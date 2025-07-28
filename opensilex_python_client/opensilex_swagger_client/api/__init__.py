@@ -1,0 +1,32 @@
+from __future__ import absolute_import
+
+# flake8: noqa
+
+# import apis into api package
+from opensilex_swagger_client.api.agroportal_api_api import AgroportalAPIApi
+from opensilex_swagger_client.api.annotations_api import AnnotationsApi
+from opensilex_swagger_client.api.area_api import AreaApi
+from opensilex_swagger_client.api.authentication_api import AuthenticationApi
+from opensilex_swagger_client.api.brapi_api import BRAPIApi
+from opensilex_swagger_client.api.data_api import DataApi
+from opensilex_swagger_client.api.devices_api import DevicesApi
+from opensilex_swagger_client.api.documents_api import DocumentsApi
+from opensilex_swagger_client.api.events_api import EventsApi
+from opensilex_swagger_client.api.experiments_api import ExperimentsApi
+from opensilex_swagger_client.api.factors_api import FactorsApi
+from opensilex_swagger_client.api.faidare_api import FaidareApi
+from opensilex_swagger_client.api.germplasm_api import GermplasmApi
+from opensilex_swagger_client.api.metrics_api import MetricsApi
+from opensilex_swagger_client.api.ontology_api import OntologyApi
+from opensilex_swagger_client.api.organizations_api import OrganizationsApi
+from opensilex_swagger_client.api.positions_api import PositionsApi
+from opensilex_swagger_client.api.projects_api import ProjectsApi
+from opensilex_swagger_client.api.scientific_objects_api import ScientificObjectsApi
+from opensilex_swagger_client.api.security_api import SecurityApi
+from opensilex_swagger_client.api.species_api import SpeciesApi
+from opensilex_swagger_client.api.staple_api_api import StapleAPIApi
+from opensilex_swagger_client.api.system_api import SystemApi
+from opensilex_swagger_client.api.uri_search_api import UriSearchApi
+from opensilex_swagger_client.api.variables_api import VariablesApi
+from opensilex_swagger_client.api.vue_js_api import VueJsApi
+from opensilex_swagger_client.api.vue_js___ontology_extension_api import VueJsOntologyExtensionApi

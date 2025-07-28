@@ -1,0 +1,22 @@
+{
+  "temp_01": {
+    "target_uri": "http://opensilex.dev/greenhouse/001",
+    "variable_uri": "http://opensilex.dev/variable/air_temperature",
+    "confidence": 0.95
+  },
+  "temp_02": {
+    "target_uri": "http://opensilex.dev/greenhouse/002",
+    "variable_uri": "http://opensilex.dev/variable/air_temperature",
+    "confidence": 0.95
+  },
+  "humidity_01": {
+    "target_uri": "http://opensilex.dev/greenhouse/001",
+    "variable_uri": "http://opensilex.dev/variable/relative_humidity",
+    "confidence": 0.9
+  },
+  "humidity_02": {
+    "target_uri": "http://opensilex.dev/greenhouse/002",
+    "variable_uri": "http://opensilex.dev/variable/relative_humidity",
+    "confidence": 0.9
+  }
+}
