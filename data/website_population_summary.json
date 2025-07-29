@@ -1,0 +1,46 @@
+{
+  "measurement_summary": {
+    "total_measurements": 21558,
+    "measurements_per_day": 239.53333333333333,
+    "variables_measured": 20,
+    "objects_measured": 1590,
+    "treatments_included": 7
+  },
+  "variable_distribution": {
+    "Stomatal Conductance": 1882,
+    "Water Use Efficiency": 1945,
+    "Precipitation": 391,
+    "Plant Height": 1853,
+    "Dry Biomass": 1954,
+    "CO2 Concentration": 405,
+    "Stem Diameter": 1897,
+    "Leaf Area Index": 1846,
+    "Root Length": 1895,
+    "Leaf Count": 1944,
+    "Light Intensity": 405,
+    "Fresh Biomass": 1872,
+    "Chlorophyll Content": 409,
+    "Relative Humidity": 400,
+    "Soil pH": 413,
+    "Soil Moisture": 391,
+    "Photosynthesis Rate": 419,
+    "Soil Temperature": 400,
+    "Wind Speed": 426,
+    "Air Temperature": 411
+  },
+  "object_distribution": {
+    "plant": 14085,
+    "plot": 6725,
+    "sensor": 748
+  },
+  "treatment_distribution": {
+    "Salt": 2270,
+    "Heat": 3057,
+    "None": 748,
+    "High-N": 3060,
+    "Control": 3075,
+    "Cold": 3173,
+    "Low-N": 3106,
+    "Drought": 3069
+  }
+}
