@@ -8,6 +8,7 @@ This utility handles authentication, token management, and session setup.
 import opensilex_swagger_client
 import os
 import json
+import requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import logging
@@ -34,8 +35,10 @@ class OpenSilexAuthManager:
     def _setup_client(self):
         """Setup the API client with host configuration."""
         self.api_client = opensilex_swagger_client.ApiClient()
-        self.api_client.configuration.host = self.host
-        logger.info(f"API client configured for host: {self.host}")
+        # Ensure the host includes the /rest API path
+        api_host = self.host.rstrip('/') + '/rest'
+        self.api_client.configuration.host = api_host
+        logger.info(f"API client configured for host: {api_host}")
     
     def authenticate(self, username: str, password: str, save_token: bool = True) -> bool:
         """
@@ -50,33 +53,47 @@ class OpenSilexAuthManager:
             True if authentication successful, False otherwise
         """
         try:
-            auth_api = opensilex_swagger_client.AuthenticationApi(self.api_client)
-            auth_dto = opensilex_swagger_client.AuthenticationDTO(
-                identifier=username,
-                password=password
+            logger.info(f"Attempting authentication for user: {username}")
+            
+            # Make direct HTTP request to authentication endpoint
+            auth_url = f"{self.host.rstrip('/')}/rest/security/authenticate"
+            auth_data = {
+                "identifier": username,
+                "password": password
+            }
+            
+            response = requests.post(
+                auth_url,
+                json=auth_data,
+                headers={"Content-Type": "application/json"}
             )
             
-            logger.info(f"Attempting authentication for user: {username}")
-            response = auth_api.authenticate(auth_dto)
-            
-            if response and hasattr(response, 'result') and hasattr(response.result, 'token'):
-                self.token_data = {
-                    'token': response.result.token,
-                    'expires_at': (datetime.now() + timedelta(hours=24)).isoformat(),
-                    'username': username,
-                    'authenticated_at': datetime.now().isoformat()
-                }
+            if response.status_code == 200:
+                response_data = response.json()
                 
-                # Set the token in the API client
-                self._set_auth_header(self.token_data['token'])
-                
-                if save_token:
-                    self._save_token()
-                
-                logger.info("Authentication successful")
-                return True
+                if 'result' in response_data and 'token' in response_data['result']:
+                    token = response_data['result']['token']
+                    
+                    self.token_data = {
+                        'token': token,
+                        'expires_at': (datetime.now() + timedelta(hours=1)).isoformat(),  # JWT tokens typically expire in 1 hour
+                        'username': username,
+                        'authenticated_at': datetime.now().isoformat()
+                    }
+                    
+                    # Set the token in the API client
+                    self._set_auth_header(token)
+                    
+                    if save_token:
+                        self._save_token()
+                    
+                    logger.info("Authentication successful")
+                    return True
+                else:
+                    logger.error(f"Authentication failed: No token in response. Response: {response_data}")
+                    return False
             else:
-                logger.error("Authentication failed: No token in response")
+                logger.error(f"Authentication failed: HTTP {response.status_code} - {response.text}")
                 return False
                 
         except Exception as e:

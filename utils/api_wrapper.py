@@ -116,22 +116,45 @@ class OpenSilexAPIWrapper:
         return self._handle_api_call(call, f"add_data({target}, {variable})")
     
     def add_multiple_data(self, data_list: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Add multiple data points."""
-        data_dtos = []
-        for data in data_list:
-            dto = opensilex_swagger_client.DataCreationDTO(
-                target=data['target'],
-                variable=data['variable'],
-                _date=data['date'],
-                value=data['value'],
-                confidence=data.get('confidence'),
-                **{k: v for k, v in data.items() if k not in ['target', 'variable', 'date', 'value', 'confidence']}
-            )
-            data_dtos.append(dto)
+        """Add multiple data points using direct HTTP request."""
+        import requests
         
-        def call():
-            return self.data_api.add_list_data(data_dtos)
-        return self._handle_api_call(call, f"add_multiple_data({len(data_list)} items)")
+        # Get the token from the auth manager
+        token = self.auth_manager.token_data['token'] if self.auth_manager.token_data else None
+        if not token:
+            raise Exception("No authentication token available")
+        
+        # Prepare the data for direct HTTP request
+        json_data = []
+        for data in data_list:
+            data_point = {
+                'target': data['target'],
+                'variable': data['variable'],
+                'value': data['value'],
+                'date': data['date'],
+                'confidence': data.get('confidence'),
+                'provenance': {
+                    'uri': 'dev:provenance/standard_provenance'
+                }
+            }
+            json_data.append(data_point)
+        
+        # Make direct HTTP request
+        url = f"{self.auth_manager.host.rstrip('/')}/rest/core/data"
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(url, json=json_data, headers=headers)
+        
+        if response.status_code == 201:
+            logger.info(f"Successfully imported {len(data_list)} data points")
+            return response.json()
+        else:
+            error_msg = f"HTTP {response.status_code}: {response.text[:500]}"
+            logger.error(f"Data import failed: {error_msg}")
+            raise Exception(error_msg)
     
     # Germplasm operations
     def list_germplasm(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:

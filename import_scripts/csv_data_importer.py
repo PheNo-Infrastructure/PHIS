@@ -114,7 +114,9 @@ class CSVDataImporter:
                         if pd.isna(value):
                             data_point[opensilex_field] = datetime.now()
                         else:
-                            data_point[opensilex_field] = datetime.strptime(str(value), date_format)
+                            # Parse date and add timezone
+                            dt = datetime.strptime(str(value), date_format)
+                            data_point[opensilex_field] = dt.strftime('%Y-%m-%dT%H:%M:%S+00:00')
                     elif opensilex_field == 'value':
                         # Convert to numeric if possible
                         if pd.isna(value):
@@ -275,11 +277,11 @@ def main():
         # You need to define your column mapping here
         # This is an example - modify based on your CSV structure
         column_mapping = {
-            'plot_uri': 'target',
+            'target_uri': 'target',
             'variable_uri': 'variable', 
-            'measurement_value': 'value',
-            'measurement_date': 'date',
-            'confidence_level': 'confidence'
+            'value': 'value',
+            'date': 'date',
+            'confidence': 'confidence'
         }
         
         print("IMPORTANT: Update the column_mapping in the script to match your CSV!")
