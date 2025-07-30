@@ -1,4 +1,0 @@
-target_uri,variable_uri,value,date,confidence
-dev:id/scientific-object/so-act,http://opensilex.dev/id/variable/air_namehumidity_measurement_percentage,65.5,2025-01-15 10:00:00,0.95
-dev:id/scientific-object/so-act,http://opensilex.dev/id/variable/air_namehumidity_measurement_percentage,67.2,2025-01-15 11:00:00,0.92
-dev:id/scientific-object/so-act,http://opensilex.dev/id/variable/air_namehumidity_measurement_percentage,64.8,2025-01-15 12:00:00,0.94
