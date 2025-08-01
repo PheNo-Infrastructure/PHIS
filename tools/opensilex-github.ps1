@@ -7,7 +7,7 @@ param(
     [string]$Command = "Menu",
     
     [Parameter(Mandatory=$false)]
-    [string]$VMName = "opensilex-github-vm",
+    [string]$VMName = "opensilex-github-vm-https",
     
     [Parameter(Mandatory=$false)]
     [string]$ResourceGroupName = "RG-OPENSILEX-GITHUB",
@@ -431,7 +431,201 @@ print_success "Dependencies installation completed!"
 "@
         
         # Upload installer script
-        $installerScript = @"
+        $installerScript = @'
+#!/bin/bash
+set -e
+
+# Source environment variables
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export MAVEN_HOME=/opt/maven
+export PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_status() { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+OPENSILEX_HOME="$HOME/opensilex"
+
+print_status "Cloning OpenSILEX repository..."
+if [ -d "$OPENSILEX_HOME" ]; then
+    rm -rf "$OPENSILEX_HOME"
+fi
+
+git clone https://github.com/OpenSILEX/opensilex.git $OPENSILEX_HOME
+cd $OPENSILEX_HOME
+
+print_status "Setting up GitHub integration..."
+# First build essential modules without the problematic swagger plugin
+mvn clean compile -Drevision=4.1.0-SNAPSHOT-github -rf opensilex-main
+
+print_status "Creating storage directories..."
+STORAGE_DIR="$HOME/opensilex-data"
+mkdir -p "$STORAGE_DIR/files"
+mkdir -p "$STORAGE_DIR/logs"
+
+# Update config if it exists
+CONFIG_FILE="$OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/config/opensilex.yml"
+if [ -f "$CONFIG_FILE" ]; then
+    cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
+    # Update storage path in config file
+    sed -i "s|storageBasePath:.*|storageBasePath: $STORAGE_DIR|g" "$CONFIG_FILE"
+fi
+
+# Add BRAPI configuration
+print_status "Configuring BRAPI integration..."
+cat >> "$CONFIG_FILE" << 'BRAPI_EOF'
+# BRAPI Configuration
+brapi:
+  enabled: true
+  version: "2.1"
+  title: "OpenSILEX BRAPI API"
+  description: "Breeding API implementation for OpenSILEX"
+  contactEmail: "admin@opensilex.org"
+  documentationURL: "https://brapi.org/"
+BRAPI_EOF
+
+# SPARQL Configuration  
+print_status "Configuring SPARQL endpoint..."
+echo "ontologies.sparql.rdf4j.serverURL=http://localhost:8667/rdf4j-server" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
+echo "big-data.sparql.rdf4j.serverURL=http://localhost:8667/rdf4j-server" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
+echo "nosql.mongodb.host=localhost" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
+echo "nosql.mongodb.port=27017" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
+echo "file-system.storageBasePath=$STORAGE_DIR" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
+
+print_status "Building OpenSILEX..."
+# Build essential modules first, then try full build without swagger plugin
+mvn clean install -DskipTests -Drevision=4.1.0-SNAPSHOT-github -pl '!opensilex-swagger-codegen-maven-plugin'
+
+if [ $? -eq 0 ]; then
+    print_success "OpenSILEX build completed successfully"
+else
+    print_error "OpenSILEX build failed"
+    exit 1
+fi
+
+print_status "Creating post-installation configuration script..."
+cat > $OPENSILEX_HOME/post-install-config.sh << 'EOF'
+#!/bin/bash
+set -e
+
+print_success() { echo -e "\033[0;32m[SUCCESS]\033[0m $1"; }
+print_info() { echo -e "\033[0;34m[INFO]\033[0m $1"; }
+print_error() { echo -e "\033[0;31m[ERROR]\033[0m $1"; }
+
+print_info "Running post-installation configuration..."
+
+# Get authentication token
+TOKEN=$(curl -s -X POST "http://localhost:8666/rest/security/authenticate" \
+    -H "Content-Type: application/json" \
+    -d '{"identifier":"admin@opensilex.org","password":"admin"}' \
+    | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+
+if [ -n "$TOKEN" ]; then
+    print_success "Authentication successful"
+    
+    # Create a proper admin profile to fix permissions
+    print_info "Creating admin profile..."
+    curl -s -X POST "http://localhost:8666/rest/security/profiles" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "name": "Administrator Profile",
+            "credentials": ["admin@opensilex.org"],
+            "first_name": "System",
+            "last_name": "Administrator",
+            "email": "admin@opensilex.org"
+        }' > /dev/null 2>&1
+    
+    # Create sample organization if not exists
+    print_info "Creating default organization..."
+    curl -s -X POST "http://localhost:8666/rest/core/organisations" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "name": "Default Research Organization",
+            "parents": []
+        }' > /dev/null 2>&1
+    
+    # Initialize default provenance if needed
+    print_info "Verifying default provenance..."
+    curl -s -H "Authorization: Bearer $TOKEN" \
+        "http://localhost:8666/rest/core/provenances" > /dev/null 2>&1
+    
+    print_info "Testing API endpoints..."
+    
+    # Test SPARQL (should work via RDF4J)
+    SPARQL_TEST=$(curl -s -X POST -H "Content-Type: application/sparql-query" \
+        -d "SELECT (COUNT(*) as ?count) WHERE { ?s ?p ?o }" \
+        "http://localhost:8667/rdf4j-server/repositories/opensilex" | grep -o '[0-9]*')
+    
+    if [ -n "$SPARQL_TEST" ]; then
+        print_success "SPARQL endpoint working - $SPARQL_TEST triples found"
+    else
+        print_error "SPARQL endpoint not responding"
+    fi
+    
+    # Test organizations
+    ORG_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" \
+        "http://localhost:8666/rest/core/organisations" | grep -o '"totalCount":[0-9]*' | cut -d':' -f2)
+    
+    if [ "$ORG_COUNT" -gt "0" ]; then
+        print_success "Organizations endpoint working - $ORG_COUNT organizations found"
+    else
+        print_error "Organizations endpoint issue"
+    fi
+    
+    print_success "Post-installation configuration completed!"
+else
+    print_error "Failed to authenticate - skipping post-configuration"
+fi
+EOF
+
+chmod +x $OPENSILEX_HOME/post-install-config.sh
+
+print_status "Starting OpenSILEX services..."
+echo "[Unit]
+Description=OpenSILEX Server
+After=network.target mongod.service
+Requires=mongod.service
+
+[Service]
+Type=forking
+User=azureuser
+Group=azureuser
+WorkingDirectory=/home/azureuser/opensilex
+Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+Environment=MAVEN_HOME=/opt/maven
+Environment=PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/opt/maven/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/azureuser/opensilex/opensilex-release/target/opensilex/opensilex.sh server start --host=0.0.0.0 --port=8666 --adminPort=8667
+ExecStop=/home/azureuser/opensilex/opensilex-release/target/opensilex/opensilex.sh server stop
+ExecStartPost=/bin/bash -c 'Start-Sleep 30 && /home/azureuser/opensilex/post-install-config.sh'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target" | sudo tee /etc/systemd/system/opensilex-server.service > /dev/null
+
+sudo systemctl daemon-reload
+sudo systemctl enable opensilex-server.service
+
+# Wait for MongoDB to be ready
+for i in {1..60}; do
+    if ($httpCode -and $httpCode -ge 300 -and $httpCode -lt 400) {
+        print_success "OpenSILEX is now running!"
+        break
+    }
+    Start-Sleep 3
+    Write-Host "." -NoNewline
+}
+Write-Host'
+"@ # End of single-quoted here-string
 #!/bin/bash
 set -e
 
@@ -463,14 +657,14 @@ cd `$OPENSILEX_HOME
 
 print_status "Building OpenSILEX (this may take 10-15 minutes)..."
 export MAVEN_OPTS="-Xmx4096m"
-mvn clean install -DskipTests
+mvn clean install -DskipTests -pl '!opensilex-swagger-codegen-maven-plugin'
 
 print_status "Setting up databases..."
 cd `$OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/docker
 docker compose up -d
 
 print_status "Waiting for databases to start..."
-sleep 30
+Start-Sleep 30
 
 print_status "Configuring OpenSILEX..."
 CONFIG_FILE="`$OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/config/opensilex.yml"
@@ -479,6 +673,7 @@ mkdir -p `$STORAGE_DIR
 
 if [ -f "`$CONFIG_FILE" ]; then
     cp "`$CONFIG_FILE" "`$CONFIG_FILE.backup"
+    # Update storage path in config file
     sed -i "s|storageBasePath:.*|storageBasePath: `$STORAGE_DIR|g" "`$CONFIG_FILE"
 fi
 
@@ -532,7 +727,7 @@ cat > `$OPENSILEX_HOME/post-install-config.sh << 'EOF'
 #!/bin/bash
 
 # Wait for OpenSILEX to start
-sleep 30
+Start-Sleep 30
 
 print_success() { echo -e "\033[0;32m[SUCCESS]\033[0m $1"; }
 print_info() { echo -e "\033[0;34m[INFO]\033[0m $1"; }
@@ -605,7 +800,7 @@ if [ -n "$TOKEN" ]; then
     
 else
     print_error "Failed to authenticate - skipping post-configuration"
-fi
+}
 EOF
 
 chmod +x `$OPENSILEX_HOME/post-install-config.sh
@@ -660,7 +855,7 @@ Requires=opensilex-docker.service
 Type=simple
 WorkingDirectory=/home/azureuser/opensilex
 ExecStart=/home/azureuser/opensilex/opensilex-release/target/opensilex/opensilex.sh dev start --no-front-dev
-ExecStartPost=/bin/bash -c 'sleep 30 && /home/azureuser/opensilex/post-install-config.sh'
+ExecStartPost=/bin/bash -c 'Start-Sleep 30 && /home/azureuser/opensilex/post-install-config.sh'
 User=azureuser
 Group=azureuser
 Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
@@ -681,155 +876,8 @@ sudo systemctl enable opensilex-server.service
 print_status "Starting OpenSILEX services..."
 sudo systemctl start opensilex-docker.service
 sleep 15
-sudo systemctl start opensilex-server.service
+'@
 
-print_status "Waiting for OpenSILEX to fully start (this may take 2-3 minutes)..."
-for i in {1..60}; do
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:8666/ | grep -q "30[0-9]"; then
-        print_success "OpenSILEX is now running!"
-        break
-    fi
-    sleep 3
-    echo -n "."
-done
-echo
-
-print_status "Creating comprehensive endpoint verification script..."
-cat > `$OPENSILEX_HOME/verify-endpoints.sh << 'EOF'
-#!/bin/bash
-
-print_success() { echo -e "\033[0;32m[SUCCESS]\033[0m $1"; }
-print_info() { echo -e "\033[0;34m[INFO]\033[0m $1"; }
-print_warning() { echo -e "\033[1;33m[WARNING]\033[0m $1"; }
-print_error() { echo -e "\033[0;31m[ERROR]\033[0m $1"; }
-
-print_info "=== OpenSILEX API Endpoint Verification ==="
-
-# Get authentication token
-TOKEN=$(curl -s -X POST "http://localhost:8666/rest/security/authenticate" \
-    -H "Content-Type: application/json" \
-    -d '{"identifier":"admin@opensilex.org","password":"admin"}' \
-    | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-
-if [ -z "$TOKEN" ]; then
-    print_error "Failed to authenticate!"
-    exit 1
-fi
-
-print_success "Authentication successful"
-
-# Test System Info
-print_info "Testing system info endpoint..."
-SYSTEM_INFO=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/core/system/info" | grep -o '"title":"[^"]*"')
-if [ -n "$SYSTEM_INFO" ]; then
-    print_success "✓ System info endpoint working"
-else
-    print_error "✗ System info endpoint failed"
-fi
-
-# Test Users
-print_info "Testing users endpoint..."
-USER_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/security/users" | grep -o '"totalCount":[0-9]*' | cut -d':' -f2)
-if [ -n "$USER_COUNT" ] && [ "$USER_COUNT" -gt "0" ]; then
-    print_success "✓ Users endpoint working - $USER_COUNT users found"
-else
-    print_error "✗ Users endpoint failed"
-fi
-
-# Test User Profile (Fixed)
-print_info "Testing user profile endpoint..."
-USER_EMAIL=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/security/users/dev%3Aid%2Fuser%2Faccount.adminopensilexorg" | grep -o '"email":"[^"]*"' | cut -d'"' -f4)
-if [ "$USER_EMAIL" = "admin@opensilex.org" ]; then
-    print_success "✓ User profile endpoint working (FIXED)"
-else
-    print_error "✗ User profile endpoint still broken"
-fi
-
-# Test Organizations
-print_info "Testing organizations endpoint..."
-ORG_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/core/organisations" | grep -o '"totalCount":[0-9]*' | cut -d':' -f2)
-if [ -n "$ORG_COUNT" ] && [ "$ORG_COUNT" -gt "0" ]; then
-    print_success "✓ Organizations endpoint working - $ORG_COUNT organizations found"
-else
-    print_warning "! Organizations endpoint empty (expected for fresh install)"
-fi
-
-# Test SPARQL (via RDF4J) 
-print_info "Testing SPARQL endpoint..."
-TRIPLE_COUNT=$(curl -s -X POST -H "Content-Type: application/sparql-query" \
-    -d "SELECT (COUNT(*) as ?count) WHERE { ?s ?p ?o }" \
-    "http://localhost:8667/rdf4j-server/repositories/opensilex" | grep -o '[0-9]*' | head -1)
-if [ -n "$TRIPLE_COUNT" ] && [ "$TRIPLE_COUNT" -gt "0" ]; then
-    print_success "✓ SPARQL endpoint working (FIXED) - $TRIPLE_COUNT triples found"
-    print_info "  → Use: http://localhost:8667/rdf4j-server/repositories/opensilex"
-else
-    print_error "✗ SPARQL endpoint not responding"
-fi
-
-# Test BRAPI (after configuration)
-print_info "Testing BRAPI endpoints..."
-BRAPI_V2=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/brapi/v2/serverinfo" 2>/dev/null)
-BRAPI_V1=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/brapi/v1/serverinfo" 2>/dev/null)
-if [[ "$BRAPI_V2" != *"Not Found"* ]] && [[ "$BRAPI_V2" != *"404"* ]]; then
-    print_success "✓ BRAPI v2 endpoint working (FIXED)"
-elif [[ "$BRAPI_V1" != *"Not Found"* ]] && [[ "$BRAPI_V1" != *"404"* ]]; then
-    print_success "✓ BRAPI v1 endpoint working (FIXED)"
-else
-    print_warning "! BRAPI endpoints need module restart (config applied)"
-fi
-
-# Test Projects
-print_info "Testing projects endpoint..."
-PROJECT_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/core/projects")
-if [[ "$PROJECT_RESPONSE" != *"CLIENT_ERROR"* ]]; then
-    print_success "✓ Projects endpoint accessible"
-else
-    print_error "✗ Projects endpoint failed"
-fi
-
-# Test Experiments  
-print_info "Testing experiments endpoint..."
-EXP_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/core/experiments")
-if [[ "$EXP_RESPONSE" != *"CLIENT_ERROR"* ]]; then
-    print_success "✓ Experiments endpoint accessible"
-else
-    print_error "✗ Experiments endpoint failed"
-fi
-
-# Test Variables
-print_info "Testing variables endpoint..."
-VAR_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/core/variables")
-if [[ "$VAR_RESPONSE" != *"CLIENT_ERROR"* ]]; then
-    print_success "✓ Variables endpoint accessible"
-else
-    print_error "✗ Variables endpoint failed"
-fi
-
-# Test Data
-print_info "Testing data endpoint..."
-DATA_RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8666/rest/core/data")
-if [[ "$DATA_RESPONSE" != *"CLIENT_ERROR"* ]]; then
-    print_success "✓ Data endpoint accessible"
-else
-    print_error "✗ Data endpoint failed"
-fi
-
-print_info "=== Verification Complete ==="
-print_info "RDF4J Workbench: http://localhost:8667/rdf4j-workbench/"
-print_info "Direct SPARQL: http://localhost:8667/rdf4j-server/repositories/opensilex"
-EOF
-
-chmod +x `$OPENSILEX_HOME/verify-endpoints.sh
-
-print_success "OpenSILEX GitHub installation completed!"
-print_success "Access URL: http://`$(curl -s ifconfig.me):8666/"
-print_success "API Documentation: http://`$(curl -s ifconfig.me):8666/api-docs"
-print_success "RDF4J Workbench: http://`$(curl -s ifconfig.me):8667/rdf4j-workbench/"
-print_success "Default login: admin@opensilex.org / admin"
-print_success "Services will start automatically on boot"
-print_success "Endpoint verification: ~/opensilex/verify-endpoints.sh"
-"@
-        
         # Write scripts to temporary files and upload
         $tempDepsScript = [System.IO.Path]::GetTempFileName()
         $tempInstallScript = [System.IO.Path]::GetTempFileName()
@@ -845,7 +893,7 @@ print_success "Endpoint verification: ~/opensilex/verify-endpoints.sh"
         Remove-Item $tempDepsScript, $tempInstallScript
         
         # Fix line endings and make scripts executable
-        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "sed -i 's/\r$//' ~/install-dependencies.sh ~/install-opensilex.sh && chmod +x ~/install-dependencies.sh ~/install-opensilex.sh"
+        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/install-dependencies.sh ~/install-opensilex.sh 2>/dev/null || sed -i 's/\r$//' ~/install-dependencies.sh ~/install-opensilex.sh; chmod +x ~/install-dependencies.sh ~/install-opensilex.sh"
         
         if (-not $SkipDependencies) {
             Write-Info "Installing dependencies (this may take 5-10 minutes)..."
@@ -856,19 +904,16 @@ print_success "Endpoint verification: ~/opensilex/verify-endpoints.sh"
         ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/install-opensilex.sh"
         
         Write-Success "OpenSILEX installation completed successfully!"
-        Write-Info "Access URL: http://${TargetIP}:8666/"
-        Write-Info "API Documentation: http://${TargetIP}:8666/api-docs"
-        Write-Info "Default credentials: admin@opensilex.org / admin"
-        
-        return $true
-    }
-    catch {
+    } catch {
         Write-Error "Installation failed: $($_.Exception.Message)"
         return $false
     }
+    
+    return $true
 }
 
 function Get-VMStatus {
+    Write-Info "Checking VM status..."
     try {
         $vm = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -Status -ErrorAction SilentlyContinue
         if ($vm) {
@@ -881,21 +926,22 @@ function Get-VMStatus {
                     Write-Info "Public IP: $($publicIP.IpAddress)"
                     Write-Info "SSH Command: ssh $AdminUsername@$($publicIP.IpAddress)"
                     Write-Info "OpenSILEX URL: http://$($publicIP.IpAddress):8666/"
+                } else {
+                    Write-Warning "Public IP not found"
                 }
             }
-            return $true
         } else {
-            Write-Warning "VM not found: $VMName"
-            return $false
+            Write-Warning "VM not found"
         }
-    }
-    catch {
+    } catch {
         Write-Error "Failed to get VM status: $($_.Exception.Message)"
-        return $false
     }
+    
+    return $true
 }
 
 function Connect-ToVM {
+    Write-Info "Connecting to VM..."
     try {
         $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip" -ErrorAction SilentlyContinue
         if ($publicIP -and $publicIP.IpAddress) {
@@ -904,69 +950,59 @@ function Connect-ToVM {
                 $privateKeyPath = $sshKeyPath -replace "\.pub$", ""
                 $ipAddress = $publicIP.IpAddress
                 Write-Info "Connecting to VM..."
-                Write-Info "SSH Command: ssh -i $privateKeyPath $AdminUsername@$ipAddress"
-                ssh -i $privateKeyPath $AdminUsername@$ipAddress
+                & ssh -i $privateKeyPath $AdminUsername@$ipAddress
             } else {
                 Write-Error "SSH key not found"
             }
         } else {
             Write-Error "Could not find VM public IP or IP address is null"
         }
-    }
-    catch {
-        Write-Error "Failed to connect to VM: $($_.Exception.Message)"
+    } catch {
+        Write-Error "Failed to connect: $($_.Exception.Message)"
     }
 }
 
 function Start-VM {
-    Write-Info "Starting VM: $VMName"
+    Write-Info "Starting VM..."
     try {
         Start-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName | Out-Null
         Write-Success "VM started successfully"
-        Start-Sleep -Seconds 10
-        Get-VMStatus
-    }
-    catch {
+    } catch {
         Write-Error "Failed to start VM: $($_.Exception.Message)"
     }
 }
 
 function Stop-VM {
-    Write-Info "Stopping VM: $VMName"
+    Write-Info "Stopping VM..."
     try {
         Stop-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -Force | Out-Null
         Write-Success "VM stopped successfully"
-    }
-    catch {
+    } catch {
         Write-Error "Failed to stop VM: $($_.Exception.Message)"
     }
 }
 
 function Restart-VM {
-    Write-Info "Restarting VM: $VMName"
+    Write-Info "Restarting VM..."
     try {
         Restart-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName | Out-Null
         Write-Success "VM restarted successfully"
-        Start-Sleep -Seconds 15
-        Get-VMStatus
-    }
-    catch {
+    } catch {
         Write-Error "Failed to restart VM: $($_.Exception.Message)"
     }
 }
 
 function Remove-Deployment {
-    Write-Warning "This will delete ALL resources in resource group: $ResourceGroupName"
+    Write-Warning "This will delete ALL resources in the resource group: $ResourceGroupName"
     $confirm = Read-Host "Are you sure? Type 'DELETE' to confirm"
     
     if ($confirm -eq "DELETE") {
         Write-Info "Deleting resource group: $ResourceGroupName"
         try {
             Remove-AzResourceGroup -Name $ResourceGroupName -Force | Out-Null
-            Write-Success "Resource group deleted successfully"
-        }
-        catch {
-            Write-Error "Failed to delete resource group: $($_.Exception.Message)"
+            Write-Success "Resources deleted successfully"
+        } catch {
+            Write-Error "Failed to delete resources: $($_.Exception.Message)"
         }
     } else {
         Write-Info "Deletion cancelled"
@@ -974,6 +1010,7 @@ function Remove-Deployment {
 }
 
 function Show-Logs {
+    Write-Info "Fetching OpenSILEX logs..."
     try {
         $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip" -ErrorAction SilentlyContinue
         if ($publicIP -and $publicIP.IpAddress) {
@@ -982,7 +1019,7 @@ function Show-Logs {
                 $privateKeyPath = $sshKeyPath -replace "\.pub$", ""
                 $ipAddress = $publicIP.IpAddress
                 Write-Info "Fetching OpenSILEX logs..."
-                ssh -i $privateKeyPath $AdminUsername@$ipAddress "cd ~/opensilex/opensilex-dev-tools/src/main/resources/docker && docker compose logs --tail=50"
+                ssh -i $privateKeyPath $AdminUsername@$ipAddress "sudo journalctl -u opensilex-server.service -n 50"
             } else {
                 Write-Error "SSH key not found"
             }
@@ -996,6 +1033,7 @@ function Show-Logs {
 }
 
 function Show-Menu {
+    $script:choice = ""
     Clear-Host
     Write-Host "=============================================" -ForegroundColor Blue
     Write-Host "   OpenSILEX GitHub Installation Manager   " -ForegroundColor Blue
@@ -1006,7 +1044,7 @@ function Show-Menu {
     Write-Host "  Resource Group: $ResourceGroupName" -ForegroundColor White
     Write-Host "  Region: $Location" -ForegroundColor White
     Write-Host ""
-    Write-Host "Available Commands:" -ForegroundColor Yellow
+    Write-Host "Available Commands:" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Installation & Deployment:" -ForegroundColor Green
     Write-Host "    1. Full Install (Deploy VM + Install OpenSILEX)" -ForegroundColor White
@@ -1032,9 +1070,9 @@ function Show-Menu {
     Write-Host "    0. Exit" -ForegroundColor Red
     Write-Host ""
     
-    $choice = Read-Host "Select an option (0-13)"
+    $script:choice = Read-Host "Select an option (0-13)"
     
-    switch ($choice) {
+    switch ($script:choice) {
         "1" { 
             Write-Info "Starting full installation..."
             if (Deploy-VM) {
@@ -1042,10 +1080,7 @@ function Show-Menu {
             }
         }
         "2" { Deploy-VM }
-        "3" { 
-            $ip = Read-Host "Enter VM IP address"
-            Install-OpenSILEX -TargetIP $ip
-        }
+        "3" { Install-OpenSILEX }
         "4" { Start-VM }
         "5" { Stop-VM }
         "6" { Restart-VM }
@@ -1083,15 +1118,10 @@ function Show-Menu {
         }
         default { 
             Write-Warning "Invalid selection. Please try again."
-            Start-Sleep -Seconds 2
         }
     }
     
-    if ($choice -ne "0") {
-        Write-Host ""
-        Read-Host "Press Enter to continue"
-        Show-Menu
-    }
+    # Choice handling moved to main loop
 }
 
 # Main execution
@@ -1101,14 +1131,23 @@ try {
     Write-Host ""
     
     switch ($Command.ToLower()) {
-        "menu" { Show-Menu }
+        "menu" { 
+            $script:choice = ""
+            while ($script:choice -ne "0") {
+                Show-Menu
+                if ($script:choice -ne "0") {
+                    Write-Host ""
+                    Read-Host "Press Enter to continue"
+                }
+            }
+        }
         "fullinstall" { 
             if (Deploy-VM) {
                 Install-OpenSILEX -TargetIP $VMIPAddress
             }
         }
         "deploy" { Deploy-VM }
-        "install" { Install-OpenSILEX -TargetIP $VMIPAddress }
+        "install" { Install-OpenSILEX }
         "status" { Get-VMStatus }
         "connect" { Connect-ToVM }
         "start" { Start-VM }
@@ -1135,8 +1174,9 @@ try {
             try {
                 $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip" -ErrorAction SilentlyContinue
                 if ($publicIP) {
-                    Write-Info "OpenSILEX Access: http://$($publicIP.IpAddress):8666/"
-                    Write-Info "API Documentation: http://$($publicIP.IpAddress):8666/api-docs"
+                    Write-Info "VM Public IP: $($publicIP.IpAddress)"
+                } else {
+                    Write-Warning "VM public IP not found"
                 }
             } catch {}
         }
@@ -1148,9 +1188,7 @@ try {
                 } else {
                     Write-Warning "VM public IP not found"
                 }
-            } catch {
-                Write-Error "Failed to get VM IP: $($_.Exception.Message)"
-            }
+            } catch {}
         }
         "openports" {
             try {
@@ -1160,20 +1198,15 @@ try {
                     $nsg.SecurityRules | ForEach-Object {
                         Write-Host "  $($_.Name): $($_.Direction) $($_.Access) $($_.Protocol) $($_.DestinationPortRange)" -ForegroundColor White
                     }
-                } else {
-                    Write-Warning "Network Security Group not found"
                 }
-            } catch {
-                Write-Error "Failed to get network security rules: $($_.Exception.Message)"
-            }
+            } catch {}
         }
-        default {
-            Write-Error "Unknown command: $Command"
-            Write-Info "Available commands: Menu, FullInstall, Deploy, Install, Status, Connect, Start, Stop, Restart, Delete, Logs, GenerateSSHKey, TestSSHKeys, ShowInfo, GetIP, OpenPorts"
+        default { 
+            Write-Warning "Unknown command: $Command"
+            Write-Info "Available commands: Menu, FullInstall, Deploy, Install, Status, Connect, Start, Stop, Restart, Delete, Logs"
         }
     }
-}
-catch {
+} catch {
     Write-Error "Script execution failed: $($_.Exception.Message)"
     Write-Error $_.ScriptStackTrace
 }
