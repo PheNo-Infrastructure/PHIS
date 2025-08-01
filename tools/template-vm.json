@@ -110,6 +110,32 @@
               "destinationAddressPrefix": "*",
               "destinationPortRange": "8666"
             }
+          },
+          {
+            "name": "HTTPS",
+            "properties": {
+              "priority": 1006,
+              "protocol": "TCP",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "443"
+            }
+          },
+          {
+            "name": "KeycloakHTTPS",
+            "properties": {
+              "priority": 1007,
+              "protocol": "TCP",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "8443"
+            }
           }
         ]
       }
