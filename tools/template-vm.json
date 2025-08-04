@@ -4,50 +4,90 @@
   "parameters": {
     "vmName": {
       "type": "string",
-      "defaultValue": "phis"
+      "defaultValue": "opensilex-prod-vm",
+      "metadata": {
+        "description": "Name of the virtual machine"
+      }
     },
     "adminUsername": {
       "type": "string",
-      "defaultValue": "azureuser"
+      "defaultValue": "azureuser",
+      "metadata": {
+        "description": "Administrator username"
+      }
     },
     "sshPublicKey": {
       "type": "string",
-      "defaultValue": "---INCLUDE SSH PUBLIC KEY HERE---"
+      "metadata": {
+        "description": "SSH public key for authentication"
+      }
+    },
+    "enableSSL": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable HTTPS port (443)"
+      }
+    },
+    "disableNginx": {
+      "type": "bool", 
+      "defaultValue": false,
+      "metadata": {
+        "description": "Disable Nginx and allow direct access to OpenSILEX port 8080"
+      }
     }
   },
   "variables": {
-    "location": "westeurope",
-    "vmSize": "Standard_B2as_v2",
-    "resourceGroupName": "RG-PHIS",
+    "location": "[resourceGroup().location]",
+    "vmSize": "Standard_D4s_v3",
+    "diskSizeGB": 100,
     "vnetName": "[concat(parameters('vmName'), '-vnet')]",
     "subnetName": "default",
     "nicName": "[concat(parameters('vmName'), '-nic')]",
     "publicIPName": "[concat(parameters('vmName'), '-ip')]",
-    "nsgName": "[concat(parameters('vmName'), '-nsg')]"
+    "nsgName": "[concat(parameters('vmName'), '-nsg')]",
+    "osDiskName": "[concat(parameters('vmName'), '-osdisk')]"
   },
   "resources": [
     {
       "type": "Microsoft.Network/publicIPAddresses",
-      "apiVersion": "2021-02-01",
+      "apiVersion": "2023-04-01",
       "name": "[variables('publicIPName')]",
       "location": "[variables('location')]",
-      "zones": ["1"],
       "sku": {
         "name": "Standard"
       },
       "properties": {
         "publicIPAllocationMethod": "Static"
+      },
+      "tags": {
+        "Application": "OpenSILEX",
+        "Environment": "Production"
       }
     },
     {
       "type": "Microsoft.Network/networkSecurityGroups",
-      "apiVersion": "2021-02-01",
+      "apiVersion": "2023-04-01",
       "name": "[variables('nsgName')]",
       "location": "[variables('location')]",
       "properties": {
         "securityRules": [
           {
             "name": "SSH",
+            "properties": {
+              "priority": 1000,
+              "protocol": "TCP",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "22",
+              "description": "Allow SSH access"
+            }
+          },
+          {
+            "name": "HTTP",
             "properties": {
               "priority": 1001,
               "protocol": "TCP",
@@ -56,93 +96,48 @@
               "sourceAddressPrefix": "*",
               "sourcePortRange": "*",
               "destinationAddressPrefix": "*",
-              "destinationPortRange": "22"
-            }
-          },
-          {
-            "name": "HTTP",
-            "properties": {
-              "priority": 1002,
-              "protocol": "TCP",
-              "access": "Allow",
-              "direction": "Inbound",
-              "sourceAddressPrefix": "*",
-              "sourcePortRange": "*",
-              "destinationAddressPrefix": "*",
-              "destinationPortRange": "80"
-            }
-          },
-          {
-            "name": "CustomPort28081",
-            "properties": {
-              "priority": 1003,
-              "protocol": "TCP",
-              "access": "Allow",
-              "direction": "Inbound",
-              "sourceAddressPrefix": "*",
-              "sourcePortRange": "*",
-              "destinationAddressPrefix": "*",
-              "destinationPortRange": "28081"
-            }
-          },
-          {
-            "name": "Port8080",
-            "properties": {
-              "priority": 1004,
-              "protocol": "TCP",
-              "access": "Allow",
-              "direction": "Inbound",
-              "sourceAddressPrefix": "*",
-              "sourcePortRange": "*",
-              "destinationAddressPrefix": "*",
-              "destinationPortRange": "8080"
-            }
-          },
-          {
-            "name": "OpenSILEX",
-            "properties": {
-              "priority": 1005,
-              "protocol": "TCP",
-              "access": "Allow",
-              "direction": "Inbound",
-              "sourceAddressPrefix": "*",
-              "sourcePortRange": "*",
-              "destinationAddressPrefix": "*",
-              "destinationPortRange": "8666"
+              "destinationPortRange": "80",
+              "description": "Allow HTTP access for Nginx"
             }
           },
           {
             "name": "HTTPS",
             "properties": {
-              "priority": 1006,
+              "priority": 1002,
               "protocol": "TCP",
-              "access": "Allow",
+              "access": "[if(parameters('enableSSL'), 'Allow', 'Deny')]",
               "direction": "Inbound",
               "sourceAddressPrefix": "*",
               "sourcePortRange": "*",
               "destinationAddressPrefix": "*",
-              "destinationPortRange": "443"
+              "destinationPortRange": "443",
+              "description": "Allow HTTPS access (SSL enabled)"
             }
           },
           {
-            "name": "KeycloakHTTPS",
+            "name": "OpenSILEX-Direct",
             "properties": {
-              "priority": 1007,
+              "priority": 1003,
               "protocol": "TCP",
-              "access": "Allow",
+              "access": "[if(parameters('disableNginx'), 'Allow', 'Deny')]",
               "direction": "Inbound",
               "sourceAddressPrefix": "*",
               "sourcePortRange": "*",
               "destinationAddressPrefix": "*",
-              "destinationPortRange": "8443"
+              "destinationPortRange": "8080",
+              "description": "Allow direct OpenSILEX access (when Nginx disabled)"
             }
           }
         ]
+      },
+      "tags": {
+        "Application": "OpenSILEX",
+        "Environment": "Production"
       }
     },
     {
       "type": "Microsoft.Network/virtualNetworks",
-      "apiVersion": "2021-02-01",
+      "apiVersion": "2023-04-01",
       "name": "[variables('vnetName')]",
       "location": "[variables('location')]",
       "dependsOn": [
@@ -150,7 +145,9 @@
       ],
       "properties": {
         "addressSpace": {
-          "addressPrefixes": ["10.0.0.0/16"]
+          "addressPrefixes": [
+            "10.0.0.0/16"
+          ]
         },
         "subnets": [
           {
@@ -163,11 +160,15 @@
             }
           }
         ]
+      },
+      "tags": {
+        "Application": "OpenSILEX",
+        "Environment": "Production"
       }
     },
     {
       "type": "Microsoft.Network/networkInterfaces",
-      "apiVersion": "2021-02-01",
+      "apiVersion": "2023-04-01",
       "name": "[variables('nicName')]",
       "location": "[variables('location')]",
       "dependsOn": [
@@ -189,14 +190,17 @@
             }
           }
         ]
+      },
+      "tags": {
+        "Application": "OpenSILEX",
+        "Environment": "Production"
       }
     },
     {
       "type": "Microsoft.Compute/virtualMachines",
-      "apiVersion": "2021-03-01",
+      "apiVersion": "2023-03-01",
       "name": "[parameters('vmName')]",
       "location": "[variables('location')]",
-      "zones": ["1"],
       "dependsOn": [
         "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
       ],
@@ -206,16 +210,20 @@
         },
         "storageProfile": {
           "imageReference": {
-            "publisher": "debian",
-            "offer": "debian-12",
-            "sku": "12-gen2",
+            "publisher": "Canonical",
+            "offer": "0001-com-ubuntu-server-jammy",
+            "sku": "22_04-lts-gen2",
             "version": "latest"
           },
           "osDisk": {
             "osType": "Linux",
-            "name": "[concat(parameters('vmName'), '_OsDisk')]",
+            "name": "[variables('osDiskName')]",
             "createOption": "FromImage",
             "caching": "ReadWrite",
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            },
+            "diskSizeGB": "[variables('diskSizeGB')]",
             "deleteOption": "Delete"
           }
         },
@@ -234,8 +242,12 @@
             },
             "provisionVMAgent": true,
             "patchSettings": {
-              "patchMode": "ImageDefault",
-              "assessmentMode": "ImageDefault"
+              "patchMode": "AutomaticByPlatform",
+              "automaticByPlatformSettings": {
+                "rebootSetting": "IfRequired",
+                "bypassPlatformSafetyChecksOnUserSchedule": false
+              },
+              "assessmentMode": "AutomaticByPlatform"
             }
           },
           "allowExtensionOperations": true
@@ -252,7 +264,7 @@
             {
               "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]",
               "properties": {
-                "deleteOption": "Detach"
+                "deleteOption": "Delete"
               }
             }
           ]
@@ -262,6 +274,12 @@
             "enabled": true
           }
         }
+      },
+      "tags": {
+        "Application": "OpenSILEX",
+        "Environment": "Production",
+        "Owner": "[parameters('adminUsername')]",
+        "CreatedDate": "[utcNow()]"
       }
     }
   ],
@@ -269,6 +287,14 @@
     "publicIPAddress": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))).ipAddress]"
+    },
+    "sshCommand": {
+      "type": "string", 
+      "value": "[concat('ssh ', parameters('adminUsername'), '@', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))).ipAddress)]"
+    },
+    "vmResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/virtualMachines', parameters('vmName'))]"
     }
   }
 }
