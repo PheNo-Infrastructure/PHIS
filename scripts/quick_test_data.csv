@@ -1,0 +1,3 @@
+plot_uri,variable_uri,measurement_value,measurement_date,confidence_level
+http://example.opensilex.org/plot/001,http://example.opensilex.org/variable/height,25.4,2024-01-15 10:00:00,0.95
+http://example.opensilex.org/plot/002,http://example.opensilex.org/variable/height,23.1,2024-01-15 10:15:00,0.9

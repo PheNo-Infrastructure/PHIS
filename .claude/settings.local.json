@@ -23,7 +23,14 @@
       "Bash(find:*)",
       "Bash(git mv:*)",
       "Bash(bash:*)",
-      "Bash(where scp)"
+      "Bash(where scp)",
+      "Bash(for file in *.py)",
+      "Bash(do echo \"Testing $file:\")",
+      "Bash(done)",
+      "Bash(set PYTHONPATH=src)",
+      "Bash(src/utils)",
+      "Bash(%PYTHONPATH%)",
+      "Bash(PYTHONPATH=\"src:src/utils:src/opensilex_python_client\" python scripts/simple_example.py)"
     ],
     "deny": []
   }

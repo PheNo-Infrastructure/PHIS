@@ -5,15 +5,17 @@ Area operations: create, read, update, delete, and search areas.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.auth_manager import quick_auth
-from opensilex_swagger_client.api.area_api import AreaApi
-from opensilex_swagger_client.models.area_creation_dto import AreaCreationDTO
-from opensilex_swagger_client.models.area_update_dto import AreaUpdateDTO
-from opensilex_swagger_client.rest import ApiException
+from src.utils.auth_manager import quick_auth
+from src.opensilex_python_client.opensilex_swagger_client.api.area_api import AreaApi
+from src.opensilex_python_client.opensilex_swagger_client.models.area_creation_dto import AreaCreationDTO
+from src.opensilex_python_client.opensilex_swagger_client.models.area_update_dto import AreaUpdateDTO
+from src.opensilex_python_client.opensilex_swagger_client.rest import ApiException
 import argparse
 import json
+import sys
+import os
 
 def create_area(auth_manager, area_data):
     """Create a new area."""

@@ -5,7 +5,7 @@ Simple example using the unified OpenSilex client.
 This demonstrates how easy it is to use OpenSilex with the orchestrator.
 """
 
-from opensilex_client import connect
+from src.opensilex_client import connect
 from datetime import datetime, timedelta
 
 def main():
