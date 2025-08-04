@@ -6,7 +6,11 @@ This script demonstrates how to use the generated Swagger Codegen client to inte
 with the OpenSilex API.
 """
 
-import opensilex_swagger_client
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.opensilex_python_client import opensilex_swagger_client
 from pprint import pprint
 
 def main():

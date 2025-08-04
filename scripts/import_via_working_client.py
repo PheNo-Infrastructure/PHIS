@@ -7,9 +7,9 @@ This script uses the existing working opensilex_client.py to import mock data.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from opensilex_client import connect
+from src.opensilex_client import connect
 import pandas as pd
 import json
 from datetime import datetime

@@ -12,10 +12,7 @@ from typing import List, Dict, Any, Optional, Union
 import sys
 import os
 
-# Add utils to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from utils import (
+from .utils import (
     OpenSilexAuthManager, 
     OpenSilexAPIWrapper, 
     ModelFactory,

@@ -6,12 +6,13 @@ Browse, search, and examine documents interactively.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.auth_manager import quick_auth
-from opensilex_swagger_client.api.documents_api import DocumentsApi
-from opensilex_swagger_client.rest import ApiException
+from src.utils.auth_manager import quick_auth
+from src.opensilex_python_client.opensilex_swagger_client.api.documents_api import DocumentsApi
+from src.opensilex_python_client.opensilex_swagger_client.rest import ApiException
 import json
+import sys
 from datetime import datetime
 
 class DocumentExplorer:

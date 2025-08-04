@@ -8,10 +8,10 @@ and retrieve information about all data files stored in the OpenSilex system.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from opensilex_client import connect
-from opensilex_swagger_client.api.data_api import DataApi
+from src.opensilex_client import connect
+from src.opensilex_python_client.opensilex_swagger_client.api.data_api import DataApi
 import logging
 from typing import Dict, List, Any, Optional
 import argparse

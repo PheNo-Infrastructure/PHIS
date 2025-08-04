@@ -6,9 +6,7 @@ This script creates and imports demonstration data to fill up your OpenSilex web
 with realistic scientific content for testing and demonstration purposes.
 """
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# No sys.path manipulation needed - using relative imports
 
 import pandas as pd
 import json

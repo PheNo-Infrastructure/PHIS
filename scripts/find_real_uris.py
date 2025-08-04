@@ -8,9 +8,9 @@ that you can use for data import.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from opensilex_client import connect
+from src.opensilex_client import connect
 import json
 from datetime import datetime
 
@@ -125,7 +125,7 @@ def find_all_uris():
                     all_uris["experiments"].append(exp_info)
                 
                 print(f"   Found {len(all_uris['experiments'])} experiments:")
-                for i, exp in enumerate(all_uris["experiments"][:3):
+                for i, exp in enumerate(all_uris["experiments"][:3]):
                     print(f"     {i+1}. {exp['name']}")
                     print(f"        URI: {exp['uri']}")
                     print(f"        Start: {exp['start_date']}")
