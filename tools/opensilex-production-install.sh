@@ -112,6 +112,52 @@ prompt_configuration() {
 install_dependencies() {
     print_status "Installing system dependencies..."
     
+    # Wait for unattended-upgrades to complete if running
+    print_status "Checking for automatic updates..."
+    if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+        print_warning "Automatic updates are running. This may take 10-30 minutes on new VMs."
+        print_status "Waiting for automatic updates to complete..."
+        
+        local wait_count=0
+        local max_wait_minutes=45  # Maximum wait time: 45 minutes
+        local max_wait_cycles=$((max_wait_minutes * 2))  # Each cycle is 30 seconds
+        
+        while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            wait_count=$((wait_count + 1))
+            if [ $((wait_count % 6)) -eq 0 ]; then
+                local minutes=$((wait_count / 2))
+                print_status "Still waiting for automatic updates... (${minutes} minutes elapsed)"
+            fi
+            
+            # Timeout check
+            if [ $wait_count -ge $max_wait_cycles ]; then
+                print_error "Timeout waiting for automatic updates to complete (${max_wait_minutes} minutes)"
+                print_warning "Attempting to force-stop automatic updates..."
+                
+                # Kill unattended-upgrades processes
+                sudo pkill -f unattended-upgrade || true
+                sudo pkill -f apt.systemd.daily || true
+                
+                # Wait a moment and check if locks are released
+                sleep 10
+                if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+                    print_error "Could not release package locks. Manual intervention required."
+                    print_info "Try running: sudo killall apt apt-get dpkg"
+                    exit 1
+                else
+                    print_warning "Package locks released. Continuing with installation..."
+                    break
+                fi
+            fi
+            
+            sleep 30
+        done
+        
+        print_success "Automatic updates completed, proceeding with installation"
+    else
+        print_success "No automatic updates running, proceeding immediately"
+    fi
+    
     # Update system
     sudo apt update
     sudo apt upgrade -y

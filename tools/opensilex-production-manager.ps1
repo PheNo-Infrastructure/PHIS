@@ -14,7 +14,7 @@ param(
     [string]$ResourceGroupName = "RG-OPENSILEX-PRODUCTION",
     
     [Parameter(Mandatory=$false)]
-    [string]$Location = "westeurope",
+    [string]$Location = "norwayeast",
     
     [Parameter(Mandatory=$false)]
     [string]$AdminUsername = "azureuser",
@@ -43,9 +43,9 @@ $Blue = "Cyan"
 $White = "White"
 
 # Configuration
-$VMSize = "Standard_D4s_v3"  # 4 vCPUs, 16 GB RAM for production
-$OSVersion = "Ubuntu:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest"
-$DiskSize = 100  # 100 GB for production
+$VMSize = "Standard_B2s"  # 2 vCPUs, 4 GB RAM for testing
+$OSVersion = "Debian:debian-12:12-gen2:latest"
+$DiskSize = 30  # 30 GB for testing
 
 function Write-ColorOutput {
     param(
@@ -195,18 +195,21 @@ function Deploy-VM {
         
         $vm = New-AzVMConfig -VMName $VMName -VMSize $VMSize
         $vm = Set-AzVMOperatingSystem -VM $vm -Linux -ComputerName $VMName -Credential $credential -DisablePasswordAuthentication
-        $vm = Set-AzVMSourceImage -VM $vm -PublisherName "Canonical" -Offer "0001-com-ubuntu-server-jammy" -Skus "22_04-lts-gen2" -Version "latest"
+        $vm = Set-AzVMSourceImage -VM $vm -PublisherName "credativ" -Offer "Debian" -Skus "12-gen2" -Version "latest"
         
         # Add SSH key
         Add-AzVMSshPublicKey -VM $vm -KeyData $sshPublicKey -Path "/home/$AdminUsername/.ssh/authorized_keys"
         
         # Create network components
+        Write-Info "Creating virtual network..."
         $subnet = New-AzVirtualNetworkSubnetConfig -Name "default" -AddressPrefix "10.0.0.0/24"
         $vnet = New-AzVirtualNetwork -Name "$VMName-vnet" -ResourceGroupName $ResourceGroupName -Location $Location -AddressPrefix "10.0.0.0/16" -Subnet $subnet
         
+        Write-Info "Creating public IP address..."
         $pip = New-AzPublicIpAddress -Name "$VMName-ip" -ResourceGroupName $ResourceGroupName -Location $Location -AllocationMethod Static -Sku Standard
         
         # Create NSG with production ports
+        Write-Info "Creating network security group..."
         $nsgRules = @()
         $nsgRules += New-AzNetworkSecurityRuleConfig -Name "SSH" -Protocol Tcp -Direction Inbound -Priority 1000 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 22 -Access Allow
         $nsgRules += New-AzNetworkSecurityRuleConfig -Name "HTTP" -Protocol Tcp -Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 80 -Access Allow
@@ -223,8 +226,8 @@ function Deploy-VM {
         
         $vm = Add-AzVMNetworkInterface -VM $vm -Id $nic.Id
         
-        # Set OS disk to Premium SSD for production
-        $vm = Set-AzVMOSDisk -VM $vm -Name "$VMName-osdisk" -DiskSizeInGB $DiskSize -CreateOption FromImage -StorageAccountType "Premium_LRS"
+        # Set OS disk to Standard SSD for testing
+        $vm = Set-AzVMOSDisk -VM $vm -Name "$VMName-osdisk" -DiskSizeInGB $DiskSize -CreateOption FromImage -StorageAccountType "Standard_LRS"
         
         # Create the VM
         Write-Info "Creating VM (this may take 5-10 minutes)..."
@@ -236,9 +239,9 @@ function Deploy-VM {
             $script:VMIPAddress = $publicIP.IpAddress
             Write-Success "Production VM deployed successfully!"
             Write-Info "VM Name: $VMName"
-            Write-Info "VM Size: $VMSize (Production)"
-            Write-Info "OS: Ubuntu 22.04 LTS"
-            Write-Info "Disk: $DiskSize GB Premium SSD"
+            Write-Info "VM Size: $VMSize (Testing)"
+            Write-Info "OS: Debian 12 (Bookworm)"
+            Write-Info "Disk: $DiskSize GB Standard SSD"
             Write-Info "Public IP: $($script:VMIPAddress)"
             Write-Info "SSH Command: ssh $AdminUsername@$($script:VMIPAddress)"
             return $true
@@ -334,7 +337,15 @@ function Install-OpenSILEXProduction {
             return $false
         }
         
-        scp -i $privateKeyPath -o StrictHostKeyChecking=no $scriptPath "$AdminUsername@${TargetIP}:~/opensilex-production-install.sh"
+        # Fix line endings by converting to Unix format before upload
+        Write-Info "Converting script to Unix line endings..."
+        $scriptContent = Get-Content $scriptPath -Raw
+        $scriptContent = $scriptContent -replace "`r`n", "`n" -replace "`r", "`n"
+        $tempScriptPath = [System.IO.Path]::GetTempFileName() + ".sh"
+        [System.IO.File]::WriteAllText($tempScriptPath, $scriptContent, [System.Text.UTF8Encoding]::new($false))
+        
+        scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempScriptPath "$AdminUsername@${TargetIP}:~/opensilex-production-install.sh"
+        Remove-Item $tempScriptPath
         
         # Make script executable
         ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "chmod +x ~/opensilex-production-install.sh"
@@ -374,15 +385,67 @@ echo '$DomainName' | ~/opensilex-production-install.sh install
         
         $installStart = Get-Date
         
-        # Run the installation with timeout
-        $installResult = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "timeout 3600 ./opensilex-production-install.sh install" 2>&1
+        # Run the installation with proper error handling (2 hour timeout)
+        Write-Info "Running installation script with full error capture..."
+        $installResult = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "timeout 7200 bash -x ./opensilex-production-install.sh install 2>&1; echo 'EXIT_CODE:'`$?" 2>&1
         
         $installEnd = Get-Date
         $installDuration = $installEnd - $installStart
         
         Write-Info "Installation completed in $($installDuration.TotalMinutes.ToString("F1")) minutes"
         
-        # Check if installation was successful
+        # Parse installation result and exit code
+        $installLines = $installResult -split "`n"
+        $exitCodeLine = $installLines | Where-Object { $_ -match "^EXIT_CODE:" } | Select-Object -Last 1
+        $exitCode = if ($exitCodeLine) { $exitCodeLine -replace "EXIT_CODE:", "" } else { "unknown" }
+        
+        # Show installation output for debugging
+        Write-Info "=== Installation Output (Last 20 lines) ==="
+        $installLines | Select-Object -Last 20 | ForEach-Object { Write-Host $_ }
+        Write-Info "=== End Installation Output ==="
+        Write-Info "Installation script exit code: $exitCode"
+        
+        # Check if installation script succeeded
+        if ($exitCode -ne "0" -and $exitCode -ne "unknown") {
+            Write-Error "Installation script failed with exit code: $exitCode"
+            Write-Error "Full installation output shown above"
+            Write-Info "Common issues:"
+            Write-Info "- Network connectivity problems"
+            Write-Info "- Insufficient disk space"
+            Write-Info "- Package installation failures"
+            Write-Info "- Service startup failures"
+            return $false
+        }
+        
+        # Verify critical services are installed
+        Write-Info "Verifying installation components..."
+        $componentChecks = @(
+            @{ Name = "Java"; Command = "java -version" },
+            @{ Name = "MongoDB"; Command = "sudo systemctl is-enabled mongod" },
+            @{ Name = "RDF4J"; Command = "test -d /opt/rdf4j" },
+            @{ Name = "OpenSILEX Directory"; Command = "test -d /home/opensilex" },
+            @{ Name = "OpenSILEX Service"; Command = "sudo systemctl is-enabled opensilex" }
+        )
+        
+        $failedComponents = @()
+        foreach ($check in $componentChecks) {
+            $result = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP $check.Command 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                $failedComponents += $check.Name
+                Write-Warning "$($check.Name) verification failed"
+            } else {
+                Write-Success "$($check.Name) verified successfully"
+            }
+        }
+        
+        if ($failedComponents.Count -gt 0) {
+            Write-Error "Installation verification failed for components: $($failedComponents -join ', ')"
+            Write-Info "Installation appears incomplete. Check the installation logs above."
+            return $false
+        }
+        
+        # Check if OpenSILEX service is running
+        Write-Info "Checking OpenSILEX service status..."
         $statusCheck = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "sudo systemctl is-active opensilex.service" 2>$null
         
         if ($statusCheck -eq "active") {
@@ -406,8 +469,21 @@ echo '$DomainName' | ~/opensilex-production-install.sh install
             
             return $true
         } else {
-            Write-Error "Installation completed but OpenSILEX service is not running"
-            Write-Info "Check logs with: $0 logs"
+            Write-Error "Installation components verified but OpenSILEX service is not running"
+            Write-Info "Service status: $statusCheck"
+            
+            # Get service logs for troubleshooting
+            Write-Info "=== OpenSILEX Service Logs (Last 20 lines) ==="
+            $serviceLogs = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "sudo journalctl -u opensilex.service -n 20 --no-pager" 2>$null
+            if ($serviceLogs) {
+                $serviceLogs -split "`n" | ForEach-Object { Write-Host $_ }
+            } else {
+                Write-Warning "Could not retrieve service logs"
+            }
+            Write-Info "=== End Service Logs ==="
+            
+            Write-Info "Try starting OpenSILEX manually with: $0 start"
+            Write-Info "Or check detailed logs with: $0 logs"
             return $false
         }
         
@@ -625,7 +701,7 @@ function Show-Menu {
     Write-Host "=============================================" -ForegroundColor Blue
     Write-Host ""
     Write-Host "PRODUCTION DEPLOYMENT FEATURES:" -ForegroundColor Green
-    Write-Host "• Ubuntu 22.04 LTS with Production VM size" -ForegroundColor White
+    Write-Host "• Debian 12 (Bookworm) with Testing VM size" -ForegroundColor White
     Write-Host "• MongoDB Replica Set configuration" -ForegroundColor White
     Write-Host "• RDF4J Triplestore with proper memory allocation" -ForegroundColor White
     Write-Host "• Nginx reverse proxy with SSL support" -ForegroundColor White
@@ -637,7 +713,7 @@ function Show-Menu {
     Write-Host "  VM Name: $VMName" -ForegroundColor White
     Write-Host "  Resource Group: $ResourceGroupName" -ForegroundColor White
     Write-Host "  Region: $Location" -ForegroundColor White
-    Write-Host "  VM Size: $VMSize (Production)" -ForegroundColor White
+    Write-Host "  VM Size: $VMSize (Testing)" -ForegroundColor White
     Write-Host ""
     Write-Host "Available Commands:" -ForegroundColor Green
     Write-Host ""
