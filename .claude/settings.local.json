@@ -30,7 +30,9 @@
       "Bash(set PYTHONPATH=src)",
       "Bash(src/utils)",
       "Bash(%PYTHONPATH%)",
-      "Bash(PYTHONPATH=\"src:src/utils:src/opensilex_python_client\" python scripts/simple_example.py)"
+      "Bash(PYTHONPATH=\"src:src/utils:src/opensilex_python_client\" python scripts/simple_example.py)",
+      "WebFetch(domain:forgemia.inrae.fr)",
+      "WebFetch(domain:forge.inrae.fr)"
     ],
     "deny": []
   }
