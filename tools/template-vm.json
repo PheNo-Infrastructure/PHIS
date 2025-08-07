@@ -17,7 +17,7 @@
   },
   "variables": {
     "location": "westeurope",
-    "vmSize": "Standard_B2as_v2",
+    "vmSize": "Standard_B4s_v2",
     "resourceGroupName": "RG-PHIS",
     "vnetName": "[concat(parameters('vmName'), '-vnet')]",
     "subnetName": "default",
@@ -31,7 +31,6 @@
       "apiVersion": "2021-02-01",
       "name": "[variables('publicIPName')]",
       "location": "[variables('location')]",
-      "zones": ["1"],
       "sku": {
         "name": "Standard"
       },
@@ -196,7 +195,6 @@
       "apiVersion": "2021-03-01",
       "name": "[parameters('vmName')]",
       "location": "[variables('location')]",
-      "zones": ["1"],
       "dependsOn": [
         "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
       ],
