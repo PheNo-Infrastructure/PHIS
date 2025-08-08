@@ -1,5 +1,5 @@
-# OpenSILEX GitHub Installation Script v1.4.9-rdg
-# PowerShell script for managing OpenSILEX version 1.4.9-rdg installation on Azure VMs
+# OpenSILEX GitHub Installation Script v1.4.8-rdg
+# PowerShell script for managing OpenSILEX version 1.4.8-rdg installation on Azure VMs
 # Follows official OpenSILEX repository guidelines: https://github.com/OpenSILEX/opensilex
 
 param(
@@ -370,7 +370,7 @@ function Install-OpenSILEX {
         # Create installation scripts on remote VM
         Write-Info "Uploading installation scripts..."
         
-        # Upload dependency script
+        # Upload dependency script with updated versions
         $dependencyScript = @"
 #!/bin/bash
 set -e
@@ -391,16 +391,16 @@ print_error() { echo -e "`${RED}[ERROR]`${NC} `$1"; }
 print_status "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-print_status "Installing Java JDK 17 (compatible with OpenSILEX - tested on JDK 11 and 17)..."
+print_status "Installing Java JDK 17 LTS (compatible with OpenSILEX)..."
 sudo apt install -y openjdk-17-jdk openjdk-17-jre
 echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
 echo 'export PATH=`$JAVA_HOME/bin:`$PATH' >> ~/.bashrc
 
-print_status "Installing Maven 3.9+ (required for OpenSILEX)..."
+print_status "Installing Maven 3.9.11 (latest stable for OpenSILEX)..."
 cd /tmp
-wget https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz
-tar -xzf apache-maven-3.9.9-bin.tar.gz
-sudo mv apache-maven-3.9.9 /opt/maven
+wget https://archive.apache.org/dist/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz
+tar -xzf apache-maven-3.9.11-bin.tar.gz
+sudo mv apache-maven-3.9.11 /opt/maven
 echo 'export MAVEN_HOME=/opt/maven' >> ~/.bashrc
 echo 'export PATH=`$MAVEN_HOME/bin:`$PATH' >> ~/.bashrc
 
@@ -421,11 +421,11 @@ sudo systemctl start docker
 sudo systemctl enable docker
 sudo chmod 666 /var/run/docker.sock
 
-print_status "Installing Node.js 18 (compatible with OpenSILEX frontend)..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+print_status "Installing Node.js v22 LTS (latest LTS for frontend)..."
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt install -y nodejs
 
-print_status "Installing Yarn..."
+print_status "Installing Yarn package manager..."
 curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
 echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
 sudo apt update
@@ -437,7 +437,7 @@ sudo apt install -y curl wget unzip build-essential
 print_success "Dependencies installation completed!"
 "@
         
-        # Upload installer script
+        # Upload simplified installer script for 1.4.8-rdg
         $installerScript = @'
 #!/bin/bash
 set -e
@@ -460,75 +460,37 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 OPENSILEX_HOME="$HOME/opensilex"
 
-print_status "Cloning OpenSILEX repository from official GitHub..."
+print_status "Downloading OpenSILEX version 1.4.8-rdg release archive..."
 if [ -d "$OPENSILEX_HOME" ]; then
     print_warning "Removing existing OpenSILEX directory..."
     rm -rf "$OPENSILEX_HOME"
 fi
 
-git clone https://github.com/OpenSILEX/opensilex.git $OPENSILEX_HOME
-cd $OPENSILEX_HOME
+# Create directory and download specific release archive to avoid git issues
+mkdir -p "$OPENSILEX_HOME"
+cd "$OPENSILEX_HOME"
+wget -O opensilex-1.4.8-rdg.tar.gz https://github.com/OpenSILEX/opensilex/archive/refs/tags/1.4.8-rdg.tar.gz
+tar -xzf opensilex-1.4.8-rdg.tar.gz --strip-components=1
+rm opensilex-1.4.8-rdg.tar.gz
 
-print_status "Checking out version 1.4.9-rdg (rdg enabled version)..."
-git -c advice.detachedHead=false checkout tags/1.4.9-rdg
-if [ $? -eq 0 ]; then
-    print_success "Successfully checked out version 1.4.9-rdg"
+print_status "Verifying OpenSILEX 1.4.8-rdg download..."
+if [ -f "pom.xml" ] && [ -d "opensilex-core" ]; then
+    print_success "Successfully downloaded OpenSILEX 1.4.8-rdg"
 else
-    print_error "Failed to checkout version 1.4.9-rdg"
-    print_info "Available tags:"
-    git tag --sort=-version:refname | head -10
+    print_error "Failed to download OpenSILEX properly"
     exit 1
 fi
 
-print_status "Fixing OpenSILEX frontend compatibility issues..."
-cd $OPENSILEX_HOME/opensilex-front/front
-
-# Fix corrupted yarn.lock file and package compatibility issues
-rm -f yarn.lock package-lock.json
-yarn cache clean
-yarn config set ignore-engines true
-
-# Install compatible versions of problematic packages
-npm install vue-markdown-loader@2.4.1 --save-dev
-
-# Install Babel plugins for modern JavaScript syntax support
-npm install @babel/plugin-proposal-function-bind @babel/plugin-proposal-nullish-coalescing-operator @babel/plugin-proposal-logical-assignment-operators --save-dev
-
-# Install dependencies with yarn
-yarn install
-
-# Backup and update Babel configuration
-cp babel.config.js babel.config.js.backup
-cat > babel.config.js << 'BABEL_EOF'
-module.exports = {
-  presets: [
-    ['@vue/cli-plugin-babel/preset', {
-      useBuiltIns: 'entry',
-      corejs: 3
-    }],
-    ['@babel/preset-env', {
-      targets: {
-        node: 'current'
-      }
-    }]
-  ],
-  plugins: [
-    '@babel/plugin-proposal-function-bind',
-    '@babel/plugin-proposal-nullish-coalescing-operator',
-    '@babel/plugin-proposal-logical-assignment-operators'
-  ]
-}
-BABEL_EOF
-
+print_status "Building OpenSILEX version 1.4.8-rdg..."
 cd $OPENSILEX_HOME
 
-print_status "Building OpenSILEX version 1.4.9-rdg following official guidelines..."
 # Set Maven memory options for successful build
 export MAVEN_OPTS="-Xmx4096m -XX:MaxMetaspaceSize=512m"
-# Build using standard Maven command as per OpenSILEX documentation
+
+print_status "Running Maven build (this may take 15-20 minutes)..."
 mvn clean install -DskipTests
 if [ $? -eq 0 ]; then
-    print_success "OpenSILEX 1.4.9-rdg build completed successfully"
+    print_success "OpenSILEX 1.4.8-rdg build completed successfully"
 else
     print_error "Build failed - check Maven logs above"
     exit 1
@@ -539,74 +501,28 @@ STORAGE_DIR="$HOME/opensilex-data"
 mkdir -p "$STORAGE_DIR/files"
 mkdir -p "$STORAGE_DIR/logs"
 
-# Update config if it exists
-CONFIG_FILE="$OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/config/opensilex.yml"
-if [ -f "$CONFIG_FILE" ]; then
-    cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
-    # Update storage path in config file
-    sed -i "s|storageBasePath:.*|storageBasePath: $STORAGE_DIR|g" "$CONFIG_FILE"
-fi
-
-# Add BRAPI configuration
-print_status "Configuring BRAPI integration..."
-cat >> "$CONFIG_FILE" << 'BRAPI_EOF'
-# BRAPI Configuration
-brapi:
-  enabled: true
-  version: "2.1"
-  title: "OpenSILEX BRAPI API"
-  description: "Breeding API implementation for OpenSILEX"
-  contactEmail: "admin@opensilex.org"
-  documentationURL: "https://brapi.org/"
-BRAPI_EOF
-
-# SPARQL Configuration  
-print_status "Configuring SPARQL endpoint..."
-echo "ontologies.sparql.rdf4j.serverURL=http://localhost:8667/rdf4j-server" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
-echo "big-data.sparql.rdf4j.serverURL=http://localhost:8667/rdf4j-server" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
-echo "nosql.mongodb.host=localhost" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
-echo "nosql.mongodb.port=27017" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
-echo "file-system.storageBasePath=$STORAGE_DIR" >> opensilex-dev-tools/src/main/resources/config/opensilex.properties
-
-print_status "OpenSILEX build completed for version 1.4.9-rdg"
-
 print_status "Creating OpenSILEX configuration file..."
 cat > $OPENSILEX_HOME/opensilex.yml << 'CONFIG_EOF'
 ontologies:
   baseURI: "http://opensilex.dev/"
   baseURIAlias: "dev"
   sparql:
-    config:
+    rdf4j:
       serverURI: "http://localhost:8667/rdf4j-server/"
       repository: "opensilex"
 
 file-system:
-  fs:
-    config:
-      defaultFS: "local"
-      connections:
-        local:
-          implementation: "org.opensilex.fs.local.LocalFileSystemConnection"
-          config:
-            basePath: "/home/azureuser/opensilex-data/files"
+  storageBasePath: "/home/azureuser/opensilex-data/files"
 
 big-data:
   mongodb:
-    config:
-      host: "localhost"
-      port: 8668
-      database: "opensilex"
+    host: "localhost"
+    port: 8668
+    database: "opensilex"
 
 server:
-  enableAntiThreadLock: false
-
-brapi:
-  enabled: true
-  version: "2.1"
-  title: "OpenSILEX BRAPI API"
-  description: "Breeding API implementation for OpenSILEX"
-  contactEmail: "admin@opensilex.org"
-  documentationURL: "https://brapi.org/"
+  host: "0.0.0.0"
+  port: 8666
 CONFIG_EOF
 
 print_status "Starting required Docker services..."
@@ -614,141 +530,77 @@ cd $OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/docker
 docker compose up -d
 sleep 15
 
-print_status "Creating RDF4J repository..."
-cat > /tmp/repo.ttl << 'RDF4J_EOF'
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix rep: <http://www.openrdf.org/config/repository#> .
-@prefix sr: <http://www.openrdf.org/config/repository/sail#> .
-@prefix sail: <http://www.openrdf.org/config/sail#> .
-@prefix ms: <http://www.openrdf.org/config/sail/memory#> .
-
-[] a rep:Repository ;
-   rep:repositoryID "opensilex" ;
-   rdfs:label "OpenSILEX Repository" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-         sail:sailType "openrdf:MemoryStore" ;
-         ms:persist true ;
-         ms:syncDelay 120
-      ]
-   ] .
-RDF4J_EOF
-curl -X POST -H "Content-Type: text/turtle" --data-binary @/tmp/repo.ttl http://localhost:8667/rdf4j-server/repositories/SYSTEM/statements
+print_status "Initializing OpenSILEX system..."
+cd $OPENSILEX_HOME
+java -jar opensilex-release/target/opensilex/opensilex.jar --CONFIG_FILE=opensilex.yml system install
 
 if [ $? -eq 0 ]; then
-    print_success "OpenSILEX build completed successfully"
+    print_success "OpenSILEX 1.4.8-rdg installation completed successfully"
 else
-    print_error "OpenSILEX build failed"
+    print_error "OpenSILEX system initialization failed"
     exit 1
 fi
 
-print_status "Creating post-installation configuration script..."
-cat > $OPENSILEX_HOME/post-install-config.sh << 'EOF'
+print_status "Creating startup script..."
+cat > $OPENSILEX_HOME/start-opensilex.sh << 'EOF'
 #!/bin/bash
 set -e
 
-print_success() { echo -e "\033[0;32m[SUCCESS]\033[0m $1"; }
-print_info() { echo -e "\033[0;34m[INFO]\033[0m $1"; }
-print_error() { echo -e "\033[0;31m[ERROR]\033[0m $1"; }
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
 
-print_info "Running post-installation configuration..."
+OPENSILEX_HOME="$HOME/opensilex"
+cd $OPENSILEX_HOME
 
-# Get authentication token
-TOKEN=$(curl -s -X POST "http://localhost:8666/rest/security/authenticate" \
-    -H "Content-Type: application/json" \
-    -d '{"identifier":"admin@opensilex.org","password":"admin"}' \
-    | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+echo "Starting Docker services..."
+cd opensilex-dev-tools/src/main/resources/docker
+docker compose up -d
+sleep 10
 
-if [ -n "$TOKEN" ]; then
-    print_success "Authentication successful"
-    
-    # Create a proper admin profile to fix permissions
-    print_info "Creating admin profile..."
-    curl -s -X POST "http://localhost:8666/rest/security/profiles" \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "name": "Administrator Profile",
-            "credentials": ["admin@opensilex.org"],
-            "first_name": "System",
-            "last_name": "Administrator",
-            "email": "admin@opensilex.org"
-        }' > /dev/null 2>&1
-    
-    # Create sample organization if not exists
-    print_info "Creating default organization..."
-    curl -s -X POST "http://localhost:8666/rest/core/organisations" \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "name": "Default Research Organization",
-            "parents": []
-        }' > /dev/null 2>&1
-    
-    # Initialize default provenance if needed
-    print_info "Verifying default provenance..."
-    curl -s -H "Authorization: Bearer $TOKEN" \
-        "http://localhost:8666/rest/core/provenances" > /dev/null 2>&1
-    
-    print_info "Testing API endpoints..."
-    
-    # Test SPARQL (should work via RDF4J)
-    SPARQL_TEST=$(curl -s -X POST -H "Content-Type: application/sparql-query" \
-        -d "SELECT (COUNT(*) as ?count) WHERE { ?s ?p ?o }" \
-        "http://localhost:8667/rdf4j-server/repositories/opensilex" | grep -o '[0-9]*')
-    
-    if [ -n "$SPARQL_TEST" ]; then
-        print_success "SPARQL endpoint working - $SPARQL_TEST triples found"
-    else
-        print_error "SPARQL endpoint not responding"
-    fi
-    
-    # Test organizations
-    ORG_COUNT=$(curl -s -H "Authorization: Bearer $TOKEN" \
-        "http://localhost:8666/rest/core/organisations" | grep -o '"totalCount":[0-9]*' | cut -d':' -f2)
-    
-    if [ "$ORG_COUNT" -gt "0" ]; then
-        print_success "Organizations endpoint working - $ORG_COUNT organizations found"
-    else
-        print_error "Organizations endpoint issue"
-    fi
-    
-    print_success "Post-installation configuration completed!"
-else
-    print_error "Failed to authenticate - skipping post-configuration"
-fi
+echo "Starting OpenSILEX server..."
+cd $OPENSILEX_HOME
+java -jar opensilex-release/target/opensilex/opensilex.jar --CONFIG_FILE=opensilex.yml server start --host=0.0.0.0 --port=8666
 EOF
 
-chmod +x $OPENSILEX_HOME/post-install-config.sh
+chmod +x $OPENSILEX_HOME/start-opensilex.sh
 
-print_status "Starting OpenSILEX services..."
-echo "[Unit]
-Description=OpenSILEX Server
+print_status "Creating systemd service..."
+sudo tee /etc/systemd/system/opensilex.service > /dev/null << 'SERVICE_EOF'
+[Unit]
+Description=OpenSILEX Server 1.4.8-rdg
 After=network.target docker.service
 Requires=docker.service
 
 [Service]
-Type=simple
+Type=exec
 User=azureuser
-Group=azureuser
-WorkingDirectory=/home/azureuser/opensilex/opensilex-release/target/opensilex
+WorkingDirectory=/home/azureuser/opensilex
 Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-Environment=MAVEN_HOME=/opt/maven
-Environment=PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/opt/maven/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStartPre=/bin/bash -c \"cd /home/azureuser/opensilex/opensilex-dev-tools/src/main/resources/docker && docker compose up -d && sleep 15\"
-ExecStart=/home/azureuser/opensilex/opensilex-release/target/opensilex/opensilex.sh --CONFIG_FILE=/home/azureuser/opensilex/opensilex.yml server start --host=0.0.0.0 --port=8666
-ExecStop=/home/azureuser/opensilex/opensilex-release/target/opensilex/opensilex.sh server stop
-Restart=always
+ExecStart=/home/azureuser/opensilex/start-opensilex.sh
+Restart=on-failure
 RestartSec=10
 
 [Install]
-WantedBy=multi-user.target" | sudo tee /etc/systemd/system/opensilex-server.service > /dev/null
+WantedBy=multi-user.target
+SERVICE_EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable opensilex-server.service
+sudo systemctl enable opensilex.service
 
-print_success "OpenSILEX services enabled and will start automatically"
+print_status "Starting OpenSILEX service..."
+sudo systemctl start opensilex.service
+sleep 5
+
+print_status "Checking service status..."
+if sudo systemctl is-active --quiet opensilex.service; then
+    print_success "OpenSILEX service started successfully!"
+else
+    print_warning "Service may still be starting up. Check with: sudo systemctl status opensilex"
+fi
+
+print_success "OpenSILEX 1.4.8-rdg installation completed!"
+print_success "Access OpenSILEX at: http://$(curl -s ifconfig.me):8666/"
+print_success "Service status: sudo systemctl status opensilex"
 '@
 
         # Write scripts to temporary files and upload

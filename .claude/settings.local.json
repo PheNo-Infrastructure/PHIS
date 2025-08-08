@@ -33,7 +33,8 @@
       "Bash(PYTHONPATH=\"src:src/utils:src/opensilex_python_client\" python scripts/simple_example.py)",
       "WebFetch(domain:forgemia.inrae.fr)",
       "WebFetch(domain:forge.inrae.fr)",
-      "WebFetch(domain:opensilex.github.io)"
+      "WebFetch(domain:opensilex.github.io)",
+      "Bash(Remove-Item \"C:\\Users\\sebas\\Documents\\GitHub\\PHIS\\tools\\test-script.ps1\" -Force)"
     ],
     "deny": []
   }
