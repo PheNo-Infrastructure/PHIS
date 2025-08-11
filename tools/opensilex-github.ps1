@@ -8,10 +8,10 @@ param(
     [string]$Command = "Menu",
     
     [Parameter(Mandatory=$false)]
-    [string]$VMName = "opensilex-github-vm-https",
+    [string]$VMName = "phis-debian12",
     
     [Parameter(Mandatory=$false)]
-    [string]$ResourceGroupName = "RG-OPENSILEX-GITHUB",
+    [string]$ResourceGroupName = "RG-OPENSILEX-debian12",
     
     [Parameter(Mandatory=$false)]
     [string]$Location = "westeurope",
@@ -37,9 +37,9 @@ $Blue = "Cyan"
 $White = "White"
 
 # Configuration
-$VMSize = "Standard_B4ms"  # 4 vCPUs, 16 GB RAM (more for building from source)
+$VMSize = "Standard_E4s_v4"  # 4 vCPUs, 32 GB RAM (optimized for current usage patterns)
 $OSVersion = "Debian:debian-12:12-gen2:latest"
-$DiskSize = 50  # 50 GB for source code and build artifacts
+$DiskSize = 500  # 500 GB for production data and storage requirements
 
 function Write-ColorOutput {
     param(
@@ -202,7 +202,7 @@ function Deploy-VM {
             # Create VM using PowerShell commands (simplified version)
             $credential = New-Object System.Management.Automation.PSCredential ($AdminUsername, (ConvertTo-SecureString "dummy" -AsPlainText -Force))
             
-            $vm = New-AzVMConfig -VMName $VMName -VMSize $VMSize
+            $vm = New-AzVMConfig -VMName $VMName -VMSize $VMSize -Priority "Spot" -MaxPrice -1 -EvictionPolicy Deallocate
             $vm = Set-AzVMOperatingSystem -VM $vm -Linux -ComputerName $VMName -Credential $credential -DisablePasswordAuthentication
             $vm = Set-AzVMSourceImage -VM $vm -PublisherName "Debian" -Offer "debian-12" -Skus "12-gen2" -Version "latest"
             
@@ -226,6 +226,25 @@ function Deploy-VM {
             
             # Create the VM
             New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vm
+            
+            # Configure auto-shutdown (19:00 UTC = 8 PM CET/7 PM GMT)
+            Write-Info "Configuring auto-shutdown for 19:00 UTC (8 PM CET)..."
+            $shutdownConfig = @{
+                ResourceGroupName = $ResourceGroupName
+                Name = $VMName
+                AutoShutdownTimeZone = "UTC"
+                AutoShutdownTime = "19:00"
+                AutoShutdownStatus = "Enabled"
+                AutoShutdownNotificationStatus = "Disabled"
+            }
+            
+            try {
+                Set-AzVMAutoShutdownPolicy @shutdownConfig -ErrorAction Stop
+                Write-Success "Auto-shutdown configured successfully"
+            } catch {
+                Write-Warning "Failed to configure auto-shutdown: $($_.Exception.Message)"
+                Write-Info "You can configure this manually in Azure portal later"
+            }
         }
         
         # Get VM IP
@@ -370,8 +389,8 @@ function Install-OpenSILEX {
         # Create installation scripts on remote VM
         Write-Info "Uploading installation scripts..."
         
-        # Upload minimal runtime dependency script (for pre-built releases)
-        $runtimeDependencyScript = @"
+        # Upload production user setup and dependency installation script
+        $setupScript = @"
 #!/bin/bash
 set -e
 
@@ -391,10 +410,24 @@ print_error() { echo -e "`${RED}[ERROR]`${NC} `$1"; }
 print_status "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-print_status "Installing Java JDK 17 LTS (required for OpenSILEX runtime)..."
+print_status "Creating OpenSILEX production user..."
+if ! id -u opensilex >/dev/null 2>&1; then
+    sudo useradd -s /bin/bash -d /home/opensilex/ -m opensilex
+    echo 'opensilex:OpenSILEX2024!' | sudo chpasswd
+    sudo usermod -a -G sudo opensilex
+    print_success "OpenSILEX user created with sudo permissions"
+else
+    print_warning "OpenSILEX user already exists"
+fi
+
+print_status "Installing Java JDK 17 (official OpenSILEX requirement)..."
 sudo apt install -y openjdk-17-jdk openjdk-17-jre
 echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
 echo 'export PATH=`$JAVA_HOME/bin:`$PATH' >> ~/.bashrc
+
+# Also add to opensilex user
+sudo -u opensilex bash -c 'echo "export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> /home/opensilex/.bashrc'
+sudo -u opensilex bash -c 'echo "export PATH=`$JAVA_HOME/bin:`$PATH" >> /home/opensilex/.bashrc'
 
 print_status "Installing Docker (required for MongoDB/RDF4J containers)..."
 sudo apt install -y ca-certificates curl gnupg lsb-release
@@ -406,6 +439,7 @@ sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin d
 
 print_status "Configuring Docker..."
 sudo usermod -aG docker `$(whoami)
+sudo usermod -aG docker opensilex
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo chmod 666 /var/run/docker.sock
@@ -413,86 +447,23 @@ sudo chmod 666 /var/run/docker.sock
 print_status "Installing essential tools..."
 sudo apt install -y curl wget unzip
 
-print_success "Runtime dependencies installation completed!"
-print_status "Note: Maven and Node.js skipped - using pre-built release"
+print_success "System setup completed!"
 "@
         
-        # Upload full build dependency script (for source builds)
-        $buildDependencyScript = @"
-#!/bin/bash
-set -e
-
-# Colors for output
-export DEBIAN_FRONTEND=noninteractive
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-print_status() { echo -e "`${BLUE}[INFO]`${NC} `$1"; }
-print_success() { echo -e "`${GREEN}[SUCCESS]`${NC} `$1"; }
-print_warning() { echo -e "`${YELLOW}[WARNING]`${NC} `$1"; }
-print_error() { echo -e "`${RED}[ERROR]`${NC} `$1"; }
-
-print_status "Updating system packages..."
-sudo apt update && sudo apt upgrade -y
-
-print_status "Installing Java JDK 17 LTS (compatible with OpenSILEX)..."
-sudo apt install -y openjdk-17-jdk openjdk-17-jre
-echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
-echo 'export PATH=`$JAVA_HOME/bin:`$PATH' >> ~/.bashrc
-
-print_status "Installing Maven 3.9.11 (latest stable for OpenSILEX)..."
-cd /tmp
-wget https://archive.apache.org/dist/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz
-tar -xzf apache-maven-3.9.11-bin.tar.gz
-sudo mv apache-maven-3.9.11 /opt/maven
-echo 'export MAVEN_HOME=/opt/maven' >> ~/.bashrc
-echo 'export PATH=`$MAVEN_HOME/bin:`$PATH' >> ~/.bashrc
-
-print_status "Installing Git..."
-sudo apt install -y git
-
-print_status "Installing Docker..."
-sudo apt install -y ca-certificates curl gnupg lsb-release
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=`$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian `$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-print_status "Configuring Docker..."
-sudo usermod -aG docker `$(whoami)
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo chmod 666 /var/run/docker.sock
-
-print_status "Installing Node.js v22 LTS (latest LTS for frontend)..."
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt install -y nodejs
-
-print_status "Installing Yarn package manager..."
-curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
-echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
-sudo apt update
-sudo apt install -y yarn
-
-print_status "Installing additional tools..."
-sudo apt install -y curl wget unzip build-essential
-
-print_success "Dependencies installation completed!"
-"@
         
-        # Upload production installer script for 1.4.8-rdg
+        # Upload complete OpenSILEX production installer script following official guide
         $installerScript = @'
 #!/bin/bash
 set -e
 
+# Switch to opensilex user for all operations
+echo "Switching to OpenSILEX user for installation..."
+exec sudo -u opensilex bash << 'OPENSILEX_USER_SCRIPT'
+set -e
+
 # Source environment variables
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export MAVEN_HOME=/opt/maven
-export PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
+export PATH=$JAVA_HOME/bin:$PATH
 export NODE_ENV=production
 
 RED='\033[0;31m'
@@ -506,86 +477,65 @@ print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-OPENSILEX_HOME="$HOME/opensilex"
+OPENSILEX_HOME="/home/opensilex"
+cd "$OPENSILEX_HOME"
 
-# Check if pre-built release is available, otherwise build from source
-print_status "Checking for OpenSILEX 1.4.8-rdg pre-built release..."
-RELEASE_URL="https://github.com/OpenSILEX/opensilex/releases/download/1.4.8-rdg/opensilex-release-1.4.8-rdg.zip"
+# Create OpenSILEX directory structure following production guide
+print_status "Creating OpenSILEX production directory structure..."
+mkdir -p "$OPENSILEX_HOME/bin"
+mkdir -p "$OPENSILEX_HOME/config"
+mkdir -p "$OPENSILEX_HOME/data"
+mkdir -p "$OPENSILEX_HOME/logs"
+mkdir -p "$OPENSILEX_HOME/data/files"
+mkdir -p "$OPENSILEX_HOME/data/logs"
+
+# Download OpenSILEX release following production guide
+print_status "Downloading OpenSILEX 1.4.8-rdg release..."
+cd "$OPENSILEX_HOME/bin"
+OPENSILEX_VERSION="1.4.8-rdg"
+RELEASE_URL="https://github.com/OpenSILEX/opensilex/releases/download/${OPENSILEX_VERSION}/opensilex-release-${OPENSILEX_VERSION}.zip"
 
 if curl -s -I -L --fail "$RELEASE_URL" >/dev/null 2>&1; then
-    print_status "Downloading pre-built OpenSILEX 1.4.8-rdg release..."
-    if [ -d "$OPENSILEX_HOME" ]; then
-        print_warning "Removing existing OpenSILEX directory..."
-        rm -rf "$OPENSILEX_HOME"
+    print_status "Downloading pre-built OpenSILEX ${OPENSILEX_VERSION} release..."
+    wget -O "opensilex-release-${OPENSILEX_VERSION}.zip" "$RELEASE_URL"
+    unzip "opensilex-release-${OPENSILEX_VERSION}.zip"
+    
+    # Move contents following production structure
+    if [ -d "opensilex-release-${OPENSILEX_VERSION}" ]; then
+        mv "opensilex-release-${OPENSILEX_VERSION}"/* .
+        rmdir "opensilex-release-${OPENSILEX_VERSION}"
     fi
     
-    mkdir -p "$OPENSILEX_HOME"
-    cd "$OPENSILEX_HOME"
-    wget -O opensilex-release-1.4.8-rdg.zip "$RELEASE_URL"
-    unzip opensilex-release-1.4.8-rdg.zip
-    rm opensilex-release-1.4.8-rdg.zip
-    
-    # Find and move contents to proper location  
-    if [ -d "opensilex-release-1.4.8-rdg" ]; then
-        mv opensilex-release-1.4.8-rdg/* .
-        rmdir opensilex-release-1.4.8-rdg
+    # Move jar to parent directory as per production guide
+    if [ -f "opensilex.jar" ]; then
+        mv opensilex.jar "$OPENSILEX_HOME/"
     fi
     
-    print_success "Pre-built release downloaded successfully"
+    rm "opensilex-release-${OPENSILEX_VERSION}.zip"
+    print_success "OpenSILEX release downloaded and extracted successfully"
 else
-    print_status "Pre-built release not available, building from source..."
-    if [ -d "$OPENSILEX_HOME" ]; then
-        print_warning "Removing existing OpenSILEX directory..."
-        rm -rf "$OPENSILEX_HOME"
-    fi
-
-    # Create directory and download source
-    mkdir -p "$OPENSILEX_HOME"
-    cd "$OPENSILEX_HOME"
-    wget -O opensilex-1.4.8-rdg.tar.gz https://github.com/OpenSILEX/opensilex/archive/refs/tags/1.4.8-rdg.tar.gz
-    tar -xzf opensilex-1.4.8-rdg.tar.gz --strip-components=1
-    rm opensilex-1.4.8-rdg.tar.gz
-
-    print_status "Building OpenSILEX version 1.4.8-rdg for production..."
-    # Set Maven memory options and production environment
-    export MAVEN_OPTS="-Xmx4096m -XX:MaxMetaspaceSize=512m"
-    
-    print_status "Running Maven build with production settings (this may take 15-20 minutes)..."
-    mvn clean install -DskipTests -Dnode.env=production
-    if [ $? -eq 0 ]; then
-        print_success "OpenSILEX 1.4.8-rdg build completed successfully"
-    else
-        print_error "Build failed - check Maven logs above"
-        exit 1
-    fi
+    print_error "Pre-built release not available for ${OPENSILEX_VERSION}"
+    exit 1
 fi
 
-print_status "Creating storage directories..."
-STORAGE_DIR="$HOME/opensilex-data"
-mkdir -p "$STORAGE_DIR/files"
-mkdir -p "$STORAGE_DIR/logs"
+# Create configuration files following production guide
+print_status "Creating production configuration files..."
 
-print_status "Creating OpenSILEX configuration file..."
-cat > $OPENSILEX_HOME/opensilex.yml << 'CONFIG_EOF'
+# Main configuration file
+cat > "$OPENSILEX_HOME/config/opensilex.yml" << 'CONFIG_EOF'
+# OpenSILEX Production Configuration
 ontologies:
-  baseURI: "http://opensilex.dev/"
-  baseURIAlias: "dev"
+  baseURI: "http://opensilex.production/"
+  baseURIAlias: "prod"
   sparql:
     rdf4j:
-      serverURI: "http://localhost:8667/rdf4j-server/"
+      serverURI: "http://localhost:8080/rdf4j-server/"
       repository: "opensilex"
 
 sparql:
   rdf4j:
-    serverURI: "http://localhost:8667/rdf4j-server/"
+    serverURI: "http://localhost:8080/rdf4j-server/"
     repository: "opensilex"
-
-rdf4j:
-  serverURI: "http://localhost:8667/rdf4j-server/"
-  repository: "opensilex"
-
-file-system:
-  storageBasePath: "/home/azureuser/opensilex-data/files"
 
 big-data:
   mongodb:
@@ -599,94 +549,138 @@ nosql:
     port: 27017
     database: "opensilex"
 
-mongoDB:
-  host: "localhost"
-  port: 27017
-  database: "opensilex"
+file-system:
+  storageBasePath: "/home/opensilex/data/files"
 
 server:
   host: "0.0.0.0"
   port: 8666
+  publicURI: "http://localhost:8666"
+
+logging:
+  config:
+    file: "/home/opensilex/config/logback.xml"
 CONFIG_EOF
 
-print_status "Starting required Docker services..."
-# Create docker-compose.yml for required services
-cat > $OPENSILEX_HOME/docker-compose.yml << 'DOCKER_EOF'
+# Logging configuration file
+cat > "$OPENSILEX_HOME/config/logback.xml" << 'LOGBACK_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- File appender -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>/home/opensilex/logs/opensilex.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>/home/opensilex/logs/opensilex.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Root logger -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+    
+    <!-- OpenSILEX specific loggers -->
+    <logger name="org.opensilex" level="INFO" />
+    <logger name="org.eclipse.rdf4j" level="WARN" />
+    <logger name="org.mongodb" level="WARN" />
+</configuration>
+LOGBACK_EOF
+
+# Docker compose configuration
+print_status "Creating database services configuration..."
+cat > "$OPENSILEX_HOME/docker-compose.yml" << 'DOCKER_EOF'
 version: '3.8'
 services:
   rdf4j:
-    image: eclipse/rdf4j-workbench:4.2.3
+    image: eclipse/rdf4j-workbench:5.0.3
+    container_name: opensilex-rdf4j
     ports:
       - "8080:8080"
     environment:
-      - JAVA_OPTS=-Xmx2g
+      - JAVA_OPTS=-Xms4g -Xmx16g -XX:+UseG1GC
     volumes:
-      - rdf4j_data:/opt/eclipse-rdf4j/data
+      - rdf4j_data:/var/rdf4j
+      - rdf4j_logs:/usr/local/tomcat/logs
+    networks:
+      - opensilex_network
+    restart: unless-stopped
     
   mongodb:
-    image: mongo:6.0
+    image: mongo:5
+    container_name: opensilex-mongodb
     ports:
       - "27017:27017"
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    command: ["mongod", "--replSet", "opensilex", "--bind_ip_all"]
     volumes:
       - mongodb_data:/data/db
+    networks:
+      - opensilex_network
+    restart: unless-stopped
 
 volumes:
   rdf4j_data:
+  rdf4j_logs:
   mongodb_data:
+  
+networks:
+  opensilex_network:
+    driver: bridge
 DOCKER_EOF
 
-cd $OPENSILEX_HOME
+# Start database services
+print_status "Starting database services..."
+cd "$OPENSILEX_HOME"
 docker compose up -d
-sleep 15
+sleep 30
 
+# Initialize MongoDB replica set
 print_status "Initializing MongoDB replica set..."
-docker exec opensilex-mongodb-1 mongosh --eval "rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]})"
-sleep 10
+echo "Waiting for MongoDB to start..."
+for i in {1..30}; do
+    if docker exec opensilex-mongodb mongosh --eval "db.adminCommand('ismaster')" >/dev/null 2>&1; then
+        echo "MongoDB is ready"
+        break
+    fi
+    sleep 2
+done
 
-print_status "Initializing OpenSILEX system..."
-OPENSILEX_CONFIG_FILE=opensilex.yml java -jar opensilex.jar system install
+# Initialize replica set
+docker exec opensilex-mongodb mongosh --eval "rs.initiate({_id: 'opensilex', members: [{_id: 0, host: 'localhost:27017'}]})"
+sleep 15
+docker exec opensilex-mongodb mongosh --eval "rs.status()"
 
-if [ $? -eq 0 ]; then
-    print_success "OpenSILEX 1.4.8-rdg installation completed successfully"
-else
-    print_error "OpenSILEX system initialization failed"
-    exit 1
-fi
+# Create OpenSILEX wrapper script
+print_status "Creating OpenSILEX wrapper script..."
+VERSION="1.4.8-rdg"
+mkdir -p "$OPENSILEX_HOME/bin/$VERSION"
+mv "$OPENSILEX_HOME/opensilex.jar" "$OPENSILEX_HOME/bin/$VERSION/"
+mv "$OPENSILEX_HOME/bin/modules" "$OPENSILEX_HOME/bin/$VERSION/"
 
-print_status "Creating startup script..."
-cat > $OPENSILEX_HOME/start-opensilex.sh << 'EOF'
+# Create opensilex.sh script
+cat > "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh" << 'WRAPPER_EOF'
 #!/bin/bash
-set -e
 
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export PATH=$JAVA_HOME/bin:$PATH
-export NODE_ENV=production
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
-OPENSILEX_HOME="$HOME/opensilex"
-cd $OPENSILEX_HOME
+CONFIG_FILE="/home/opensilex/config/opensilex.yml"
 
-echo "Starting Docker services..."
-docker compose up -d
-sleep 10
+cd $SCRIPT_DIR
 
-echo "Starting OpenSILEX server..."
-cd $OPENSILEX_HOME
-
-# Find the OpenSILEX jar file (handles both built and pre-built releases)
-OPENSILEX_JAR=""
-if [ -f "opensilex.jar" ]; then
-    OPENSILEX_JAR="opensilex.jar"
-elif [ -f "opensilex-release/target/opensilex/opensilex.jar" ]; then
-    OPENSILEX_JAR="opensilex-release/target/opensilex/opensilex.jar"
-elif [ -f "bin/opensilex.jar" ]; then
-    OPENSILEX_JAR="bin/opensilex.jar"
-else
-    echo "ERROR: Could not find opensilex.jar file"
-    exit 1
-fi
-
-OPENSILEX_CONFIG_FILE=opensilex.yml java --add-opens java.base/java.io=ALL-UNNAMED \
+java --add-opens java.base/java.io=ALL-UNNAMED \
      --add-opens java.base/java.lang=ALL-UNNAMED \
      --add-opens java.base/java.util=ALL-UNNAMED \
      --add-opens java.base/sun.nio.ch=ALL-UNNAMED \
@@ -694,99 +688,242 @@ OPENSILEX_CONFIG_FILE=opensilex.yml java --add-opens java.base/java.io=ALL-UNNAM
      --add-opens java.base/java.lang.reflect=ALL-UNNAMED \
      --add-opens java.base/java.security=ALL-UNNAMED \
      --add-exports java.base/sun.util.calendar=ALL-UNNAMED \
-     -jar $OPENSILEX_JAR server start --host=0.0.0.0 --port=8666
+     -jar $SCRIPT_DIR/opensilex.jar --BASE_DIRECTORY=$SCRIPT_DIR --CONFIG_FILE=$CONFIG_FILE "$@"
+WRAPPER_EOF
+
+chmod +x "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh"
+chown -R opensilex:opensilex "$OPENSILEX_HOME/bin/$VERSION/"
+
+# Create alias for opensilex user
+sudo -u opensilex bash -c 'echo "alias opensilex=\"/home/opensilex/bin/1.4.8-rdg/opensilex.sh\"" >> /home/opensilex/.bash_aliases'
+
+# Wait for databases to be fully ready
+print_status "Waiting for databases to be fully ready..."
+for i in {1..60}; do
+    if docker exec opensilex-rdf4j curl -s http://localhost:8080/rdf4j-server/protocol >/dev/null 2>&1; then
+        echo "RDF4J is ready"
+        break
+    fi
+    echo "Waiting for RDF4J to start... ($i/60)"
+    sleep 5
+done
+
+# Initialize OpenSILEX system
+print_status "Initializing OpenSILEX system..."
+cd "$OPENSILEX_HOME"
+sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh system install
+
+# Reset and load ontologies (triplestore initialization)
+print_status "Initializing triplestore with ontologies..."
+# Retry the sparql reset-ontologies command up to 3 times
+for attempt in {1..3}; do
+    echo "Attempt $attempt: Initializing triplestore..."
+    if sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh sparql reset-ontologies; then
+        echo "Triplestore initialization successful"
+        break
+    else
+        echo "Triplestore initialization failed on attempt $attempt"
+        if [ $attempt -eq 3 ]; then
+            echo "WARNING: Triplestore initialization failed after 3 attempts. You may need to run this manually after startup:"
+            echo "sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh sparql reset-ontologies"
+        else
+            echo "Waiting 10 seconds before retry..."
+            sleep 10
+        fi
+    fi
+done
+
+# Create admin user (automated)
+print_status "Creating admin user..."
+# Retry user creation up to 3 times
+for attempt in {1..3}; do
+    echo "Attempt $attempt: Creating admin user..."
+    if sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh user add \
+        --admin \
+        --email="admin@opensilex.org" \
+        --firstName="System" \
+        --lastName="Administrator" \
+        --password="admin"; then
+        echo "Admin user created successfully"
+        break
+    else
+        echo "User creation failed on attempt $attempt"
+        if [ $attempt -eq 3 ]; then
+            echo "WARNING: Admin user creation failed after 3 attempts. You may need to run this manually after startup:"
+            echo "sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh user add --admin --email=admin@opensilex.org --firstName=System --lastName=Administrator --password=admin"
+        else
+            echo "Waiting 10 seconds before retry..."
+            sleep 10
+        fi
+    fi
+done
+
+OPENSILEX_USER_SCRIPT
+
+# Create startup and management scripts (as root)
+print_status "Creating management scripts..."
+
+# Startup script
+cat > /home/opensilex/start-opensilex.sh << 'START_EOF'
+#!/bin/bash
+set -e
+
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+export NODE_ENV=production
+
+OPENSILEX_HOME="/home/opensilex"
+cd $OPENSILEX_HOME
+
+echo "Starting Docker services..."
+docker compose up -d
+sleep 10
+
+echo "Starting OpenSILEX server..."
+/home/opensilex/bin/1.4.8-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
+START_EOF
+
+chmod +x /home/opensilex/start-opensilex.sh
+chown opensilex:opensilex /home/opensilex/start-opensilex.sh
+
+# Stop script
+cat > /home/opensilex/stop-opensilex.sh << 'STOP_EOF'
+#!/bin/bash
+
+OPENSILEX_HOME="/home/opensilex"
+cd $OPENSILEX_HOME
+
+echo "Stopping Docker services..."
+docker compose down
+
+echo "OpenSILEX stopped successfully"
+STOP_EOF
+
+chmod +x /home/opensilex/stop-opensilex.sh
+chown opensilex:opensilex /home/opensilex/stop-opensilex.sh
+
+# Help/Instructions script
+cat > /home/opensilex/opensilex-help.sh << 'HELP_EOF'
+#!/bin/bash
+
+cat << 'INSTRUCTIONS'
+==============================================
+        OpenSILEX Production Installation
+==============================================
+
+Access Information:
+• Web Interface: http://your-server-ip:8666/
+• API Documentation: http://your-server-ip:8666/api-docs
+• Default Admin Login: admin@opensilex.org / admin
+
+Common Commands:
+• Start OpenSILEX: sudo systemctl start opensilex
+• Stop OpenSILEX: sudo systemctl stop opensilex
+• Restart: sudo systemctl restart opensilex
+• Status: sudo systemctl status opensilex
+• Logs: sudo journalctl -u opensilex -f
+
+Manual Operations:
+• Start: cd /home/opensilex && ./start-opensilex.sh
+• Stop: cd /home/opensilex && ./stop-opensilex.sh
+
+Configuration Files:
+• Main Config: /home/opensilex/config/opensilex.yml
+• Logging: /home/opensilex/config/logback.xml
+• Docker: /home/opensilex/docker-compose.yml
+
+Data Locations:
+• File Storage: /home/opensilex/data/files
+• Logs: /home/opensilex/logs/
+• Database Data: Docker volumes
+
+==============================================
+INSTRUCTIONS
 EOF
 
-chmod +x $OPENSILEX_HOME/start-opensilex.sh
+chmod +x /home/opensilex/opensilex-help.sh
+chown opensilex:opensilex /home/opensilex/opensilex-help.sh
 
+# Add alias for opensilex user
+sudo -u opensilex bash -c 'echo "alias opensilex-help=/home/opensilex/opensilex-help.sh" >> /home/opensilex/.bashrc'
+sudo -u opensilex bash -c 'echo "alias opensilex-start=\"sudo systemctl start opensilex\"" >> /home/opensilex/.bashrc'
+sudo -u opensilex bash -c 'echo "alias opensilex-stop=\"sudo systemctl stop opensilex\"" >> /home/opensilex/.bashrc'
+sudo -u opensilex bash -c 'echo "alias opensilex-status=\"sudo systemctl status opensilex\"" >> /home/opensilex/.bashrc'
+sudo -u opensilex bash -c 'echo "alias opensilex-logs=\"sudo journalctl -u opensilex -f\"" >> /home/opensilex/.bashrc'
+
+# Create systemd service
 print_status "Creating systemd service..."
-sudo tee /etc/systemd/system/opensilex.service > /dev/null << 'SERVICE_EOF'
+cat > /etc/systemd/system/opensilex.service << 'SERVICE_EOF'
 [Unit]
-Description=OpenSILEX Server 1.4.8-rdg (Production)
+Description=OpenSILEX Server (Production)
 After=network.target docker.service
 Requires=docker.service
 
 [Service]
 Type=exec
-User=azureuser
-WorkingDirectory=/home/azureuser/opensilex
-Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-Environment=PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+User=opensilex
+WorkingDirectory=/home/opensilex
+Environment=JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+Environment=PATH=/usr/lib/jvm/java-11-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
-ExecStart=/home/azureuser/opensilex/start-opensilex.sh
+ExecStart=/home/opensilex/start-opensilex.sh
 Restart=on-failure
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 SERVICE_EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable opensilex.service
+systemctl daemon-reload
+systemctl enable opensilex.service
 
-print_status "Starting OpenSILEX service..."
-sudo systemctl start opensilex.service
-sleep 5
-
-print_status "Checking service status..."
-if sudo systemctl is-active --quiet opensilex.service; then
-    print_success "OpenSILEX service started successfully!"
-else
-    print_warning "Service may still be starting up. Check with: sudo systemctl status opensilex"
-fi
-
-print_success "OpenSILEX 1.4.8-rdg installation completed!"
-print_success "Access OpenSILEX at: http://$(curl -s ifconfig.me):8666/"
-print_success "Service status: sudo systemctl status opensilex"
+print_success "OpenSILEX production installation completed!"
+echo ""
+echo "==============================================" 
+echo "        Installation Summary"
+echo "==============================================" 
+echo "• OpenSILEX user created with sudo permissions"
+echo "• Directory structure: /home/opensilex/{bin,config,data,logs}"
+echo "• Configuration files created with logging"
+echo "• MongoDB and RDF4J services configured"
+echo "• Triplestore initialized with ontologies"
+echo "• Admin user created (admin@opensilex.org / admin)"
+echo "• Startup scripts and aliases configured"
+echo "• Systemd service configured"
+echo ""
+echo "Next steps:"
+echo "1. Start service: systemctl start opensilex"
+echo "2. Access: http://$(curl -s ifconfig.me):8666/"
+echo "3. Run help: /home/opensilex/opensilex-help.sh"
+echo "==============================================" 
 '@
 
-        # Check if pre-built release is available to determine which dependencies to install
-        Write-Info "Checking pre-built release availability to optimize dependency installation..."
-        $prebuiltAvailable = $false
-        try {
-            $response = Invoke-WebRequest -Uri "https://github.com/OpenSILEX/opensilex/releases/download/1.4.8-rdg/opensilex-release-1.4.8-rdg.zip" -Method Head -ErrorAction SilentlyContinue
-            if ($response.StatusCode -eq 200) {
-                $prebuiltAvailable = $true
-                Write-Success "Pre-built release available - installing minimal runtime dependencies"
-            }
-        }
-        catch {
-            Write-Warning "Pre-built release not available - installing full build dependencies"
-        }
         
         # Write scripts to temporary files and upload
-        $tempDepsScript = [System.IO.Path]::GetTempFileName()
+        $tempSetupScript = [System.IO.Path]::GetTempFileName()
         $tempInstallScript = [System.IO.Path]::GetTempFileName()
         
-        # Choose appropriate dependency script based on pre-built availability
-        $selectedDependencyScript = if ($prebuiltAvailable) { $runtimeDependencyScript } else { $buildDependencyScript }
-        [System.IO.File]::WriteAllText($tempDepsScript, $selectedDependencyScript)
+        [System.IO.File]::WriteAllText($tempSetupScript, $setupScript)
         [System.IO.File]::WriteAllText($tempInstallScript, $installerScript)
         
         # Upload scripts
-        scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempDepsScript "$AdminUsername@${TargetIP}:~/install-dependencies.sh"
+        scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempSetupScript "$AdminUsername@${TargetIP}:~/setup-system.sh"
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempInstallScript "$AdminUsername@${TargetIP}:~/install-opensilex.sh"
         
         # Clean up temp files
-        Remove-Item $tempDepsScript, $tempInstallScript
+        Remove-Item $tempSetupScript, $tempInstallScript
         
         # Fix line endings and make scripts executable
-        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/install-dependencies.sh ~/install-opensilex.sh 2>/dev/null || sed -i 's/\r$//' ~/install-dependencies.sh ~/install-opensilex.sh; chmod +x ~/install-dependencies.sh ~/install-opensilex.sh"
+        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/setup-system.sh ~/install-opensilex.sh 2>/dev/null || sed -i 's/\r$//' ~/setup-system.sh ~/install-opensilex.sh; chmod +x ~/setup-system.sh ~/install-opensilex.sh"
         
         if (-not $SkipDependencies) {
-            if ($prebuiltAvailable) {
-                Write-Info "Installing runtime dependencies (this may take 3-5 minutes)..."
-            } else {
-                Write-Info "Installing build dependencies (this may take 5-10 minutes)..."
-            }
-            ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/install-dependencies.sh"
+            Write-Info "Setting up system and creating OpenSILEX user (this may take 5-10 minutes)..."
+            ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/setup-system.sh"
         }
         
-        if ($prebuiltAvailable) {
-            Write-Info "Installing OpenSILEX from pre-built release (this may take 2-3 minutes)..."
-        } else {
-            Write-Info "Installing OpenSILEX from source (this may take 15-20 minutes)..."
-        }
+        Write-Info "Installing OpenSILEX following production guide (this may take 10-15 minutes)..."
         ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/install-opensilex.sh"
         
         Write-Success "OpenSILEX installation completed successfully!"
@@ -905,7 +1042,7 @@ function Show-Logs {
                 $privateKeyPath = $sshKeyPath -replace "\.pub$", ""
                 $ipAddress = $publicIP.IpAddress
                 Write-Info "Fetching OpenSILEX logs..."
-                ssh -i $privateKeyPath $AdminUsername@$ipAddress "sudo journalctl -u opensilex-server.service -n 50"
+                ssh -i $privateKeyPath $AdminUsername@$ipAddress "sudo journalctl -u opensilex -n 50"
             } else {
                 Write-Error "SSH key not found"
             }

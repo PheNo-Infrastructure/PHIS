@@ -38,9 +38,9 @@ print_error() {
 check_prerequisites() {
     print_status "Checking prerequisites..."
     
-    # Check Java
-    if ! java -version 2>&1 | grep -q "openjdk version \"1[1-9]\.\|openjdk version \"[2-9][0-9]\."; then
-        print_error "Java JDK 11+ is required. Please run opensilex-dependencies.sh first."
+    # Check Java (require Java 17+ for OpenSILEX 1.4.8-rdg)
+    if ! java -version 2>&1 | grep -q "openjdk version \"1[7-9]\.\|openjdk version \"[2-9][0-9]\."; then
+        print_error "Java JDK 17+ is required. Please run opensilex-dependencies.sh first."
         exit 1
     fi
     
@@ -147,25 +147,69 @@ configure_opensilex() {
         exit 1
     fi
     
-    # Create data storage directory
-    STORAGE_DIR="$HOME/opensilex-data"
-    mkdir -p "$STORAGE_DIR"
+    # Create production directory structure like the PowerShell script
+    PRODUCTION_DIR="$HOME/opensilex"
+    BIN_DIR="$PRODUCTION_DIR/bin/1.4.8-rdg"
+    CONFIG_DIR="$PRODUCTION_DIR/config"
+    DATA_DIR="$PRODUCTION_DIR/data"
+    LOG_DIR="$PRODUCTION_DIR/logs"
+    
+    mkdir -p "$BIN_DIR" "$CONFIG_DIR" "$DATA_DIR" "$LOG_DIR"
+    
+    # Copy the built JAR file to production location
+    if [ -f "$OPENSILEX_HOME/opensilex-release/target/opensilex.jar" ]; then
+        cp "$OPENSILEX_HOME/opensilex-release/target/opensilex.jar" "$BIN_DIR/"
+    else
+        print_error "OpenSILEX JAR file not found. Build may have failed."
+        exit 1
+    fi
+    
+    # Create opensilex.sh wrapper script (same as PowerShell script)
+    cat > "$BIN_DIR/opensilex.sh" << 'EOF'
+#!/bin/bash
+# OpenSILEX 1.4.8-rdg Wrapper Script
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+CONFIG_FILE="/home/$(whoami)/opensilex/config/opensilex.yml"
+
+cd $SCRIPT_DIR
+java --add-opens java.base/java.io=ALL-UNNAMED \
+     --add-opens java.base/java.lang=ALL-UNNAMED \
+     --add-opens java.base/java.lang.reflect=ALL-UNNAMED \
+     --add-opens java.base/java.net=ALL-UNNAMED \
+     --add-opens java.base/java.text=ALL-UNNAMED \
+     --add-opens java.base/java.util=ALL-UNNAMED \
+     --add-opens java.base/jdk.internal.loader=ALL-UNNAMED \
+     --add-opens java.base/sun.nio.ch=ALL-UNNAMED \
+     --add-opens java.base/sun.nio.fs=ALL-UNNAMED \
+     --add-opens java.desktop/java.awt.font=ALL-UNNAMED \
+     --add-opens java.logging/java.util.logging=ALL-UNNAMED \
+     -Dlogback.configurationFile=./logback.xml \
+     -Djava.awt.headless=true \
+     -XX:+UseG1GC -Xms8G -Xmx20G \
+     -jar $SCRIPT_DIR/opensilex.jar --BASE_DIRECTORY=$SCRIPT_DIR --CONFIG_FILE=$CONFIG_FILE "$@"
+EOF
+    
+    chmod +x "$BIN_DIR/opensilex.sh"
+    
+    # Copy configuration to production location
+    cp "$CONFIG_FILE" "$CONFIG_DIR/"
     
     # Backup original configuration
     cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
     
     # Update configuration with proper storage path
-    print_status "Setting storage path to $STORAGE_DIR"
+    print_status "Setting storage path to $DATA_DIR"
     
     # Use sed to replace the storageBasePath in the YAML file
-    sed -i "s|storageBasePath:.*|storageBasePath: $STORAGE_DIR|g" "$CONFIG_FILE"
+    sed -i "s|storageBasePath:.*|storageBasePath: $DATA_DIR|g" "$CONFIG_DIR/opensilex.yml"
     
-    # Set proper permissions for storage directory
-    chmod -R 755 "$STORAGE_DIR"
+    # Set proper permissions for directories
+    chmod -R 755 "$PRODUCTION_DIR"
     
     print_success "OpenSILEX configured successfully"
-    print_status "Configuration file: $CONFIG_FILE"
-    print_status "Data storage: $STORAGE_DIR"
+    print_status "Configuration file: $CONFIG_DIR/opensilex.yml"
+    print_status "Data storage: $DATA_DIR"
+    print_status "OpenSILEX wrapper: $BIN_DIR/opensilex.sh"
 }
 
 # Function to initialize system data
@@ -173,17 +217,29 @@ initialize_system() {
     print_status "Initializing OpenSILEX system data..."
     cd "$OPENSILEX_HOME"
     
-    # Set the environment
+    # Set the environment (using actual Java 17 installation paths)
     export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}
-    export MAVEN_HOME=${MAVEN_HOME:-/opt/maven}
+    export MAVEN_HOME=${MAVEN_HOME:-/usr/share/maven}
     export PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
     
-    # Initialize the system
-    if ~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev install; then
-        print_success "System initialization completed successfully"
+    # Initialize the system using production wrapper
+    PRODUCTION_WRAPPER="$HOME/opensilex/bin/1.4.8-rdg/opensilex.sh"
+    
+    if [ -f "$PRODUCTION_WRAPPER" ]; then
+        print_status "Using production wrapper: $PRODUCTION_WRAPPER"
+        if "$PRODUCTION_WRAPPER" sparql reset-ontologies; then
+            print_success "Database initialization completed successfully"
+            
+            # Create admin user
+            print_status "Creating admin user..."
+            "$PRODUCTION_WRAPPER" user add --admin || print_warning "Admin user creation may have failed (might already exist)"
+        else
+            print_warning "Database initialization may have encountered issues."
+            print_status "You can try running this manually later: $PRODUCTION_WRAPPER sparql reset-ontologies"
+        fi
     else
-        print_warning "System initialization may have encountered issues. This is sometimes normal on first run."
-        print_status "You can try running this manually later: cd $OPENSILEX_HOME && ~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev install"
+        print_error "Production wrapper not found at $PRODUCTION_WRAPPER"
+        exit 1
     fi
 }
 
@@ -191,57 +247,26 @@ initialize_system() {
 create_startup_scripts() {
     print_status "Creating startup scripts..."
     
-    # Create start script
-    cat > "$OPENSILEX_HOME/start-opensilex.sh" << 'EOF'
+    # Create start script using production wrapper
+    cat > "$HOME/opensilex/start-opensilex.sh" << 'EOF'
 #!/bin/bash
-# OpenSILEX Startup Script
-
-cd "$(dirname "$0")"
+# OpenSILEX Production Startup Script
 
 # Set environment variables
 export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}
-export MAVEN_HOME=${MAVEN_HOME:-/opt/maven}
+export MAVEN_HOME=${MAVEN_HOME:-/usr/share/maven}
 export PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
 
 echo "Starting OpenSILEX databases..."
-cd opensilex-dev-tools/src/main/resources/docker
+cd ~/opensilex/opensilex-dev-tools/src/main/resources/docker
 docker compose up -d
 
 echo "Waiting for databases to be ready..."
 sleep 10
 
 echo "Starting OpenSILEX server..."
-cd "$(dirname "$0")"
-~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev start --no-front-dev
-
-echo "OpenSILEX is now running!"
-echo "Access the application at: http://localhost:8666/"
-echo "API Documentation: http://localhost:8666/api-docs"
-echo "Default login: admin@opensilex.org / admin"
-EOF
-
-    # Create start with frontend script
-    cat > "$OPENSILEX_HOME/start-opensilex-with-frontend.sh" << 'EOF'
-#!/bin/bash
-# OpenSILEX Startup Script with Vue.js Hot Reload
-
-cd "$(dirname "$0")"
-
-# Set environment variables
-export JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}
-export MAVEN_HOME=${MAVEN_HOME:-/opt/maven}
-export PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
-
-echo "Starting OpenSILEX databases..."
-cd opensilex-dev-tools/src/main/resources/docker
-docker compose up -d
-
-echo "Waiting for databases to be ready..."
-sleep 10
-
-echo "Starting OpenSILEX server with Vue.js hot reload..."
-cd "$(dirname "$0")"
-~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev start
+cd ~/opensilex/bin/1.4.8-rdg
+./opensilex.sh server start --host=0.0.0.0 --port=8666
 
 echo "OpenSILEX is now running!"
 echo "Access the application at: http://localhost:8666/"
@@ -250,24 +275,23 @@ echo "Default login: admin@opensilex.org / admin"
 EOF
 
     # Create stop script
-    cat > "$OPENSILEX_HOME/stop-opensilex.sh" << 'EOF'
+    cat > "$HOME/opensilex/stop-opensilex.sh" << 'EOF'
 #!/bin/bash
 # OpenSILEX Stop Script
 
-cd "$(dirname "$0")"
-
 echo "Stopping OpenSILEX databases..."
-cd opensilex-dev-tools/src/main/resources/docker
+cd ~/opensilex/opensilex-dev-tools/src/main/resources/docker
 docker compose down
 
-echo "OpenSILEX databases stopped."
-echo "Note: The Java server needs to be stopped manually (Ctrl+C in the terminal where it's running)"
+echo "Killing OpenSILEX server processes..."
+pkill -f "java.*opensilex.jar"
+
+echo "OpenSILEX stopped."
 EOF
 
     # Make scripts executable
-    chmod +x "$OPENSILEX_HOME/start-opensilex.sh"
-    chmod +x "$OPENSILEX_HOME/start-opensilex-with-frontend.sh"
-    chmod +x "$OPENSILEX_HOME/stop-opensilex.sh"
+    chmod +x "$HOME/opensilex/start-opensilex.sh"
+    chmod +x "$HOME/opensilex/stop-opensilex.sh"
     
     print_success "Startup scripts created successfully"
 }
@@ -287,11 +311,11 @@ run_tests() {
     print_status "Running basic installation tests..."
     cd "$OPENSILEX_HOME"
     
-    # Test if opensilex command works
-    if ~/opensilex/opensilex-release/target/opensilex/opensilex.sh --help > /dev/null 2>&1; then
-        print_success "OpenSILEX command line tool is working"
+    # Test if production opensilex wrapper works
+    if ~/opensilex/bin/1.4.8-rdg/opensilex.sh --help > /dev/null 2>&1; then
+        print_success "OpenSILEX production wrapper is working"
     else
-        print_warning "OpenSILEX command line tool test failed"
+        print_warning "OpenSILEX production wrapper test failed"
     fi
     
     # Check if databases are accessible
@@ -309,24 +333,26 @@ display_instructions() {
     print_status "Installation Summary:"
     echo "✓ OpenSILEX cloned to: $OPENSILEX_HOME"
     echo "✓ Project built successfully"
+    echo "✓ Production structure created: ~/opensilex/"
+    echo "✓ OpenSILEX wrapper created: ~/opensilex/bin/1.4.8-rdg/opensilex.sh"
     echo "✓ Databases configured and running"
-    echo "✓ System initialized"
+    echo "✓ System initialized with admin user"
     echo "✓ Startup scripts created"
     echo
     print_status "How to start OpenSILEX:"
-    echo "1. Backend only (API services):"
-    echo "   cd $OPENSILEX_HOME && ./start-opensilex.sh"
+    echo "1. Production server:"
+    echo "   cd ~/opensilex && ./start-opensilex.sh"
     echo
-    echo "2. Backend + Frontend with hot reload:"
-    echo "   cd $OPENSILEX_HOME && ./start-opensilex-with-frontend.sh"
+    echo "2. Manual start:"
+    echo "   cd ~/opensilex/bin/1.4.8-rdg"
+    echo "   ./opensilex.sh server start --host=0.0.0.0 --port=8666"
     echo
-    echo "3. Manual start:"
-    echo "   cd $OPENSILEX_HOME"
-    echo "   ~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev start --no-front-dev    # Backend only"
-    echo "   ~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev start                   # With frontend"
+    echo "3. Database commands:"
+    echo "   ~/opensilex/bin/1.4.8-rdg/opensilex.sh sparql reset-ontologies"
+    echo "   ~/opensilex/bin/1.4.8-rdg/opensilex.sh user add --admin"
     echo
     print_status "How to stop OpenSILEX:"
-    echo "   cd $OPENSILEX_HOME && ./stop-opensilex.sh"
+    echo "   cd ~/opensilex && ./stop-opensilex.sh"
     echo
     print_status "Access URLs:"
     echo "- OpenSILEX Application: http://localhost:8666/"
@@ -334,17 +360,18 @@ display_instructions() {
     echo "- Default Login: admin@opensilex.org / admin"
     echo
     print_status "Important Files:"
-    echo "- Configuration: $OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/config/opensilex.yml"
-    echo "- Data Storage: $HOME/opensilex-data"
-    echo "- Logs: Check the terminal output where you started OpenSILEX"
+    echo "- Configuration: ~/opensilex/config/opensilex.yml"
+    echo "- Data Storage: ~/opensilex/data/"
+    echo "- Logs: ~/opensilex/logs/"
+    echo "- OpenSILEX Wrapper: ~/opensilex/bin/1.4.8-rdg/opensilex.sh"
     echo
-    print_warning "Note: Unlike the docker-compose version, this installation runs OpenSILEX natively with Java."
-    print_warning "Make sure to keep the terminal window open where OpenSILEX is running."
+    print_success "Production-ready OpenSILEX 1.4.8-rdg installation complete!"
+    print_warning "This uses the same production structure as the PowerShell Azure deployment."
     echo
     print_status "Troubleshooting:"
     echo "- If databases don't start: cd $OPENSILEX_HOME/opensilex-dev-tools/src/main/resources/docker && docker compose up -d"
     echo "- If build fails: cd $OPENSILEX_HOME && mvn clean install"
-    echo "- If system init fails: cd $OPENSILEX_HOME && ~/opensilex/opensilex-release/target/opensilex/opensilex.sh dev install"
+    echo "- If init fails: ~/opensilex/bin/1.4.8-rdg/opensilex.sh sparql reset-ontologies"
 }
 
 # Main execution
