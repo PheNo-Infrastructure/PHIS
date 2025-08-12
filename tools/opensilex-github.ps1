@@ -1,5 +1,5 @@
-# OpenSILEX GitHub Installation Script v1.4.8-rdg
-# PowerShell script for managing OpenSILEX version 1.4.8-rdg installation on Azure VMs
+# OpenSILEX GitHub Installation Script v1.4.9-rdg
+# PowerShell script for managing OpenSILEX version 1.4.9-rdg installation on Azure VMs
 # Follows official OpenSILEX repository guidelines: https://github.com/OpenSILEX/opensilex
 
 param(
@@ -490,9 +490,9 @@ mkdir -p "$OPENSILEX_HOME/data/files"
 mkdir -p "$OPENSILEX_HOME/data/logs"
 
 # Download OpenSILEX release following production guide
-print_status "Downloading OpenSILEX 1.4.8-rdg release..."
+print_status "Downloading OpenSILEX 1.4.9-rdg release..."
 cd "$OPENSILEX_HOME/bin"
-OPENSILEX_VERSION="1.4.8-rdg"
+OPENSILEX_VERSION="1.4.9-rdg"
 RELEASE_URL="https://github.com/OpenSILEX/opensilex/releases/download/${OPENSILEX_VERSION}/opensilex-release-${OPENSILEX_VERSION}.zip"
 
 if curl -s -I -L --fail "$RELEASE_URL" >/dev/null 2>&1; then
@@ -665,7 +665,7 @@ docker exec opensilex-mongodb mongosh --eval "rs.status()"
 
 # Create OpenSILEX wrapper script
 print_status "Creating OpenSILEX wrapper script..."
-VERSION="1.4.8-rdg"
+VERSION="1.4.9-rdg"
 mkdir -p "$OPENSILEX_HOME/bin/$VERSION"
 mv "$OPENSILEX_HOME/opensilex.jar" "$OPENSILEX_HOME/bin/$VERSION/"
 mv "$OPENSILEX_HOME/bin/modules" "$OPENSILEX_HOME/bin/$VERSION/"
@@ -695,7 +695,7 @@ chmod +x "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh"
 chown -R opensilex:opensilex "$OPENSILEX_HOME/bin/$VERSION/"
 
 # Create alias for opensilex user
-sudo -u opensilex bash -c 'echo "alias opensilex=\"/home/opensilex/bin/1.4.8-rdg/opensilex.sh\"" >> /home/opensilex/.bash_aliases'
+sudo -u opensilex bash -c 'echo "alias opensilex=\"/home/opensilex/bin/1.4.9-rdg/opensilex.sh\"" >> /home/opensilex/.bash_aliases'
 
 # Wait for databases to be fully ready
 print_status "Waiting for databases to be fully ready..."
@@ -711,21 +711,21 @@ done
 # Initialize OpenSILEX system
 print_status "Initializing OpenSILEX system..."
 cd "$OPENSILEX_HOME"
-sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh system install
+sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh system install
 
 # Reset and load ontologies (triplestore initialization)
 print_status "Initializing triplestore with ontologies..."
 # Retry the sparql reset-ontologies command up to 3 times
 for attempt in {1..3}; do
     echo "Attempt $attempt: Initializing triplestore..."
-    if sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh sparql reset-ontologies; then
+    if sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies; then
         echo "Triplestore initialization successful"
         break
     else
         echo "Triplestore initialization failed on attempt $attempt"
         if [ $attempt -eq 3 ]; then
             echo "WARNING: Triplestore initialization failed after 3 attempts. You may need to run this manually after startup:"
-            echo "sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh sparql reset-ontologies"
+            echo "sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
         else
             echo "Waiting 10 seconds before retry..."
             sleep 10
@@ -738,7 +738,7 @@ print_status "Creating admin user..."
 # Retry user creation up to 3 times
 for attempt in {1..3}; do
     echo "Attempt $attempt: Creating admin user..."
-    if sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh user add \
+    if sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh user add \
         --admin \
         --email="admin@opensilex.org" \
         --firstName="System" \
@@ -750,7 +750,7 @@ for attempt in {1..3}; do
         echo "User creation failed on attempt $attempt"
         if [ $attempt -eq 3 ]; then
             echo "WARNING: Admin user creation failed after 3 attempts. You may need to run this manually after startup:"
-            echo "sudo -u opensilex /home/opensilex/bin/1.4.8-rdg/opensilex.sh user add --admin --email=admin@opensilex.org --firstName=System --lastName=Administrator --password=admin"
+            echo "sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh user add --admin --email=admin@opensilex.org --firstName=System --lastName=Administrator --password=admin"
         else
             echo "Waiting 10 seconds before retry..."
             sleep 10
@@ -780,7 +780,7 @@ docker compose up -d
 sleep 10
 
 echo "Starting OpenSILEX server..."
-/home/opensilex/bin/1.4.8-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
+/home/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
 START_EOF
 
 chmod +x /home/opensilex/start-opensilex.sh
