@@ -1,6 +1,23 @@
 # OpenSILEX GitHub Installation Script v1.4.9-rdg
 # PowerShell script for managing OpenSILEX version 1.4.9-rdg installation on Azure VMs
 # Follows official OpenSILEX repository guidelines: https://github.com/OpenSILEX/opensilex
+#
+# API Key Configuration:
+#   For Agroportal ontology integration, you need an API key from:
+#   https://agroportal.lirmm.fr/account
+#
+# Setup Methods (in order of preference):
+#   1. Create: tools/config/api-keys.conf with content:
+#      AGROPORTAL_API_KEY="your-key-here"
+#   
+#   2. OR set environment variable:
+#      $env:AGROPORTAL_API_KEY = "your-key-here" (PowerShell)
+#      export AGROPORTAL_API_KEY="your-key-here" (Bash)
+#
+# Security Note:
+#   - The config/api-keys.conf file is ignored by git (.gitignore)
+#   - Never commit API keys to version control
+#   - Script works without API key (Agroportal features disabled)
 
 param(
     [Parameter(Mandatory=$false)]
@@ -528,6 +545,47 @@ fi
 # Create configuration files following production guide
 print_status "Creating production configuration files..."
 
+# Create required directories with proper permissions
+mkdir -p "$OPENSILEX_HOME/logs"
+mkdir -p "$OPENSILEX_HOME/data/files"
+mkdir -p "$OPENSILEX_HOME/config"
+chown -R azureuser:azureuser "$OPENSILEX_HOME"
+chmod -R 755 "$OPENSILEX_HOME"
+
+# Check for API keys - try multiple sources
+AGROPORTAL_ENABLED=false
+AGROPORTAL_API_KEY=""
+
+# 1. Check for local config file (not committed to git)
+CONFIG_FILE="$(dirname "$0")/config/api-keys.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    print_info "Loading API keys from config file..."
+    source "$CONFIG_FILE"
+    if [ ! -z "$AGROPORTAL_API_KEY" ]; then
+        print_success "Using Agroportal API key from config file"
+        AGROPORTAL_ENABLED=true
+    fi
+fi
+
+# 2. Check environment variable (overrides config file)
+if [ ! -z "$AGROPORTAL_API_KEY" ]; then
+    print_success "Using Agroportal API key from environment variable"
+    AGROPORTAL_ENABLED=true
+fi
+
+# 3. Final fallback
+if [ "$AGROPORTAL_ENABLED" = false ]; then
+    print_warning "No Agroportal API key found"
+    print_info "Agroportal integration will be disabled"
+    echo ""
+    print_info "To enable Agroportal ontology integration:"
+    print_info "1. Get your API key from: https://agroportal.lirmm.fr/account"
+    print_info "2. Create file: config/api-keys.conf"
+    print_info "3. Add line: AGROPORTAL_API_KEY=\"your-key-here\""
+    print_info "4. See config/api-keys.conf.template for example"
+    echo ""
+fi
+
 # Main configuration file with dynamic IP
 cat > "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_EOF
 # OpenSILEX Production Configuration
@@ -540,6 +598,11 @@ ontologies:
       config:
         serverURI: "http://localhost:8080/rdf4j-server/"
         repository: "opensilex"
+        # Connection pool and timeout settings to prevent EOFExceptions
+        maxConnections: 10
+        connectionTimeout: 30000
+        readTimeout: 60000
+        queryTimeout: 120000
 
 big-data:
   mongodb:
@@ -594,6 +657,19 @@ front:
   dashboard:
     variable:
       variableDetailsLabel: "Production Environment"
+  # Agroportal ontology mappings for variable components
+  agroportal:
+    entity:
+      - AGROVOC
+      - PO
+    trait:
+      - PATO
+    method:
+      - TRANSFORMON
+    unit:
+      - OBOE
+  # Geocoding service configuration
+  geocodingService: Photon
 
 # Logging configuration
 logging:
@@ -625,6 +701,22 @@ phisws:
     allowCredentials: true
 CONFIG_EOF
 
+# Add Agroportal configuration if API key is provided
+if [ "$AGROPORTAL_ENABLED" = true ]; then
+    print_status "Adding Agroportal configuration..."
+    cat >> "$OPENSILEX_HOME/config/opensilex.yml" << AGROPORTAL_EOF
+
+# Agroportal configuration for ontology access (added via environment variable)
+core:
+  agroportal:
+    basePath: "https://agroportal.lirmm.fr"
+    baseAPIPath: "https://data.agroportal.lirmm.fr"
+    externalAPIKey: "$AGROPORTAL_API_KEY"
+AGROPORTAL_EOF
+else
+    print_info "Skipping Agroportal configuration - API key not provided"
+fi
+
 # Logging configuration file
 cat > "$OPENSILEX_HOME/config/logback.xml" << 'LOGBACK_EOF'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -639,7 +731,9 @@ cat > "$OPENSILEX_HOME/config/logback.xml" << 'LOGBACK_EOF'
     <!-- File appender -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>/home/azureuser/opensilex/logs/opensilex.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+        <append>true</append>
+        <immediateFlush>true</immediateFlush>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>/home/azureuser/opensilex/logs/opensilex.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
@@ -651,15 +745,20 @@ cat > "$OPENSILEX_HOME/config/logback.xml" << 'LOGBACK_EOF'
     </appender>
     
     <!-- Root logger -->
-    <root level="INFO">
+    <root level="DEBUG">
         <appender-ref ref="STDOUT" />
         <appender-ref ref="FILE" />
     </root>
     
     <!-- OpenSILEX specific loggers -->
-    <logger name="org.opensilex" level="INFO" />
-    <logger name="org.eclipse.rdf4j" level="WARN" />
-    <logger name="org.mongodb" level="WARN" />
+    <logger name="org.opensilex" level="DEBUG" />
+    <logger name="org.opensilex.core.device" level="TRACE" />
+    <logger name="org.opensilex.sparql" level="DEBUG" />
+    <logger name="org.eclipse.rdf4j" level="DEBUG" />
+    <logger name="org.eclipse.rdf4j.query" level="TRACE" />
+    <logger name="org.eclipse.rdf4j.repository" level="DEBUG" />
+    <logger name="org.mongodb" level="DEBUG" />
+    <logger name="org.mongodb.driver" level="DEBUG" />
 </configuration>
 LOGBACK_EOF
 
@@ -674,12 +773,20 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - JAVA_OPTS=-Xms4g -Xmx16g -XX:+UseG1GC
+      - JAVA_OPTS=-Xms4g -Xmx16g -XX:+UseG1GC -Djava.awt.headless=true -Dfile.encoding=UTF-8
+      - CATALINA_OPTS=-Dcom.sun.management.jmxremote=true
+      - LOGGING_LEVEL_ROOT=DEBUG
+      - LOGGING_LEVEL_ORG_ECLIPSE_RDF4J=DEBUG
     volumes:
       - rdf4j_data:/var/rdf4j
       - rdf4j_logs:/usr/local/tomcat/logs
     networks:
       - opensilex_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/rdf4j-server/protocol"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
     
   mongodb:
@@ -769,6 +876,34 @@ for i in {1..60}; do
     echo "Waiting for RDF4J to start... ($i/60)"
     sleep 5
 done
+
+# Verify and recreate RDF4J repository if needed to prevent EOFExceptions
+print_status "Verifying RDF4J repository health..."
+if ! docker exec opensilex-rdf4j curl -s http://localhost:8080/rdf4j-server/repositories/opensilex >/dev/null 2>&1; then
+    echo "Creating OpenSILEX repository in RDF4J..."
+    docker exec opensilex-rdf4j curl -X PUT \
+        -H "Content-Type: text/turtle" \
+        -d "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+            @prefix rep: <http://www.openrdf.org/config/repository#> .
+            @prefix sr: <http://www.openrdf.org/config/repository/sail#> .
+            @prefix sail: <http://www.openrdf.org/config/sail#> .
+            @prefix native: <http://www.openrdf.org/config/sail/native#> .
+
+            [] a rep:Repository ;
+               rep:repositoryID \"opensilex\" ;
+               rdfs:label \"OpenSILEX Repository\" ;
+               rep:repositoryImpl [
+                  rep:repositoryType \"openrdf:SailRepository\" ;
+                  sr:sailImpl [
+                     sail:sailType \"openrdf:NativeStore\" ;
+                     native:tripleIndexes \"spoc,posc,cspo\"
+                  ]
+               ] ." \
+        http://localhost:8080/rdf4j-server/repositories/opensilex
+    sleep 5
+else
+    echo "RDF4J repository exists and is accessible"
+fi
 
 # Initialize OpenSILEX system
 print_status "Initializing OpenSILEX system..."
@@ -923,6 +1058,18 @@ else
     print_warning "Nginx may not be properly configured - please check manually"
 fi
 
+# Test log file creation
+print_status "Testing log file creation..."
+sudo -u azureuser touch "$OPENSILEX_HOME/logs/opensilex.log"
+sudo -u azureuser chmod 664 "$OPENSILEX_HOME/logs/opensilex.log"
+echo "$(date): OpenSILEX installation log test" | sudo -u azureuser tee "$OPENSILEX_HOME/logs/opensilex.log" > /dev/null
+
+if [ -f "$OPENSILEX_HOME/logs/opensilex.log" ]; then
+    echo "Log file created successfully at $OPENSILEX_HOME/logs/opensilex.log"
+else
+    echo "WARNING: Failed to create log file"
+fi
+
 # Create systemd service
 print_status "Creating systemd service..."
 sudo tee /etc/systemd/system/opensilex.service << 'SERVICE_EOF'
@@ -946,6 +1093,9 @@ Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
+# Ensure log directory permissions
+ExecStartPre=/bin/chown -R azureuser:azureuser /home/azureuser/opensilex/logs
+ExecStartPre=/bin/chmod -R 755 /home/azureuser/opensilex/logs
 
 [Install]
 WantedBy=multi-user.target
