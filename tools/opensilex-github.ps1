@@ -896,6 +896,7 @@ SERVICE_EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable opensilex.service
+sudo systemctl start opensilex.service
 
 print_success "OpenSILEX production installation completed!"
 echo ""
