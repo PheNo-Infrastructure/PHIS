@@ -549,23 +549,80 @@ big-data:
       port: 27017
       database: "opensilex"
 
+# File system configuration with proper structure
 file-system:
-  storageBasePath: "/home/azureuser/opensilex/data/files"
+  fs:
+    defaultFS: local
+    config:
+      connections:
+        local:
+          implementation: org.opensilex.fs.local.LocalFileSystemConnection
+          config:
+            basePath: "/home/azureuser/opensilex/data/files"
 
 server:
   host: "0.0.0.0"
   port: 8666
   publicURI: "http://$VM_PUBLIC_IP:8666"
 
+# Security configuration with email support
+security:
+  email:
+    config:
+      enable: false
+      smtp:
+        host: ""
+        port: 587
+        userId: ""
+        userPassword: ""
+        sender: ""
+
+# Dashboard configuration with metrics
+front:
+  metrics:
+    enable: true
+    system:
+      enableMetrics: true
+      firstMetricAfterInitialisation: 1
+      metricsTimeInterval: 30
+      timeUnit: "DAYS"
+    experiments:
+      enableMetrics: true
+      firstMetricAfterInitialisation: 1
+      metricsTimeInterval: 7
+      timeUnit: "DAYS"
+  dashboard:
+    variable:
+      variableDetailsLabel: "Production Environment"
+
+# Logging configuration
 logging:
   config:
     file: "/home/azureuser/opensilex/config/logback.xml"
 
+# System configuration
 system:
   defaultLanguage: "en"
 
 core:
   enableLogs: true
+  
+# Additional production configurations
+phisws:
+  # Enable CORS for production
+  cors:
+    allowedOrigins:
+      - "http://$VM_PUBLIC_IP"
+      - "https://$VM_PUBLIC_IP"
+    allowedMethods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowedHeaders:
+      - "*"
+    allowCredentials: true
 CONFIG_EOF
 
 # Logging configuration file
