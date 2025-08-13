@@ -553,18 +553,20 @@ chown -R azureuser:azureuser "$OPENSILEX_HOME"
 chmod -R 755 "$OPENSILEX_HOME"
 
 # Check for API keys - try multiple sources
-AGROPORTAL_ENABLED=false
+AGROPORTAL_ENABLED=true
 AGROPORTAL_API_KEY=""
 
-# 1. Check for local config file (not committed to git)
-CONFIG_FILE="$(dirname "$0")/config/api-keys.conf"
+# 1. Check for local config file (uploaded from tools/config/api-keys.conf)
+CONFIG_FILE="$HOME/api-keys.conf"
 if [ -f "$CONFIG_FILE" ]; then
-    print_info "Loading API keys from config file..."
+    print_status "Loading API keys from config file..."
     source "$CONFIG_FILE"
     if [ ! -z "$AGROPORTAL_API_KEY" ]; then
         print_success "Using Agroportal API key from config file"
         AGROPORTAL_ENABLED=true
     fi
+else
+    print_status "API keys config file not found at $CONFIG_FILE"
 fi
 
 # 2. Check environment variable (overrides config file)
@@ -576,13 +578,13 @@ fi
 # 3. Final fallback
 if [ "$AGROPORTAL_ENABLED" = false ]; then
     print_warning "No Agroportal API key found"
-    print_info "Agroportal integration will be disabled"
+    print_status "Agroportal integration will be disabled"
     echo ""
-    print_info "To enable Agroportal ontology integration:"
-    print_info "1. Get your API key from: https://agroportal.lirmm.fr/account"
-    print_info "2. Create file: config/api-keys.conf"
-    print_info "3. Add line: AGROPORTAL_API_KEY=\"your-key-here\""
-    print_info "4. See config/api-keys.conf.template for example"
+    print_status "To enable Agroportal ontology integration:"
+    print_status "1. Get your API key from: https://agroportal.lirmm.fr/account"
+    print_status "2. Create file: config/api-keys.conf"
+    print_status "3. Add line: AGROPORTAL_API_KEY=\"your-key-here\""
+    print_status "4. See config/api-keys.conf.template for example"
     echo ""
 fi
 
@@ -593,16 +595,14 @@ ontologies:
   baseURI: "http://$VM_PUBLIC_IP/"
   baseURIAlias: "prod"
   sparql:
-    rdf4j:
-      implementation: org.opensilex.sparql.rdf4j.RDF4JServiceFactory
-      config:
-        serverURI: "http://localhost:8080/rdf4j-server/"
-        repository: "opensilex"
-        # Connection pool and timeout settings to prevent EOFExceptions
-        maxConnections: 10
-        connectionTimeout: 30000
-        readTimeout: 60000
-        queryTimeout: 120000
+    config:
+      serverURI: "http://localhost:7200"
+      repository: "opensilex"
+      # GraphDB connection settings to prevent connection issues
+      maxConnections: 10
+      connectionTimeout: 30000
+      readTimeout: 60000
+      queryTimeout: 120000
 
 big-data:
   mongodb:
@@ -701,12 +701,12 @@ phisws:
     allowCredentials: true
 CONFIG_EOF
 
-# Add Agroportal configuration if API key is provided
+# Add Agroportal configuration if enabled
 if [ "$AGROPORTAL_ENABLED" = true ]; then
     print_status "Adding Agroportal configuration..."
     cat >> "$OPENSILEX_HOME/config/opensilex.yml" << AGROPORTAL_EOF
 
-# Agroportal configuration for ontology access (added via environment variable)
+# Agroportal configuration for ontology access
 core:
   agroportal:
     basePath: "https://agroportal.lirmm.fr"
@@ -714,7 +714,7 @@ core:
     externalAPIKey: "$AGROPORTAL_API_KEY"
 AGROPORTAL_EOF
 else
-    print_info "Skipping Agroportal configuration - API key not provided"
+    print_status "Skipping Agroportal configuration - disabled"
 fi
 
 # Logging configuration file
@@ -767,26 +767,27 @@ print_status "Creating database services configuration..."
 cat > "$OPENSILEX_HOME/docker-compose.yml" << 'DOCKER_EOF'
 version: '3.8'
 services:
-  rdf4j:
-    image: eclipse/rdf4j-workbench:5.0.3
-    container_name: opensilex-rdf4j
+  graphdb:
+    image: ontotext/graphdb:10.6.4
+    container_name: opensilex-graphdb
     ports:
-      - "8080:8080"
+      - "7200:7200"
     environment:
-      - JAVA_OPTS=-Xms4g -Xmx16g -XX:+UseG1GC -Djava.awt.headless=true -Dfile.encoding=UTF-8
-      - CATALINA_OPTS=-Dcom.sun.management.jmxremote=true
-      - LOGGING_LEVEL_ROOT=DEBUG
-      - LOGGING_LEVEL_ORG_ECLIPSE_RDF4J=DEBUG
+      - GDB_HEAP_SIZE=4g
+      - GDB_MAX_HEAP_SIZE=8g
+      - GDB_JAVA_OPTS=-XX:+UseG1GC -Djava.awt.headless=true
     volumes:
-      - rdf4j_data:/var/rdf4j
-      - rdf4j_logs:/usr/local/tomcat/logs
+      - graphdb_data:/opt/graphdb/home
+      - graphdb_work:/opt/graphdb/work
+      - graphdb_logs:/opt/graphdb/logs
     networks:
       - opensilex_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/rdf4j-server/protocol"]
+      test: ["CMD", "curl", "-f", "http://localhost:7200/rest/repositories"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
     
   mongodb:
@@ -802,8 +803,9 @@ services:
     restart: unless-stopped
 
 volumes:
-  rdf4j_data:
-  rdf4j_logs:
+  graphdb_data:
+  graphdb_work:
+  graphdb_logs:
   mongodb_data:
   
 networks:
@@ -866,43 +868,67 @@ chmod +x "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh"
 # Create alias for azureuser
 echo 'alias opensilex="/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh"' >> ~/.bash_aliases
 
-# Wait for databases to be fully ready
-print_status "Waiting for databases to be fully ready..."
+# Wait for GraphDB to be ready and create repository if needed
+print_status "Waiting for GraphDB to be ready..."
 for i in {1..60}; do
-    if docker exec opensilex-rdf4j curl -s http://localhost:8080/rdf4j-server/protocol >/dev/null 2>&1; then
-        echo "RDF4J is ready"
+    if docker exec opensilex-graphdb curl -s http://localhost:7200/rest/repositories >/dev/null 2>&1; then
+        echo "GraphDB is ready"
         break
     fi
-    echo "Waiting for RDF4J to start... ($i/60)"
+    echo "Waiting for GraphDB to start... ($i/60)"
     sleep 5
 done
 
-# Verify and recreate RDF4J repository if needed to prevent EOFExceptions
-print_status "Verifying RDF4J repository health..."
-if ! docker exec opensilex-rdf4j curl -s http://localhost:8080/rdf4j-server/repositories/opensilex >/dev/null 2>&1; then
-    echo "Creating OpenSILEX repository in RDF4J..."
-    docker exec opensilex-rdf4j curl -X PUT \
-        -H "Content-Type: text/turtle" \
-        -d "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-            @prefix rep: <http://www.openrdf.org/config/repository#> .
-            @prefix sr: <http://www.openrdf.org/config/repository/sail#> .
-            @prefix sail: <http://www.openrdf.org/config/sail#> .
-            @prefix native: <http://www.openrdf.org/config/sail/native#> .
-
-            [] a rep:Repository ;
-               rep:repositoryID \"opensilex\" ;
-               rdfs:label \"OpenSILEX Repository\" ;
-               rep:repositoryImpl [
-                  rep:repositoryType \"openrdf:SailRepository\" ;
-                  sr:sailImpl [
-                     sail:sailType \"openrdf:NativeStore\" ;
-                     native:tripleIndexes \"spoc,posc,cspo\"
-                  ]
-               ] ." \
-        http://localhost:8080/rdf4j-server/repositories/opensilex
-    sleep 5
+# Check if repository already exists
+print_status "Checking if OpenSILEX repository exists..."
+if docker exec opensilex-graphdb curl -s http://localhost:7200/rest/repositories/opensilex >/dev/null 2>&1; then
+    echo "OpenSILEX repository already exists, skipping creation"
 else
-    echo "RDF4J repository exists and is accessible"
+    print_status "Creating GraphDB repository..."
+    
+    # Create repository configuration file with dynamic IP
+    docker exec opensilex-graphdb sh -c "cat > /tmp/repo-config.ttl << 'EOF'
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rep: <http://www.openrdf.org/config/repository#> .
+@prefix sr: <http://www.openrdf.org/config/repository/sail#> .
+@prefix sail: <http://www.openrdf.org/config/sail#> .
+@prefix owlim: <http://www.ontotext.com/trree/owlim#> .
+
+[] a rep:Repository ;
+   rep:repositoryID \"opensilex\" ;
+   rdfs:label \"OpenSILEX Repository\" ;
+   rep:repositoryImpl [
+      rep:repositoryType \"graphdb:SailRepository\" ;
+      sr:sailImpl [
+         sail:sailType \"graphdb:Sail\" ;
+         owlim:ruleset \"rdfs-optimized\" ;
+         owlim:storage-folder \"storage\" ;
+         owlim:base-URL \"http://$VM_PUBLIC_IP/\" ;
+         owlim:repository-type \"file-repository\" ;
+         owlim:entity-index-size \"10000000\" ;
+         owlim:enable-context-index \"false\" ;
+         owlim:enablePredicateList \"true\" ;
+         owlim:enable-literal-index \"true\" ;
+         owlim:check-for-inconsistencies \"false\" ;
+         owlim:disable-sameAs \"true\" ;
+         owlim:query-timeout \"0\" ;
+         owlim:throw-QueryEvaluationException-on-timeout \"false\" ;
+         owlim:read-only \"false\"
+      ]
+   ] .
+EOF"
+
+    # Create the repository using the TTL file
+    if docker exec opensilex-graphdb curl -X POST \
+        -H "Content-Type: multipart/form-data" \
+        -F "config=@/tmp/repo-config.ttl" \
+        http://localhost:7200/rest/repositories; then
+        echo "GraphDB repository created successfully"
+    else
+        echo "WARNING: Repository creation failed, but continuing with installation"
+    fi
+    
+    sleep 10
 fi
 
 # Initialize OpenSILEX system
@@ -910,22 +936,27 @@ print_status "Initializing OpenSILEX system..."
 cd "$OPENSILEX_HOME"
 /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh system install
 
-# Reset and load ontologies (triplestore initialization)
+# Reset and load ontologies (triplestore initialization) - CRITICAL for GraphDB
 print_status "Initializing triplestore with ontologies..."
-# Retry the sparql reset-ontologies command up to 3 times
-for attempt in {1..3}; do
-    echo "Attempt $attempt: Initializing triplestore..."
+# Wait for GraphDB repository to be fully accessible
+sleep 15
+
+# Retry the sparql reset-ontologies command up to 5 times (GraphDB may need more time)
+for attempt in {1..5}; do
+    echo "Attempt $attempt: Initializing triplestore with ontologies..."
     if /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies; then
-        echo "Triplestore initialization successful"
+        echo "SUCCESS: Triplestore initialization completed"
         break
     else
         echo "Triplestore initialization failed on attempt $attempt"
-        if [ $attempt -eq 3 ]; then
-            echo "WARNING: Triplestore initialization failed after 3 attempts. You may need to run this manually after startup:"
+        if [ $attempt -eq 5 ]; then
+            echo "ERROR: Triplestore initialization failed after 5 attempts"
+            echo "OpenSILEX may not work correctly without ontologies"
+            echo "Run this command manually after installation:"
             echo "/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
         else
-            echo "Waiting 10 seconds before retry..."
-            sleep 10
+            echo "Waiting 15 seconds before retry..."
+            sleep 15
         fi
     fi
 done
@@ -1086,6 +1117,7 @@ Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 Environment=PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
 ExecStartPre=/usr/bin/docker compose up -d
+ExecStartPre=/bin/sleep 30
 ExecStart=/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
 ExecStop=/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server stop
 ExecStopPost=/usr/bin/docker compose down
@@ -1113,7 +1145,7 @@ echo "=============================================="
 echo "• Using azureuser for OpenSILEX installation"
 echo "• Directory structure: /home/azureuser/opensilex/{bin,config,data,logs}"
 echo "• Configuration files created with logging"
-echo "• MongoDB and RDF4J services configured"
+echo "• MongoDB and GraphDB services configured"
 echo "• Triplestore initialized with ontologies"
 echo "• Admin user created (admin@opensilex.org / admin)"
 echo "• Nginx reverse proxy configured on port 80"
@@ -1138,6 +1170,15 @@ echo "=============================================="
         # Upload scripts
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempSetupScript "$AdminUsername@${TargetIP}:~/setup-system.sh"
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempInstallScript "$AdminUsername@${TargetIP}:~/install-opensilex.sh"
+        
+        # Upload API keys config file if it exists
+        $apiKeysPath = Join-Path $PSScriptRoot "config\api-keys.conf"
+        if (Test-Path $apiKeysPath) {
+            Write-Info "Uploading API keys configuration..."
+            scp -i $privateKeyPath -o StrictHostKeyChecking=no $apiKeysPath "$AdminUsername@${TargetIP}:~/api-keys.conf"
+        } else {
+            Write-Warning "API keys file not found: $apiKeysPath"
+        }
         
         # Clean up temp files
         Remove-Item $tempSetupScript, $tempInstallScript
