@@ -410,24 +410,14 @@ print_error() { echo -e "`${RED}[ERROR]`${NC} `$1"; }
 print_status "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
-print_status "Creating OpenSILEX production user..."
-if ! id -u opensilex >/dev/null 2>&1; then
-    sudo useradd -s /bin/bash -d /home/opensilex/ -m opensilex
-    echo 'opensilex:OpenSILEX2024!' | sudo chpasswd
-    sudo usermod -a -G sudo opensilex
-    print_success "OpenSILEX user created with sudo permissions"
-else
-    print_warning "OpenSILEX user already exists"
-fi
+print_status "Using azureuser for OpenSILEX installation..."
 
 print_status "Installing Java JDK 17 (official OpenSILEX requirement)..."
 sudo apt install -y openjdk-17-jdk openjdk-17-jre
 echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
 echo 'export PATH=`$JAVA_HOME/bin:`$PATH' >> ~/.bashrc
 
-# Also add to opensilex user
-sudo -u opensilex bash -c 'echo "export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> /home/opensilex/.bashrc'
-sudo -u opensilex bash -c 'echo "export PATH=`$JAVA_HOME/bin:`$PATH" >> /home/opensilex/.bashrc'
+# Environment variables already added to azureuser above
 
 print_status "Installing Docker (required for MongoDB/RDF4J containers)..."
 sudo apt install -y ca-certificates curl gnupg lsb-release
@@ -439,7 +429,6 @@ sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin d
 
 print_status "Configuring Docker..."
 sudo usermod -aG docker `$(whoami)
-sudo usermod -aG docker opensilex
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo chmod 666 /var/run/docker.sock
@@ -456,10 +445,8 @@ print_success "System setup completed!"
 #!/bin/bash
 set -e
 
-# Switch to opensilex user for all operations
-echo "Switching to OpenSILEX user for installation..."
-exec sudo -u opensilex bash << 'OPENSILEX_USER_SCRIPT'
-set -e
+# Continue with azureuser for all operations
+echo "Continuing OpenSILEX installation as azureuser..."
 
 # Source environment variables
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
@@ -477,12 +464,12 @@ print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-OPENSILEX_HOME="/home/opensilex"
-cd "$OPENSILEX_HOME"
+OPENSILEX_HOME="/home/azureuser/opensilex"
 
 # Create OpenSILEX directory structure following production guide
 print_status "Creating OpenSILEX production directory structure..."
 mkdir -p "$OPENSILEX_HOME/bin"
+cd "$OPENSILEX_HOME"
 mkdir -p "$OPENSILEX_HOME/config"
 mkdir -p "$OPENSILEX_HOME/data"
 mkdir -p "$OPENSILEX_HOME/logs"
@@ -518,48 +505,63 @@ else
     exit 1
 fi
 
+# Get VM public IP for configuration
+print_status "Fetching VM public IP address..."
+VM_PUBLIC_IP=""
+# Try multiple methods to get public IP
+if command -v curl >/dev/null 2>&1; then
+    VM_PUBLIC_IP=$(curl -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 ipinfo.io/ip 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null)
+fi
+
+# Fallback if curl methods fail
+if [ -z "$VM_PUBLIC_IP" ]; then
+    VM_PUBLIC_IP="localhost"
+    print_warning "Could not fetch public IP, using localhost. You may need to update publicURI manually."
+else
+    print_success "Using VM public IP: $VM_PUBLIC_IP"
+fi
+
 # Create configuration files following production guide
 print_status "Creating production configuration files..."
 
-# Main configuration file
-cat > "$OPENSILEX_HOME/config/opensilex.yml" << 'CONFIG_EOF'
+# Main configuration file with dynamic IP
+cat > "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_EOF
 # OpenSILEX Production Configuration
 ontologies:
-  baseURI: "http://opensilex.production/"
+  baseURI: "http://$VM_PUBLIC_IP/"
   baseURIAlias: "prod"
   sparql:
     rdf4j:
-      serverURI: "http://localhost:8080/rdf4j-server/"
-      repository: "opensilex"
-
-sparql:
-  rdf4j:
-    serverURI: "http://localhost:8080/rdf4j-server/"
-    repository: "opensilex"
+      implementation: org.opensilex.sparql.rdf4j.RDF4JServiceFactory
+      config:
+        serverURI: "http://localhost:8080/rdf4j-server/"
+        repository: "opensilex"
 
 big-data:
   mongodb:
-    host: "localhost"
-    port: 27017
-    database: "opensilex"
-
-nosql:
-  mongodb:
-    host: "localhost"
-    port: 27017
-    database: "opensilex"
+    implementation: org.opensilex.nosql.mongodb.MongoDBService
+    config:
+      host: "localhost"
+      port: 27017
+      database: "opensilex"
 
 file-system:
-  storageBasePath: "/home/opensilex/data/files"
+  storageBasePath: "/home/azureuser/opensilex/data/files"
 
 server:
   host: "0.0.0.0"
   port: 8666
-  publicURI: "http://localhost:8666"
+  publicURI: "http://$VM_PUBLIC_IP:8666"
 
 logging:
   config:
-    file: "/home/opensilex/config/logback.xml"
+    file: "/home/azureuser/opensilex/config/logback.xml"
+
+system:
+  defaultLanguage: "en"
+
+core:
+  enableLogs: true
 CONFIG_EOF
 
 # Logging configuration file
@@ -575,9 +577,9 @@ cat > "$OPENSILEX_HOME/config/logback.xml" << 'LOGBACK_EOF'
     
     <!-- File appender -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>/home/opensilex/logs/opensilex.log</file>
+        <file>/home/azureuser/opensilex/logs/opensilex.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>/home/opensilex/logs/opensilex.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>/home/azureuser/opensilex/logs/opensilex.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
             <totalSizeCap>1GB</totalSizeCap>
@@ -676,7 +678,7 @@ cat > "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh" << 'WRAPPER_EOF'
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
-CONFIG_FILE="/home/opensilex/config/opensilex.yml"
+CONFIG_FILE="/home/azureuser/opensilex/config/opensilex.yml"
 
 cd $SCRIPT_DIR
 
@@ -692,10 +694,9 @@ java --add-opens java.base/java.io=ALL-UNNAMED \
 WRAPPER_EOF
 
 chmod +x "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh"
-chown -R opensilex:opensilex "$OPENSILEX_HOME/bin/$VERSION/"
 
-# Create alias for opensilex user
-sudo -u opensilex bash -c 'echo "alias opensilex=\"/home/opensilex/bin/1.4.9-rdg/opensilex.sh\"" >> /home/opensilex/.bash_aliases'
+# Create alias for azureuser
+echo 'alias opensilex="/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh"' >> ~/.bash_aliases
 
 # Wait for databases to be fully ready
 print_status "Waiting for databases to be fully ready..."
@@ -711,21 +712,21 @@ done
 # Initialize OpenSILEX system
 print_status "Initializing OpenSILEX system..."
 cd "$OPENSILEX_HOME"
-sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh system install
+/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh system install
 
 # Reset and load ontologies (triplestore initialization)
 print_status "Initializing triplestore with ontologies..."
 # Retry the sparql reset-ontologies command up to 3 times
 for attempt in {1..3}; do
     echo "Attempt $attempt: Initializing triplestore..."
-    if sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies; then
+    if /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies; then
         echo "Triplestore initialization successful"
         break
     else
         echo "Triplestore initialization failed on attempt $attempt"
         if [ $attempt -eq 3 ]; then
             echo "WARNING: Triplestore initialization failed after 3 attempts. You may need to run this manually after startup:"
-            echo "sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
+            echo "/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
         else
             echo "Waiting 10 seconds before retry..."
             sleep 10
@@ -738,7 +739,7 @@ print_status "Creating admin user..."
 # Retry user creation up to 3 times
 for attempt in {1..3}; do
     echo "Attempt $attempt: Creating admin user..."
-    if sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh user add \
+    if /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh user add \
         --admin \
         --email="admin@opensilex.org" \
         --firstName="System" \
@@ -750,7 +751,7 @@ for attempt in {1..3}; do
         echo "User creation failed on attempt $attempt"
         if [ $attempt -eq 3 ]; then
             echo "WARNING: Admin user creation failed after 3 attempts. You may need to run this manually after startup:"
-            echo "sudo -u opensilex /home/opensilex/bin/1.4.9-rdg/opensilex.sh user add --admin --email=admin@opensilex.org --firstName=System --lastName=Administrator --password=admin"
+            echo "/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh user add --admin --email=admin@opensilex.org --firstName=System --lastName=Administrator --password=admin"
         else
             echo "Waiting 10 seconds before retry..."
             sleep 10
@@ -758,13 +759,11 @@ for attempt in {1..3}; do
     fi
 done
 
-OPENSILEX_USER_SCRIPT
-
-# Create startup and management scripts (as root)
+# Create startup and management scripts
 print_status "Creating management scripts..."
 
 # Startup script
-cat > /home/opensilex/start-opensilex.sh << 'START_EOF'
+cat > /home/azureuser/start-opensilex.sh << 'START_EOF'
 #!/bin/bash
 set -e
 
@@ -772,7 +771,7 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
 export NODE_ENV=production
 
-OPENSILEX_HOME="/home/opensilex"
+OPENSILEX_HOME="/home/azureuser/opensilex"
 cd $OPENSILEX_HOME
 
 echo "Starting Docker services..."
@@ -780,17 +779,16 @@ docker compose up -d
 sleep 10
 
 echo "Starting OpenSILEX server..."
-/home/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
+/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
 START_EOF
 
-chmod +x /home/opensilex/start-opensilex.sh
-chown opensilex:opensilex /home/opensilex/start-opensilex.sh
+chmod +x /home/azureuser/start-opensilex.sh
 
 # Stop script
-cat > /home/opensilex/stop-opensilex.sh << 'STOP_EOF'
+cat > /home/azureuser/stop-opensilex.sh << 'STOP_EOF'
 #!/bin/bash
 
-OPENSILEX_HOME="/home/opensilex"
+OPENSILEX_HOME="/home/azureuser/opensilex"
 cd $OPENSILEX_HOME
 
 echo "Stopping Docker services..."
@@ -799,11 +797,10 @@ docker compose down
 echo "OpenSILEX stopped successfully"
 STOP_EOF
 
-chmod +x /home/opensilex/stop-opensilex.sh
-chown opensilex:opensilex /home/opensilex/stop-opensilex.sh
+chmod +x /home/azureuser/stop-opensilex.sh
 
 # Help/Instructions script
-cat > /home/opensilex/opensilex-help.sh << 'HELP_EOF'
+cat > /home/azureuser/opensilex-help.sh << 'HELP_EOF'
 #!/bin/bash
 
 cat << 'INSTRUCTIONS'
@@ -824,32 +821,31 @@ Common Commands:
 • Logs: sudo journalctl -u opensilex -f
 
 Manual Operations:
-• Start: cd /home/opensilex && ./start-opensilex.sh
-• Stop: cd /home/opensilex && ./stop-opensilex.sh
+• Start: cd /home/azureuser && ./start-opensilex.sh
+• Stop: cd /home/azureuser && ./stop-opensilex.sh
 
 Configuration Files:
-• Main Config: /home/opensilex/config/opensilex.yml
-• Logging: /home/opensilex/config/logback.xml
-• Docker: /home/opensilex/docker-compose.yml
+• Main Config: /home/azureuser/opensilex/config/opensilex.yml
+• Logging: /home/azureuser/opensilex/config/logback.xml
+• Docker: /home/azureuser/opensilex/docker-compose.yml
 
 Data Locations:
-• File Storage: /home/opensilex/data/files
-• Logs: /home/opensilex/logs/
+• File Storage: /home/azureuser/opensilex/data/files
+• Logs: /home/azureuser/opensilex/logs/
 • Database Data: Docker volumes
 
 ==============================================
 INSTRUCTIONS
 EOF
 
-chmod +x /home/opensilex/opensilex-help.sh
-chown opensilex:opensilex /home/opensilex/opensilex-help.sh
+chmod +x /home/azureuser/opensilex-help.sh
 
-# Add alias for opensilex user
-sudo -u opensilex bash -c 'echo "alias opensilex-help=/home/opensilex/opensilex-help.sh" >> /home/opensilex/.bashrc'
-sudo -u opensilex bash -c 'echo "alias opensilex-start=\"sudo systemctl start opensilex\"" >> /home/opensilex/.bashrc'
-sudo -u opensilex bash -c 'echo "alias opensilex-stop=\"sudo systemctl stop opensilex\"" >> /home/opensilex/.bashrc'
-sudo -u opensilex bash -c 'echo "alias opensilex-status=\"sudo systemctl status opensilex\"" >> /home/opensilex/.bashrc'
-sudo -u opensilex bash -c 'echo "alias opensilex-logs=\"sudo journalctl -u opensilex -f\"" >> /home/opensilex/.bashrc'
+# Add alias for azureuser
+echo 'alias opensilex-help=/home/azureuser/opensilex-help.sh' >> ~/.bashrc
+echo 'alias opensilex-start="sudo systemctl start opensilex"' >> ~/.bashrc
+echo 'alias opensilex-stop="sudo systemctl stop opensilex"' >> ~/.bashrc
+echo 'alias opensilex-status="sudo systemctl status opensilex"' >> ~/.bashrc
+echo 'alias opensilex-logs="sudo journalctl -u opensilex -f"' >> ~/.bashrc
 
 # Create systemd service
 print_status "Creating systemd service..."
@@ -861,12 +857,12 @@ Requires=docker.service
 
 [Service]
 Type=exec
-User=opensilex
-WorkingDirectory=/home/opensilex
-Environment=JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-Environment=PATH=/usr/lib/jvm/java-11-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+User=azureuser
+WorkingDirectory=/home/azureuser
+Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+Environment=PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
-ExecStart=/home/opensilex/start-opensilex.sh
+ExecStart=/home/azureuser/start-opensilex.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -884,8 +880,8 @@ echo ""
 echo "==============================================" 
 echo "        Installation Summary"
 echo "==============================================" 
-echo "• OpenSILEX user created with sudo permissions"
-echo "• Directory structure: /home/opensilex/{bin,config,data,logs}"
+echo "• Using azureuser for OpenSILEX installation"
+echo "• Directory structure: /home/azureuser/opensilex/{bin,config,data,logs}"
 echo "• Configuration files created with logging"
 echo "• MongoDB and RDF4J services configured"
 echo "• Triplestore initialized with ontologies"
@@ -896,7 +892,7 @@ echo ""
 echo "Next steps:"
 echo "1. Start service: systemctl start opensilex"
 echo "2. Access: http://$(curl -s ifconfig.me):8666/"
-echo "3. Run help: /home/opensilex/opensilex-help.sh"
+echo "3. Run help: /home/azureuser/opensilex-help.sh"
 echo "==============================================" 
 '@
 
