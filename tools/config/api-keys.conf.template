@@ -1,0 +1,20 @@
+# API Keys Configuration Template
+# 
+# Copy this file to 'api-keys.conf' and add your actual API keys
+# 
+# IMPORTANT: 
+#   - The api-keys.conf file will be ignored by git for security
+#   - Never commit actual API keys to version control
+#   - Get your Agroportal API key from: https://agroportal.lirmm.fr/account
+#
+# Usage:
+#   1. Copy this file: cp api-keys.conf.template api-keys.conf
+#   2. Edit api-keys.conf with your actual API keys
+#   3. Run the installation script normally
+#
+
+# Agroportal API Key (required for ontology integration)
+AGROPORTAL_API_KEY="your-agroportal-api-key-here"
+
+# Future API keys can be added below:
+# OTHER_SERVICE_API_KEY="your-other-key-here"

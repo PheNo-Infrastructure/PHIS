@@ -1,0 +1,19 @@
+# Ignore sensitive configuration files
+config/api-keys.conf
+config/*.conf
+
+# Ignore log files
+*.log
+logs/
+
+# Ignore temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
