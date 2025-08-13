@@ -217,8 +217,9 @@ function Deploy-VM {
             
             # Create NSG with required ports
             $nsgRule1 = New-AzNetworkSecurityRuleConfig -Name "SSH" -Protocol Tcp -Direction Inbound -Priority 1000 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 22 -Access Allow
-            $nsgRule2 = New-AzNetworkSecurityRuleConfig -Name "OpenSILEX" -Protocol Tcp -Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 8666 -Access Allow
-            $nsg = New-AzNetworkSecurityGroup -Name "$VMName-nsg" -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $nsgRule1,$nsgRule2
+            $nsgRule2 = New-AzNetworkSecurityRuleConfig -Name "HTTP" -Protocol Tcp -Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 80 -Access Allow
+            $nsgRule3 = New-AzNetworkSecurityRuleConfig -Name "OpenSILEX" -Protocol Tcp -Direction Inbound -Priority 1002 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 8666 -Access Allow
+            $nsg = New-AzNetworkSecurityGroup -Name "$VMName-nsg" -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $nsgRule1,$nsgRule2,$nsgRule3
             
             $nic = New-AzNetworkInterface -Name "$VMName-nic" -ResourceGroupName $ResourceGroupName -Location $Location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
             
@@ -435,6 +436,9 @@ sudo chmod 666 /var/run/docker.sock
 
 print_status "Installing essential tools..."
 sudo apt install -y curl wget unzip
+
+print_status "Installing and configuring nginx..."
+sudo apt install -y nginx
 
 print_success "System setup completed!"
 "@
@@ -759,97 +763,112 @@ for attempt in {1..3}; do
     fi
 done
 
-# Create startup and management scripts
-print_status "Creating management scripts..."
-
-# Startup script
-cat > /home/azureuser/start-opensilex.sh << 'START_EOF'
-#!/bin/bash
-set -e
-
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export PATH=$JAVA_HOME/bin:$PATH
-export NODE_ENV=production
-
-OPENSILEX_HOME="/home/azureuser/opensilex"
-cd $OPENSILEX_HOME
-
-echo "Starting Docker services..."
-docker compose up -d
-sleep 10
-
-echo "Starting OpenSILEX server..."
-/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
-START_EOF
-
-chmod +x /home/azureuser/start-opensilex.sh
-
-# Stop script
-cat > /home/azureuser/stop-opensilex.sh << 'STOP_EOF'
-#!/bin/bash
-
-OPENSILEX_HOME="/home/azureuser/opensilex"
-cd $OPENSILEX_HOME
-
-echo "Stopping Docker services..."
-docker compose down
-
-echo "OpenSILEX stopped successfully"
-STOP_EOF
-
-chmod +x /home/azureuser/stop-opensilex.sh
-
-# Help/Instructions script
-cat > /home/azureuser/opensilex-help.sh << 'HELP_EOF'
-#!/bin/bash
-
-cat << 'INSTRUCTIONS'
-==============================================
-        OpenSILEX Production Installation
-==============================================
-
-Access Information:
-• Web Interface: http://your-server-ip:8666/
-• API Documentation: http://your-server-ip:8666/api-docs
-• Default Admin Login: admin@opensilex.org / admin
-
-Common Commands:
-• Start OpenSILEX: sudo systemctl start opensilex
-• Stop OpenSILEX: sudo systemctl stop opensilex
-• Restart: sudo systemctl restart opensilex
-• Status: sudo systemctl status opensilex
-• Logs: sudo journalctl -u opensilex -f
-
-Manual Operations:
-• Start: cd /home/azureuser && ./start-opensilex.sh
-• Stop: cd /home/azureuser && ./stop-opensilex.sh
-
-Configuration Files:
-• Main Config: /home/azureuser/opensilex/config/opensilex.yml
-• Logging: /home/azureuser/opensilex/config/logback.xml
-• Docker: /home/azureuser/opensilex/docker-compose.yml
-
-Data Locations:
-• File Storage: /home/azureuser/opensilex/data/files
-• Logs: /home/azureuser/opensilex/logs/
-• Database Data: Docker volumes
-
-==============================================
-INSTRUCTIONS
-EOF
-
-chmod +x /home/azureuser/opensilex-help.sh
-
-# Add alias for azureuser
-echo 'alias opensilex-help=/home/azureuser/opensilex-help.sh' >> ~/.bashrc
+# Add useful aliases for azureuser  
+print_status "Setting up OpenSILEX aliases..."
+echo 'alias opensilex="/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh"' >> ~/.bashrc
 echo 'alias opensilex-start="sudo systemctl start opensilex"' >> ~/.bashrc
 echo 'alias opensilex-stop="sudo systemctl stop opensilex"' >> ~/.bashrc
 echo 'alias opensilex-status="sudo systemctl status opensilex"' >> ~/.bashrc
 echo 'alias opensilex-logs="sudo journalctl -u opensilex -f"' >> ~/.bashrc
 
+print_success "OpenSILEX aliases configured"
+
+# Configure nginx reverse proxy
+print_status "Configuring nginx reverse proxy..."
+
+# Create nginx config with error handling
+if sudo tee /etc/nginx/sites-available/opensilex << 'NGINX_CONFIG'
+server {
+    listen 80;
+    server_name _;
+    
+    # Increase client max body size for file uploads
+    client_max_body_size 100M;
+    
+    # Proxy settings for OpenSILEX
+    location / {
+        proxy_pass http://127.0.0.1:8666;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    
+    # Handle WebSocket connections for real-time features
+    location /ws {
+        proxy_pass http://127.0.0.1:8666;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINX_CONFIG
+then
+    print_success "Nginx configuration file created successfully"
+else
+    print_error "Failed to create nginx configuration file"
+    exit 1
+fi
+
+# Verify the config file was created
+if [ ! -f "/etc/nginx/sites-available/opensilex" ]; then
+    print_error "Nginx configuration file not found after creation"
+    exit 1
+fi
+
+# Enable the site and disable default
+print_status "Enabling OpenSILEX site and disabling default..."
+sudo ln -sf /etc/nginx/sites-available/opensilex /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Verify the symlink was created
+if [ ! -L "/etc/nginx/sites-enabled/opensilex" ]; then
+    print_error "Failed to create nginx site symlink"
+    exit 1
+fi
+
+# Test nginx configuration
+print_status "Testing nginx configuration..."
+if sudo nginx -t; then
+    print_success "Nginx configuration test passed"
+else
+    print_error "Nginx configuration test failed"
+    exit 1
+fi
+
+# Start and enable nginx
+print_status "Starting and enabling nginx service..."
+sudo systemctl start nginx
+sudo systemctl enable nginx
+sudo systemctl reload nginx
+
+# Verify nginx is running
+if sudo systemctl is-active --quiet nginx; then
+    print_success "Nginx is running successfully"
+else
+    print_error "Nginx failed to start"
+    sudo systemctl status nginx
+    exit 1
+fi
+
+# Test if nginx is serving on port 80
+sleep 5
+if curl -s -I http://localhost/ | grep -q "nginx"; then
+    print_success "Nginx configured as reverse proxy on port 80"
+else
+    print_warning "Nginx may not be properly configured - please check manually"
+fi
+
 # Create systemd service
 print_status "Creating systemd service..."
-cat > /etc/systemd/system/opensilex.service << 'SERVICE_EOF'
+sudo tee /etc/systemd/system/opensilex.service << 'SERVICE_EOF'
 [Unit]
 Description=OpenSILEX Server (Production)
 After=network.target docker.service
@@ -858,11 +877,14 @@ Requires=docker.service
 [Service]
 Type=exec
 User=azureuser
-WorkingDirectory=/home/azureuser
+WorkingDirectory=/home/azureuser/opensilex
 Environment=JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 Environment=PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NODE_ENV=production
-ExecStart=/home/azureuser/start-opensilex.sh
+ExecStartPre=/usr/bin/docker compose up -d
+ExecStart=/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
+ExecStop=/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server stop
+ExecStopPost=/usr/bin/docker compose down
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -872,8 +894,8 @@ StandardError=journal
 WantedBy=multi-user.target
 SERVICE_EOF
 
-systemctl daemon-reload
-systemctl enable opensilex.service
+sudo systemctl daemon-reload
+sudo systemctl enable opensilex.service
 
 print_success "OpenSILEX production installation completed!"
 echo ""
@@ -886,12 +908,13 @@ echo "• Configuration files created with logging"
 echo "• MongoDB and RDF4J services configured"
 echo "• Triplestore initialized with ontologies"
 echo "• Admin user created (admin@opensilex.org / admin)"
+echo "• Nginx reverse proxy configured on port 80"
 echo "• Startup scripts and aliases configured"
 echo "• Systemd service configured"
 echo ""
 echo "Next steps:"
 echo "1. Start service: systemctl start opensilex"
-echo "2. Access: http://$(curl -s ifconfig.me):8666/"
+echo "2. Access: http://$(curl -s ifconfig.me)/ (nginx) or :8666 (direct)"
 echo "3. Run help: /home/azureuser/opensilex-help.sh"
 echo "==============================================" 
 '@
