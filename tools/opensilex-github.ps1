@@ -25,10 +25,10 @@ param(
     [string]$Command = "Menu",
     
     [Parameter(Mandatory=$false)]
-    [string]$VMName = "phis-debian12",
+    [string]$VMName = "phis-debian12-TEST",
     
     [Parameter(Mandatory=$false)]
-    [string]$ResourceGroupName = "RG-OPENSILEX-debian12",
+    [string]$ResourceGroupName = "RG-OPENSILEX-debian12-TEST",
     
     [Parameter(Mandatory=$false)]
     [string]$Location = "westeurope",
@@ -642,21 +642,12 @@ security:
 
 # Dashboard configuration with metrics
 front:
-  metrics:
-    enable: true
-    system:
-      enableMetrics: true
-      firstMetricAfterInitialisation: 1
-      metricsTimeInterval: 30
-      timeUnit: "DAYS"
-    experiments:
-      enableMetrics: true
-      firstMetricAfterInitialisation: 1
-      metricsTimeInterval: 7
-      timeUnit: "DAYS"
   dashboard:
-    variable:
-      variableDetailsLabel: "Production Environment"
+    graph1:
+      # Variable URI for dashboard visualization (leave empty for default logo)
+      variable: ""
+      # Optional location information for data context
+      dataLocationInformations: "Production Environment Data"
   # Agroportal ontology mappings for variable components
   agroportal:
     entity:
@@ -681,8 +672,42 @@ system:
   defaultLanguage: "en"
 
 core:
-  enableLogs: true
-  
+    enableLogs: true
+    sharedResourceInstances:
+      - uri: "http://opensilex.org/sandbox"
+        apiUrl: "http://opensilex.org/sandbox/rest"
+        label:
+          fr: "SANDBOX"
+          en: "SANDBOX"
+        accountName: "guest@opensilex.org"
+        accountPassword: "guest"
+      - uri: "http://aims.fao.org/aos/agrovoc/"
+        apiUrl: "https://agrovoc.fao.org/sparql"
+        label:
+          fr: "AGROVOC"
+          en: "AGROVOC"
+        accountName: ""
+        accountPassword: ""
+    # Metrics options (MetricsConfig)
+    metrics:
+      # Activate access metrics (boolean)
+      enableMetrics: true
+      # Metrics configs about system (SystemMetricsConfig)
+      system:
+        # First metrics for any time depending on is time unit (int)
+        timeBeforeFirstMetric: 1
+        # Delay between whole system metrics (combined with corresponding TimeUnit) (int)
+        delayBetweenMetrics: 30
+        # Default metrics units : DAYS, HOURS, MINUTES, SECONDS are authorized (String)
+        metricsTimeUnit: DAYS
+      # Metrics configs about experiments (ExperimentsMetricsConfig)
+      experiments:
+        # First metrics for any time depending on is time unit (int)
+        timeBeforeFirstMetric: 1
+        # Delay between whole system metrics (combined with corresponding TimeUnit) (int)
+        delayBetweenMetrics: 7
+        # Default metrics units : DAYS, HOURS, MINUTES, SECONDS are authorized (String)
+        metricsTimeUnit: DAYS
 # Additional production configurations
 phisws:
   # Enable CORS for production

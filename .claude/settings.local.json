@@ -34,7 +34,9 @@
       "WebFetch(domain:forgemia.inrae.fr)",
       "WebFetch(domain:forge.inrae.fr)",
       "WebFetch(domain:opensilex.github.io)",
-      "Bash(Remove-Item \"C:\\Users\\sebas\\Documents\\GitHub\\PHIS\\tools\\test-script.ps1\" -Force)"
+      "Bash(Remove-Item \"C:\\Users\\sebas\\Documents\\GitHub\\PHIS\\tools\\test-script.ps1\" -Force)",
+      "WebFetch(domain:agroportal.lirmm.fr)",
+      "WebFetch(domain:data.agroportal.lirmm.fr)"
     ],
     "deny": []
   }
