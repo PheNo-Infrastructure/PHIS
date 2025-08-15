@@ -36,7 +36,9 @@
       "WebFetch(domain:opensilex.github.io)",
       "Bash(Remove-Item \"C:\\Users\\sebas\\Documents\\GitHub\\PHIS\\tools\\test-script.ps1\" -Force)",
       "WebFetch(domain:agroportal.lirmm.fr)",
-      "WebFetch(domain:data.agroportal.lirmm.fr)"
+      "WebFetch(domain:data.agroportal.lirmm.fr)",
+      "Bash(cmd /c:*)",
+      "Bash(timeout 60 python:*)"
     ],
     "deny": []
   }
