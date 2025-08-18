@@ -163,12 +163,78 @@ def map_sandbox_uri_to_vm(uri: str) -> str:
         entity_name = uri.replace('opensilex-sandbox:id/variable/entity.', '')
         return f'http://opensilex.test/id/variable/entity.{entity_name}'
     
+    # Map test entity URIs to VM URIs
+    if uri.startswith('test:id/variable/entity_of_interest.'):
+        entity_name = uri.replace('test:id/variable/entity_of_interest.', '')
+        return f'http://opensilex.test/id/variable/entity_of_interest.{entity_name}'
+    
+    if uri.startswith('test:id/variable/entity.'):
+        entity_name = uri.replace('test:id/variable/entity.', '')
+        return f'http://opensilex.test/id/variable/entity.{entity_name}'
+    
+    # Map any other test entities
+    if uri.startswith('test:id/'):
+        test_path = uri.replace('test:id/', '')
+        return f'http://opensilex.test/id/{test_path}'
+    
     # Keep other URIs as-is (they should already exist in VM)
     return uri
 
 
-def clean_variable_for_import(variable: Dict) -> Dict:
-    """Clean variable data for import - convert nested objects to URIs and map sandbox URIs"""
+def validate_variable_dependencies(variable: Dict, existing_entities: set, existing_characteristics: set, 
+                                 existing_methods: set, existing_units: set, vm_client=None) -> bool:
+    """Check if variable has all required dependencies, create them if possible, return True if can be imported"""
+    creatable_deps = []
+    uncreatable_deps = []
+    
+    # Check entity dependency
+    if 'entity' in variable and isinstance(variable['entity'], dict):
+        entity_uri = map_sandbox_uri_to_vm(variable['entity'].get('uri'))
+        if entity_uri not in existing_entities:
+            creatable_deps.append(f"entity: {entity_uri}")
+    
+    # Check entity_of_interest dependency
+    if 'entity_of_interest' in variable and isinstance(variable['entity_of_interest'], dict):
+        entity_uri = map_sandbox_uri_to_vm(variable['entity_of_interest'].get('uri'))
+        if entity_uri not in existing_entities:
+            creatable_deps.append(f"entity_of_interest: {entity_uri}")
+    
+    # Check characteristic dependency
+    if 'characteristic' in variable and isinstance(variable['characteristic'], dict):
+        char_uri = map_sandbox_uri_to_vm(variable['characteristic'].get('uri'))
+        if char_uri not in existing_characteristics:
+            creatable_deps.append(f"characteristic: {char_uri}")
+    
+    # Check method dependency
+    if 'method' in variable and isinstance(variable['method'], dict):
+        method_uri = map_sandbox_uri_to_vm(variable['method'].get('uri'))
+        if method_uri not in existing_methods:
+            creatable_deps.append(f"method: {method_uri}")
+    
+    # Check unit dependency
+    if 'unit' in variable and isinstance(variable['unit'], dict):
+        unit_uri = map_sandbox_uri_to_vm(variable['unit'].get('uri'))
+        if unit_uri not in existing_units:
+            creatable_deps.append(f"unit: {unit_uri}")
+    
+    # Most dependencies can be auto-created, so we'll attempt import
+    # The clean_variable_for_import function will handle the actual creation
+    if creatable_deps:
+        var_name = variable.get('name', 'unknown')
+        print(f"[INFO] Variable {var_name} needs dependencies: {', '.join(creatable_deps[:3])} - will auto-create")
+    
+    # Only skip if there are truly uncreatable dependencies (none currently)
+    if uncreatable_deps:
+        var_name = variable.get('name', 'unknown') 
+        print(f"[SKIP] Variable {var_name} has uncreatable dependencies: {', '.join(uncreatable_deps[:3])}")
+        return False
+    
+    return True
+
+
+def clean_variable_for_import(variable: Dict, existing_entities: set = None, existing_characteristics: set = None, 
+                             existing_methods: set = None, existing_units: set = None, vm_client = None) -> Dict:
+    """Clean variable data for import with smart dependency creation"""
     cleaned = variable.copy()
     
     # Remove fields that shouldn't be copied
@@ -176,21 +242,83 @@ def clean_variable_for_import(variable: Dict) -> Dict:
     for field in fields_to_remove:
         cleaned.pop(field, None)
     
-    # Convert nested objects to URI strings and map sandbox URIs
+    # Smart dependency handling for entities
     if 'entity' in cleaned and isinstance(cleaned['entity'], dict):
-        cleaned['entity'] = map_sandbox_uri_to_vm(cleaned['entity'].get('uri'))
+        original_uri = cleaned['entity'].get('uri')
+        entity_uri = map_sandbox_uri_to_vm(original_uri)
+        print(f"[DEBUG] Entity URI mapping: {original_uri} -> {entity_uri}")
+        
+        if existing_entities is not None and entity_uri not in existing_entities:
+            if vm_client:
+                from opensilex_client import create_minimal_entity
+                if create_minimal_entity(vm_client, entity_uri):
+                    existing_entities.add(entity_uri)
+                    print(f"[INFO] Successfully created and added entity: {entity_uri}")
+                    # Small delay to ensure entity is committed before variable creation
+                    import time
+                    time.sleep(0.2)
+                else:
+                    print(f"[ERROR] Failed to create entity: {entity_uri}")
+                    # Don't add to existing_entities if creation failed
+        cleaned['entity'] = entity_uri
     
     if 'entity_of_interest' in cleaned and isinstance(cleaned['entity_of_interest'], dict):
-        cleaned['entity_of_interest'] = map_sandbox_uri_to_vm(cleaned['entity_of_interest'].get('uri'))
+        original_uri = cleaned['entity_of_interest'].get('uri')
+        entity_uri = map_sandbox_uri_to_vm(original_uri)
+        print(f"[DEBUG] Entity of Interest URI mapping: {original_uri} -> {entity_uri}")
+        
+        if existing_entities is not None and entity_uri not in existing_entities:
+            if vm_client:
+                from opensilex_client import create_minimal_entity
+                if create_minimal_entity(vm_client, entity_uri):
+                    existing_entities.add(entity_uri)
+                    print(f"[INFO] Successfully created and added entity_of_interest: {entity_uri}")
+                    # Small delay to ensure entity is committed before variable creation
+                    import time
+                    time.sleep(0.2)
+                else:
+                    print(f"[ERROR] Failed to create entity_of_interest: {entity_uri}")
+                    # Don't add to existing_entities if creation failed
+        cleaned['entity_of_interest'] = entity_uri
     
+    # Smart dependency handling for characteristics
     if 'characteristic' in cleaned and isinstance(cleaned['characteristic'], dict):
-        cleaned['characteristic'] = map_sandbox_uri_to_vm(cleaned['characteristic'].get('uri'))
+        char_uri = map_sandbox_uri_to_vm(cleaned['characteristic'].get('uri'))
+        if existing_characteristics is not None and char_uri not in existing_characteristics:
+            if vm_client:
+                from opensilex_client import create_minimal_characteristic
+                if create_minimal_characteristic(vm_client, char_uri):
+                    existing_characteristics.add(char_uri)
+                    # Small delay to ensure characteristic is committed
+                    import time
+                    time.sleep(0.1)
+        cleaned['characteristic'] = char_uri
     
+    # Smart dependency handling for methods
     if 'method' in cleaned and isinstance(cleaned['method'], dict):
-        cleaned['method'] = map_sandbox_uri_to_vm(cleaned['method'].get('uri'))
+        method_uri = map_sandbox_uri_to_vm(cleaned['method'].get('uri'))
+        if existing_methods is not None and method_uri not in existing_methods:
+            if vm_client:
+                from opensilex_client import create_minimal_method
+                if create_minimal_method(vm_client, method_uri):
+                    existing_methods.add(method_uri)
+                    # Small delay to ensure method is committed
+                    import time
+                    time.sleep(0.1)
+        cleaned['method'] = method_uri
     
+    # Smart dependency handling for units
     if 'unit' in cleaned and isinstance(cleaned['unit'], dict):
-        cleaned['unit'] = map_sandbox_uri_to_vm(cleaned['unit'].get('uri'))
+        unit_uri = map_sandbox_uri_to_vm(cleaned['unit'].get('uri'))
+        if existing_units is not None and unit_uri not in existing_units:
+            if vm_client:
+                from opensilex_client import create_minimal_unit
+                if create_minimal_unit(vm_client, unit_uri):
+                    existing_units.add(unit_uri)
+                    # Small delay to ensure unit is committed
+                    import time
+                    time.sleep(0.1)
+        cleaned['unit'] = unit_uri
     
     # Add required datatype if missing (default to decimal for numeric data)
     if 'datatype' not in cleaned or cleaned.get('datatype') is None:
@@ -251,17 +379,23 @@ def import_sandbox_variables():
         print("[ERROR] Failed to authenticate with VM")
         return
     
-    # Import dependency chain with small batches for testing
+    # Import dependency chain with smart dependency creation
     success_counts = {}
     
-    # Define what to import - import all dependencies first, then variables
+    # Define what to import - import dependencies first, then variables with smart dependency creation
     import_config = [
         ("core/units", "units", None, "regular"),  # Import ALL units
         ("core/methods", "methods", None, "regular"),  # Import ALL methods  
         ("core/entities", "entities", None, "regular"),  # Import ALL entities  
         ("core/characteristics", "characteristics", None, "regular"),  # Import ALL characteristics
-        ("core/variables", "variables", None, "variable"),  # Import ALL variables
+        ("core/variables", "variables", None, "variable"),  # Import ALL variables with dependency creation
     ]
+    
+    # Track existing items for dependency validation
+    existing_entities = set()
+    existing_characteristics = set()
+    existing_methods = set()
+    existing_units = set()
     
     for config in import_config:
         endpoint, name, limit, item_type = config
@@ -273,6 +407,25 @@ def import_sandbox_variables():
             success_counts[name] = 0
             continue
         
+        # Update existing items tracking by fetching from VM after importing dependencies
+        if name == "entities":
+            # Get what's actually in the VM now (including newly imported items)
+            vm_entities = vm.get_all_items(endpoint)
+            existing_entities = {item.get('uri', '') for item in vm_entities if item.get('uri')}
+            print(f"[INFO] Tracking {len(existing_entities)} entities in VM")
+        elif name == "characteristics":
+            vm_chars = vm.get_all_items(endpoint)
+            existing_characteristics = {item.get('uri', '') for item in vm_chars if item.get('uri')}
+            print(f"[INFO] Tracking {len(existing_characteristics)} characteristics in VM")
+        elif name == "methods":
+            vm_methods = vm.get_all_items(endpoint)
+            existing_methods = {item.get('uri', '') for item in vm_methods if item.get('uri')}
+            print(f"[INFO] Tracking {len(existing_methods)} methods in VM")
+        elif name == "units":
+            vm_units = vm.get_all_items(endpoint)
+            existing_units = {item.get('uri', '') for item in vm_units if item.get('uri')}
+            print(f"[INFO] Tracking {len(existing_units)} units in VM")
+        
         # Limit items if specified
         if limit is not None:
             items = items[:limit]
@@ -281,10 +434,31 @@ def import_sandbox_variables():
             print(f"[INFO] Importing ALL {len(items)} {name}")
         
         success_count = 0
+        created_dependencies = 0
+        skipped_count = 0
+        
         for i, item in enumerate(items):
             # Use appropriate cleaning function based on item type
             if item_type == "variable":
-                cleaned_item = clean_variable_for_import(item)
+                # For variables, first validate dependencies (and try to create missing ones)
+                if not validate_variable_dependencies(item, existing_entities, existing_characteristics, 
+                                                    existing_methods, existing_units, vm):
+                    skipped_count += 1
+                    continue
+                
+                # For variables with valid dependencies, use smart dependency creation
+                original_counts = (len(existing_entities), len(existing_characteristics), 
+                                 len(existing_methods), len(existing_units))
+                
+                cleaned_item = clean_variable_for_import(
+                    item, existing_entities, existing_characteristics, 
+                    existing_methods, existing_units, vm
+                )
+                
+                # Track newly created dependencies
+                new_counts = (len(existing_entities), len(existing_characteristics), 
+                            len(existing_methods), len(existing_units))
+                created_dependencies += sum(new_counts[j] - original_counts[j] for j in range(4))
             else:
                 cleaned_item = clean_item_for_import(item)
                 
@@ -298,6 +472,12 @@ def import_sandbox_variables():
         
         success_counts[name] = success_count
         print(f"[OK] Successfully imported {success_count}/{len(items)} {name}")
+        
+        if item_type == "variable":
+            if created_dependencies > 0:
+                print(f"[INFO] Created {created_dependencies} missing dependencies for variables")
+            if skipped_count > 0:
+                print(f"[INFO] Skipped {skipped_count} variables with unresolvable dependencies")
     
     # Summary
     print("\n=== Import Summary ===")
