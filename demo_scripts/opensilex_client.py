@@ -9,6 +9,23 @@ import json
 import time
 from typing import Dict, List, Optional
 
+def is_auth_error(response) -> bool:
+    """Check if response indicates an authentication error"""
+    if response.status_code in [401, 403]:
+        return True
+    
+    # Check for OpenSILEX-specific auth error messages
+    response_text = response.text.lower() if response.text else ""
+    auth_error_indicators = [
+        "access denied",
+        "you must be authenticate",
+        "authentication required",
+        "token expired",
+        "invalid token"
+    ]
+    
+    return any(indicator in response_text for indicator in auth_error_indicators)
+
 
 class OpenSILEXClient:
     def __init__(self, base_url: str, username: str = "", password: str = ""):
@@ -16,12 +33,15 @@ class OpenSILEXClient:
         self.username = username
         self.password = password
         self.token = None
+        self.token_expires_at = None
         
     def authenticate(self) -> bool:
         """Authenticate and get access token"""
         if not self.username or not self.password:
             print(f"[INFO] No credentials provided for {self.base_url} - using guest access")
             return True
+        
+        print(f"[AUTH] Authenticating with {self.base_url}...")
             
         auth_data = {
             "identifier": self.username,
@@ -33,6 +53,17 @@ class OpenSILEXClient:
             if response.status_code == 200:
                 result = response.json()
                 self.token = result['result']['token']
+                # Try to get expiration from the response, otherwise use a conservative estimate
+                token_data = result.get('result', {})
+                if 'expires_at' in token_data:
+                    # Use the actual expiration time from the server
+                    self.token_expires_at = token_data['expires_at']
+                elif 'expires_in' in token_data:
+                    # Use expires_in seconds from now
+                    self.token_expires_at = time.time() + token_data['expires_in']
+                else:
+                    # Conservative fallback - assume 30 minutes to be safer
+                    self.token_expires_at = time.time() + 1800  # 30 minutes from now
                 print(f"[OK] Authenticated with {self.base_url}")
                 return True
             else:
@@ -42,6 +73,20 @@ class OpenSILEXClient:
         except Exception as e:
             print(f"[ERROR] Authentication error: {e}")
             return False
+    
+    def is_token_expired(self) -> bool:
+        """Check if the authentication token is expired or about to expire"""
+        if not self.token or not self.token_expires_at:
+            return True
+        # Refresh token 2 minutes before expiration to be safe
+        return time.time() > (self.token_expires_at - 120)
+    
+    def ensure_authenticated(self) -> bool:
+        """Ensure authentication is valid, refresh if needed"""
+        if self.is_token_expired():
+            print(f"[INFO] Token expired or expiring soon, re-authenticating...")
+            return self.authenticate()
+        return True
     
     def get_headers(self) -> Dict[str, str]:
         """Get request headers with authentication"""
@@ -57,6 +102,11 @@ class OpenSILEXClient:
             page = 0
             page_size = 20  # Smaller page size to match OpenSILEX default and avoid timeouts
             
+            # Ensure we have valid authentication
+            if not self.ensure_authenticated():
+                print(f"[ERROR] Failed to authenticate before fetching {endpoint}")
+                return []
+            
             while True:
                 query_params = (params or {}).copy()  # Create a copy to avoid modifying original
                 query_params.update({"page": page, "pageSize": page_size})
@@ -66,6 +116,19 @@ class OpenSILEXClient:
                     headers=self.get_headers(),
                     params=query_params
                 )
+                
+                # Handle authentication timeout - retry once with fresh authentication
+                if is_auth_error(response):
+                    print(f"[WARNING] Authentication failed while fetching {endpoint}, refreshing token and retrying...")
+                    if self.authenticate():
+                        response = requests.get(
+                            f"{self.base_url}/rest/{endpoint}",
+                            headers=self.get_headers(),
+                            params=query_params
+                        )
+                    else:
+                        print(f"[ERROR] Failed to re-authenticate")
+                        break
                 
                 if response.status_code != 200:
                     print(f"[ERROR] Failed to fetch {endpoint} page {page}: {response.status_code}")
@@ -107,13 +170,31 @@ class OpenSILEXClient:
             return []
     
     def create_item(self, endpoint: str, item_data: Dict) -> bool:
-        """Create a single item"""
+        """Create a single item with automatic authentication refresh"""
+        # Ensure we have valid authentication
+        if not self.ensure_authenticated():
+            print(f"[ERROR] Failed to authenticate before creating item in {endpoint}")
+            return False
+            
         try:
             response = requests.post(
                 f"{self.base_url}/rest/{endpoint}",
                 headers=self.get_headers(),
                 json=item_data
             )
+            
+            # Handle authentication timeout - retry once with fresh authentication
+            if is_auth_error(response):
+                print(f"[WARNING] Authentication failed, refreshing token and retrying...")
+                if self.authenticate():
+                    response = requests.post(
+                        f"{self.base_url}/rest/{endpoint}",
+                        headers=self.get_headers(),
+                        json=item_data
+                    )
+                else:
+                    print(f"[ERROR] Failed to re-authenticate")
+                    return False
             
             if response.status_code in [200, 201]:
                 return True
@@ -138,6 +219,11 @@ class OpenSILEXClient:
         """Create a batch of data items with error handling for missing variables"""
         if not data_items:
             return 0
+        
+        # Ensure we have valid authentication
+        if not self.ensure_authenticated():
+            print(f"[ERROR] Failed to authenticate before creating data batch")
+            return 0
             
         try:
             # First try to import the full batch
@@ -146,6 +232,19 @@ class OpenSILEXClient:
                 headers=self.get_headers(),
                 json=data_items
             )
+            
+            # Handle authentication timeout - retry once with fresh authentication
+            if is_auth_error(response):
+                print(f"[WARNING] Authentication failed during batch import, refreshing token and retrying...")
+                if self.authenticate():
+                    response = requests.post(
+                        f"{self.base_url}/rest/core/data",
+                        headers=self.get_headers(),
+                        json=data_items
+                    )
+                else:
+                    print(f"[ERROR] Failed to re-authenticate")
+                    return 0
             
             if response.status_code in [200, 201]:
                 print(f"[OK] Successfully imported full batch of {len(data_items)} data items")
@@ -176,12 +275,25 @@ class OpenSILEXClient:
         
         for i, item in enumerate(data_items):
             try:
+                # Check authentication every 100 items (but don't refresh unless needed)
+                if i % 100 == 0 and self.is_token_expired():
+                    self.authenticate()
+                
                 # Try to import single item
                 response = requests.post(
                     f"{self.base_url}/rest/core/data",
                     headers=self.get_headers(),
                     json=[item]  # Single item in array
                 )
+                
+                # Handle authentication timeout - retry once with fresh authentication
+                if is_auth_error(response):
+                    if self.authenticate():
+                        response = requests.post(
+                            f"{self.base_url}/rest/core/data",
+                            headers=self.get_headers(),
+                            json=[item]
+                        )
                 
                 if response.status_code in [200, 201]:
                     success_count += 1
