@@ -6,18 +6,28 @@
 #   For Agroportal ontology integration, you need an API key from:
 #   https://agroportal.lirmm.fr/account
 #
+# FEIDE Authentication Configuration:
+#   For FEIDE (Dataporten) authentication, you need client credentials from:
+#   https://dashboard.dataporten.no/
+#
 # Setup Methods (in order of preference):
 #   1. Create: tools/config/api-keys.conf with content:
 #      AGROPORTAL_API_KEY="your-key-here"
+#      FEIDE_CLIENT_ID="your-client-id-here"
+#      FEIDE_CLIENT_SECRET="your-client-secret-here"
 #   
-#   2. OR set environment variable:
+#   2. OR set environment variables:
 #      $env:AGROPORTAL_API_KEY = "your-key-here" (PowerShell)
+#      $env:FEIDE_CLIENT_ID = "your-client-id-here" (PowerShell)
+#      $env:FEIDE_CLIENT_SECRET = "your-client-secret-here" (PowerShell)
 #      export AGROPORTAL_API_KEY="your-key-here" (Bash)
+#      export FEIDE_CLIENT_ID="your-client-id-here" (Bash)
+#      export FEIDE_CLIENT_SECRET="your-client-secret-here" (Bash)
 #
 # Security Note:
 #   - The config/api-keys.conf file is ignored by git (.gitignore)
-#   - Never commit API keys to version control
-#   - Script works without API key (Agroportal features disabled)
+#   - Never commit API keys or client credentials to version control
+#   - Script works without API key/FEIDE credentials (features disabled)
 
 param(
     [Parameter(Mandatory=$false)]
@@ -552,30 +562,42 @@ mkdir -p "$OPENSILEX_HOME/config"
 chown -R azureuser:azureuser "$OPENSILEX_HOME"
 chmod -R 755 "$OPENSILEX_HOME"
 
-# Check for API keys - try multiple sources
+# Check for API keys and FEIDE credentials - try multiple sources
 AGROPORTAL_ENABLED=true
 AGROPORTAL_API_KEY=""
+FEIDE_ENABLED=false
+FEIDE_CLIENT_ID=""
+FEIDE_CLIENT_SECRET=""
 
 # 1. Check for local config file (uploaded from tools/config/api-keys.conf)
 CONFIG_FILE="$HOME/api-keys.conf"
 if [ -f "$CONFIG_FILE" ]; then
-    print_status "Loading API keys from config file..."
+    print_status "Loading configuration from config file..."
     source "$CONFIG_FILE"
     if [ ! -z "$AGROPORTAL_API_KEY" ]; then
         print_success "Using Agroportal API key from config file"
         AGROPORTAL_ENABLED=true
     fi
+    if [ ! -z "$FEIDE_CLIENT_ID" ] && [ ! -z "$FEIDE_CLIENT_SECRET" ]; then
+        print_success "Using FEIDE credentials from config file"
+        FEIDE_ENABLED=true
+    fi
 else
-    print_status "API keys config file not found at $CONFIG_FILE"
+    print_status "Configuration file not found at $CONFIG_FILE"
 fi
 
-# 2. Check environment variable (overrides config file)
+# 2. Check environment variables (overrides config file)
 if [ ! -z "$AGROPORTAL_API_KEY" ]; then
     print_success "Using Agroportal API key from environment variable"
     AGROPORTAL_ENABLED=true
 fi
 
-# 3. Final fallback
+if [ ! -z "$FEIDE_CLIENT_ID" ] && [ ! -z "$FEIDE_CLIENT_SECRET" ]; then
+    print_success "Using FEIDE credentials from environment variables"
+    FEIDE_ENABLED=true
+fi
+
+# 3. Final status reporting
 if [ "$AGROPORTAL_ENABLED" = false ]; then
     print_warning "No Agroportal API key found"
     print_status "Agroportal integration will be disabled"
@@ -585,6 +607,22 @@ if [ "$AGROPORTAL_ENABLED" = false ]; then
     print_status "2. Create file: config/api-keys.conf"
     print_status "3. Add line: AGROPORTAL_API_KEY=\"your-key-here\""
     print_status "4. See config/api-keys.conf.template for example"
+    echo ""
+fi
+
+if [ "$FEIDE_ENABLED" = false ]; then
+    print_warning "No FEIDE credentials found"
+    print_status "FEIDE authentication will be disabled"
+    echo ""
+    print_status "To enable FEIDE (Dataporten) authentication:"
+    print_status "1. Register your application at: https://dashboard.dataporten.no/"
+    print_status "2. Set redirect URI to: http://$VM_PUBLIC_IP:8080/app/openid"
+    print_status "3. Enable attribute groups: email, userinfo-name, userinfo-mail"
+    print_status "4. Enable scopes: openid, userid, profile, email"
+    print_status "5. Create file: config/api-keys.conf"
+    print_status "6. Add lines:"
+    print_status "   FEIDE_CLIENT_ID=\"your-client-id-here\""
+    print_status "   FEIDE_CLIENT_SECRET=\"your-client-secret-here\""
     echo ""
 fi
 
@@ -742,6 +780,33 @@ core:
 AGROPORTAL_EOF
 else
     print_status "Skipping Agroportal configuration - disabled"
+fi
+
+# Add FEIDE configuration if enabled
+if [ "$FEIDE_ENABLED" = true ]; then
+    print_status "Adding FEIDE (Dataporten) authentication configuration..."
+    cat >> "$OPENSILEX_HOME/config/opensilex.yml" << FEIDE_EOF
+
+# FEIDE/Dataporten OpenID Connect authentication configuration
+security:
+  openID:
+    enable: true
+    scopes: ["openid", "userid", "profile", "email", "userinfo-name", "userinfo-mail"]
+    userIdClaim: "sub"
+    userNameClaim: "name"
+    userEmailClaim: "https://n.feide.no/claims/eduPersonPrincipalName"
+    userFirstNameClaim: "given_name"
+    userLastNameClaim: "family_name"
+    providerURI: "https://auth.dataporten.no"
+    redirectURI: "http://$VM_PUBLIC_IP:8080/app/openid"
+    clientID: "$FEIDE_CLIENT_ID"
+    clientSecret: "$FEIDE_CLIENT_SECRET"
+    connectionTitle:
+      en: "Login with Feide"
+      no: "Logg inn med Feide"
+FEIDE_EOF
+else
+    print_status "Skipping FEIDE authentication configuration - disabled"
 fi
 
 # Logging configuration file
