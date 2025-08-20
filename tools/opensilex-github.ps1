@@ -640,14 +640,16 @@ security:
         userPassword: ""
         sender: ""
 
-# Dashboard configuration with metrics
+# Dashboard configuration with real-time metrics
 front:
   dashboard:
     graph1:
       # Variable URI for dashboard visualization (leave empty for default logo)
+      # After importing data, update this with a variable that has data points
+      # Example: "http://opensilex.test/id/variable/air_temperature_datalogging_degreecelsius"
       variable: ""
-      # Optional location information for data context
-      dataLocationInformations: "Production Environment Data"
+      # Enhanced location information for data context
+      dataLocationInformations: "Production Environment - Configure with variable URI after data import"
   # Agroportal ontology mappings for variable components
   agroportal:
     entity:
@@ -688,25 +690,25 @@ core:
           en: "AGROVOC"
         accountName: ""
         accountPassword: ""
-    # Metrics options (MetricsConfig)
+    # Metrics options (MetricsConfig) - Optimized for real-time dashboard
     metrics:
       # Activate access metrics (boolean)
       enableMetrics: true
-      # Metrics configs about system (SystemMetricsConfig)
+      # Metrics configs about system (SystemMetricsConfig) - Real-time updates
       system:
-        # First metrics for any time depending on is time unit (int)
-        timeBeforeFirstMetric: 1
-        # Delay between whole system metrics (combined with corresponding TimeUnit) (int)
-        delayBetweenMetrics: 30
-        # Default metrics units : DAYS, HOURS, MINUTES, SECONDS are authorized (String)
-        metricsTimeUnit: DAYS
-      # Metrics configs about experiments (ExperimentsMetricsConfig)
+        # First metrics after 2 minutes (reasonable startup time)
+        timeBeforeFirstMetric: 2
+        # Update system metrics every 5 minutes for responsive dashboard
+        delayBetweenMetrics: 5
+        # Use MINUTES for real-time dashboard responsiveness
+        metricsTimeUnit: MINUTES
+      # Metrics configs about experiments (ExperimentsMetricsConfig) - Daily tracking
       experiments:
-        # First metrics for any time depending on is time unit (int)
-        timeBeforeFirstMetric: 1
-        # Delay between whole system metrics (combined with corresponding TimeUnit) (int)
-        delayBetweenMetrics: 7
-        # Default metrics units : DAYS, HOURS, MINUTES, SECONDS are authorized (String)
+        # Start experiment metrics after 2 minutes
+        timeBeforeFirstMetric: 2
+        # Update experiment metrics daily (appropriate for research data)
+        delayBetweenMetrics: 1
+        # Use DAYS for experiment overview tracking
         metricsTimeUnit: DAYS
 # Additional production configurations
 phisws:
