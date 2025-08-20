@@ -1,0 +1,30 @@
+=== CURRENT VM DASHBOARD CONFIGURATION ===
+  dashboard:
+    graph1:
+      dataLocationInformations: Production Environment - Air Temperature from Datalogging
+        System (July 2025 Data Available)
+      variable: http://opensilex.test/id/variable/air_temperature_datalogging_degreecelsius
+  geocodingService: Photon
+logging:
+  config:
+    file: /home/azureuser/opensilex/config/logback.xml
+ontologies:
+  baseURI: http://20.61.118.92/
+
+=== CURRENT VM METRICS CONFIGURATION ===
+  metrics:
+    enableMetrics: true
+    experiments:
+      delayBetweenMetrics: 1
+      metricsTimeUnit: DAYS
+      timeBeforeFirstMetric: 2
+    system:
+      delayBetweenMetrics: 5
+      metricsTimeUnit: MINUTES
+      timeBeforeFirstMetric: 2
+file-system:
+  fs:
+    config:
+      connections:
+        local:
+          config:
