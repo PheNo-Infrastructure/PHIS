@@ -151,8 +151,16 @@ class OpenSILEXClient:
                 
                 print(f"[INFO] Fetched page {page}: {len(items)} items (total so far: {len(all_items)}/{total_count})")
                 
-                # Better termination logic
-                if not has_next or len(all_items) >= total_count:
+                # Better termination logic - ignore hasNextPage for sandbox as it's unreliable
+                # Stop only when we get empty results or reach totalCount (if reliable)
+                if len(items) == 0:
+                    break
+                
+                # For sandbox, also check if we've exceeded the reported total (API bug workaround)
+                if self.base_url.endswith('/sandbox') and len(all_items) > total_count:
+                    print(f"[INFO] Fetched more items ({len(all_items)}) than reported totalCount ({total_count}) - continuing due to sandbox API bug")
+                elif len(all_items) >= total_count and total_count > 0 and not self.base_url.endswith('/sandbox'):
+                    # For non-sandbox, respect totalCount
                     break
                     
                 page += 1
