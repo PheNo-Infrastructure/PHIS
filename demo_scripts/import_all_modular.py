@@ -243,7 +243,7 @@ def main():
             print("Major issues detected - check individual script outputs.")
         
         print("\nYou can now view the imported data in your OpenSILEX web interface:")
-        print("🌐 http://20.61.118.92:8666")
+        print("🌐 http://172.211.86.191:8666")
         
     else:
         print(f"\n❌ [IMPORT FAILURE] No imports completed successfully.")
