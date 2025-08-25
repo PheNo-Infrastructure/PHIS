@@ -10,7 +10,7 @@ from typing import Dict
 from opensilex_client import OpenSILEXClient, test_vm_connection
 
 
-def clean_facility_for_import(facility: Dict, include_organizations: bool = False) -> Dict:
+def clean_facility_for_import(facility: Dict) -> Dict:
     """Clean facility data for import - ULTRA MINIMAL approach to avoid ontology errors"""
     
     # SOLUTION: Since minimal facilities work but complex ones cause ontology errors,
@@ -41,27 +41,10 @@ def clean_facility_for_import(facility: Dict, include_organizations: bool = Fals
         except:
             print(f"[WARNING] Skipping invalid geometry for {facility.get('name')}")
     
-    # Add organization references if requested and they exist
-    if include_organizations and 'organizations' in facility and facility['organizations']:
-        # Convert sandbox URIs to VM URIs for organization references
-        from opensilex_client import map_sandbox_uri_to_vm
-        org_refs = []
-        for org in facility['organizations']:
-            if isinstance(org, dict) and 'uri' in org:
-                vm_uri = map_sandbox_uri_to_vm(org['uri'])
-                org_refs.append(vm_uri)
-            elif isinstance(org, str):
-                vm_uri = map_sandbox_uri_to_vm(org)
-                org_refs.append(vm_uri)
-        
-        if org_refs:
-            essential_facility['organizations'] = org_refs
-            print(f"[FACILITY] Added {len(org_refs)} organization references to {facility.get('name', 'Unknown')}")
+    # CRITICAL: Skip organizations/sites/relations that cause ontology errors
+    # These can be linked later through a separate process if needed
     
-    if include_organizations:
-        print(f"[FACILITY] Prepared {facility.get('name', 'Unknown')} with organization links")
-    else:
-        print(f"[FACILITY] Minimized {facility.get('name', 'Unknown')} to avoid ontology errors")
+    print(f"[FACILITY] Minimized {facility.get('name', 'Unknown')} to avoid ontology errors")
     return essential_facility
 
 
@@ -76,22 +59,12 @@ def main():
     VM_USER = os.getenv("VM_USER", "admin@opensilex.org")
     VM_PASS = os.getenv("VM_PASS", "admin")
     
-    # Check for organization linking flag (default: enabled)
-    include_organizations = "--without-organizations" not in sys.argv
-    
     # If environment variables not set, try to get from command line args
     if len(sys.argv) >= 3:
-        # Filter out the flag when looking for credentials
-        args = [arg for arg in sys.argv[1:] if arg != "--without-organizations"]
-        if len(args) >= 2:
-            VM_USER = args[0]
-            VM_PASS = args[1]
+        VM_USER = sys.argv[1]
+        VM_PASS = sys.argv[2]
     
     print(f"[INFO] Using VM credentials: {VM_USER} (password hidden)")
-    if include_organizations:
-        print("[INFO] Organization linking enabled (default)")
-    else:
-        print("[INFO] Organization linking disabled (--without-organizations flag used)")
     
     # Initialize clients
     sandbox = OpenSILEXClient(SANDBOX_URL, SANDBOX_USER, SANDBOX_PASS)
@@ -123,12 +96,11 @@ def main():
         print("[WARNING] No facilities found in sandbox")
         return False
     
-    mode_description = "with organization links" if include_organizations else "ultra-minimal mode"
-    print(f"[INFO] Importing {len(facilities)} facilities ({mode_description})")
+    print(f"[INFO] Importing {len(facilities)} facilities (ultra-minimal mode)")
     success_count = 0
     
     for i, facility in enumerate(facilities):
-        cleaned_facility = clean_facility_for_import(facility, include_organizations)
+        cleaned_facility = clean_facility_for_import(facility)
         
         if vm.create_item('core/facilities', cleaned_facility):
             success_count += 1

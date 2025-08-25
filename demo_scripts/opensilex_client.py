@@ -156,12 +156,10 @@ class OpenSILEXClient:
                 if len(items) == 0:
                     break
                 
-                # For sandbox, stop when we reach totalCount to avoid duplicates
-                if self.base_url.endswith('/sandbox'):
-                    if len(all_items) >= total_count and total_count > 0:
-                        print(f"[INFO] Reached totalCount ({total_count}) for sandbox - stopping to avoid duplicates")
-                        break
-                elif len(all_items) >= total_count and total_count > 0:
+                # For sandbox, also check if we've exceeded the reported total (API bug workaround)
+                if self.base_url.endswith('/sandbox') and len(all_items) > total_count:
+                    print(f"[INFO] Fetched more items ({len(all_items)}) than reported totalCount ({total_count}) - continuing due to sandbox API bug")
+                elif len(all_items) >= total_count and total_count > 0 and not self.base_url.endswith('/sandbox'):
                     # For non-sandbox, respect totalCount
                     break
                     
@@ -323,95 +321,6 @@ class OpenSILEXClient:
         
         print(f"[SUMMARY] Individual import: {success_count}/{len(data_items)} data items imported")
         return success_count
-
-    def get_item_by_uri(self, endpoint: str, uri: str) -> Optional[Dict]:
-        """Get a single item by its URI"""
-        try:
-            import urllib.parse
-            
-            # Ensure we have valid authentication
-            if not self.ensure_authenticated():
-                print(f"[ERROR] Failed to authenticate before fetching item {uri}")
-                return None
-            
-            # URL encode the URI for the API call
-            encoded_uri = urllib.parse.quote(uri, safe='')
-            
-            response = requests.get(
-                f"{self.base_url}/rest/{endpoint}/{encoded_uri}",
-                headers=self.get_headers()
-            )
-            
-            # Handle authentication timeout
-            if is_auth_error(response):
-                print(f"[WARNING] Authentication failed while fetching {uri}, refreshing token and retrying...")
-                if self.authenticate():
-                    response = requests.get(
-                        f"{self.base_url}/rest/{endpoint}/{encoded_uri}",
-                        headers=self.get_headers()
-                    )
-                else:
-                    print(f"[ERROR] Failed to re-authenticate")
-                    return None
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('result')
-            else:
-                print(f"[ERROR] Failed to get item {uri}: {response.status_code}")
-                return None
-                
-        except Exception as e:
-            print(f"[ERROR] Error getting item {uri}: {e}")
-            return None
-
-    def update_item(self, endpoint: str, item_data: Dict) -> bool:
-        """Update an existing item"""
-        try:
-            import urllib.parse
-            
-            # Ensure we have valid authentication
-            if not self.ensure_authenticated():
-                print(f"[ERROR] Failed to authenticate before updating item")
-                return False
-            
-            item_uri = item_data.get('uri', '')
-            encoded_uri = urllib.parse.quote(item_uri, safe='')
-            
-            response = requests.put(
-                f"{self.base_url}/rest/{endpoint}/{encoded_uri}",
-                headers=self.get_headers(),
-                json=item_data
-            )
-            
-            # Handle authentication timeout
-            if is_auth_error(response):
-                print(f"[WARNING] Authentication failed during update, refreshing token and retrying...")
-                if self.authenticate():
-                    response = requests.put(
-                        f"{self.base_url}/rest/{endpoint}/{encoded_uri}",
-                        headers=self.get_headers(),
-                        json=item_data
-                    )
-                else:
-                    print(f"[ERROR] Failed to re-authenticate")
-                    return False
-            
-            if response.status_code in [200, 204]:
-                return True
-            else:
-                print(f"[ERROR] Failed to update item {item_uri}: {response.status_code}")
-                if response.text:
-                    try:
-                        error_data = response.json()
-                        print(f"[ERROR] Response: {json.dumps(error_data, indent=2)}")
-                    except:
-                        print(f"[ERROR] Response: {response.text}")
-                return False
-                
-        except Exception as e:
-            print(f"[ERROR] Error updating item: {e}")
-            return False
 
 
 def test_vm_connection(vm_client: OpenSILEXClient) -> bool:
