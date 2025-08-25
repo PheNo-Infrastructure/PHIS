@@ -10,13 +10,10 @@
 #   For FEIDE (Dataporten) authentication, you need client credentials from:
 #   https://dashboard.dataporten.no/
 #   
-#   FEIDE USER PRE-CREATION (for API access):
-#   Create tools/config/feide-users.conf with format:
-#     email@domain.no,FirstName,LastName
-#     sebastian.t.iversen@uit.no,Sebastian,Iversen
-#   
-#   This ensures FEIDE users get admin privileges and API access (password: "feide123")
-#   Users can then authenticate via both FEIDE web login and API with password.
+#   AUTOMATIC ADMIN PROMOTION:
+#   - All FEIDE users (from any Norwegian institution) are automatically promoted to admin
+#   - Event-driven system monitors for new user logins and promotes immediately  
+#   - Uses GraphDB detection: FEIDE users have no password hash (OpenID Connect authentication)
 #
 # Setup Methods (in order of preference):
 #   1. Create: tools/config/api-keys.conf with content:
@@ -796,16 +793,22 @@ if [ "$FEIDE_ENABLED" = true ]; then
     cat >> "$OPENSILEX_HOME/config/opensilex.yml" << FEIDE_EOF
 
 # FEIDE/Dataporten OpenID Connect authentication configuration
-# Following official OpenSILEX federation authentication documentation
 security:
   openID:
     enable: true
+    scopes: ["openid", "userid", "profile", "email", "userinfo-name", "userinfo-mail"]
+    userIdClaim: "sub"
+    userNameClaim: "name"
+    userEmailClaim: "https://n.feide.no/claims/eduPersonPrincipalName"
+    userFirstNameClaim: "given_name"
+    userLastNameClaim: "family_name"
     providerURI: "https://auth.dataporten.no"
     redirectURI: "http://$VM_PUBLIC_IP:8080/app/openid"
     clientID: "$FEIDE_CLIENT_ID"
     clientSecret: "$FEIDE_CLIENT_SECRET"
     connectionTitle:
       en: "Login with Feide"
+      no: "Logg inn med Feide"
 FEIDE_EOF
 else
     print_status "Skipping FEIDE authentication configuration - disabled"
@@ -1080,46 +1083,6 @@ for attempt in {1..3}; do
     fi
 done
 
-# Pre-create FEIDE user accounts with admin access (if credentials provided)
-if [ "$FEIDE_ENABLED" = true ]; then
-    print_status "Pre-creating FEIDE user accounts for API access..."
-    
-    # Check if FEIDE users configuration exists
-    FEIDE_USERS_FILE="/home/azureuser/feide-users.conf"
-    if [ -f "$FEIDE_USERS_FILE" ]; then
-        print_status "Found FEIDE users configuration file"
-        
-        # Read each line from the configuration file
-        while IFS=',' read -r email firstName lastName || [ -n "$email" ]; do
-            # Skip empty lines and comments
-            [[ -z "$email" || "$email" =~ ^[[:space:]]*# ]] && continue
-            
-            # Remove whitespace
-            email=$(echo "$email" | xargs)
-            firstName=$(echo "$firstName" | xargs)
-            lastName=$(echo "$lastName" | xargs)
-            
-            print_status "Pre-creating FEIDE user: $email"
-            
-            # Create user with admin privileges and API access
-            # Note: OpenSILEX will not overwrite existing users
-            /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh user add \
-                --admin \
-                --email="$email" \
-                --firstName="$firstName" \
-                --lastName="$lastName" \
-                --password="feide123" \
-                --lang=en 2>/dev/null || echo "User $email may already exist"
-                
-        done < "$FEIDE_USERS_FILE"
-    else
-        print_status "No FEIDE users configuration found at $FEIDE_USERS_FILE"
-        print_status "To pre-create FEIDE users, create a file with format:"
-        print_status "email@domain.no,FirstName,LastName"
-        print_status "sebastian.t.iversen@uit.no,Sebastian,Iversen"
-    fi
-fi
-
 # Add useful aliases for azureuser  
 print_status "Setting up OpenSILEX aliases..."
 echo 'alias opensilex="/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh"' >> ~/.bashrc
@@ -1271,6 +1234,145 @@ sudo systemctl daemon-reload
 sudo systemctl enable opensilex.service
 sudo systemctl start opensilex.service
 
+# Setup FEIDE auto-promotion system
+print_status "Setting up FEIDE user auto-promotion system..."
+
+# Install inotify-tools for log monitoring
+sudo apt install -y inotify-tools
+
+# Create FEIDE user promotion script
+cat > /home/azureuser/promote-feide-users.sh << 'FEIDE_SCRIPT'
+#!/bin/bash
+
+# Script to automatically promote FEIDE users to admin
+# FEIDE users are identified by the absence of hasPasswordHash (they use OpenID Connect)
+# Run this periodically via cron
+
+GRAPHDB_URL="http://localhost:7200/repositories/opensilex"
+LOG_FILE="/home/azureuser/opensilex/logs/feide-promotion.log"
+
+log() {
+    echo "\$(date '+%Y-%m-%d %H:%M:%S'): \$1" | tee -a "\$LOG_FILE"
+}
+
+log "Starting FEIDE user promotion check..."
+
+# Query for non-admin FEIDE users (users without password hash = OpenID Connect users)
+QUERY='SELECT ?user WHERE { 
+    ?user a <http://xmlns.com/foaf/0.1/OnlineAccount> . 
+    ?user <http://www.opensilex.org/security#isAdmin> false . 
+    FILTER NOT EXISTS { ?user <http://www.opensilex.org/security#hasPasswordHash> ?hash }
+}'
+
+# Get users to promote
+RESPONSE=\$(curl -s -G "\$GRAPHDB_URL" \\
+    --data-urlencode "query=\$QUERY" \\
+    -H 'Accept: application/sparql-results+json')
+
+if [ \$? -ne 0 ]; then
+    log "ERROR: Failed to query GraphDB"
+    exit 1
+fi
+
+# Extract user URIs from JSON response
+USERS=\$(echo "\$RESPONSE" | grep -o '"value"[^}]*user[^"]*' | grep -o 'http[^"]*' | sort -u)
+
+if [ -z "\$USERS" ]; then
+    log "No FEIDE users found requiring promotion"
+    exit 0
+fi
+
+# Promote each FEIDE user to admin
+for USER_URI in \$USERS; do
+    log "Promoting FEIDE user to admin: \$USER_URI"
+    
+    # Update user to admin using SPARQL UPDATE
+    UPDATE_QUERY="DELETE { <\$USER_URI> <http://www.opensilex.org/security#isAdmin> false } 
+                  INSERT { <\$USER_URI> <http://www.opensilex.org/security#isAdmin> true } 
+                  WHERE { <\$USER_URI> <http://www.opensilex.org/security#isAdmin> false }"
+    
+    # Execute the update
+    UPDATE_RESPONSE=\$(curl -s -X POST "\$GRAPHDB_URL/statements" \\
+        -H "Content-Type: application/sparql-update" \\
+        --data "\$UPDATE_QUERY")
+    
+    if [ \$? -eq 0 ]; then
+        log "SUCCESS: User \$USER_URI promoted to admin"
+    else
+        log "ERROR: Failed to promote user \$USER_URI"
+    fi
+done
+
+log "FEIDE user promotion check completed"
+FEIDE_SCRIPT
+
+chmod +x /home/azureuser/promote-feide-users.sh
+
+# Create event-driven monitor script
+cat > /home/azureuser/feide-user-monitor.sh << 'MONITOR_SCRIPT'
+#!/bin/bash
+
+# Event-driven FEIDE user promotion service
+# Monitors OpenSILEX logs for user creation events and promotes FEIDE users immediately
+
+LOG_FILE="/home/azureuser/opensilex/logs/opensilex.log"
+MONITOR_LOG="/home/azureuser/opensilex/logs/feide-monitor.log"
+PROMOTION_SCRIPT="/home/azureuser/promote-feide-users.sh"
+
+log() {
+    echo "\$(date '+%Y-%m-%d %H:%M:%S'): \$1" | tee -a "\$MONITOR_LOG"
+}
+
+log "Starting FEIDE user monitor service..."
+
+# Function to check for new users and promote FEIDE users
+check_and_promote() {
+    log "User creation detected, checking for FEIDE users to promote..."
+    "\$PROMOTION_SCRIPT"
+}
+
+# Monitor the OpenSILEX log file for user creation events
+tail -F "\$LOG_FILE" 2>/dev/null | while read line; do
+    # Look for patterns that indicate user creation/authentication
+    if echo "\$line" | grep -q -E "(user|User|account|Account|authentication|login|created|registered)"; then
+        # Debounce: only check once per 10 seconds to avoid spam
+        if [ ! -f "/tmp/feide_check_lock" ] || [ \$(find /tmp/feide_check_lock -mmin +0.2 2>/dev/null | wc -l) -gt 0 ]; then
+            touch /tmp/feide_check_lock
+            check_and_promote &
+        fi
+    fi
+done
+MONITOR_SCRIPT
+
+chmod +x /home/azureuser/feide-user-monitor.sh
+
+# Create systemd service for the monitor
+sudo tee /etc/systemd/system/feide-monitor.service << 'FEIDE_SERVICE'
+[Unit]
+Description=FEIDE User Auto-Promotion Monitor
+After=opensilex.service
+Requires=opensilex.service
+
+[Service]
+Type=simple
+User=azureuser
+WorkingDirectory=/home/azureuser
+ExecStart=/home/azureuser/feide-user-monitor.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+FEIDE_SERVICE
+
+# Enable and start the FEIDE monitor service
+sudo systemctl daemon-reload
+sudo systemctl enable feide-monitor.service
+sudo systemctl start feide-monitor.service
+
+print_success "FEIDE auto-promotion system configured and started"
 
 print_success "OpenSILEX production installation completed!"
 echo ""
@@ -1286,7 +1388,7 @@ echo "• Admin user created (admin@opensilex.org / admin)"
 echo "• Nginx reverse proxy configured on port 80"
 echo "• Startup scripts and aliases configured"
 echo "• Systemd service configured"
-echo "• FEIDE user pre-creation system available"
+echo "• FEIDE auto-promotion system configured (event-driven)"
 echo ""
 echo "Next steps:"
 echo "1. Start service: systemctl start opensilex"
@@ -1314,15 +1416,6 @@ echo "=============================================="
             scp -i $privateKeyPath -o StrictHostKeyChecking=no $apiKeysPath "$AdminUsername@${TargetIP}:~/api-keys.conf"
         } else {
             Write-Warning "API keys file not found: $apiKeysPath"
-        }
-        
-        # Upload FEIDE users config file if it exists
-        $feideUsersPath = Join-Path $PSScriptRoot "config\feide-users.conf"
-        if (Test-Path $feideUsersPath) {
-            Write-Info "Uploading FEIDE users configuration..."
-            scp -i $privateKeyPath -o StrictHostKeyChecking=no $feideUsersPath "$AdminUsername@${TargetIP}:~/feide-users.conf"
-        } else {
-            Write-Info "FEIDE users file not found: $feideUsersPath"
         }
         
         # Clean up temp files
