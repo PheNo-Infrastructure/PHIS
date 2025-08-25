@@ -44,10 +44,7 @@
       "Bash(timeout 1200 python demo_scripts/import_sandbox_data.py)",
       "Bash(timeout 1800 python demo_scripts/import_sandbox_data.py)",
       "Bash(timeout 900 python demo_scripts/import_sandbox_data.py)",
-      "Bash(timeout 600 python demo_scripts/import_sandbox_data.py)",
-      "WebFetch(domain:172.211.86.191)",
-      "WebSearch",
-      "Bash(scp:*)"
+      "Bash(timeout 600 python demo_scripts/import_sandbox_data.py)"
     ],
     "deny": []
   }

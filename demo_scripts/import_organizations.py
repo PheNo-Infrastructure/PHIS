@@ -114,58 +114,6 @@ class OrganizationImporter:
         return success_count
 
 
-def link_organizations_to_facilities(sandbox_client: OpenSILEXClient, vm_client: OpenSILEXClient) -> int:
-    """Link organizations to their facilities after both have been imported"""
-    print("\n=== Linking Organizations to Facilities ===")
-    
-    # Get facilities from sandbox to see organization relationships
-    facilities = sandbox_client.get_all_items("core/facilities")
-    if not facilities:
-        print("[WARNING] No facilities found in sandbox")
-        return 0
-    
-    # Build mapping of organization URI -> list of facility URIs
-    from opensilex_client import map_sandbox_uri_to_vm
-    org_to_facilities = {}
-    
-    for facility in facilities:
-        if 'organizations' in facility and facility['organizations']:
-            facility_vm_uri = map_sandbox_uri_to_vm(facility['uri'])
-            
-            for org in facility['organizations']:
-                org_sandbox_uri = org['uri'] if isinstance(org, dict) else org
-                org_vm_uri = map_sandbox_uri_to_vm(org_sandbox_uri)
-                
-                if org_vm_uri not in org_to_facilities:
-                    org_to_facilities[org_vm_uri] = []
-                org_to_facilities[org_vm_uri].append(facility_vm_uri)
-    
-    print(f"[INFO] Found {len(org_to_facilities)} organizations with facility relationships")
-    
-    # Update each organization to include its facilities
-    success_count = 0
-    
-    for org_uri, facility_uris in org_to_facilities.items():
-        # Get the current organization data
-        org_data = vm_client.get_item_by_uri('core/organisations', org_uri)
-        
-        if org_data:
-            # Add facilities to organization
-            org_data['facilities'] = facility_uris
-            
-            # Update the organization
-            if vm_client.update_item('core/organisations', org_data):
-                success_count += 1
-                print(f"[OK] Linked organization {org_uri} to {len(facility_uris)} facilities")
-            else:
-                print(f"[ERROR] Failed to update organization {org_uri}")
-        else:
-            print(f"[WARNING] Organization {org_uri} not found in VM")
-    
-    print(f"[OK] Successfully linked {success_count}/{len(org_to_facilities)} organizations to facilities")
-    return success_count
-
-
 def main():
     """Main function to import organizations"""
     # Configuration
