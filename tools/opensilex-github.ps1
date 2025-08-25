@@ -226,6 +226,15 @@ function Deploy-VM {
         } else {
             Write-Info "Creating VM with PowerShell commands..."
             
+            # Check for orphaned disks from previous VM deletions
+            Write-Info "Checking for orphaned disks..."
+            $orphanedDisk = Get-AzDisk -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*$VMName*" -and $_.DiskState -eq "Unattached" }
+            if ($orphanedDisk) {
+                Write-Warning "Found orphaned disk(s) from previous VM deletion:"
+                $orphanedDisk | ForEach-Object { Write-Info "  - $($_.Name)" }
+                Write-Info "These will be automatically cleaned up during VM creation"
+            }
+            
             # Create VM using PowerShell commands (simplified version)
             $credential = New-Object System.Management.Automation.PSCredential ($AdminUsername, (ConvertTo-SecureString "dummy" -AsPlainText -Force))
             
@@ -236,24 +245,75 @@ function Deploy-VM {
             # Add SSH key
             Add-AzVMSshPublicKey -VM $vm -KeyData $sshPublicKey -Path "/home/$AdminUsername/.ssh/authorized_keys"
             
-            # Create network components
-            $subnet = New-AzVirtualNetworkSubnetConfig -Name "default" -AddressPrefix "10.0.0.0/24"
-            $vnet = New-AzVirtualNetwork -Name "$VMName-vnet" -ResourceGroupName $ResourceGroupName -Location $Location -AddressPrefix "10.0.0.0/16" -Subnet $subnet
+            # Create or reuse network components
+            Write-Info "Checking for existing network components..."
             
-            $pip = New-AzPublicIpAddress -Name "$VMName-ip" -ResourceGroupName $ResourceGroupName -Location $Location -AllocationMethod Dynamic
+            # Check for existing virtual network
+            $vnet = Get-AzVirtualNetwork -Name "$VMName-vnet" -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+            if ($vnet) {
+                Write-Success "Reusing existing virtual network: $VMName-vnet"
+            } else {
+                Write-Info "Creating new virtual network..."
+                $subnet = New-AzVirtualNetworkSubnetConfig -Name "default" -AddressPrefix "10.0.0.0/24"
+                $vnet = New-AzVirtualNetwork -Name "$VMName-vnet" -ResourceGroupName $ResourceGroupName -Location $Location -AddressPrefix "10.0.0.0/16" -Subnet $subnet
+                Write-Success "Virtual network created: $VMName-vnet"
+            }
             
-            # Create NSG with required ports
-            $nsgRule1 = New-AzNetworkSecurityRuleConfig -Name "SSH" -Protocol Tcp -Direction Inbound -Priority 1000 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 22 -Access Allow
-            $nsgRule2 = New-AzNetworkSecurityRuleConfig -Name "HTTP" -Protocol Tcp -Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 80 -Access Allow
-            $nsgRule3 = New-AzNetworkSecurityRuleConfig -Name "OpenSILEX" -Protocol Tcp -Direction Inbound -Priority 1002 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 8666 -Access Allow
-            $nsg = New-AzNetworkSecurityGroup -Name "$VMName-nsg" -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $nsgRule1,$nsgRule2,$nsgRule3
+            # Check for existing public IP
+            $pip = Get-AzPublicIpAddress -Name "$VMName-ip" -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+            if ($pip) {
+                Write-Success "Reusing existing public IP: $VMName-ip (IP: $($pip.IpAddress))"
+                # Ensure it's set to Static to preserve the IP
+                if ($pip.PublicIpAllocationMethod -eq "Dynamic") {
+                    Write-Info "Converting public IP from Dynamic to Static to preserve IP address..."
+                    $pip.PublicIpAllocationMethod = "Static"
+                    Set-AzPublicIpAddress -PublicIpAddress $pip | Out-Null
+                    Write-Success "Public IP converted to Static"
+                }
+            } else {
+                Write-Info "Creating new public IP..."
+                $pip = New-AzPublicIpAddress -Name "$VMName-ip" -ResourceGroupName $ResourceGroupName -Location $Location -AllocationMethod Static
+                Write-Success "Public IP created: $VMName-ip"
+            }
             
+            # Check for existing NSG
+            $nsg = Get-AzNetworkSecurityGroup -Name "$VMName-nsg" -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+            if ($nsg) {
+                Write-Success "Reusing existing network security group: $VMName-nsg"
+            } else {
+                Write-Info "Creating new network security group..."
+                $nsgRule1 = New-AzNetworkSecurityRuleConfig -Name "SSH" -Protocol Tcp -Direction Inbound -Priority 1000 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 22 -Access Allow
+                $nsgRule2 = New-AzNetworkSecurityRuleConfig -Name "HTTP" -Protocol Tcp -Direction Inbound -Priority 1001 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 80 -Access Allow
+                $nsgRule3 = New-AzNetworkSecurityRuleConfig -Name "OpenSILEX" -Protocol Tcp -Direction Inbound -Priority 1002 -SourceAddressPrefix * -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 8666 -Access Allow
+                $nsg = New-AzNetworkSecurityGroup -Name "$VMName-nsg" -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $nsgRule1,$nsgRule2,$nsgRule3
+                Write-Success "Network security group created: $VMName-nsg"
+            }
+            
+            # Check for existing NIC
+            $nic = Get-AzNetworkInterface -Name "$VMName-nic" -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+            if ($nic) {
+                Write-Warning "Network interface $VMName-nic already exists. This might indicate a previous incomplete deployment."
+                Write-Info "Removing existing NIC to create a fresh one..."
+                Remove-AzNetworkInterface -Name "$VMName-nic" -ResourceGroupName $ResourceGroupName -Force | Out-Null
+            }
+            
+            Write-Info "Creating new network interface..."
             $nic = New-AzNetworkInterface -Name "$VMName-nic" -ResourceGroupName $ResourceGroupName -Location $Location -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
+            Write-Success "Network interface created: $VMName-nic"
             
             $vm = Add-AzVMNetworkInterface -VM $vm -Id $nic.Id
             
             # Create the VM
-            New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vm
+            Write-Info "Creating new VM: $VMName"
+            try {
+                New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vm | Out-Null
+                Write-Success "VM created successfully: $VMName"
+            } catch {
+                Write-Error "Failed to create VM: $($_.Exception.Message)"
+                Write-Info "Cleaning up potentially orphaned network interface..."
+                Remove-AzNetworkInterface -Name "$VMName-nic" -ResourceGroupName $ResourceGroupName -Force -ErrorAction SilentlyContinue | Out-Null
+                throw $_
+            }
             
             # Configure auto-shutdown (19:00 UTC = 8 PM CET/7 PM GMT)
             Write-Info "Configuring auto-shutdown for 19:00 UTC (8 PM CET)..."
@@ -275,19 +335,40 @@ function Deploy-VM {
             }
         }
         
-        # Get VM IP
-        $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip" -ErrorAction SilentlyContinue
-        if ($publicIP) {
-            $script:VMIPAddress = $publicIP.IpAddress
-            Write-Success "VM deployed successfully!"
-            Write-Info "VM Name: $VMName"
-            Write-Info "Public IP: $($script:VMIPAddress)"
-            Write-Info "SSH Command: ssh $AdminUsername@$($script:VMIPAddress)"
-            return $true
-        } else {
-            Write-Error "Failed to get VM public IP"
-            return $false
+        # Get VM IP and verify deployment
+        Write-Info "Verifying VM deployment and getting public IP..."
+        $maxRetries = 5
+        $retryDelay = 10
+        
+        for ($i = 1; $i -le $maxRetries; $i++) {
+            $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip" -ErrorAction SilentlyContinue
+            if ($publicIP -and $publicIP.IpAddress) {
+                $script:VMIPAddress = $publicIP.IpAddress
+                Write-Success "VM deployed successfully!"
+                Write-Info "VM Name: $VMName"
+                Write-Info "Public IP: $($script:VMIPAddress)"
+                Write-Info "SSH Command: ssh $AdminUsername@$($script:VMIPAddress)"
+                
+                # Additional deployment verification
+                $vm = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -Status -ErrorAction SilentlyContinue
+                if ($vm) {
+                    $powerState = ($vm.Statuses | Where-Object {$_.Code -like "PowerState/*"}).DisplayStatus
+                    Write-Info "VM Power State: $powerState"
+                }
+                
+                return $true
+            } else {
+                Write-Warning "Attempt $i of ${maxRetries}: Public IP not ready yet..."
+                if ($i -lt $maxRetries) {
+                    Start-Sleep -Seconds $retryDelay
+                }
+            }
         }
+        
+        Write-Error "Failed to get VM public IP after ${maxRetries} attempts"
+        Write-Info "VM may have been created but public IP assignment failed"
+        Write-Info "Check Azure portal for VM status: $VMName in resource group: $ResourceGroupName"
+        return $false
     }
     catch {
         Write-Error "VM deployment failed: $($_.Exception.Message)"
@@ -450,10 +531,20 @@ echo 'export PATH=`$JAVA_HOME/bin:`$PATH' >> ~/.bashrc
 print_status "Installing Docker (required for MongoDB/RDF4J containers)..."
 sudo apt install -y ca-certificates curl gnupg lsb-release
 sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=`$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian `$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Fix GPG key download for non-interactive sessions
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null || {
+    print_warning "GPG method failed, trying alternative Docker installation..."
+    # Alternative: use the convenience script
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    rm get-docker.sh
+}
+# Only add repository if GPG key was successful
+if [ -f "/etc/apt/keyrings/docker.gpg" ]; then
+    echo "deb [arch=`$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian `$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt update
+    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+fi
 
 print_status "Configuring Docker..."
 sudo usermod -aG docker `$(whoami)
@@ -616,7 +707,7 @@ if [ "$FEIDE_ENABLED" = false ]; then
     echo ""
     print_status "To enable FEIDE (Dataporten) authentication:"
     print_status "1. Register your application at: https://dashboard.dataporten.no/"
-    print_status "2. Set redirect URI to: http://$VM_PUBLIC_IP:8080/app/openid"
+    print_status "2. Set redirect URI to: http://$VM_PUBLIC_IP/app/openid"
     print_status "3. Enable attribute groups: email, userinfo-name, userinfo-mail"
     print_status "4. Enable scopes: openid, userid, profile, email"
     print_status "5. Create file: config/api-keys.conf"
@@ -798,7 +889,7 @@ security:
     userFirstNameClaim: "given_name"
     userLastNameClaim: "family_name"
     providerURI: "https://auth.dataporten.no"
-    redirectURI: "http://$VM_PUBLIC_IP:8080/app/openid"
+    redirectURI: "http://$VM_PUBLIC_IP/app/openid"
     clientID: "$FEIDE_CLIENT_ID"
     clientSecret: "$FEIDE_CLIENT_SECRET"
     connectionTitle:
@@ -1276,7 +1367,7 @@ echo "=============================================="
         Remove-Item $tempSetupScript, $tempInstallScript
         
         # Fix line endings and make scripts executable
-        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/setup-system.sh ~/install-opensilex.sh 2>/dev/null || sed -i 's/\r$//' ~/setup-system.sh ~/install-opensilex.sh; chmod +x ~/setup-system.sh ~/install-opensilex.sh"
+        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/setup-system.sh ~/install-opensilex.sh ~/api-keys.conf 2>/dev/null || sed -i 's/\r$//' ~/setup-system.sh ~/install-opensilex.sh ~/api-keys.conf; chmod +x ~/setup-system.sh ~/install-opensilex.sh"
         
         if (-not $SkipDependencies) {
             Write-Info "Setting up system and creating OpenSILEX user (this may take 5-10 minutes)..."
