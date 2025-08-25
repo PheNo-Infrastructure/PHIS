@@ -345,7 +345,7 @@ def import_sandbox_variables():
     SANDBOX_USER = "guest@opensilex.org"
     SANDBOX_PASS = "guest"
     
-    VM_URL = "http://172.211.86.191:8666"
+    VM_URL = "http://20.61.118.92:8666"
     VM_USER = os.getenv("VM_USER", "admin@opensilex.org")
     VM_PASS = os.getenv("VM_PASS", "admin")
     
