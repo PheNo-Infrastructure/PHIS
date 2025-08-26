@@ -1384,6 +1384,7 @@ DEFAULT_GROUP_URI = "http://opensilex.org/groups/users"
 DEFAULT_PROFILE_URI = "http://opensilex.org/profiles/default"
 CHECK_INTERVAL = 10  # seconds - optimized for faster user detection
 PROCESSED_USERS_FILE = "/opt/opensilex-auto-groups/processed_users.json"
+USER_COUNT_FILE = "/opt/opensilex-auto-groups/user_count.json"
 
 # Setup logging
 logging.basicConfig(
@@ -1418,6 +1419,40 @@ class RawOpenSILEXAutoGroups:
                 json.dump(list(self.processed_users), f)
         except Exception as e:
             logger.error(f"Could not save processed users file: {e}")
+    
+    def load_user_count(self):
+        """Load last known user count"""
+        try:
+            if Path(USER_COUNT_FILE).exists():
+                with open(USER_COUNT_FILE, 'r') as f:
+                    data = json.load(f)
+                    return data.get('count', 0)
+            return 0
+        except Exception as e:
+            logger.warning(f"Could not load user count: {e}")
+            return 0
+    
+    def save_user_count(self, count):
+        """Save current user count"""
+        try:
+            with open(USER_COUNT_FILE, 'w') as f:
+                json.dump({'count': count, 'timestamp': time.time()}, f)
+        except Exception as e:
+            logger.error(f"Could not save user count: {e}")
+    
+    def detect_user_deletion(self, current_count):
+        """Detect if users were deleted and reset processing if needed"""
+        last_count = self.load_user_count()
+        
+        if last_count > 0 and current_count < last_count:
+            logger.warning(f"🔄 User count decreased: {last_count} → {current_count} (deletion detected)")
+            logger.info("🔄 Automatically resetting processed users cache...")
+            self.processed_users = set()
+            self.save_processed_users()
+            logger.info("✅ Cache reset complete - will re-process all users")
+            return True
+        
+        return False
     
     def authenticate(self):
         """Authenticate and get token"""
@@ -1540,8 +1575,21 @@ class RawOpenSILEXAutoGroups:
             logger.error(f"Error assigning user to group: {e}")
             return False
     
+    def get_current_group_members(self):
+        """Get list of current Users group members"""
+        try:
+            group_data = self.get_group_by_uri(DEFAULT_GROUP_URI)
+            if not group_data:
+                return set()
+            
+            user_profiles = group_data.get('user_profiles', [])
+            return set(profile.get('user_uri') for profile in user_profiles if profile.get('user_uri'))
+        except Exception as e:
+            logger.error(f"Error getting group members: {e}")
+            return set()
+    
     def process_new_users(self):
-        """Process new users"""
+        """Process new users with enhanced group membership checking"""
         try:
             if not self.token and not self.authenticate():
                 logger.warning("Failed to authenticate")
@@ -1553,7 +1601,16 @@ class RawOpenSILEXAutoGroups:
                 return
             
             logger.info(f"Found {len(users)} total users")
-            new_users_found = 0
+            
+            # Check for user deletions and auto-reset if needed
+            self.detect_user_deletion(len(users))
+            self.save_user_count(len(users))
+            
+            # Get current group members
+            current_group_members = self.get_current_group_members()
+            logger.debug(f"Current group has {len(current_group_members)} members")
+            
+            assigned_users = 0
             
             for user in users:
                 user_uri = user.get('uri')
@@ -1566,24 +1623,30 @@ class RawOpenSILEXAutoGroups:
                 if user_email == ADMIN_EMAIL:
                     continue
                 
-                # Check if already processed
-                if user_uri in self.processed_users:
-                    continue
-                
-                logger.info(f"Found new user: {user_email}")
-                
-                # Assign to group
-                if self.assign_user_to_group(user):
-                    self.processed_users.add(user_uri)
-                    new_users_found += 1
+                # Check if user is NOT in the group (regardless of processed status)
+                if user_uri not in current_group_members:
+                    logger.info(f"Found new user: {user_email}")
+                    
+                    # Assign to group
+                    if self.assign_user_to_group(user):
+                        self.processed_users.add(user_uri)
+                        assigned_users += 1
+                    else:
+                        logger.error(f"Failed to assign {user_email}")
                 else:
-                    logger.error(f"Failed to assign {user_email}")
+                    # User is in group - make sure they're marked as processed
+                    if user_uri not in self.processed_users:
+                        self.processed_users.add(user_uri)
+                        logger.debug(f"Marked existing group member as processed: {user_email}")
             
-            if new_users_found > 0:
+            if assigned_users > 0:
                 self.save_processed_users()
-                logger.info(f"Processed {new_users_found} new users")
+                logger.info(f"Processed {assigned_users} new users")
             else:
                 logger.debug("No new users to process")
+                
+            # Save processed users even if no new assignments (for existing members)
+            self.save_processed_users()
                 
         except Exception as e:
             logger.error(f"Error in process_new_users: {e}")
@@ -1591,8 +1654,9 @@ class RawOpenSILEXAutoGroups:
     
     def run_monitor(self):
         """Main monitoring loop"""
-        logger.info("🚀 Starting Raw HTTP OpenSILEX Monitor for Feide users")
+        logger.info("🚀 Starting Intelligent OpenSILEX Monitor with auto-deletion detection")
         logger.info(f"Check interval: {CHECK_INTERVAL} seconds")
+        logger.info("🧠 Automatically detects account deletions and resets cache")
         
         while True:
             try:
@@ -1793,7 +1857,7 @@ sudo /opt/opensilex-auto-groups/venv/bin/python /opt/opensilex-auto-groups/setup
 # Create systemd service for monitoring
 sudo tee /etc/systemd/system/opensilex-auto-groups.service > /dev/null << 'SERVICE_EOF'
 [Unit]
-Description=OpenSILEX Automatic Group Assignment Service for Feide/OpenID Users (Optimized - 10s intervals)
+Description=Intelligent OpenSILEX Auto Group Assignment (detects account deletions automatically)
 After=network.target opensilex.service
 Requires=network.target
 
@@ -1826,6 +1890,31 @@ sudo tee /etc/logrotate.d/opensilex-auto-groups > /dev/null << 'LOGROTATE_EOF'
 }
 LOGROTATE_EOF
 
+# Create reset monitoring script for account recreation scenarios
+sudo tee /opt/opensilex-auto-groups/reset_monitoring.sh << 'RESET_EOF'
+#!/bin/bash
+# Reset OpenSILEX Auto Groups Monitoring
+# Use this if a Feide user deleted/recreated their account and needs re-processing
+
+echo "🔄 Resetting OpenSILEX Auto Groups Monitoring..."
+
+# Clear processed users cache
+echo "Clearing processed users cache..."
+sudo echo "[]" > /opt/opensilex-auto-groups/processed_users.json
+
+# Restart monitoring service
+echo "Restarting monitoring service..."
+sudo systemctl restart opensilex-auto-groups
+
+echo "✅ Monitoring reset complete!"
+echo "📊 The service will now re-process all users within 10 seconds."
+echo ""
+echo "Check status with: sudo systemctl status opensilex-auto-groups"
+echo "View logs with: sudo journalctl -u opensilex-auto-groups -f"
+RESET_EOF
+
+sudo chmod +x /opt/opensilex-auto-groups/reset_monitoring.sh
+
 # Enable and start the auto-groups service
 sudo systemctl daemon-reload
 sudo systemctl enable opensilex-auto-groups.service
@@ -1851,11 +1940,13 @@ echo "• Feide/OpenID authentication configured"
 echo "• Automatic group assignment system installed"
 echo ""
 echo "🔐 User Management:"
-echo "• New Feide users automatically join 'Users' group"
+echo "• New Feide users automatically join 'Users' group (10s detection)"
+echo "• 🧠 Intelligent deletion detection - auto-resets on account recreation"
 echo "• Default profile provides menu/dashboard access only"
 echo "• Admin users must be manually assigned to 'Administrators' group"
 echo "• Monitor service: systemctl status opensilex-auto-groups"
-echo "• Monitor logs: tail -f /var/log/opensilex-auto-groups.log"
+echo "• Monitor logs: journalctl -u opensilex-auto-groups -f"
+echo "• Manual reset (if needed): /opt/opensilex-auto-groups/reset_monitoring.sh"
 echo ""
 echo "Next steps:"
 echo "1. Access: http://$(curl -s ifconfig.me)/ (nginx) or :8666 (direct)"
