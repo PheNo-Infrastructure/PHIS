@@ -1382,7 +1382,7 @@ ADMIN_EMAIL = "admin@opensilex.org"
 ADMIN_PASSWORD = "admin"
 DEFAULT_GROUP_URI = "http://opensilex.org/groups/users"
 DEFAULT_PROFILE_URI = "http://opensilex.org/profiles/default"
-CHECK_INTERVAL = 60  # seconds
+CHECK_INTERVAL = 10  # seconds - optimized for faster user detection
 PROCESSED_USERS_FILE = "/opt/opensilex-auto-groups/processed_users.json"
 
 # Setup logging
@@ -1793,7 +1793,7 @@ sudo /opt/opensilex-auto-groups/venv/bin/python /opt/opensilex-auto-groups/setup
 # Create systemd service for monitoring
 sudo tee /etc/systemd/system/opensilex-auto-groups.service > /dev/null << 'SERVICE_EOF'
 [Unit]
-Description=OpenSILEX Automatic Group Assignment Service for Feide/OpenID Users
+Description=OpenSILEX Automatic Group Assignment Service for Feide/OpenID Users (Optimized - 10s intervals)
 After=network.target opensilex.service
 Requires=network.target
 
