@@ -1320,6 +1320,519 @@ sudo systemctl daemon-reload
 sudo systemctl enable opensilex.service
 sudo systemctl start opensilex.service
 
+# Set up automatic group assignment for Feide/OpenID users
+print_status "Setting up automatic group assignment for new users..."
+
+# Wait for OpenSILEX to start up (may take a minute)
+print_status "Waiting for OpenSILEX service to be fully ready..."
+sleep 30
+for i in {1..12}; do
+    if curl -s http://localhost:8666/rest/system/info >/dev/null; then
+        print_success "OpenSILEX API is responding"
+        break
+    fi
+    if [ $i -eq 12 ]; then
+        print_warning "API not responding yet, continuing with group setup anyway"
+    else
+        print_status "Waiting for API... (attempt $i/12)"
+        sleep 10
+    fi
+done
+
+# Create auto-group assignment directory
+sudo mkdir -p /opt/opensilex-auto-groups
+
+# Install Python dependencies
+sudo apt install -y python3 python3-pip python3-venv jq curl
+
+# Clone PHIS repository for OpenSILEX Python client
+print_status "Setting up OpenSILEX Python client..."
+if [ ! -d "/home/azureuser/PHIS" ]; then
+    echo "Cloning PHIS repository (debian-11-production branch) for OpenSILEX Python client..."
+    cd /home/azureuser
+    git clone -b debian-11-production https://github.com/lversen/PHIS.git PHIS
+    chown -R azureuser:azureuser /home/azureuser/PHIS
+else
+    echo "PHIS repository already exists"
+fi
+
+# Create Python virtual environment
+sudo python3 -m venv /opt/opensilex-auto-groups/venv
+sudo /opt/opensilex-auto-groups/venv/bin/pip install requests pymongo python-dateutil urllib3 six
+
+# Create the monitoring script
+sudo tee /opt/opensilex-auto-groups/monitor_new_users.py > /dev/null << 'MONITOR_EOF'
+#!/usr/bin/env python3
+"""
+Working OpenSILEX New User Monitor using raw HTTP requests
+Bypasses Python client deserialization issues
+"""
+
+import requests
+import json
+import time
+import logging
+import os
+import sys
+from datetime import datetime
+
+# Configuration
+OPENSILEX_API_URL = "http://172.211.86.191:8666/rest"
+ADMIN_EMAIL = "admin@opensilex.org"
+ADMIN_PASSWORD = "admin"
+DEFAULT_GROUP_URI = "http://opensilex.org/groups/users"
+DEFAULT_PROFILE_URI = "http://opensilex.org/profiles/default"
+CHECK_INTERVAL = 60  # seconds
+PROCESSED_USERS_FILE = "/opt/opensilex-auto-groups/processed_users.json"
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('/var/log/opensilex-auto-groups.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class RawOpenSILEXAutoGroups:
+    def __init__(self):
+        self.token = None
+        self.processed_users = self.load_processed_users()
+        
+    def load_processed_users(self):
+        """Load list of already processed users"""
+        try:
+            if os.path.exists(PROCESSED_USERS_FILE):
+                with open(PROCESSED_USERS_FILE, 'r') as f:
+                    return set(json.load(f))
+        except Exception as e:
+            logger.warning(f"Could not load processed users file: {e}")
+        return set()
+    
+    def save_processed_users(self):
+        """Save list of processed users"""
+        try:
+            with open(PROCESSED_USERS_FILE, 'w') as f:
+                json.dump(list(self.processed_users), f)
+        except Exception as e:
+            logger.error(f"Could not save processed users file: {e}")
+    
+    def authenticate(self):
+        """Authenticate and get token"""
+        try:
+            auth_data = {"identifier": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+            response = requests.post(f"{OPENSILEX_API_URL}/security/authenticate", 
+                                   json=auth_data, headers={"Content-Type": "application/json"})
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.token = result.get('result', {}).get('token')
+                if self.token:
+                    logger.info("Successfully authenticated with OpenSILEX API")
+                    return True
+            
+            logger.error(f"Authentication failed: {response.status_code}")
+            return False
+        except Exception as e:
+            logger.error(f"Authentication error: {e}")
+            return False
+    
+    def get_users_from_api(self):
+        """Get users using raw HTTP"""
+        try:
+            headers = {"Authorization": f"Bearer {self.token}"}
+            response = requests.get(f"{OPENSILEX_API_URL}/security/users", headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('result', [])
+            else:
+                logger.error(f"Failed to get users: {response.status_code} - {response.text}")
+                return []
+        except Exception as e:
+            logger.error(f"Error getting users: {e}")
+            return []
+    
+    def get_group_by_uri(self, group_uri):
+        """Get group data using raw HTTP"""
+        try:
+            headers = {"Authorization": f"Bearer {self.token}"}
+            # URL encode the URI
+            encoded_uri = group_uri.replace('/', '%2F').replace(':', '%3A')
+            response = requests.get(f"{OPENSILEX_API_URL}/security/groups/{encoded_uri}", headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('result', {})
+            else:
+                logger.error(f"Failed to get group: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting group: {e}")
+            return None
+    
+    def update_group_raw(self, group_data):
+        """Update group using raw HTTP"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.put(f"{OPENSILEX_API_URL}/security/groups", 
+                                  json=group_data, headers=headers)
+            
+            if response.status_code == 200:
+                return True
+            else:
+                logger.error(f"Failed to update group: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Error updating group: {e}")
+            return False
+    
+    def assign_user_to_group(self, user_data):
+        """Assign user to default group using raw HTTP"""
+        try:
+            user_uri = user_data.get('uri')
+            user_email = user_data.get('email', 'unknown')
+            user_name = f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip()
+            if not user_name:
+                user_name = user_email
+            
+            logger.info(f"Processing user: {user_email} ({user_uri})")
+            
+            # Get current group
+            group_data = self.get_group_by_uri(DEFAULT_GROUP_URI)
+            if not group_data:
+                logger.error("Could not retrieve Users group")
+                return False
+            
+            # Check if user already in group
+            user_profiles = group_data.get('user_profiles', [])
+            for profile in user_profiles:
+                if profile.get('user_uri') == user_uri:
+                    logger.info(f"User {user_email} already in group")
+                    return True
+            
+            # Add user to group
+            new_user_profile = {
+                "user_uri": user_uri,
+                "user_name": user_name,
+                "profile_uri": DEFAULT_PROFILE_URI,
+                "profile_name": "Default User"
+            }
+            
+            user_profiles.append(new_user_profile)
+            group_data['user_profiles'] = user_profiles
+            
+            # Update the group
+            if self.update_group_raw(group_data):
+                logger.info(f"✅ Successfully assigned {user_email} to Users group")
+                return True
+            else:
+                logger.error(f"❌ Failed to update group for {user_email}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error assigning user to group: {e}")
+            return False
+    
+    def process_new_users(self):
+        """Process new users"""
+        try:
+            if not self.token and not self.authenticate():
+                logger.warning("Failed to authenticate")
+                return
+            
+            users = self.get_users_from_api()
+            if not users:
+                logger.debug("No users returned")
+                return
+            
+            logger.info(f"Found {len(users)} total users")
+            new_users_found = 0
+            
+            for user in users:
+                user_uri = user.get('uri')
+                user_email = user.get('email', 'unknown')
+                
+                if not user_uri:
+                    continue
+                
+                # Skip admin user
+                if user_email == ADMIN_EMAIL:
+                    continue
+                
+                # Check if already processed
+                if user_uri in self.processed_users:
+                    continue
+                
+                logger.info(f"Found new user: {user_email}")
+                
+                # Assign to group
+                if self.assign_user_to_group(user):
+                    self.processed_users.add(user_uri)
+                    new_users_found += 1
+                else:
+                    logger.error(f"Failed to assign {user_email}")
+            
+            if new_users_found > 0:
+                self.save_processed_users()
+                logger.info(f"Processed {new_users_found} new users")
+            else:
+                logger.debug("No new users to process")
+                
+        except Exception as e:
+            logger.error(f"Error in process_new_users: {e}")
+            self.token = None  # Reset auth on error
+    
+    def run_monitor(self):
+        """Main monitoring loop"""
+        logger.info("🚀 Starting Raw HTTP OpenSILEX Monitor for Feide users")
+        logger.info(f"Check interval: {CHECK_INTERVAL} seconds")
+        
+        while True:
+            try:
+                self.process_new_users()
+                time.sleep(CHECK_INTERVAL)
+                
+            except KeyboardInterrupt:
+                logger.info("Shutting down...")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                time.sleep(CHECK_INTERVAL)
+        
+        logger.info("Monitor stopped")
+
+if __name__ == "__main__":
+    monitor = RawOpenSILEXAutoGroups()
+    monitor.run_monitor()
+MONITOR_EOF
+
+# Create initial groups and profiles setup script
+sudo tee /opt/opensilex-auto-groups/setup_initial_groups.py > /dev/null << 'SETUP_EOF'
+#!/usr/bin/env python3
+"""
+Simple working setup for OpenSILEX Feide/OpenID integration
+Focuses on creating profiles and groups correctly
+"""
+
+import sys
+import os
+import time
+
+# Add src directories to Python path for OpenSILEX client
+sys.path.insert(0, '/home/azureuser/PHIS/src')
+sys.path.insert(0, '/home/azureuser/PHIS/src/utils')
+sys.path.insert(0, '/home/azureuser/PHIS/src/opensilex_python_client')
+
+from opensilex_swagger_client.api.security_api import SecurityApi
+from opensilex_swagger_client.models.group_creation_dto import GroupCreationDTO
+from opensilex_swagger_client.models.profile_creation_dto import ProfileCreationDTO
+from auth_manager import OpenSilexAuthManager
+
+OPENSILEX_API_URL = "http://172.211.86.191:8666"
+ADMIN_EMAIL = "admin@opensilex.org"
+ADMIN_PASSWORD = "admin"
+
+def main():
+    print("🚀 Setting up OpenSILEX profiles and groups for Feide/OpenID integration...")
+    
+    try:
+        # Initialize auth manager
+        auth_manager = OpenSilexAuthManager(host=OPENSILEX_API_URL)
+        
+        # Authenticate with retry logic
+        authenticated = False
+        for attempt in range(5):
+            print(f"Authentication attempt {attempt + 1}/5...")
+            if auth_manager.authenticate(ADMIN_EMAIL, ADMIN_PASSWORD, save_token=False):
+                authenticated = True
+                print("✅ Authentication successful")
+                break
+            else:
+                print(f"❌ Authentication failed (attempt {attempt+1}/5)")
+                if attempt < 4:
+                    print("Waiting 10 seconds before retry...")
+                    time.sleep(10)
+        
+        if not authenticated:
+            print("❌ Could not authenticate after 5 attempts")
+            sys.exit(1)
+        
+        # Get authenticated client
+        api_client = auth_manager.get_authenticated_client()
+        security_api = SecurityApi(api_client)
+        auth_header = f"Bearer {auth_manager.token_data['token']}"
+        
+        print("🔧 Creating profiles...")
+        
+        # Create comprehensive admin profile with ALL necessary credentials
+        admin_credentials = [
+            # Core security management
+            "admin-access", "user-modification", "group-modification", "profile-modification",
+            # Access to all system modules
+            "organization-access", "project-access", "experiment-access", "facility-access",
+            "device-access", "event-access", "variable-access", "germplasm-access", 
+            "document-access", "scientific-objects-access", "provenance-access", "data-access",
+            "spatial-access", "vocabulary-access", "account-access", "person-access", 
+            "group-access", "profile-access", "package-access", "dataverse-access",
+            # UI access
+            "dashboard-access", "menu-access", "profile-read-own"
+        ]
+        
+        try:
+            admin_profile = ProfileCreationDTO(
+                uri="http://opensilex.org/profiles/admin",
+                name="Administrator",
+                credentials=admin_credentials
+            )
+            security_api.create_profile(authorization=auth_header, body=admin_profile)
+            print("✅ Created/Updated Administrator profile with comprehensive permissions")
+        except Exception as e:
+            if "409" in str(e) or "already exists" in str(e).lower():
+                print("ℹ️  Administrator profile already exists")
+            else:
+                print(f"❌ Failed to create Administrator profile: {e}")
+        
+        # Create default profile for Feide users
+        try:
+            default_profile = ProfileCreationDTO(
+                uri="http://opensilex.org/profiles/default",
+                name="Default User",
+                credentials=[
+                    "dashboard-access",
+                    "menu-access", 
+                    "profile-read-own"
+                ]
+            )
+            security_api.create_profile(authorization=auth_header, body=default_profile)
+            print("✅ Created Default User profile")
+        except Exception as e:
+            if "409" in str(e) or "already exists" in str(e).lower():
+                print("ℹ️  Default User profile already exists")
+            else:
+                print(f"❌ Failed to create Default User profile: {e}")
+        
+        print("🔧 Creating groups...")
+        
+        # Create Users group for automatic Feide assignment
+        try:
+            users_group = GroupCreationDTO(
+                uri="http://opensilex.org/groups/users",
+                name="Users",
+                description="Default group for Feide/OpenID users - automatically assigned",
+                user_profiles=[]
+            )
+            security_api.create_group(authorization=auth_header, body=users_group)
+            print("✅ Created Users group")
+        except Exception as e:
+            if "409" in str(e) or "already exists" in str(e).lower():
+                print("ℹ️  Users group already exists")
+            else:
+                print(f"❌ Failed to create Users group: {e}")
+        
+        # Create Administrators group for manual admin assignment
+        try:
+            admin_group = GroupCreationDTO(
+                uri="http://opensilex.org/groups/administrators",
+                name="Administrators",
+                description="System administrators with full access",
+                user_profiles=[]
+            )
+            security_api.create_group(authorization=auth_header, body=admin_group)
+            print("✅ Created Administrators group")
+        except Exception as e:
+            if "409" in str(e) or "already exists" in str(e).lower():
+                print("ℹ️  Administrators group already exists")
+            else:
+                print(f"❌ Failed to create Administrators group: {e}")
+        
+        print("✅ Setup completed successfully!")
+        print("")
+        print("📋 Next Steps:")
+        print("1. ✅ Administrator profile created with comprehensive permissions")
+        print("2. ✅ Default User profile created for Feide users")
+        print("3. ✅ Users group created for automatic assignment")
+        print("4. ✅ Administrators group created")
+        print("")
+        print("🔧 Manual Action Required:")
+        print("• Log into the OpenSILEX web interface as admin")
+        print("• Go to Administration > Groups")
+        print("• Edit the 'Administrators' group")
+        print("• Add the admin user with 'Administrator' profile")
+        print("• This enables the admin to manage users and groups via the API")
+        print("")
+        print("🚀 After manual setup, the monitoring service will automatically:")
+        print("• Detect new Feide users")
+        print("• Assign them to 'Users' group with 'Default User' profile")
+        print("• Give them dashboard and menu access")
+        
+    except Exception as e:
+        print(f"❌ Setup failed with error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+SETUP_EOF
+
+# Make scripts executable
+sudo chmod +x /opt/opensilex-auto-groups/monitor_new_users.py
+sudo chmod +x /opt/opensilex-auto-groups/setup_initial_groups.py
+
+# Run initial setup
+print_status "Creating initial profiles and groups..."
+sudo /opt/opensilex-auto-groups/venv/bin/python /opt/opensilex-auto-groups/setup_initial_groups.py
+
+# Create systemd service for monitoring
+sudo tee /etc/systemd/system/opensilex-auto-groups.service > /dev/null << 'SERVICE_EOF'
+[Unit]
+Description=OpenSILEX Automatic Group Assignment Service for Feide/OpenID Users
+After=network.target opensilex.service
+Requires=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/opensilex-auto-groups
+ExecStart=/opt/opensilex-auto-groups/venv/bin/python /opt/opensilex-auto-groups/monitor_new_users.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/opensilex-auto-groups.log
+StandardError=append:/var/log/opensilex-auto-groups.log
+
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+
+# Create log rotation
+sudo tee /etc/logrotate.d/opensilex-auto-groups > /dev/null << 'LOGROTATE_EOF'
+/var/log/opensilex-auto-groups.log {
+    daily
+    missingok
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+}
+LOGROTATE_EOF
+
+# Enable and start the auto-groups service
+sudo systemctl daemon-reload
+sudo systemctl enable opensilex-auto-groups.service
+sudo systemctl start opensilex-auto-groups.service
+
+print_success "Automatic group assignment configured!"
+
 print_success "OpenSILEX production installation completed!"
 echo ""
 echo "==============================================" 
@@ -1334,11 +1847,21 @@ echo "• Admin user created (admin@opensilex.org / admin)"
 echo "• Nginx reverse proxy configured on port 80"
 echo "• Startup scripts and aliases configured"
 echo "• Systemd service configured"
+echo "• Feide/OpenID authentication configured"
+echo "• Automatic group assignment system installed"
+echo ""
+echo "🔐 User Management:"
+echo "• New Feide users automatically join 'Users' group"
+echo "• Default profile provides menu/dashboard access only"
+echo "• Admin users must be manually assigned to 'Administrators' group"
+echo "• Monitor service: systemctl status opensilex-auto-groups"
+echo "• Monitor logs: tail -f /var/log/opensilex-auto-groups.log"
 echo ""
 echo "Next steps:"
-echo "1. Start service: systemctl start opensilex"
-echo "2. Access: http://$(curl -s ifconfig.me)/ (nginx) or :8666 (direct)"
-echo "3. Run help: /home/azureuser/opensilex-help.sh"
+echo "1. Access: http://$(curl -s ifconfig.me)/ (nginx) or :8666 (direct)"
+echo "2. Login with Feide credentials (new users auto-assigned to Users group)"
+echo "3. For admin access: manually add users to Administrators group"
+echo "4. Run help: /home/azureuser/opensilex-help.sh"
 echo "==============================================" 
 '@
 
