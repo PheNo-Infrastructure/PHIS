@@ -4,6 +4,13 @@ set -e
 # Continue with azureuser for all operations
 echo "Continuing OpenSILEX installation as azureuser..."
 
+# Ensure required tools are available (in case setup script was skipped or failed)
+if ! command -v unzip &> /dev/null; then
+    echo "Installing missing required tools (unzip, curl, wget)..."
+    sudo apt update
+    sudo apt install -y unzip curl wget
+fi
+
 # Source environment variables
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export PATH=$JAVA_HOME/bin:$PATH
