@@ -6,6 +6,7 @@ Import-Module -Name "$PSScriptRoot\OpenSILEX-OutputUtils.psm1" -Force
 Import-Module -Name "$PSScriptRoot\OpenSILEX-SSHUtils.psm1" -Force
 Import-Module -Name "$PSScriptRoot\OpenSILEX-AzureVMManager.psm1" -Force
 Import-Module -Name "$PSScriptRoot\OpenSILEX-Installer.psm1" -Force
+Import-Module -Name "$PSScriptRoot\OpenSILEX-Installer-Dev.psm1" -Force
 
 function Show-Menu {
     param(
@@ -15,14 +16,16 @@ function Show-Menu {
         [string]$AdminUsername,
         [string]$SSHKeyPath,
         [switch]$SkipDependencies,
-        [string]$PSScriptRoot
+        [string]$PSScriptRoot,
+        [switch]$DevMode
     )
     
     $choice = ""
     Clear-Host
-    Write-Host "=============================================" -ForegroundColor Blue
-    Write-Host "   OpenSILEX GitHub Installation Manager   " -ForegroundColor Blue
-    Write-Host "=============================================" -ForegroundColor Blue
+    $modeTitle = if ($DevMode) { "Development" } else { "Production" }
+    Write-Host "===============================================" -ForegroundColor Blue
+    Write-Host "   OpenSILEX GitHub $modeTitle Installation Manager   " -ForegroundColor Blue
+    Write-Host "===============================================" -ForegroundColor Blue
     Write-Host ""
     Write-Host "Current Configuration:" -ForegroundColor Yellow
     Write-Host "  VM Name: $VMName" -ForegroundColor White
@@ -62,14 +65,22 @@ function Show-Menu {
             Write-Info "Starting full installation..."
             $deployResult, $VMIPAddress = Deploy-VM -VMName $VMName -ResourceGroupName $ResourceGroupName -Location $Location -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath
             if ($deployResult) {
-                Install-OpenSILEX -TargetIP $VMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot
+                if ($DevMode) {
+                    Install-OpenSILEX-Dev -TargetIP $VMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot
+                } else {
+                    Install-OpenSILEX -TargetIP $VMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot
+                }
             }
         }
         "2" { 
             Deploy-VM -VMName $VMName -ResourceGroupName $ResourceGroupName -Location $Location -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath | Out-Null
         }
         "3" { 
-            Install-OpenSILEX -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+            if ($DevMode) {
+                Install-OpenSILEX-Dev -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+            } else {
+                Install-OpenSILEX -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+            }
         }
         "4" { Start-VM -VMName $VMName -ResourceGroupName $ResourceGroupName }
         "5" { Stop-VM -VMName $VMName -ResourceGroupName $ResourceGroupName }
@@ -124,21 +135,30 @@ function Invoke-MenuCommand {
         [string]$SSHKeyPath,
         [string]$VMIPAddress,
         [switch]$SkipDependencies,
-        [string]$PSScriptRoot
+        [string]$PSScriptRoot,
+        [switch]$DevMode
     )
     
     switch ($Command.ToLower()) {
         "fullinstall" { 
             $deployResult, $ResultVMIPAddress = Deploy-VM -VMName $VMName -ResourceGroupName $ResourceGroupName -Location $Location -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath
             if ($deployResult) {
-                Install-OpenSILEX -TargetIP $ResultVMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+                if ($DevMode) {
+                    Install-OpenSILEX-Dev -TargetIP $ResultVMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+                } else {
+                    Install-OpenSILEX -TargetIP $ResultVMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+                }
             }
         }
         "deploy" { 
             Deploy-VM -VMName $VMName -ResourceGroupName $ResourceGroupName -Location $Location -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath | Out-Null
         }
         "install" { 
-            Install-OpenSILEX -TargetIP $VMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+            if ($DevMode) {
+                Install-OpenSILEX-Dev -TargetIP $VMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+            } else {
+                Install-OpenSILEX -TargetIP $VMIPAddress -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername -SSHKeyPath $SSHKeyPath -SkipDependencies:$SkipDependencies -PSScriptRoot $PSScriptRoot | Out-Null
+            }
         }
         "status" { 
             Get-VMStatus -VMName $VMName -ResourceGroupName $ResourceGroupName -AdminUsername $AdminUsername | Out-Null
