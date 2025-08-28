@@ -328,26 +328,39 @@ sudo systemctl enable opensilex-dev
 # Start required database containers
 print_status "Starting database containers..."
 
-# Start MongoDB container
-print_status "Starting MongoDB container..."
-sudo docker run -d --name mongo-opensilex-dev -p 27017:27017 -v "$OPENSILEX_HOME/data/mongodb:/data/db" mongo:4.4
+# Start MongoDB container with replica set
+print_status "Starting MongoDB container with replica set configuration..."
+sudo docker run -d --name mongo-opensilex-dev -p 27017:27017 -v "$OPENSILEX_HOME/data/mongodb:/data/db" mongo:4.4 --replSet rs0
 
-# Start GraphDB container  
+# Wait for MongoDB to start and initialize replica set
+print_status "Waiting for MongoDB to start..."
+sleep 10
+print_status "Initializing MongoDB replica set..."
+sudo docker exec mongo-opensilex-dev mongo --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "localhost:27017"}]})'
+
+# Start GraphDB container (use same version as production)
 print_status "Starting GraphDB container..."
-sudo docker run -d --name graphdb-opensilex-dev -p 7200:7200 -v "$OPENSILEX_HOME/data/graphdb:/opt/graphdb/home" -e GDB_HEAP_SIZE=2g ontotext/graphdb:10.7.3
+sudo docker run -d --name graphdb-opensilex-dev -p 7200:7200 \
+    -v "$OPENSILEX_HOME/data/graphdb:/opt/graphdb/home" \
+    -v "$OPENSILEX_HOME/data/graphdb-work:/opt/graphdb/work" \
+    -v "$OPENSILEX_HOME/logs:/opt/graphdb/logs" \
+    -e GDB_HEAP_SIZE=2g \
+    -e GDB_MAX_HEAP_SIZE=4g \
+    -e GDB_JAVA_OPTS="-XX:+UseG1GC -Djava.awt.headless=true" \
+    ontotext/graphdb:10.6.4
 
 # Wait for GraphDB to start
 print_status "Waiting for GraphDB to initialize..."
 sleep 20
 
-# Create repository configuration for GraphDB
+# Create repository configuration for GraphDB (use same as production)
 print_status "Creating GraphDB repository configuration..."
 cat > /tmp/repo-config.ttl << 'REPO_EOF'
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rep: <http://www.openrdf.org/config/repository#> .
 @prefix sr: <http://www.openrdf.org/config/repository/sail#> .
 @prefix sail: <http://www.openrdf.org/config/sail#> .
-@prefix graphdb: <http://www.ontotext.com/config/graphdb#> .
+@prefix owlim: <http://www.ontotext.com/trree/owlim#> .
 
 [] a rep:Repository ;
    rep:repositoryID "opensilex" ;
@@ -356,8 +369,14 @@ cat > /tmp/repo-config.ttl << 'REPO_EOF'
       rep:repositoryType "graphdb:SailRepository" ;
       sr:sailImpl [
          sail:sailType "graphdb:Sail" ;
-         graphdb:read-only "false" ;
-         graphdb:ruleset "rdfsplus-optimized" ;
+         owlim:ruleset "rdfs-optimized" ;
+         owlim:storage-folder "storage" ;
+         owlim:base-URL "http://$VM_PUBLIC_IP/" ;
+         owlim:repository-type "file-repository" ;
+         owlim:entity-index-size "10000000" ;
+         owlim:entity-id-size "32" ;
+         owlim:imports "" ;
+         owlim:defaultNS "" ;
       ]
    ] .
 REPO_EOF
@@ -373,9 +392,49 @@ else
     print_status "Repository creation log: $(cat /tmp/repo-creation.log 2>/dev/null || echo 'No log available')"
 fi
 
+# Run system installation after databases are ready
+print_status "Running OpenSILEX system installation (database initialization)..."
+print_status "This will create the necessary database structures and load ontologies..."
+
+# Wait a bit more for GraphDB repository creation
+sleep 5
+
+# Run the system install command
+java --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -jar opensilex.jar --CONFIG_FILE=config/opensilex.yml system install
+
+if [ $? -eq 0 ]; then
+    print_success "System installation completed successfully"
+    
+    # CRITICAL: Reset and load ontologies (triplestore initialization) - same as production
+    print_status "Initializing triplestore with ontologies..."
+    print_status "This step is critical for GraphDB to work properly with OpenSILEX..."
+    
+    # Wait for GraphDB repository to be fully accessible
+    sleep 15
+    
+    # Retry the sparql reset-ontologies command up to 5 times (GraphDB may need more time)
+    for attempt in {1..5}; do
+        print_status "Attempt $attempt: Initializing triplestore with ontologies..."
+        if java --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -jar opensilex.jar --CONFIG_FILE=config/opensilex.yml sparql reset-ontologies; then
+            print_success "Triplestore initialization completed"
+            break
+        else
+            if [ $attempt -lt 5 ]; then
+                print_warning "Attempt $attempt failed, retrying in 10 seconds..."
+                sleep 10
+            else
+                print_error "Failed to initialize triplestore after 5 attempts"
+                print_warning "This may cause issues with the web application"
+            fi
+        fi
+    done
+else
+    print_warning "System installation may have encountered issues - check logs"
+fi
+
 print_success "Database containers started"
 print_status "GraphDB Web Interface: http://$VM_PUBLIC_IP:7200"
-print_status "If repository creation failed, please create 'opensilex' repository manually via the web interface"
+print_status "MongoDB: mongodb://$VM_PUBLIC_IP:27017"
 
 print_success "Systemd service 'opensilex-dev' created and enabled"
 print_status "To start the service: sudo systemctl start opensilex-dev"
