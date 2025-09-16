@@ -338,14 +338,14 @@ sleep 10
 print_status "Initializing MongoDB replica set..."
 sudo docker exec mongo-opensilex-dev mongo --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "localhost:27017"}]})'
 
-# Start GraphDB container (use same version as production)
+# Start GraphDB container (exact same configuration as production)
 print_status "Starting GraphDB container..."
 sudo docker run -d --name graphdb-opensilex-dev -p 7200:7200 \
     -v "$OPENSILEX_HOME/data/graphdb:/opt/graphdb/home" \
     -v "$OPENSILEX_HOME/data/graphdb-work:/opt/graphdb/work" \
     -v "$OPENSILEX_HOME/logs:/opt/graphdb/logs" \
-    -e GDB_HEAP_SIZE=2g \
-    -e GDB_MAX_HEAP_SIZE=4g \
+    -e GDB_HEAP_SIZE=4g \
+    -e GDB_MAX_HEAP_SIZE=8g \
     -e GDB_JAVA_OPTS="-XX:+UseG1GC -Djava.awt.headless=true" \
     ontotext/graphdb:10.6.4
 
@@ -353,9 +353,14 @@ sudo docker run -d --name graphdb-opensilex-dev -p 7200:7200 \
 print_status "Waiting for GraphDB to initialize..."
 sleep 20
 
-# Create repository configuration for GraphDB (use same as production)
-print_status "Creating GraphDB repository configuration..."
-cat > /tmp/repo-config.ttl << 'REPO_EOF'
+# Check if repository already exists
+if curl -s "http://localhost:7200/rest/repositories/opensilex" >/dev/null 2>&1; then
+    print_success "GraphDB repository 'opensilex' already exists"
+else
+    print_status "Creating GraphDB repository with exact production configuration..."
+
+    # Create repository configuration file with exact production settings
+    cat > /tmp/repo-config.ttl << 'REPO_EOF'
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rep: <http://www.openrdf.org/config/repository#> .
 @prefix sr: <http://www.openrdf.org/config/repository/sail#> .
@@ -374,22 +379,26 @@ cat > /tmp/repo-config.ttl << 'REPO_EOF'
          owlim:base-URL "http://$VM_PUBLIC_IP/" ;
          owlim:repository-type "file-repository" ;
          owlim:entity-index-size "10000000" ;
-         owlim:entity-id-size "32" ;
-         owlim:imports "" ;
-         owlim:defaultNS "" ;
+         owlim:enable-context-index "false" ;
+         owlim:enablePredicateList "true" ;
+         owlim:enable-literal-index "true" ;
+         owlim:check-for-inconsistencies "false" ;
+         owlim:disable-sameAs "true" ;
+         owlim:query-timeout "0" ;
+         owlim:throw-QueryEvaluationException-on-timeout "false" ;
+         owlim:read-only "false"
       ]
    ] .
 REPO_EOF
 
-# Try to create the repository 
-print_status "Attempting to create GraphDB repository..."
-curl -s -X POST http://localhost:7200/rest/repositories -H "Content-Type: multipart/form-data" -F "config=@/tmp/repo-config.ttl" > /tmp/repo-creation.log 2>&1
+    # Create the repository using the TTL file (same method as production)
+    if curl -X POST -H "Content-Type: multipart/form-data" -F "config=@/tmp/repo-config.ttl" http://localhost:7200/rest/repositories; then
+        print_success "GraphDB repository created successfully"
+    else
+        print_warning "Repository creation failed, but continuing with installation"
+    fi
 
-if curl -s "http://localhost:7200/repositories" | grep -q "opensilex"; then
-    print_success "GraphDB repository 'opensilex' created successfully"
-else
-    print_warning "GraphDB repository creation may need to be done manually via web interface"
-    print_status "Repository creation log: $(cat /tmp/repo-creation.log 2>/dev/null || echo 'No log available')"
+    sleep 10
 fi
 
 # Run system installation after databases are ready
