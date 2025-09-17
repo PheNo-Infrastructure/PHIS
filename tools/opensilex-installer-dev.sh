@@ -321,7 +321,7 @@ TimeoutStopSec=120
 WantedBy=multi-user.target
 EOF
 
-# Enable the service (but don't start it automatically)
+# Enable and prepare the service for auto-start after installation
 sudo systemctl daemon-reload
 sudo systemctl enable opensilex-dev
 
@@ -437,6 +437,15 @@ if [ $? -eq 0 ]; then
             fi
         fi
     done
+
+    # Create default admin user after successful installation
+    print_status "Creating default admin user..."
+    if java --add-opens java.base/java.io=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED -jar opensilex.jar --CONFIG_FILE=config/opensilex.yml user add --firstName="Admin" --lastName="User" --email="admin@opensilex.org" --password="admin" --admin --lang="en"; then
+        print_success "Default admin user created successfully"
+        print_status "Admin credentials: admin@opensilex.org / admin"
+    else
+        print_warning "Failed to create default admin user - you may need to create it manually"
+    fi
 else
     print_warning "System installation may have encountered issues - check logs"
 fi
@@ -446,9 +455,27 @@ print_status "GraphDB Web Interface: http://$VM_PUBLIC_IP:7200"
 print_status "MongoDB: mongodb://$VM_PUBLIC_IP:27017"
 
 print_success "Systemd service 'opensilex-dev' created and enabled"
-print_status "To start the service: sudo systemctl start opensilex-dev"
-print_status "To check status: sudo systemctl status opensilex-dev"
-print_status "To view logs: sudo journalctl -u opensilex-dev -f"
+
+# Auto-start the OpenSILEX service after successful installation
+print_status "Starting OpenSILEX service..."
+sudo systemctl start opensilex-dev
+
+# Wait a moment and check if service started successfully
+sleep 5
+if sudo systemctl is-active --quiet opensilex-dev; then
+    print_success "OpenSILEX service started successfully"
+    print_status "Web Application: http://$VM_PUBLIC_IP:8666/app/"
+    print_status "Admin Interface: http://$VM_PUBLIC_IP:8667/"
+else
+    print_warning "OpenSILEX service failed to start automatically"
+    print_status "Manual start: sudo systemctl start opensilex-dev"
+fi
+
+print_status "Service management commands:"
+print_status "  Check status: sudo systemctl status opensilex-dev"
+print_status "  View logs: sudo journalctl -u opensilex-dev -f"
+print_status "  Stop service: sudo systemctl stop opensilex-dev"
+print_status "  Restart service: sudo systemctl restart opensilex-dev"
 
 print_success "OpenSILEX development installation completed successfully!"
 print_status ""
@@ -459,6 +486,10 @@ print_status "Source Code: $OPENSILEX_HOME/source/opensilex"
 print_status "Configuration: $OPENSILEX_HOME/config/opensilex.yml"
 print_status "Data Directory: $OPENSILEX_HOME/data"
 print_status "Log Directory: $OPENSILEX_HOME/logs"
+print_status ""
+print_status "Default Admin Credentials:"
+print_status "  Email: admin@opensilex.org"
+print_status "  Password: admin"
 print_status ""
 print_status "To start OpenSILEX development server:"
 print_status "  cd $OPENSILEX_HOME"
