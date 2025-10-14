@@ -35,10 +35,10 @@ param(
     [string]$Command = "Menu",
     
     [Parameter(Mandatory=$false)]
-    [string]$VMName = "phis-debian12-TEST-NEW",
+    [string]$VMName = "phis-debian12-TEST",
     
     [Parameter(Mandatory=$false)]
-    [string]$ResourceGroupName = "RG-OPENSILEX-debian12-TEST-NEW",
+    [string]$ResourceGroupName = "RG-OPENSILEX-debian12-TEST",
     
     [Parameter(Mandatory=$false)]
     [string]$Location = "westeurope",
