@@ -17,7 +17,7 @@
   },
   "variables": {
     "location": "westeurope",
-    "vmSize": "Standard_B8ms",
+    "vmSize": "Standard_B4ms",
     "resourceGroupName": "RG-PHIS",
     "vnetName": "[concat(parameters('vmName'), '-vnet')]",
     "subnetName": "default",
