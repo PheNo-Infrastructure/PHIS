@@ -35,7 +35,7 @@ param(
     [string]$Command = "Menu",
     
     [Parameter(Mandatory=$false)]
-    [string]$VMName = "phis-debian12-DEV",
+    [string]$VMName = "phis-debian12-DEV-HOME",
     
     [Parameter(Mandatory=$false)]
     [string]$ResourceGroupName = "RG-OPENSILEX-debian12-DEV",
