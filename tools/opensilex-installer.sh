@@ -1216,6 +1216,72 @@ class RawOpenSILEXSetup:
             logger.error(f"Authentication error: {e}")
             return False
     
+    def delete_profile(self, profile_uri):
+        """Delete profile using raw HTTP"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+            # URL encode the URI
+            encoded_uri = profile_uri.replace('/', '%2F').replace(':', '%3A')
+            response = requests.delete(f"{self.base_url}/security/profiles/{encoded_uri}",
+                                      headers=headers)
+
+            if response.status_code == 200 or response.status_code == 204:
+                return True
+            elif response.status_code == 404:
+                logger.info(f"Profile {profile_uri} does not exist")
+                return True
+            else:
+                logger.error(f"Failed to delete profile: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Error deleting profile: {e}")
+            return False
+
+    def get_profile(self, profile_uri):
+        """Get profile by URI using raw HTTP"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+            # URL encode the URI
+            encoded_uri = profile_uri.replace('/', '%2F').replace(':', '%3A')
+            response = requests.get(f"{self.base_url}/security/profiles/{encoded_uri}",
+                                   headers=headers)
+
+            if response.status_code == 200:
+                return response.json().get('result', {})
+            elif response.status_code == 404:
+                return None
+            else:
+                logger.error(f"Failed to get profile: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error getting profile: {e}")
+            return None
+
+    def update_profile(self, profile_data):
+        """Update profile using raw HTTP"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json"
+            }
+            response = requests.put(f"{self.base_url}/security/profiles",
+                                   json=profile_data, headers=headers)
+
+            if response.status_code == 200:
+                return True
+            else:
+                logger.error(f"Failed to update profile: {response.status_code} - {response.text}")
+                return False
+        except Exception as e:
+            logger.error(f"Error updating profile: {e}")
+            return False
+
     def create_profile(self, profile_data):
         """Create profile using raw HTTP"""
         try:
@@ -1223,14 +1289,15 @@ class RawOpenSILEXSetup:
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json"
             }
-            response = requests.post(f"{self.base_url}/security/profiles", 
+            response = requests.post(f"{self.base_url}/security/profiles",
                                    json=profile_data, headers=headers)
-            
+
             if response.status_code == 200 or response.status_code == 201:
                 return True
             elif response.status_code == 409:
-                logger.info(f"Profile {profile_data.get('name')} already exists")
-                return True
+                logger.info(f"Profile {profile_data.get('name')} already exists - updating it")
+                # Profile exists, update it instead
+                return self.update_profile(profile_data)
             else:
                 logger.error(f"Failed to create profile: {response.status_code} - {response.text}")
                 return False
@@ -1284,21 +1351,70 @@ def main():
         if not authenticated:
             print("❌ Could not authenticate after 5 attempts")
             sys.exit(1)
-        
-        print("🔧 Creating profiles...")
-        
-        # Create comprehensive admin profile with ALL necessary credentials
+
+        print("🔧 Cleaning up old profiles...")
+
+        # Delete "Default Profile" if it exists (avoid confusion with "Default User")
+        # This is the profile created during system installation with full access
+        old_default_profile_uri = "http://www.opensilex.org/profiles/default-profile"
+        if setup.delete_profile(old_default_profile_uri):
+            print("✅ Removed old 'Default Profile' (if it existed)")
+
+        print("🔧 Creating profiles with proper credentials...")
+
+        # Create comprehensive admin profile with ALL credentials
+        # This maps to ALL the credentials you listed
         admin_credentials = [
-            # Core security management
-            "admin-access", "user-modification", "group-modification", "profile-modification",
-            # Access to all system modules
-            "organization-access", "project-access", "experiment-access", "facility-access",
-            "device-access", "event-access", "variable-access", "germplasm-access", 
-            "document-access", "scientific-objects-access", "provenance-access", "data-access",
-            "spatial-access", "vocabulary-access", "account-access", "person-access", 
-            "group-access", "profile-access", "package-access", "dataverse-access",
-            # UI access
-            "dashboard-access", "menu-access", "profile-read-own"
+            # Accounts
+            "account-access", "account-modification",
+            # Annotations
+            "annotation-access", "annotation-modification", "annotation-delete",
+            # Area
+            "area-access", "area-modification", "area-delete",
+            # Data
+            "data-access", "data-modification", "data-delete",
+            # Dataverse
+            "dataverse-access", "dataverse-modification",
+            # Device
+            "device-access", "device-modification", "device-delete",
+            # Documents
+            "document-access", "document-modification", "document-delete",
+            # Events
+            "event-access", "event-modification", "event-delete",
+            # Experiments
+            "experiment-access", "experiment-modification", "experiment-delete",
+            # Facilities
+            "facility-access", "facility-modification", "facility-delete",
+            # Factors
+            "factor-access", "factor-modification", "factor-delete",
+            # Germplasm
+            "germplasm-access", "germplasm-modification", "germplasm-delete",
+            # Groups
+            "group-access", "group-modification", "group-delete",
+            # Organizations
+            "organization-access", "organization-modification", "organization-delete",
+            # Packages
+            "package-access",
+            # Persons
+            "person-access", "person-modification",
+            # Profiles
+            "profile-access", "profile-modification", "profile-delete",
+            # Projects
+            "project-access", "project-modification", "project-delete",
+            # Provenances
+            "provenance-access", "provenance-modification", "provenance-delete",
+            # Scientific objects
+            "scientific-objects-access", "scientific-objects-modification", "scientific-objects-delete",
+            # Spatial
+            "spatial-access",
+            # Users
+            "user-access", "user-modification", "user-delete",
+            # Variables
+            "variable-access", "variable-modification", "variable-delete",
+            # Vocabulary
+            "vocabulary-access",
+            # System/Admin access
+            "admin-access", "dashboard-access", "menu-access", "profile-read-own"
         ]
         
         admin_profile_data = {
@@ -1375,18 +1491,23 @@ def main():
         
         print("✅ Setup completed successfully!")
         print("")
-        print("📋 Next Steps:")
-        print("1. ✅ Administrator profile created with comprehensive permissions")
-        print("2. ✅ Default User profile created for Feide users")
-        print("3. ✅ Users group created for automatic assignment")
-        print("4. ✅ Administrators group created")
+        print("📋 Profile Configuration:")
+        print("1. ✅ Old 'Default Profile' removed automatically")
+        print("2. ✅ Administrator profile created with ALL credentials:")
+        print("   • Full add/update/delete access to all modules")
+        print("   • User, group, and profile management")
+        print("3. ✅ Default User profile created with MENU ACCESS ONLY:")
+        print("   • Can view/navigate all modules")
+        print("   • NO add/update/delete permissions")
+        print("4. ✅ Users group created for automatic assignment")
+        print("5. ✅ Administrators group created")
         print("")
         print("🔧 Manual Action Required:")
         print("• Log into the OpenSILEX web interface as admin")
         print("• Go to Administration > Groups")
         print("• Edit the 'Administrators' group")
         print("• Add the admin user with 'Administrator' profile")
-        print("• This enables the admin to manage users and groups via the API")
+        print("• This enables full admin functionality via the API")
         print("")
         print("🚀 After manual setup, the monitoring service will automatically:")
         print("• Detect new Feide users")
