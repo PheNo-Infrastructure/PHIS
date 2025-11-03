@@ -1,0 +1,355 @@
+/*
+ * PheNo Custom Theme for OpenSILEX
+ * Based on PheNo Design Guidelines
+ * Norwegian Plant Phenotyping Infrastructure
+ */
+
+/* ========================================
+   CSS Variables / Color Palette
+   ======================================== */
+:root {
+  /* PheNo Brand Colors */
+  --pheno-straw-light: #F2F5DE;
+  --pheno-straw-dark: #E3EBA1;
+  --pheno-leaf-green-light: #87CF82;
+  --pheno-leaf-green-dark: #3D8526;
+  --pheno-forest-green: #264030;
+
+  /* RGB values for transparency effects */
+  --pheno-leaf-green-light-rgb: 135, 207, 130;
+  --pheno-leaf-green-dark-rgb: 61, 133, 38;
+  --pheno-forest-green-rgb: 38, 64, 48;
+
+  /* Text colors */
+  --pheno-text-dark: #264030;
+  --pheno-text-light: #ffffff;
+
+  /* Apply to OpenSILEX variables */
+  --primary-color: #3D8526;
+  --primary-dark: #264030;
+  --primary-light: #87CF82;
+  --secondary-color: #E3EBA1;
+  --background-light: #F2F5DE;
+}
+
+/* ========================================
+   Typography - Aptos Font Family
+   ======================================== */
+body,
+.navbar,
+.sidebar,
+button,
+input,
+select,
+textarea,
+.card,
+.modal,
+.dropdown-menu {
+  font-family: 'Aptos', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+}
+
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family: 'Aptos', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  font-weight: 600;
+  color: var(--pheno-forest-green);
+}
+
+/* ========================================
+   Header / Navigation Bar
+   ======================================== */
+.navbar,
+.navbar-default,
+header.navbar {
+  background-color: var(--pheno-forest-green) !important;
+  border-color: var(--pheno-leaf-green-dark) !important;
+}
+
+.navbar .navbar-brand,
+.navbar-default .navbar-brand {
+  color: var(--pheno-text-light) !important;
+}
+
+.navbar-default .navbar-nav > li > a,
+.navbar .nav > li > a {
+  color: var(--pheno-text-light) !important;
+}
+
+.navbar-default .navbar-nav > li > a:hover,
+.navbar .nav > li > a:hover,
+.navbar-default .navbar-nav > li > a:focus {
+  background-color: rgba(135, 207, 130, 0.2) !important;
+  color: var(--pheno-straw-light) !important;
+}
+
+.navbar-default .navbar-nav > .active > a,
+.navbar-default .navbar-nav > .active > a:hover,
+.navbar-default .navbar-nav > .active > a:focus {
+  background-color: var(--pheno-leaf-green-dark) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+/* ========================================
+   Sidebar / Menu
+   ======================================== */
+.sidebar,
+.main-sidebar,
+.sidebar-menu {
+  background-color: var(--pheno-forest-green) !important;
+}
+
+.sidebar .sidebar-menu > li > a,
+.main-sidebar .sidebar-menu > li > a {
+  color: var(--pheno-straw-light) !important;
+}
+
+.sidebar .sidebar-menu > li > a:hover,
+.main-sidebar .sidebar-menu > li > a:hover {
+  background-color: rgba(135, 207, 130, 0.15) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+.sidebar .sidebar-menu > li.active > a,
+.main-sidebar .sidebar-menu > li.active > a {
+  background-color: var(--pheno-leaf-green-dark) !important;
+  color: var(--pheno-text-light) !important;
+  border-left: 3px solid var(--pheno-leaf-green-light);
+}
+
+/* ========================================
+   Buttons
+   ======================================== */
+.btn-primary,
+button.btn-primary {
+  background-color: var(--pheno-leaf-green-dark) !important;
+  border-color: var(--pheno-leaf-green-dark) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background-color: var(--pheno-forest-green) !important;
+  border-color: var(--pheno-forest-green) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+.btn-success {
+  background-color: var(--pheno-leaf-green-light) !important;
+  border-color: var(--pheno-leaf-green-light) !important;
+  color: var(--pheno-forest-green) !important;
+}
+
+.btn-success:hover,
+.btn-success:focus,
+.btn-success:active {
+  background-color: var(--pheno-leaf-green-dark) !important;
+  border-color: var(--pheno-leaf-green-dark) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+/* ========================================
+   Links
+   ======================================== */
+a {
+  color: var(--pheno-leaf-green-dark) !important;
+}
+
+a:hover,
+a:focus {
+  color: var(--pheno-forest-green) !important;
+}
+
+/* ========================================
+   Cards / Panels
+   ======================================== */
+.card,
+.panel {
+  border-color: var(--pheno-leaf-green-light) !important;
+}
+
+.card-header,
+.panel-heading {
+  background-color: var(--pheno-straw-light) !important;
+  border-color: var(--pheno-leaf-green-light) !important;
+  color: var(--pheno-forest-green) !important;
+}
+
+.panel-primary > .panel-heading {
+  background-color: var(--pheno-leaf-green-dark) !important;
+  border-color: var(--pheno-leaf-green-dark) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+/* ========================================
+   Forms
+   ======================================== */
+.form-control:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--pheno-leaf-green-light) !important;
+  box-shadow: 0 0 0 0.2rem rgba(var(--pheno-leaf-green-light-rgb), 0.25) !important;
+}
+
+.form-group label {
+  color: var(--pheno-forest-green) !important;
+  font-weight: 500;
+}
+
+/* ========================================
+   Tables
+   ======================================== */
+.table thead th {
+  background-color: var(--pheno-straw-light) !important;
+  color: var(--pheno-forest-green) !important;
+  border-color: var(--pheno-leaf-green-light) !important;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+  background-color: rgba(242, 245, 222, 0.3) !important;
+}
+
+.table-hover tbody tr:hover {
+  background-color: rgba(135, 207, 130, 0.15) !important;
+}
+
+/* ========================================
+   Badges / Labels
+   ======================================== */
+.badge-primary,
+.label-primary {
+  background-color: var(--pheno-leaf-green-dark) !important;
+}
+
+.badge-success,
+.label-success {
+  background-color: var(--pheno-leaf-green-light) !important;
+  color: var(--pheno-forest-green) !important;
+}
+
+/* ========================================
+   Alerts
+   ======================================== */
+.alert-success {
+  background-color: rgba(135, 207, 130, 0.2) !important;
+  border-color: var(--pheno-leaf-green-light) !important;
+  color: var(--pheno-forest-green) !important;
+}
+
+.alert-info {
+  background-color: rgba(227, 235, 161, 0.3) !important;
+  border-color: var(--pheno-straw-dark) !important;
+  color: var(--pheno-forest-green) !important;
+}
+
+/* ========================================
+   Progress Bars
+   ======================================== */
+.progress-bar {
+  background-color: var(--pheno-leaf-green-dark) !important;
+}
+
+/* ========================================
+   Tabs
+   ======================================== */
+.nav-tabs > li.active > a,
+.nav-tabs > li.active > a:hover,
+.nav-tabs > li.active > a:focus {
+  color: var(--pheno-forest-green) !important;
+  border-top: 3px solid var(--pheno-leaf-green-dark) !important;
+}
+
+.nav-tabs > li > a:hover {
+  border-color: var(--pheno-leaf-green-light) var(--pheno-leaf-green-light) transparent !important;
+}
+
+/* ========================================
+   Dropdown Menus
+   ======================================== */
+.dropdown-menu > li > a:hover,
+.dropdown-menu > li > a:focus {
+  background-color: var(--pheno-straw-light) !important;
+  color: var(--pheno-forest-green) !important;
+}
+
+.dropdown-menu > .active > a,
+.dropdown-menu > .active > a:hover,
+.dropdown-menu > .active > a:focus {
+  background-color: var(--pheno-leaf-green-dark) !important;
+  color: var(--pheno-text-light) !important;
+}
+
+/* ========================================
+   Page Background
+   ======================================== */
+body {
+  background-color: #ffffff !important;
+}
+
+.content-wrapper,
+.main-content {
+  background-color: #ffffff !important;
+}
+
+/* ========================================
+   Logo Styling
+   ======================================== */
+.navbar-brand img,
+.logo img {
+  max-height: 50px;
+  width: auto;
+}
+
+/* ========================================
+   Footer
+   ======================================== */
+.footer,
+.main-footer {
+  background-color: var(--pheno-forest-green) !important;
+  color: var(--pheno-straw-light) !important;
+}
+
+.footer a,
+.main-footer a {
+  color: var(--pheno-straw-light) !important;
+}
+
+.footer a:hover,
+.main-footer a:hover {
+  color: var(--pheno-leaf-green-light) !important;
+}
+
+/* ========================================
+   Custom Components
+   ======================================== */
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--pheno-straw-light);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pheno-leaf-green-light);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pheno-leaf-green-dark);
+}
+
+/* Selection color */
+::selection {
+  background-color: var(--pheno-leaf-green-light);
+  color: var(--pheno-forest-green);
+}
+
+::-moz-selection {
+  background-color: var(--pheno-leaf-green-light);
+  color: var(--pheno-forest-green);
+}
