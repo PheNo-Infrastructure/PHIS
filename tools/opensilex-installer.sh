@@ -1312,14 +1312,31 @@ def main():
         else:
             print("❌ Failed to create Administrator profile")
         
-        # Create default profile for Feide users
+        # Create default profile for Feide users with read access to all modules
         default_profile_data = {
             "uri": "http://opensilex.org/profiles/default",
             "name": "Default User",
             "credentials": [
+                # UI access
                 "dashboard-access",
-                "menu-access", 
-                "profile-read-own"
+                "menu-access",
+                "profile-read-own",
+                # Read access to all system modules
+                "organization-access",
+                "project-access",
+                "experiment-access",
+                "facility-access",
+                "device-access",
+                "event-access",
+                "variable-access",
+                "germplasm-access",
+                "document-access",
+                "scientific-objects-access",
+                "provenance-access",
+                "data-access",
+                "spatial-access",
+                "vocabulary-access",
+                "person-access"
             ]
         }
         
@@ -1374,7 +1391,8 @@ def main():
         print("🚀 After manual setup, the monitoring service will automatically:")
         print("• Detect new Feide users")
         print("• Assign them to 'Users' group with 'Default User' profile")
-        print("• Give them dashboard and menu access")
+        print("• Give them READ ACCESS to all system modules")
+        print("• Users can view but not modify: organizations, projects, experiments, devices, data, etc.")
         
     except Exception as e:
         print(f"❌ Setup failed with error: {e}")
@@ -1482,8 +1500,8 @@ echo ""
 echo "🔐 User Management:"
 echo "• New Feide users automatically join 'Users' group (10s detection)"
 echo "• 🧠 Intelligent deletion detection - auto-resets on account recreation"
-echo "• Default profile provides menu/dashboard access only"
-echo "• Admin users must be manually assigned to 'Administrators' group"
+echo "• Default profile provides READ ACCESS to all modules (organizations, projects, experiments, devices, data, etc.)"
+echo "• Admin users must be manually assigned to 'Administrators' group for write/modify access"
 echo "• Monitor service: systemctl status opensilex-auto-groups"
 echo "• Monitor logs: journalctl -u opensilex-auto-groups -f"
 echo "• Manual reset (if needed): /opt/opensilex-auto-groups/reset_monitoring.sh"
