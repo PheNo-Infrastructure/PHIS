@@ -68,20 +68,18 @@ else
     exit 1
 fi
 
-# Get VM public IP for configuration
-print_status "Fetching VM public IP address..."
+# Get domain name for configuration (default to phis.pheno.no)
+print_status "Configuring domain name..."
+DOMAIN_NAME="${OPENSILEX_DOMAIN:-phis.pheno.no}"
+print_success "Using domain: $DOMAIN_NAME"
+
+# Get VM public IP for fallback/reference
 VM_PUBLIC_IP=""
-# Try multiple methods to get public IP
 if command -v curl >/dev/null 2>&1; then
     VM_PUBLIC_IP=$(curl -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 ipinfo.io/ip 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null)
 fi
-
-# Fallback if curl methods fail
 if [ -z "$VM_PUBLIC_IP" ]; then
     VM_PUBLIC_IP="localhost"
-    print_warning "Could not fetch public IP, using localhost. You may need to update publicURI manually."
-else
-    print_success "Using VM public IP: $VM_PUBLIC_IP"
 fi
 
 # Create configuration files following production guide
@@ -148,7 +146,7 @@ if [ "$FEIDE_ENABLED" = false ]; then
     echo ""
     print_status "To enable FEIDE (Dataporten) authentication:"
     print_status "1. Register your application at: https://dashboard.dataporten.no/"
-    print_status "2. Set redirect URI to: http://$VM_PUBLIC_IP/app/openid"
+    print_status "2. Set redirect URI to: http://$DOMAIN_NAME/app/openid"
     print_status "3. Enable attribute groups: email, userinfo-name, userinfo-mail"
     print_status "4. Enable scopes: openid, userid, profile, email"
     print_status "5. Create file: config/api-keys.conf"
@@ -158,11 +156,11 @@ if [ "$FEIDE_ENABLED" = false ]; then
     echo ""
 fi
 
-# Main configuration file with dynamic IP
+# Main configuration file with domain name
 cat > "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_EOF
 # OpenSILEX Production Configuration
 ontologies:
-  baseURI: "http://$VM_PUBLIC_IP/"
+  baseURI: "http://$DOMAIN_NAME/"
   baseURIAlias: "prod"
   sparql:
     config:
@@ -196,7 +194,7 @@ file-system:
 server:
   host: "0.0.0.0"
   port: 8666
-  publicURI: "http://$VM_PUBLIC_IP:8666"
+  publicURI: "http://$DOMAIN_NAME"
 
 # Security configuration with email support
 security:
@@ -285,8 +283,8 @@ phisws:
   # Enable CORS for production
   cors:
     allowedOrigins:
-      - "http://$VM_PUBLIC_IP"
-      - "https://$VM_PUBLIC_IP"
+      - "http://$DOMAIN_NAME"
+      - "https://$DOMAIN_NAME"
     allowedMethods:
       - "GET"
       - "POST"
@@ -330,7 +328,7 @@ security:
     userFirstNameClaim: "given_name"
     userLastNameClaim: "family_name"
     providerURI: "https://auth.dataporten.no"
-    redirectURI: "http://$VM_PUBLIC_IP/app/openid"
+    redirectURI: "http://$DOMAIN_NAME/app/openid"
     clientID: "$FEIDE_CLIENT_ID"
     clientSecret: "$FEIDE_CLIENT_SECRET"
     connectionTitle:
@@ -510,8 +508,8 @@ if docker exec opensilex-graphdb curl -s http://localhost:7200/rest/repositories
 else
     print_status "Creating GraphDB repository..."
     
-    # Create repository configuration file with dynamic IP
-    docker exec opensilex-graphdb sh -c "cat > /tmp/repo-config.ttl << 'EOF'
+    # Create repository configuration file with domain name
+    docker exec opensilex-graphdb sh -c "cat > /tmp/repo-config.ttl << EOF
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix rep: <http://www.openrdf.org/config/repository#> .
 @prefix sr: <http://www.openrdf.org/config/repository/sail#> .
@@ -527,7 +525,7 @@ else
          sail:sailType \"graphdb:Sail\" ;
          owlim:ruleset \"rdfs-optimized\" ;
          owlim:storage-folder \"storage\" ;
-         owlim:base-URL \"http://$VM_PUBLIC_IP/\" ;
+         owlim:base-URL \"http://$DOMAIN_NAME/\" ;
          owlim:repository-type \"file-repository\" ;
          owlim:entity-index-size \"10000000\" ;
          owlim:enable-context-index \"false\" ;
@@ -624,36 +622,36 @@ print_success "OpenSILEX aliases configured"
 print_status "Configuring nginx reverse proxy..."
 
 # Create nginx config with error handling
-if sudo tee /etc/nginx/sites-available/opensilex << 'NGINX_CONFIG'
+if sudo tee /etc/nginx/sites-available/opensilex << NGINX_CONFIG
 server {
     listen 80;
-    server_name _;
-    
+    server_name $DOMAIN_NAME;
+
     # Increase client max body size for file uploads
     client_max_body_size 100M;
-    
+
     # Proxy settings for OpenSILEX
     location / {
         proxy_pass http://127.0.0.1:8666;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
     }
-    
+
     # Handle WebSocket connections for real-time features
     location /ws {
         proxy_pass http://127.0.0.1:8666;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 NGINX_CONFIG
@@ -744,7 +742,7 @@ ExecStartPre=/usr/bin/docker compose up -d
 ExecStartPre=/bin/sleep 30
 ExecStart=/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server start --host=0.0.0.0 --port=8666
 ExecStop=/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh server stop
-ExecStopPost=/usr/bin/docker compose down
+ExecStopPost=/usr/bin/docker compose stop
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -1628,7 +1626,7 @@ echo "• Monitor logs: journalctl -u opensilex-auto-groups -f"
 echo "• Manual reset (if needed): /opt/opensilex-auto-groups/reset_monitoring.sh"
 echo ""
 echo "Next steps:"
-echo "1. Access: http://$(curl -s ifconfig.me)/ (nginx) or :8666 (direct)"
+echo "1. Access: http://$DOMAIN_NAME/ (nginx) or http://$DOMAIN_NAME:8666 (direct)"
 echo "2. Login with Feide credentials (new users auto-assigned to Users group)"
 echo "3. For admin access: manually add users to Administrators group"
 echo "4. Run help: /home/azureuser/opensilex-help.sh"
