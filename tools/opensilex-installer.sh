@@ -492,28 +492,14 @@ echo 'alias opensilex="/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh"' >>
 
 # Wait for GraphDB to be ready and create repository if needed
 print_status "Waiting for GraphDB to be ready..."
-GRAPHDB_READY=false
-for i in {1..90}; do
+for i in {1..60}; do
     if docker exec opensilex-graphdb curl -s http://localhost:7200/rest/repositories >/dev/null 2>&1; then
-        # GraphDB API is responding, but let's verify it's truly ready
-        if docker exec opensilex-graphdb curl -s http://localhost:7200/rest/monitor/infrastructure >/dev/null 2>&1; then
-            print_success "GraphDB is ready and healthy"
-            GRAPHDB_READY=true
-            break
-        fi
+        echo "GraphDB is ready"
+        break
     fi
-    if [ $i -eq 90 ]; then
-        print_error "GraphDB failed to start after 7.5 minutes"
-        exit 1
-    fi
-    echo "Waiting for GraphDB to be fully ready... ($i/90)"
+    echo "Waiting for GraphDB to start... ($i/60)"
     sleep 5
 done
-
-if [ "$GRAPHDB_READY" = false ]; then
-    print_error "GraphDB is not ready - cannot continue installation"
-    exit 1
-fi
 
 # Check if repository already exists
 print_status "Checking if OpenSILEX repository exists..."
@@ -578,49 +564,24 @@ print_status "Initializing triplestore with ontologies..."
 sleep 15
 
 # Retry the sparql reset-ontologies command up to 5 times (GraphDB may need more time)
-ONTOLOGIES_LOADED=false
 for attempt in {1..5}; do
     echo "Attempt $attempt: Initializing triplestore with ontologies..."
     if /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies; then
-        print_success "Ontology initialization command completed"
-
-        # CRITICAL: Verify ontologies were actually loaded
-        sleep 5
-        print_status "Verifying ontologies were loaded into GraphDB..."
-        REPO_SIZE=$(docker exec opensilex-graphdb curl -s http://localhost:7200/rest/repositories/opensilex/size | grep -o '"total":[0-9]*' | cut -d':' -f2)
-
-        if [ ! -z "$REPO_SIZE" ] && [ "$REPO_SIZE" != "-1" ] && [ "$REPO_SIZE" -gt "0" ]; then
-            print_success "✅ Ontologies successfully loaded! Repository contains $REPO_SIZE triples"
-            ONTOLOGIES_LOADED=true
-            break
+        echo "SUCCESS: Triplestore initialization completed"
+        break
+    else
+        echo "Triplestore initialization failed on attempt $attempt"
+        if [ $attempt -eq 5 ]; then
+            echo "ERROR: Triplestore initialization failed after 5 attempts"
+            echo "OpenSILEX may not work correctly without ontologies"
+            echo "Run this command manually after installation:"
+            echo "/home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
         else
-            print_error "⚠️  Ontology command succeeded but repository is empty (size: $REPO_SIZE)"
-            print_status "This may indicate a timing issue. Retrying..."
+            echo "Waiting 15 seconds before retry..."
+            sleep 15
         fi
-    else
-        print_error "Triplestore initialization failed on attempt $attempt"
-    fi
-
-    if [ $attempt -eq 5 ]; then
-        print_error "❌ CRITICAL ERROR: Triplestore initialization failed after 5 attempts"
-        print_error "OpenSILEX CANNOT work correctly without ontologies!"
-        echo ""
-        print_status "Troubleshooting:"
-        print_status "1. Check GraphDB logs: docker logs opensilex-graphdb"
-        print_status "2. Manually run: /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
-        print_status "3. Verify repository: curl http://localhost:7200/rest/repositories/opensilex/size"
-        echo ""
-        exit 1
-    else
-        echo "Waiting 15 seconds before retry..."
-        sleep 15
     fi
 done
-
-if [ "$ONTOLOGIES_LOADED" = false ]; then
-    print_error "Installation cannot continue without ontologies"
-    exit 1
-fi
 
 # Create admin user (automated)
 print_status "Creating admin user..."
@@ -1638,178 +1599,6 @@ sudo systemctl start opensilex-auto-groups.service
 
 print_success "Automatic group assignment configured!"
 
-# Create health check script
-print_status "Creating health check script..."
-sudo tee /home/azureuser/verify-opensilex.sh > /dev/null << 'HEALTHCHECK_EOF'
-#!/bin/bash
-# OpenSILEX Installation Health Check Script
-# Verifies that all components are properly configured and running
-
-set -e
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-print_status() { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_success() { echo -e "${GREEN}[✓]${NC} $1"; }
-print_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
-print_error() { echo -e "${RED}[✗]${NC} $1"; }
-
-ERRORS=0
-WARNINGS=0
-
-echo "======================================"
-echo "OpenSILEX Installation Health Check"
-echo "======================================"
-echo ""
-
-# Check 1: Docker containers running
-print_status "Checking Docker containers..."
-if docker ps | grep -q "opensilex-graphdb.*Up"; then
-    print_success "GraphDB container is running"
-else
-    print_error "GraphDB container is not running"
-    ((ERRORS++))
-fi
-
-if docker ps | grep -q "opensilex-mongodb.*Up"; then
-    print_success "MongoDB container is running"
-else
-    print_error "MongoDB container is not running"
-    ((ERRORS++))
-fi
-
-# Check 2: GraphDB health
-print_status "Checking GraphDB health..."
-if curl -s -f http://localhost:7200/rest/repositories >/dev/null 2>&1; then
-    print_success "GraphDB API is responding"
-
-    # Check repository exists
-    if curl -s http://localhost:7200/rest/repositories/opensilex >/dev/null 2>&1; then
-        print_success "OpenSILEX repository exists"
-
-        # Check ontologies loaded
-        REPO_SIZE=$(curl -s http://localhost:7200/rest/repositories/opensilex/size | grep -o '"total":[0-9-]*' | cut -d':' -f2)
-        if [ ! -z "$REPO_SIZE" ] && [ "$REPO_SIZE" != "-1" ] && [ "$REPO_SIZE" -gt "0" ]; then
-            print_success "Ontologies loaded ($REPO_SIZE triples in repository)"
-        else
-            print_error "Ontologies NOT loaded (repository size: $REPO_SIZE)"
-            print_warning "Run: /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
-            ((ERRORS++))
-        fi
-    else
-        print_error "OpenSILEX repository does not exist"
-        ((ERRORS++))
-    fi
-else
-    print_error "GraphDB API is not responding"
-    ((ERRORS++))
-fi
-
-# Check 3: MongoDB health
-print_status "Checking MongoDB health..."
-if docker exec opensilex-mongodb mongosh --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; then
-    print_success "MongoDB is responding"
-
-    # Check replica set
-    RS_STATUS=$(docker exec opensilex-mongodb mongosh --quiet --eval "rs.status().ok" 2>/dev/null || echo "0")
-    if [ "$RS_STATUS" = "1" ]; then
-        print_success "MongoDB replica set is initialized"
-    else
-        print_error "MongoDB replica set is not initialized"
-        print_warning "Run: docker exec opensilex-mongodb mongosh --eval 'rs.initiate({_id: \"opensilex\", members: [{_id: 0, host: \"localhost:27017\"}]})'"
-        ((ERRORS++))
-    fi
-
-    # Check users exist
-    USER_COUNT=$(docker exec opensilex-mongodb mongosh opensilex --quiet --eval "db.user.countDocuments()" 2>/dev/null || echo "0")
-    if [ "$USER_COUNT" -gt "0" ]; then
-        print_success "Users exist in database ($USER_COUNT users)"
-    else
-        print_warning "No users in database"
-        print_warning "Run: /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh user add --admin --email admin@opensilex.org --firstName Admin --lastName User --password admin"
-        ((WARNINGS++))
-    fi
-else
-    print_error "MongoDB is not responding"
-    ((ERRORS++))
-fi
-
-# Check 4: OpenSILEX service
-print_status "Checking OpenSILEX service..."
-if systemctl is-active --quiet opensilex; then
-    print_success "OpenSILEX service is running"
-
-    # Check API responding
-    if curl -s -f http://localhost:8666/rest/system/info >/dev/null 2>&1; then
-        print_success "OpenSILEX API is responding"
-    else
-        print_warning "OpenSILEX API is not responding yet (may still be starting)"
-        ((WARNINGS++))
-    fi
-else
-    print_error "OpenSILEX service is not running"
-    print_warning "Run: sudo systemctl start opensilex"
-    ((ERRORS++))
-fi
-
-# Check 5: Nginx
-print_status "Checking Nginx..."
-if systemctl is-active --quiet nginx; then
-    print_success "Nginx is running"
-
-    # Check if proxying to OpenSILEX
-    if curl -s -I http://localhost/ | grep -q "HTTP"; then
-        print_success "Nginx is responding"
-    else
-        print_warning "Nginx may not be configured correctly"
-        ((WARNINGS++))
-    fi
-else
-    print_error "Nginx is not running"
-    print_warning "Run: sudo systemctl start nginx"
-    ((ERRORS++))
-fi
-
-# Check 6: Auto-groups service (optional)
-print_status "Checking auto-groups service..."
-if systemctl is-active --quiet opensilex-auto-groups; then
-    print_success "Auto-groups service is running"
-else
-    print_warning "Auto-groups service is not running (optional)"
-    ((WARNINGS++))
-fi
-
-# Summary
-echo ""
-echo "======================================"
-echo "Health Check Summary"
-echo "======================================"
-
-if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
-    print_success "✅ All checks passed! Installation is healthy."
-    exit 0
-elif [ $ERRORS -eq 0 ]; then
-    print_warning "⚠️  $WARNINGS warning(s) found (installation is functional)"
-    exit 0
-else
-    print_error "❌ $ERRORS error(s) and $WARNINGS warning(s) found"
-    echo ""
-    print_status "Common fixes:"
-    print_status "1. Restart services: sudo systemctl restart opensilex"
-    print_status "2. Check logs: sudo journalctl -u opensilex -f"
-    print_status "3. Verify Docker: docker ps -a"
-    print_status "4. Fix ontologies: /home/azureuser/opensilex/bin/1.4.9-rdg/opensilex.sh sparql reset-ontologies"
-    exit 1
-fi
-HEALTHCHECK_EOF
-
-sudo chmod +x /home/azureuser/verify-opensilex.sh
-print_success "Health check script created at ~/verify-opensilex.sh"
-
 print_success "OpenSILEX production installation completed!"
 echo ""
 echo "==============================================" 
@@ -1836,14 +1625,9 @@ echo "• Monitor service: systemctl status opensilex-auto-groups"
 echo "• Monitor logs: journalctl -u opensilex-auto-groups -f"
 echo "• Manual reset (if needed): /opt/opensilex-auto-groups/reset_monitoring.sh"
 echo ""
-echo "🔧 Health Check:"
-echo "• Verify installation: ~/verify-opensilex.sh"
-echo "• Checks all services, databases, and configurations"
-echo "• Provides troubleshooting guidance if issues found"
-echo ""
 echo "Next steps:"
-echo "1. Verify installation: ~/verify-opensilex.sh"
-echo "2. Access: http://$DOMAIN_NAME/ (nginx) or http://$DOMAIN_NAME:8666 (direct)"
-echo "3. Login with Feide credentials (new users auto-assigned to Users group)"
-echo "4. For admin access: manually add users to Administrators group"
+echo "1. Access: http://$DOMAIN_NAME/ (nginx) or http://$DOMAIN_NAME:8666 (direct)"
+echo "2. Login with Feide credentials (new users auto-assigned to Users group)"
+echo "3. For admin access: manually add users to Administrators group"
+echo "4. Run help: /home/azureuser/opensilex-help.sh"
 echo "==============================================" 

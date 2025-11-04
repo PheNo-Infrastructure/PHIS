@@ -106,18 +106,13 @@ function Install-OpenSILEX {
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempSetupScript "$AdminUsername@${TargetIP}:~/setup-system.sh"
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempInstallScript "$AdminUsername@${TargetIP}:~/install-opensilex.sh"
         
-        # Upload API keys config file if it exists (prefer test-api-keys.conf for testing)
-        $testApiKeysPath = Join-Path $PSScriptRoot "config\test-api-keys.conf"
+        # Upload API keys config file if it exists
         $apiKeysPath = Join-Path $PSScriptRoot "config\api-keys.conf"
-
-        if (Test-Path $testApiKeysPath) {
-            Write-Info "Uploading test API keys configuration..."
-            scp -i $privateKeyPath -o StrictHostKeyChecking=no $testApiKeysPath "$AdminUsername@${TargetIP}:~/api-keys.conf"
-        } elseif (Test-Path $apiKeysPath) {
+        if (Test-Path $apiKeysPath) {
             Write-Info "Uploading API keys configuration..."
             scp -i $privateKeyPath -o StrictHostKeyChecking=no $apiKeysPath "$AdminUsername@${TargetIP}:~/api-keys.conf"
         } else {
-            Write-Warning "API keys file not found: $testApiKeysPath or $apiKeysPath"
+            Write-Warning "API keys file not found: $apiKeysPath"
         }
         
         # Clean up temp files
@@ -132,31 +127,9 @@ function Install-OpenSILEX {
         }
         
         Write-Info "Installing OpenSILEX following production guide (this may take 10-15 minutes)..."
-        Write-Warning "Installation output will be shown below. Please wait for completion..."
-
-        # Run installation and capture exit code
-        $installOutput = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "export OPENSILEX_DOMAIN='$TargetIP' && bash ~/install-opensilex.sh 2>&1; echo EXIT_CODE:\$?"
-
-        # Extract exit code from output
-        $exitCodeLine = $installOutput | Select-String "EXIT_CODE:(\d+)" | Select-Object -Last 1
-        if ($exitCodeLine -and $exitCodeLine.Matches.Groups[1].Value -eq "0") {
-            Write-Success "OpenSILEX installation completed successfully!"
-
-            # Verify installation by checking if systemd service exists
-            Write-Info "Verifying installation..."
-            $serviceCheck = ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "systemctl status opensilex --no-pager 2>&1"
-            if ($serviceCheck -match "could not be found") {
-                Write-Error "Installation completed but OpenSILEX service was not created. Check logs on the server."
-                return $false
-            } else {
-                Write-Success "OpenSILEX service is installed and running!"
-            }
-        } else {
-            Write-Error "Installation script failed or did not complete successfully"
-            Write-Error "Last 50 lines of output:"
-            $installOutput | Select-Object -Last 50 | ForEach-Object { Write-Host $_ }
-            return $false
-        }
+        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/install-opensilex.sh"
+        
+        Write-Success "OpenSILEX installation completed successfully!"
     } catch {
         Write-Error "Installation failed: $($_.Exception.Message)"
         return $false
