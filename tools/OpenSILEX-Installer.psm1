@@ -107,10 +107,10 @@ function Install-OpenSILEX {
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempInstallScript "$AdminUsername@${TargetIP}:~/install-opensilex.sh"
         
         # Upload API keys config file if it exists
-        $apiKeysPath = Join-Path $PSScriptRoot "config\api-keys.conf"
+        $apiKeysPath = Join-Path $PSScriptRoot "config\test-api-keys.conf"
         if (Test-Path $apiKeysPath) {
             Write-Info "Uploading API keys configuration..."
-            scp -i $privateKeyPath -o StrictHostKeyChecking=no $apiKeysPath "$AdminUsername@${TargetIP}:~/api-keys.conf"
+            scp -i $privateKeyPath -o StrictHostKeyChecking=no $apiKeysPath "$AdminUsername@${TargetIP}:~/test-api-keys.conf"
         } else {
             Write-Warning "API keys file not found: $apiKeysPath"
         }
@@ -119,7 +119,7 @@ function Install-OpenSILEX {
         Remove-Item $tempSetupScript, $tempInstallScript
         
         # Fix line endings and make scripts executable
-        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/setup-system.sh ~/install-opensilex.sh ~/api-keys.conf 2>/dev/null || sed -i 's/\r$//' ~/setup-system.sh ~/install-opensilex.sh ~/api-keys.conf; chmod +x ~/setup-system.sh ~/install-opensilex.sh"
+        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "dos2unix ~/setup-system.sh ~/install-opensilex.sh ~/test-api-keys.conf 2>/dev/null || sed -i 's/\r$//' ~/setup-system.sh ~/install-opensilex.sh ~/test-api-keys.conf; chmod +x ~/setup-system.sh ~/install-opensilex.sh"
         
         if (-not $SkipDependencies) {
             Write-Info "Setting up system and creating OpenSILEX user (this may take 5-10 minutes)..."
