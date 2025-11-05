@@ -6664,6 +6664,34 @@ hr {
   color: #ffffff !important;
 }
 
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a {
+  color: #3D8526 !important;
+}
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a span {
+  color: #3D8526 !important;
+}
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a i {
+  color: #3D8526 !important;
+}
+
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item.active a {
+  color: #264030 !important;
+  font-weight: 600;
+}
+
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a:hover {
+  color: #264030 !important;
+}
+
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item.has-sub .submenu-content .menu-item {
+  color: #3D8526 !important;
+}
+
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item.has-sub .submenu-content .menu-item.active {
+  color: #264030 !important;
+  font-weight: 600;
+}
+
 .navbar,
 .navbar-default,
 header.navbar {

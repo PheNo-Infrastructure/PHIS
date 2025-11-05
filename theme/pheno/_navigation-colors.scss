@@ -1,0 +1,35 @@
+// PheNo Navigation Color Overrides
+// Force navigation menu items to use PheNo green colors
+
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a {
+  color: $pheno-leaf-green-dark !important;  // Force green color on menu items
+
+  span {
+    color: $pheno-leaf-green-dark !important;
+  }
+
+  i {
+    color: $pheno-leaf-green-dark !important;
+  }
+}
+
+// Active/selected state
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item.active a {
+  color: $pheno-forest-green !important;
+  font-weight: 600;
+}
+
+// Hover state
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a:hover {
+  color: $pheno-forest-green !important;
+}
+
+// Submenu items
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item.has-sub .submenu-content .menu-item {
+  color: $pheno-leaf-green-dark !important;
+}
+
+.wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item.has-sub .submenu-content .menu-item.active {
+  color: $pheno-forest-green !important;
+  font-weight: 600;
+}

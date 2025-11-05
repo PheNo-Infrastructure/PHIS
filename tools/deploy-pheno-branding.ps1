@@ -163,6 +163,10 @@ Write-Info "Uploading theme CSS and SCSS..."
 scp "$ThemeDir\_settings.scss" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/"
 scp "$ThemeDir\main.css" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/"
 
+# Upload index.html with custom title
+Write-Info "Uploading index.html with PHIS - PheNo title..."
+scp "$ThemeDir\index.html" "$ServerUser@$ServerHost`:$DeployTempDir/front/"
+
 # Upload logo files
 Write-Info "Uploading logo files..."
 scp "$ThemeDir\images\pheno-icon-224.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/opensilex.png"
@@ -214,7 +218,7 @@ if (-not $SkipBackup) {
 
 # Step 7: Inject files into JAR
 Write-Step "Injecting PheNo branding into OpenSILEX JAR"
-$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/main.css front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
+$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/index.html front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/main.css front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
 ssh "$ServerUser@$ServerHost" $jarCommand
 
 if ($LASTEXITCODE -ne 0) {
@@ -250,11 +254,11 @@ if (-not $SkipRestart) {
 
 # Step 10: Verify deployment
 Write-Step "Verifying deployment"
-$verifyCommand = "jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/theme/opensilex/(main.css|_settings.scss|images/logo-opensilex.png)' | wc -l"
+$verifyCommand = "jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/(index.html|theme/opensilex/(main.css|_settings.scss|images/logo-opensilex.png))' | wc -l"
 $themeCheck = ssh "$ServerUser@$ServerHost" $verifyCommand
 
-if ([int]$themeCheck -ge 3) {
-    Write-Success "Deployment verified - theme files present in JAR"
+if ([int]$themeCheck -ge 4) {
+    Write-Success "Deployment verified - theme files and index.html present in JAR"
 } else {
     Write-Error "Verification failed - some theme files may be missing"
     exit 1
