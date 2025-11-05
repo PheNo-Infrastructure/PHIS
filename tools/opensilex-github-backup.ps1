@@ -532,7 +532,7 @@ function Install-OpenSILEX {
         scp -i $privateKeyPath -o StrictHostKeyChecking=no $tempInstallScript "$AdminUsername@${TargetIP}:~/install-opensilex.sh"
         
         # Upload API keys config file if it exists
-        $apiKeysPath = Join-Path $PSScriptRoot "config\api-keys.conf"
+        $apiKeysPath = Join-Path $PSScriptRoot "config\test-api-keys.conf"
         if (Test-Path $apiKeysPath) {
             Write-Info "Uploading API keys configuration..."
             scp -i $privateKeyPath -o StrictHostKeyChecking=no $apiKeysPath "$AdminUsername@${TargetIP}:~/api-keys.conf"

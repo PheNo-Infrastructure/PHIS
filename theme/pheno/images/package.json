@@ -1,0 +1,12 @@
+{
+  "name": "pheno-logo-tools",
+  "version": "1.0.0",
+  "description": "Image processing tools for PheNo logos",
+  "private": true,
+  "scripts": {
+    "prepare": "node ../prepare-logos.js"
+  },
+  "dependencies": {
+    "sharp": "^0.33.5"
+  }
+}

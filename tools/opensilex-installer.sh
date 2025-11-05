@@ -68,18 +68,32 @@ else
     exit 1
 fi
 
-# Get domain name for configuration (default to phis.pheno.no)
-print_status "Configuring domain name..."
-DOMAIN_NAME="${OPENSILEX_DOMAIN:-phis.pheno.no}"
-print_success "Using domain: $DOMAIN_NAME"
-
-# Get VM public IP for fallback/reference
+# Get VM public IP first
+print_status "Detecting VM public IP address..."
 VM_PUBLIC_IP=""
 if command -v curl >/dev/null 2>&1; then
     VM_PUBLIC_IP=$(curl -s --max-time 10 ifconfig.me 2>/dev/null || curl -s --max-time 10 ipinfo.io/ip 2>/dev/null || curl -s --max-time 10 icanhazip.com 2>/dev/null)
 fi
 if [ -z "$VM_PUBLIC_IP" ]; then
     VM_PUBLIC_IP="localhost"
+fi
+print_success "VM IP: $VM_PUBLIC_IP"
+
+# Get domain name for configuration
+# Priority: 1. OPENSILEX_DOMAIN env var, 2. VM public IP (for test environments), 3. phis.pheno.no (production default)
+print_status "Configuring domain name..."
+if [ ! -z "$OPENSILEX_DOMAIN" ]; then
+    DOMAIN_NAME="$OPENSILEX_DOMAIN"
+    print_success "Using domain from OPENSILEX_DOMAIN: $DOMAIN_NAME"
+elif [ "$VM_PUBLIC_IP" != "localhost" ] && [ "$VM_PUBLIC_IP" != "phis.pheno.no" ]; then
+    # For test VMs, use the public IP by default
+    DOMAIN_NAME="$VM_PUBLIC_IP"
+    print_success "Using VM IP as domain (test environment): $DOMAIN_NAME"
+    print_status "To use a custom domain, set OPENSILEX_DOMAIN environment variable before installation"
+else
+    # Production default
+    DOMAIN_NAME="phis.pheno.no"
+    print_success "Using production domain: $DOMAIN_NAME"
 fi
 
 # Create configuration files following production guide
@@ -99,8 +113,8 @@ FEIDE_ENABLED=false
 FEIDE_CLIENT_ID=""
 FEIDE_CLIENT_SECRET=""
 
-# 1. Check for local config file (uploaded from tools/config/api-keys.conf)
-CONFIG_FILE="$HOME/api-keys.conf"
+# 1. Check for local config file (uploaded from tools/config/test-api-keys.conf)
+CONFIG_FILE="$HOME/test-api-keys.conf"
 if [ -f "$CONFIG_FILE" ]; then
     print_status "Loading configuration from config file..."
     source "$CONFIG_FILE"
@@ -842,7 +856,7 @@ ADMIN_EMAIL = "admin@opensilex.org"
 ADMIN_PASSWORD = "admin"
 DEFAULT_GROUP_URI = "http://opensilex.org/groups/users"
 DEFAULT_PROFILE_URI = "http://opensilex.org/profiles/default"
-CHECK_INTERVAL = 10  # seconds - optimized for faster user detection
+CHECK_INTERVAL = 1  # seconds - near-instant user detection (minimal overhead)
 PROCESSED_USERS_FILE = "/opt/opensilex-auto-groups/processed_users.json"
 USER_COUNT_FILE = "/opt/opensilex-auto-groups/user_count.json"
 
@@ -935,14 +949,18 @@ class RawOpenSILEXAutoGroups:
             return False
     
     def get_users_from_api(self):
-        """Get users using raw HTTP"""
+        """Get users using raw HTTP with auth recovery"""
         try:
             headers = {"Authorization": f"Bearer {self.token}"}
             response = requests.get(f"{OPENSILEX_API_URL}/security/users", headers=headers)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return data.get('result', [])
+            elif response.status_code == 401:
+                logger.warning("Authentication token expired or invalid - will re-authenticate next cycle")
+                self.token = None  # Force re-authentication on next cycle
+                return []
             else:
                 logger.error(f"Failed to get users: {response.status_code} - {response.text}")
                 return []
@@ -1049,15 +1067,18 @@ class RawOpenSILEXAutoGroups:
             return set()
     
     def process_new_users(self):
-        """Process new users with enhanced group membership checking"""
+        """Process new users with enhanced group membership checking and auto-recovery"""
         try:
+            # Always try to authenticate if no token or if we get auth errors
             if not self.token and not self.authenticate():
-                logger.warning("Failed to authenticate")
+                logger.warning("Failed to authenticate, will retry next cycle")
                 return
-            
+
             users = self.get_users_from_api()
             if not users:
-                logger.debug("No users returned")
+                # Check if this was an auth error (401) - reset token to force re-auth
+                logger.debug("No users returned - may need to re-authenticate")
+                self.token = None
                 return
             
             logger.info(f"Found {len(users)} total users")
@@ -1531,20 +1552,30 @@ sudo chmod +x /opt/opensilex-auto-groups/setup_initial_groups.py
 print_status "Creating initial profiles and groups..."
 sudo /opt/opensilex-auto-groups/venv/bin/python /opt/opensilex-auto-groups/setup_initial_groups.py
 
-# Create systemd service for monitoring
+# Create systemd service for monitoring with improved stability
 sudo tee /etc/systemd/system/opensilex-auto-groups.service > /dev/null << 'SERVICE_EOF'
 [Unit]
 Description=Intelligent OpenSILEX Auto Group Assignment (detects account deletions automatically)
 After=network.target opensilex.service
 Requires=network.target
+# Ensure service stops when OpenSILEX stops
+BindsTo=opensilex.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/opensilex-auto-groups
+# Wait 30 seconds for OpenSILEX to stabilize
+ExecStartPre=/bin/sleep 30
+# Health check: Wait for OpenSILEX to be responding (check if web server is up)
+ExecStartPre=/bin/bash -c 'for i in {1..30}; do curl -sf http://localhost:8666/ >/dev/null 2>&1 && exit 0 || sleep 2; done; exit 1'
 ExecStart=/opt/opensilex-auto-groups/venv/bin/python /opt/opensilex-auto-groups/monitor_new_users.py
+# Auto-restart on failure with 30 second delay
 Restart=always
-RestartSec=10
+RestartSec=30
+# Limit restart attempts: 5 tries within 5 minutes
+StartLimitInterval=300
+StartLimitBurst=5
 StandardOutput=append:/var/log/opensilex-auto-groups.log
 StandardError=append:/var/log/opensilex-auto-groups.log
 

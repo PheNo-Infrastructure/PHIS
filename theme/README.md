@@ -1,282 +1,342 @@
 # PheNo Theme for OpenSILEX
 
-This directory contains the custom PheNo (Norwegian Plant Phenotyping Infrastructure) branding theme for OpenSILEX.
+Complete branding package for applying Norwegian Plant Phenotyping Infrastructure (PheNo) visual identity to OpenSILEX installations.
 
-## Overview
+## Quick Links
 
-The PheNo theme applies the official brand design guidelines to the OpenSILEX web interface, including:
+- 🚀 **[Quick Start Guide](QUICK-START.md)** - Deploy in 5 minutes
+- 📖 **[Full Documentation](README-DEPLOYMENT.md)** - Complete deployment guide
+- 📋 **[Future Improvements](TODO-STYLE-IMPROVEMENTS.md)** - Roadmap and enhancements
 
-- **Color Palette**: Forest green, leaf greens, and straw colors
-- **Typography**: Aptos font family
-- **Logo**: PheNo branded logos
-- **Icons**: Custom PheNo icon set
+---
 
-## Directory Structure
+## What's Included
 
-```
-theme/
-├── css/
-│   └── pheno-theme.css          # Main theme stylesheet
-├── images/
-│   └── README.md                # Instructions for logo files
-├── fonts/                       # Custom fonts (if needed)
-└── README.md                    # This file
-```
+### Visual Elements
 
-## Design Specifications
+**Colors:**
+- Forest Green (#264030) - Primary navigation and headers
+- Leaf Green Dark (#3D8526) - Buttons and primary actions
+- Leaf Green Light (#87CF82) - Success states and highlights
+- Straw Dark (#E3EBA1) - Info states and accents
+- Straw Light (#F2F5DE) - Light backgrounds
 
-Based on the PheNo Design Guidelines:
+**Logos:**
+- Loading screen logo (224x224)
+- Navbar logo (42x42)
+- Main logo (216x216)
+- Dashboard logo (224x224)
+- Full PheNo logo (SVG)
 
-### Color Palette
+**Typography:**
+- Primary: Aptos font family
+- Fallback: System fonts (Segoe UI, Roboto, Arial)
 
-| Color Name | Hex Code | RGB | Usage |
-|------------|----------|-----|-------|
-| Straw Light | `#F2F5DE` | 242, 245, 222 | Light backgrounds, subtle accents |
-| Straw Dark | `#E3EBA1` | 227, 235, 161 | Secondary backgrounds |
-| Leaf Green Light | `#87CF82` | 135, 207, 130 | Hover states, highlights |
-| Leaf Green Dark | `#3D8526` | 61, 133, 38 | Primary buttons, active states |
-| Forest Green | `#264030` | 38, 64, 48 | Headers, navigation, text |
+### Tools & Scripts
 
-### Typography
+1. **[deploy-pheno-branding.ps1](../tools/deploy-pheno-branding.ps1)**
+   - One-command deployment
+   - Automatic backups
+   - Validation and verification
 
-- **Font Family**: Aptos (fallback to system sans-serif)
-- **Weights**: Regular (400), Medium (500), Semibold (600)
-- **Usage**: All UI elements, headings, body text
+2. **[prepare-logos.js](pheno/prepare-logos.js)**
+   - Automated logo resizing
+   - Generates all required sizes
 
-### Logo Guidelines
+3. **Theme Files**
+   - SCSS source files with PheNo colors
+   - Pre-compiled CSS
+   - Component-specific styles
 
-- **Spacing**: Equal to height of lowercase letter (e/o)
-- **Position**: Top left (primary), bottom (signature)
-- **Variants**:
-  - Green (light backgrounds)
-  - White (dark backgrounds)
-  - Black (non-brand backgrounds)
+---
 
 ## Installation
 
 ### Prerequisites
 
-1. OpenSILEX instance running on a server
-2. SSH access to the server
-3. Logo files added to `theme/images/` directory
+```powershell
+# Install Node.js from https://nodejs.org/
+node --version  # Verify installation
 
-### Deployment Steps
+# Install Sass compiler
+npm install -g sass
 
-#### Option 1: Automated Deployment (Recommended for Testing)
+# Install image processing tools
+cd theme\pheno\images
+npm install
+```
+
+### Deploy to Server
 
 ```powershell
-# Deploy to test VM only
-.\tools\deploy-theme.ps1 -VMIPAddress <test-vm-ip> -AdminUsername azureuser -Action All
+# Basic deployment
+.\tools\deploy-pheno-branding.ps1 -ServerHost YOUR_SERVER_IP
+
+# Advanced options
+.\tools\deploy-pheno-branding.ps1 `
+    -ServerHost 172.211.86.191 `
+    -ServerUser azureuser `
+    -OpenSilexPath /home/azureuser/opensilex
 ```
 
-This will:
-1. Copy theme files to the server
-2. Install and configure Nginx as a reverse proxy
-3. Inject the custom CSS into all OpenSILEX pages
+See [QUICK-START.md](QUICK-START.md) for more examples.
 
-#### Option 2: Manual Deployment
+---
 
-1. **Upload theme files to server:**
-   ```bash
-   scp -r theme/* azureuser@<vm-ip>:/home/azureuser/opensilex/data/files/theme/
-   ```
+## Repository Structure
 
-2. **Set permissions:**
-   ```bash
-   ssh azureuser@<vm-ip> "chmod -R 755 /home/azureuser/opensilex/data/files/theme"
-   ```
-
-3. **Install Nginx (for theme injection):**
-   ```bash
-   ssh azureuser@<vm-ip> "sudo apt-get update && sudo apt-get install -y nginx"
-   ```
-
-4. **Configure Nginx** (see Nginx Configuration section below)
-
-### Nginx Configuration
-
-The theme uses Nginx as a reverse proxy to inject the custom CSS into OpenSILEX pages without modifying the JAR file.
-
-Configuration file location: `/etc/nginx/sites-available/opensilex-pheno`
-
-```nginx
-server {
-    listen 80;
-    server_name _;
-
-    # Serve theme files directly
-    location /theme/ {
-        alias /home/azureuser/opensilex/data/files/theme/;
-        expires 1d;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Proxy to OpenSILEX with CSS injection
-    location / {
-        proxy_pass http://localhost:8666;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-        # Inject custom CSS
-        sub_filter '</head>' '<link rel="stylesheet" href="/theme/css/pheno-theme.css"></head>';
-        sub_filter_once off;
-        sub_filter_types text/html;
-    }
-}
+```
+PHIS/
+├── theme/
+│   ├── README.md                       ← You are here
+│   ├── QUICK-START.md                  ← Start here for deployment
+│   ├── README-DEPLOYMENT.md            ← Detailed deployment guide
+│   ├── TODO-STYLE-IMPROVEMENTS.md      ← Future enhancements
+│   └── pheno/
+│       ├── prepare-logos.js            ← Logo resizing script
+│       ├── _settings.scss              ← PheNo color variables
+│       ├── theme.scss                  ← Main SCSS entry point
+│       ├── main.css                    ← Compiled CSS (auto-generated)
+│       ├── [component].scss            ← Component-specific styles
+│       └── images/
+│           ├── pheno-icon.png          ← Original 2250x2250 logo
+│           ├── pheno-icon-42.png       ← Navbar (generated)
+│           ├── pheno-icon-216.png      ← Main (generated)
+│           ├── pheno-icon-224.png      ← Loading screen (generated)
+│           └── PheNo_logo_long_*.svg   ← Full logos
+└── tools/
+    └── deploy-pheno-branding.ps1       ← Main deployment script
 ```
 
-## Adding Logo Files
+---
 
-Before deploying, add the following logo files to `theme/images/`:
+## How It Works
 
-1. `pheno-logo-green.svg` or `pheno-logo-green.png` - Primary logo
-2. `pheno-logo-white.svg` or `pheno-logo-white.png` - For dark backgrounds
-3. `pheno-logo-black.svg` or `pheno-logo-black.png` - Alternative version
-4. `pheno-icon.svg` or `pheno-icon.png` - Icon only (64x64px minimum)
+### Deployment Process
 
-See `theme/images/README.md` for detailed requirements.
+1. **Preparation**
+   - Validates prerequisites (Node.js, Sass, SSH)
+   - Resizes logos to OpenSILEX-required dimensions
+   - Compiles SCSS to CSS with PheNo colors
 
-## Testing
+2. **Backup**
+   - Creates timestamped backup of `opensilex-front.jar`
+   - Preserves original theme files
 
-### Test Environment Setup
+3. **Injection**
+   - Uploads theme files to server
+   - Injects into `opensilex-front.jar` using `jar -uf`
+   - Replaces:
+     - `front/theme/opensilex/_settings.scss` (colors)
+     - `front/theme/opensilex/main.css` (compiled styles)
+     - `front/opensilex.png` (loading logo)
+     - `front/theme/opensilex/images/logo-*.png` (various logos)
 
-**IMPORTANT**: Always test on a dedicated test VM first, never on production!
+4. **Activation**
+   - Restarts OpenSILEX service
+   - Verifies deployment
+   - Confirms theme files in JAR
 
-1. Create a test VM using the installer:
-   ```powershell
-   .\tools\opensilex-github.ps1 -Command FullInstall -VMName "phis-test" -ResourceGroupName "RG-OPENSILEX-TEST"
-   ```
+### Technical Approach
 
-2. Deploy the theme:
-   ```powershell
-   .\tools\deploy-theme.ps1 -VMIPAddress <test-vm-ip> -Action All
-   ```
+Instead of creating a new theme, we **modify the default OpenSILEX theme** in place:
 
-3. Verify the theme:
-   - Navigate to `http://<test-vm-ip>`
-   - Check color scheme matches PheNo guidelines
-   - Verify logo placement and sizing
-   - Test all UI components (buttons, forms, tables, etc.)
+**Pros:**
+- ✅ Simple implementation
+- ✅ No configuration changes needed
+- ✅ Compatible with existing OpenSILEX setup
+- ✅ Easy to maintain
 
-### Verification Checklist
+**Cons:**
+- ⚠️ Updates to OpenSILEX may overwrite theme
+- ⚠️ Must redeploy after OpenSILEX upgrades
 
-- [ ] Primary colors applied (forest green header/navigation)
-- [ ] Secondary colors visible (leaf green buttons)
-- [ ] Typography changed to Aptos font
-- [ ] Logo displayed correctly
-- [ ] Buttons use correct hover states
-- [ ] Forms have proper styling
-- [ ] Tables have straw-colored headers
-- [ ] All pages load without errors
+**Alternative:** Creating a custom theme would be more robust but requires deeper OpenSILEX integration knowledge.
 
-## Troubleshooting
+---
 
-### Theme not loading
-
-Check Nginx status:
-```bash
-ssh azureuser@<vm-ip> "sudo systemctl status nginx"
-```
-
-View Nginx error log:
-```bash
-ssh azureuser@<vm-ip> "sudo tail -f /var/log/nginx/error.log"
-```
-
-### CSS not being injected
-
-Verify sub_filter module is enabled:
-```bash
-ssh azureuser@<vm-ip> "nginx -V 2>&1 | grep sub_filter"
-```
-
-Test Nginx configuration:
-```bash
-ssh azureuser@<vm-ip> "sudo nginx -t"
-```
-
-### Theme files not accessible
-
-Check file permissions:
-```bash
-ssh azureuser@<vm-ip> "ls -la /home/azureuser/opensilex/data/files/theme/"
-```
-
-## Reverting to Original Theme
-
-To remove the PheNo theme:
-
-1. **Remove Nginx configuration:**
-   ```bash
-   ssh azureuser@<vm-ip> "sudo rm /etc/nginx/sites-enabled/opensilex-pheno && sudo systemctl restart nginx"
-   ```
-
-2. **Access OpenSILEX directly on port 8666:**
-   ```
-   http://<vm-ip>:8666
-   ```
-
-## Production Deployment
-
-When ready to deploy to production:
-
-1. **Test thoroughly** on test VM
-2. **Schedule maintenance window** (minimal downtime)
-3. **Backup current configuration**
-4. **Deploy using the same process** as testing
-5. **Monitor for issues** post-deployment
-
-## Customization
+## Development
 
 ### Modifying Colors
 
-Edit `theme/css/pheno-theme.css` and update the CSS variables at the top:
+1. Edit [pheno/_settings.scss](pheno/_settings.scss)
+2. Change color variables:
+   ```scss
+   $pheno-forest-green: #264030;    // Your new color
+   $pheno-leaf-green-dark: #3D8526; // Your new color
+   ```
+3. Compile: `sass theme.scss main.css`
+4. Deploy: `.\tools\deploy-pheno-branding.ps1 -ServerHost SERVER_IP`
 
-```css
-:root {
-  --pheno-straw-light: #F2F5DE;
-  --pheno-straw-dark: #E3EBA1;
-  --pheno-leaf-green-light: #87CF82;
-  --pheno-leaf-green-dark: #3D8526;
-  --pheno-forest-green: #264030;
-}
+### Modifying Components
+
+1. Edit specific component file (e.g., [_navigation.scss](pheno/_navigation.scss))
+2. Compile and deploy as above
+
+### Adding New Logos
+
+1. Place logo in [pheno/images/](pheno/images/)
+2. Update [prepare-logos.js](pheno/prepare-logos.js) with new size
+3. Update [deploy-pheno-branding.ps1](../tools/deploy-pheno-branding.ps1) to include new logo
+4. Run deployment
+
+---
+
+## Troubleshooting
+
+### Logos Not Showing
+
+**Clear browser cache:**
+- Chrome/Edge: `Ctrl+Shift+Delete`
+- Firefox: `Ctrl+Shift+Delete`
+- Or hard refresh: `Ctrl+Shift+R`
+
+**Verify deployment:**
+```bash
+ssh user@server "jar -tf /path/to/opensilex-front.jar | grep logo-opensilex"
 ```
 
-### Adding Custom Styles
+### Colors Not Applying
 
-Append your custom CSS to `theme/css/pheno-theme.css` or create a new CSS file in `theme/css/`.
+**Check compiled CSS:**
+```powershell
+Select-String -Path theme\pheno\main.css -Pattern "#264030"
+```
+
+**Verify on server:**
+```bash
+jar -xf opensilex-front.jar front/theme/opensilex/main.css
+grep "#264030" front/theme/opensilex/main.css
+```
+
+### Deployment Fails
+
+**Check SSH connection:**
+```powershell
+ssh user@server "echo connected"
+```
+
+**Restore backup:**
+```bash
+cd /home/azureuser/opensilex/bin/1.4.9-rdg/modules
+cp opensilex-front.jar.backup opensilex-front.jar
+sudo systemctl restart opensilex
+```
+
+See [README-DEPLOYMENT.md](README-DEPLOYMENT.md) for comprehensive troubleshooting.
+
+---
 
 ## Maintenance
 
-### Updating the Theme
+### After OpenSILEX Updates
 
-1. Modify theme files in the Git repository
-2. Commit changes
-3. Redeploy to test VM first
-4. Test thoroughly
-5. Deploy to production if successful
+When updating OpenSILEX:
 
-### Version Control
+1. OpenSILEX update will replace `opensilex-front.jar`
+2. PheNo theme will be lost
+3. **Re-run deployment:**
+   ```powershell
+   .\tools\deploy-pheno-branding.ps1 -ServerHost SERVER_IP
+   ```
 
-All theme files are version-controlled in Git. This ensures:
-- Reproducibility across environments
-- Easy rollback if needed
-- Change tracking and history
+**Recommendation:** Create a post-update checklist including theme redeployment.
+
+### Keeping Theme Updated
+
+```bash
+# Pull latest theme changes
+git pull origin main
+
+# Navigate to PHIS directory
+cd path/to/PHIS
+
+# Redeploy
+.\tools\deploy-pheno-branding.ps1 -ServerHost SERVER_IP
+```
+
+---
+
+## Version History
+
+### v1.0.0 (2025-01-04)
+- ✅ Initial release
+- ✅ PheNo color palette implementation
+- ✅ Logo replacement system
+- ✅ Automated deployment script
+- ✅ Comprehensive documentation
+
+### Future Versions
+
+See [TODO-STYLE-IMPROVEMENTS.md](TODO-STYLE-IMPROVEMENTS.md) for planned enhancements.
+
+---
 
 ## Support
 
-For issues or questions:
-- Review the PheNo Design Guidelines PDF
-- Check OpenSILEX documentation
-- Review Nginx documentation for proxy configuration
+### Documentation
+- Quick start: [QUICK-START.md](QUICK-START.md)
+- Full guide: [README-DEPLOYMENT.md](README-DEPLOYMENT.md)
+- Improvements: [TODO-STYLE-IMPROVEMENTS.md](TODO-STYLE-IMPROVEMENTS.md)
+
+### Resources
+- [OpenSILEX GitHub](https://github.com/OpenSILEX/opensilex)
+- [Sass Documentation](https://sass-lang.com/documentation)
+- [Node.js Downloads](https://nodejs.org/)
+
+### Getting Help
+
+1. Check [README-DEPLOYMENT.md](README-DEPLOYMENT.md) troubleshooting section
+2. Review OpenSILEX logs: `sudo journalctl -u opensilex -n 100`
+3. Verify JAR contents: `jar -tf opensilex-front.jar | grep pheno`
+
+---
 
 ## License
 
-This theme follows the PheNo brand guidelines and is intended for use with the Norwegian Plant Phenotyping Infrastructure project.
+This theme package is for use with Norwegian Plant Phenotyping Infrastructure (PheNo) installations of OpenSILEX.
 
-## References
+PheNo branding elements (logos, colors) are property of PheNo.
+OpenSILEX is licensed under AGPL-3.0.
 
-- PheNo Design Guidelines: `PheNo Design guidelines.pdf`
-- OpenSILEX Documentation: https://github.com/OpenSILEX/opensilex
-- Nginx sub_filter module: http://nginx.org/en/docs/http/ngx_http_sub_module.html
+---
+
+## Credits
+
+**Theme Development:** Created during OpenSILEX branding implementation
+**Design Source:** PheNo Design Guidelines
+**Built For:** Norwegian Plant Phenotyping Infrastructure
+
+---
+
+## Quick Command Reference
+
+```powershell
+# Deploy to test server
+.\tools\deploy-pheno-branding.ps1 -ServerHost 20.234.181.44
+
+# Deploy to production
+.\tools\deploy-pheno-branding.ps1 -ServerHost 172.211.86.191
+
+# Prepare logos only
+cd theme\pheno
+node prepare-logos.js
+
+# Compile SCSS only
+cd theme\pheno
+sass theme.scss main.css
+
+# Check deployment status
+ssh user@server "jar -tf /path/to/opensilex-front.jar | grep 'pheno\|logo'"
+
+# View OpenSILEX logs
+ssh user@server "sudo journalctl -u opensilex -f"
+
+# Restore from backup
+ssh user@server "cd /path/to/modules && cp opensilex-front.jar.backup-TIMESTAMP opensilex-front.jar && sudo systemctl restart opensilex"
+```
+
+---
+
+**Last Updated:** 2025-01-04
+**Version:** 1.0.0

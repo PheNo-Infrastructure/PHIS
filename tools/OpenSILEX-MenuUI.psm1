@@ -6,7 +6,7 @@ Import-Module -Name "$PSScriptRoot\OpenSILEX-OutputUtils.psm1" -Force
 Import-Module -Name "$PSScriptRoot\OpenSILEX-SSHUtils.psm1" -Force
 Import-Module -Name "$PSScriptRoot\OpenSILEX-AzureVMManager.psm1" -Force
 Import-Module -Name "$PSScriptRoot\OpenSILEX-Installer.psm1" -Force
-Import-Module -Name "$PSScriptRoot\OpenSILEX-Installer-Dev.psm1" -Force
+Import-Module -Name "$PSScriptRoot\dev\OpenSILEX-Installer-Dev.psm1" -Force
 
 function Show-Menu {
     param(
