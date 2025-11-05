@@ -10,11 +10,29 @@
     background-color: $pheno-leaf-green-dark !important;
 }
 
-// Hamburger menu styling
+// Hamburger menu styling - make it white to be visible on green background
 .hamburger-inner[data-v-5d66e734],
 .hamburger-inner[data-v-5d66e734]:before,
 .hamburger-inner[data-v-5d66e734]:after {
-    background-color: $pheno-leaf-green-dark !important;
+    background-color: $white !important;
+}
+
+// Mobile navigation toggle in header - make it white to be visible
+.wrapper .header-top .top-menu .mobile-nav-toggle {
+    span {
+        background-color: $white !important;
+
+        &::before,
+        &::after {
+            background-color: $white !important;
+        }
+    }
+}
+
+// Also ensure nav-toggle and nav-close buttons are visible
+.wrapper .page-wrap .app-sidebar .sidebar-header .nav-toggle,
+.wrapper .page-wrap .app-sidebar .sidebar-header .nav-close {
+    color: $white !important;
 }
 
 // Additional header elements

@@ -218,7 +218,7 @@ if (-not $SkipBackup) {
 
 # Step 7: Inject files into JAR
 Write-Step "Injecting PheNo branding into OpenSILEX JAR"
-$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/index.html front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/main.css front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
+$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/index.html front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
 ssh "$ServerUser@$ServerHost" $jarCommand
 
 if ($LASTEXITCODE -ne 0) {

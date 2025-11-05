@@ -6657,7 +6657,19 @@ hr {
 .hamburger-inner[data-v-5d66e734],
 .hamburger-inner[data-v-5d66e734]:before,
 .hamburger-inner[data-v-5d66e734]:after {
-  background-color: #3D8526 !important;
+  background-color: #ffffff !important;
+}
+
+.wrapper .header-top .top-menu .mobile-nav-toggle span {
+  background-color: #ffffff !important;
+}
+.wrapper .header-top .top-menu .mobile-nav-toggle span::before, .wrapper .header-top .top-menu .mobile-nav-toggle span::after {
+  background-color: #ffffff !important;
+}
+
+.wrapper .page-wrap .app-sidebar .sidebar-header .nav-toggle,
+.wrapper .page-wrap .app-sidebar .sidebar-header .nav-close {
+  color: #ffffff !important;
 }
 
 .header-brand .text[data-v-5d66e734] {
