@@ -171,16 +171,42 @@ scp "$ThemeDir\images\pheno-icon-42.png" "$ServerUser@$ServerHost`:$DeployTempDi
 scp "$ThemeDir\images\pheno-icon-224.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/dashboardLogo.png"
 scp "$ThemeDir\images\PheNo_logo_long_Green.svg" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/logo-phis.svg"
 
+# Upload login background images
+Write-Info "Uploading login background images..."
+$loginBgDir = Join-Path $ThemeDir "images\login-backgrounds"
+if (Test-Path $loginBgDir) {
+    $bgImages = Get-ChildItem "$loginBgDir\*.jpg", "$loginBgDir\*.jpeg", "$loginBgDir\*.png" -ErrorAction SilentlyContinue
+    if ($bgImages.Count -gt 0) {
+        $bgIndex = 1
+        foreach ($bgImage in $bgImages) {
+            # Map images to the OpenSILEX login background names
+            switch ($bgIndex) {
+                1 { $targetName = "phis-login-bg.jpg" }
+                2 { $targetName = "opensilex-login-bg.png" }
+                3 { $targetName = "vitioeno.jpg" }
+                4 { $targetName = "LBE_Reacteur_de_laboratoire.jpg" }
+                5 { $targetName = "lac.jpg" }
+                default { $targetName = "pheno-bg-$bgIndex.jpg" }
+            }
+            scp "$($bgImage.FullName)" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/$targetName"
+            Write-Info "  → $($bgImage.Name) as $targetName"
+            $bgIndex++
+        }
+        Write-Success "Login background images uploaded ($($bgImages.Count) images)"
+    } else {
+        Write-Info "No login background images found, skipping..."
+    }
+} else {
+    Write-Info "Login backgrounds directory not found, skipping..."
+}
+
 Write-Success "All files uploaded"
 
 # Step 6: Backup existing JAR
 if (-not $SkipBackup) {
     Write-Step "Creating backup of OpenSILEX JAR"
     $BackupTimestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    ssh "$ServerUser@$ServerHost" @"
-        cd $OpenSilexPath/bin/1.4.9-rdg/modules && \
-        cp opensilex-front.jar opensilex-front.jar.backup-$BackupTimestamp
-"@
+    ssh "$ServerUser@$ServerHost" "cd $OpenSilexPath/bin/1.4.9-rdg/modules && cp opensilex-front.jar opensilex-front.jar.backup-$BackupTimestamp"
     Write-Success "Backup created: opensilex-front.jar.backup-$BackupTimestamp"
 } else {
     Write-Info "Skipping backup (as requested)"
@@ -188,23 +214,14 @@ if (-not $SkipBackup) {
 
 # Step 7: Inject files into JAR
 Write-Step "Injecting PheNo branding into OpenSILEX JAR"
-ssh "$ServerUser@$ServerHost" @"
-    cd $DeployTempDir && \
-    jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar \
-        front/opensilex.png \
-        front/theme/opensilex/_settings.scss \
-        front/theme/opensilex/main.css \
-        front/theme/opensilex/images/logo-opensilex.png \
-        front/theme/opensilex/images/logo-opensilex_miniature.png \
-        front/theme/opensilex/images/dashboardLogo.png \
-        front/theme/opensilex/images/logo-phis.svg
-"@
+$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/main.css front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
+ssh "$ServerUser@$ServerHost" $jarCommand
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to inject files into JAR"
     exit 1
 }
-Write-Success "PheNo branding injected into JAR"
+Write-Success "PheNo branding injected into JAR (including login backgrounds)"
 
 # Step 8: Cleanup
 Write-Step "Cleaning up temporary files"
@@ -233,11 +250,8 @@ if (-not $SkipRestart) {
 
 # Step 10: Verify deployment
 Write-Step "Verifying deployment"
-$themeCheck = ssh "$ServerUser@$ServerHost" @"
-    jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | \
-    grep -E 'front/theme/opensilex/(main.css|_settings.scss|images/logo-opensilex.png)' | \
-    wc -l
-"@
+$verifyCommand = "jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/theme/opensilex/(main.css|_settings.scss|images/logo-opensilex.png)' | wc -l"
+$themeCheck = ssh "$ServerUser@$ServerHost" $verifyCommand
 
 if ([int]$themeCheck -ge 3) {
     Write-Success "Deployment verified - theme files present in JAR"

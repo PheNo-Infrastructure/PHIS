@@ -1,0 +1,23 @@
+// App-specific overrides for Vue component styles
+// These styles target Vue scoped components with data-v attributes
+
+// Header and logo styling
+.app-logo[data-v-5d66e734] {
+    background-color: $pheno-forest-green !important;
+}
+
+.title-icon[data-v-5d66e734] {
+    background-color: $pheno-leaf-green-dark !important;
+}
+
+// Hamburger menu styling
+.hamburger-inner[data-v-5d66e734],
+.hamburger-inner[data-v-5d66e734]:before,
+.hamburger-inner[data-v-5d66e734]:after {
+    background-color: $pheno-leaf-green-dark !important;
+}
+
+// Additional header elements
+.header-brand .text[data-v-5d66e734] {
+    color: $white !important;
+}
