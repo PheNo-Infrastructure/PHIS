@@ -6672,8 +6672,42 @@ hr {
   color: #ffffff !important;
 }
 
-.header-brand .text[data-v-5d66e734] {
-  color: #ffffff !important;
+.header-brand .text[data-v-5d66e734],
+span.text[data-v-5d66e734] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.header-brand .logo-img[data-v-5d66e734],
+.logo-img[data-v-5d66e734],
+img.logo-img[data-v-5d66e734] {
+  max-width: 200px !important;
+  width: auto !important;
+  height: 50px !important;
+  max-height: 50px !important;
+  object-fit: contain !important;
+  margin: 0 !important;
+}
+
+.header-brand[data-v-5d66e734],
+a.header-brand[data-v-5d66e734] {
+  display: flex !important;
+  align-items: center !important;
+  width: auto !important;
+  min-width: 180px !important;
+}
+
+.header-brand[data-v-5d66e734] > * {
+  margin-left: 0 !important;
+}
+
+div[data-v-5d66e734].header-brand {
+  gap: 0 !important;
 }
 
 .wrapper .page-wrap .app-sidebar .sidebar-content .nav-container .navigation-main .nav-item a {
