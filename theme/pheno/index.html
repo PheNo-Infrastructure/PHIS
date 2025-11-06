@@ -96,4 +96,51 @@
             100% {
                 transform: rotate(360deg);
             }
-        }</style><link href="osfront/js/chunk-2d216214.51e2adc6.js" rel="prefetch"><link href="osfront/js/chunk-2d216257.c67a7328.js" rel="prefetch"><link href="osfront/js/chunk-4836d9aa.df1e2f8b.js" rel="prefetch"><link href="osfront/css/app.6e9cdf00.css" rel="preload" as="style"><link href="osfront/css/chunk-vendors.ddfe5124.css" rel="preload" as="style"><link href="osfront/js/app.2a65618b.js" rel="preload" as="script"><link href="osfront/js/chunk-vendors.b97390b2.js" rel="preload" as="script"><link href="osfront/css/chunk-vendors.ddfe5124.css" rel="stylesheet"><link href="osfront/css/app.6e9cdf00.css" rel="stylesheet"></head><body class="theme-wrapper"><noscript><strong>We're sorry but OpenSilex doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="opensilex-loader"><div class="lds-ring"><div></div><div></div><div></div><div></div></div><img class="opensilex-logo" src="osfront/opensilex.png"><div id="opensilex-error-loading">Error while loading OpenSILEX, please contact your support team</div></div><div id="app"></div><script src="osfront/js/chunk-vendors.b97390b2.js"></script><script src="osfront/js/app.2a65618b.js"></script><script src=/js/pheno-text-replace.js></script></body></html>
+        }
+
+        /* PheNo Branding - Hide OpenSILEX text and expand logo */
+        .header-brand .text[data-v-5d66e734],
+        .header-brand span.text,
+        span.text[data-v-5d66e734] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            width: 0 !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            position: absolute !important;
+            left: -9999px !important;
+        }
+
+        /* Override OpenSILEX's max-width: 42px constraint */
+        .header-brand .logo-img[data-v-5d66e734],
+        .header-brand img.logo-img[data-v-5d66e734],
+        a.header-brand[data-v-5d66e734] img.logo-img,
+        .logo-img[data-v-5d66e734],
+        img.logo-img[data-v-5d66e734],
+        .header-brand img {
+            max-width: none !important;
+            width: 140px !important;
+            min-width: 120px !important;
+            height: auto !important;
+            max-height: 45px !important;
+            min-height: 35px !important;
+            object-fit: contain !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            position: static !important;
+            top: auto !important;
+            transform: none !important;
+        }
+
+        .header-brand[data-v-5d66e734],
+        a.header-brand[data-v-5d66e734],
+        .header-brand {
+            display: flex !important;
+            align-items: center !important;
+            width: auto !important;
+            min-width: 180px !important;
+            gap: 0 !important;
+        }
+    </style><link href="osfront/js/chunk-2d216214.51e2adc6.js" rel="prefetch"><link href="osfront/js/chunk-2d216257.c67a7328.js" rel="prefetch"><link href="osfront/js/chunk-4836d9aa.df1e2f8b.js" rel="prefetch"><link href="osfront/css/app.6e9cdf00.css" rel="preload" as="style"><link href="osfront/css/chunk-vendors.ddfe5124.css" rel="preload" as="style"><link href="osfront/js/app.2a65618b.js" rel="preload" as="script"><link href="osfront/js/chunk-vendors.b97390b2.js" rel="preload" as="script"><link href="osfront/css/chunk-vendors.ddfe5124.css" rel="stylesheet"><link href="osfront/css/app.6e9cdf00.css" rel="stylesheet"><link href="/css/pheno-overrides.css" rel="stylesheet"></head><body class="theme-wrapper"><noscript><strong>We're sorry but OpenSilex doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="opensilex-loader"><div class="lds-ring"><div></div><div></div><div></div><div></div></div><img class="opensilex-logo" src="osfront/opensilex.png"><div id="opensilex-error-loading">Error while loading OpenSILEX, please contact your support team</div></div><div id="app"></div><script src="osfront/js/chunk-vendors.b97390b2.js"></script><script src="osfront/js/app.2a65618b.js"></script><script src="/js/pheno-text-replace.js"></script></body></html>

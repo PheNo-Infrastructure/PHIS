@@ -152,26 +152,35 @@ Write-Step "Creating deployment package"
 $DeployTempDir = "/tmp/pheno-deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
 # Create remote directory structure
-ssh "$ServerUser@$ServerHost" "mkdir -p $DeployTempDir/front/theme/opensilex/images"
+ssh "$ServerUser@$ServerHost" "mkdir -p $DeployTempDir/front/theme/opensilex/images $DeployTempDir/front/js $DeployTempDir/front/css"
 Write-Success "Remote staging directory created"
 
 # Step 5: Upload theme files
 Write-Step "Uploading theme files to server"
 
-# Upload SCSS and CSS files
-Write-Info "Uploading theme CSS and SCSS..."
+# Upload SCSS files only (not main.css - see TROUBLESHOOTING-HAMBURGER-BUTTON.md)
+Write-Info "Uploading theme SCSS..."
 scp "$ThemeDir\_settings.scss" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/"
-scp "$ThemeDir\main.css" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/"
+# NOTE: We do NOT upload main.css to preserve OpenSILEX functionality (hamburger button, etc.)
+# Only _settings.scss is deployed so OpenSILEX can compile it with the original theme
 
 # Upload index.html with custom title
 Write-Info "Uploading index.html with PHIS - PheNo title..."
 scp "$ThemeDir\index.html" "$ServerUser@$ServerHost`:$DeployTempDir/front/"
 
+# Upload CSS overrides file
+Write-Info "Uploading PheNo CSS overrides..."
+scp "$ThemeDir\pheno-overrides.css" "$ServerUser@$ServerHost`:$DeployTempDir/front/css/"
+
+# Upload JavaScript file for text replacement
+Write-Info "Uploading PheNo text replacement script..."
+scp "$ThemeDir\pheno-text-replace.js" "$ServerUser@$ServerHost`:$DeployTempDir/front/js/"
+
 # Upload logo files
 Write-Info "Uploading logo files..."
 scp "$ThemeDir\images\pheno-icon-224.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/opensilex.png"
-scp "$ThemeDir\images\pheno-icon-216.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/logo-opensilex.png"
-scp "$ThemeDir\images\pheno-icon-42.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/logo-opensilex_miniature.png"
+scp "$ThemeDir\images\pheno-logo-navbar.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/logo-opensilex.png"
+scp "$ThemeDir\images\pheno-logo-navbar-mini.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/logo-opensilex_miniature.png"
 scp "$ThemeDir\images\pheno-icon-224.png" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/dashboardLogo.png"
 scp "$ThemeDir\images\PheNo_logo_long_Green.svg" "$ServerUser@$ServerHost`:$DeployTempDir/front/theme/opensilex/images/logo-phis.svg"
 
@@ -218,7 +227,7 @@ if (-not $SkipBackup) {
 
 # Step 7: Inject files into JAR
 Write-Step "Injecting PheNo branding into OpenSILEX JAR"
-$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/index.html front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
+$jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/index.html front/css/pheno-overrides.css front/js/pheno-text-replace.js front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
 ssh "$ServerUser@$ServerHost" $jarCommand
 
 if ($LASTEXITCODE -ne 0) {
