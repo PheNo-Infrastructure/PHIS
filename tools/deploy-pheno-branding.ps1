@@ -227,6 +227,17 @@ if (-not $SkipBackup) {
 
 # Step 7: Inject files into JAR
 Write-Step "Injecting PheNo branding into OpenSILEX JAR"
+
+# First verify all files exist in the temp directory
+Write-Info "Verifying files in staging directory..."
+$verifyFilesCommand = @"
+cd $DeployTempDir &&
+ls -la front/css/pheno-overrides.css front/js/pheno-text-replace.js front/index.html 2>&1
+"@
+$fileCheck = ssh "$ServerUser@$ServerHost" $verifyFilesCommand
+Write-Info "File verification output:`n$fileCheck"
+
+# Now inject into JAR
 $jarCommand = "cd $DeployTempDir && jar -uf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar front/index.html front/css/pheno-overrides.css front/js/pheno-text-replace.js front/opensilex.png front/theme/opensilex/_settings.scss front/theme/opensilex/images/logo-opensilex.png front/theme/opensilex/images/logo-opensilex_miniature.png front/theme/opensilex/images/dashboardLogo.png front/theme/opensilex/images/logo-phis.svg front/theme/opensilex/images/phis-login-bg.jpg front/theme/opensilex/images/opensilex-login-bg.png front/theme/opensilex/images/vitioeno.jpg front/theme/opensilex/images/LBE_Reacteur_de_laboratoire.jpg front/theme/opensilex/images/lac.jpg"
 ssh "$ServerUser@$ServerHost" $jarCommand
 
@@ -234,6 +245,13 @@ if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to inject files into JAR"
     exit 1
 }
+
+# Verify the files were actually added to the JAR
+Write-Info "Verifying files were added to JAR..."
+$verifyJarCommand = "jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/(css/pheno-overrides.css|js/pheno-text-replace.js)'"
+$jarContents = ssh "$ServerUser@$ServerHost" $verifyJarCommand
+Write-Info "JAR contents check:`n$jarContents"
+
 Write-Success "PheNo branding injected into JAR (including login backgrounds)"
 
 # Step 8: Cleanup
@@ -263,13 +281,15 @@ if (-not $SkipRestart) {
 
 # Step 10: Verify deployment
 Write-Step "Verifying deployment"
-$verifyCommand = "jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/(index.html|theme/opensilex/(main.css|_settings.scss|images/logo-opensilex.png))' | wc -l"
+$verifyCommand = "jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/(index.html|css/pheno-overrides.css|js/pheno-text-replace.js|theme/opensilex/(_settings.scss|images/logo-opensilex.png))' | wc -l"
 $themeCheck = ssh "$ServerUser@$ServerHost" $verifyCommand
 
-if ([int]$themeCheck -ge 4) {
-    Write-Success "Deployment verified - theme files and index.html present in JAR"
+if ([int]$themeCheck -ge 5) {
+    Write-Success "Deployment verified - all critical theme files present in JAR"
+    Write-Info "Files verified: index.html, pheno-overrides.css, pheno-text-replace.js, _settings.scss, logos"
 } else {
-    Write-Error "Verification failed - some theme files may be missing"
+    Write-Error "Verification failed - some theme files may be missing (found $themeCheck files, expected 5+)"
+    Write-Info "Run this to check: jar -tf $OpenSilexPath/bin/1.4.9-rdg/modules/opensilex-front.jar | grep -E 'front/(css|js)/'"
     exit 1
 }
 

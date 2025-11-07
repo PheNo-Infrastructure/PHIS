@@ -5,7 +5,8 @@
       "Bash(sudo docker:*)",
       "Bash(sudo systemctl status:*)",
       "Bash(systemctl status:*)",
-      "Bash(ssh:*)"
+      "Bash(ssh:*)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' \"http://172.201.60.223/app/js/pheno-text-replace.js\")"
     ],
     "deny": [],
     "ask": []
