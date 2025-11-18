@@ -214,7 +214,10 @@
             "name": "[concat(parameters('vmName'), '_OsDisk')]",
             "createOption": "FromImage",
             "caching": "ReadWrite",
-            "deleteOption": "Delete"
+            "deleteOption": "Delete",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS"
+            }
           }
         },
         "osProfile": {
