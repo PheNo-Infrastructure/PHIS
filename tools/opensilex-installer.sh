@@ -112,6 +112,12 @@ AGROPORTAL_API_KEY=""
 FEIDE_ENABLED=false
 FEIDE_CLIENT_ID=""
 FEIDE_CLIENT_SECRET=""
+S3_ENABLED=false
+AWS_ACCESS_KEY_ID=""
+AWS_SECRET_ACCESS_KEY=""
+AWS_REGION=""
+AWS_S3_BUCKET=""
+AWS_S3_ENDPOINT=""
 
 # 1. Check for local config file (uploaded from tools/config/test-api-keys.conf)
 CONFIG_FILE="$HOME/test-api-keys.conf"
@@ -139,6 +145,22 @@ fi
 if [ ! -z "$FEIDE_CLIENT_ID" ] && [ ! -z "$FEIDE_CLIENT_SECRET" ]; then
     print_success "Using FEIDE credentials from environment variables"
     FEIDE_ENABLED=true
+fi
+
+# Check for S3 credentials
+if [ ! -z "$AWS_ACCESS_KEY_ID" ] && [ ! -z "$AWS_SECRET_ACCESS_KEY" ] && [ ! -z "$AWS_S3_BUCKET" ]; then
+    print_success "Using AWS S3 credentials from configuration"
+    S3_ENABLED=true
+
+    # Set defaults if not provided
+    AWS_REGION="${AWS_REGION:-eu-west-3}"
+    AWS_S3_ENDPOINT="${AWS_S3_ENDPOINT:-https://s3.$AWS_REGION.amazonaws.com}"
+
+    # Ensure endpoint has URI scheme
+    if [[ ! "$AWS_S3_ENDPOINT" =~ ^https?:// ]]; then
+        AWS_S3_ENDPOINT="https://$AWS_S3_ENDPOINT"
+        print_warning "Added https:// prefix to S3 endpoint: $AWS_S3_ENDPOINT"
+    fi
 fi
 
 # 3. Final status reporting
@@ -170,6 +192,18 @@ if [ "$FEIDE_ENABLED" = false ]; then
     echo ""
 fi
 
+if [ "$S3_ENABLED" = false ]; then
+    print_warning "No AWS S3 credentials found"
+    print_status "Using local file storage"
+    echo ""
+    print_status "To enable AWS S3 storage:"
+    print_status "1. Create an S3 bucket at: https://console.aws.amazon.com/s3/"
+    print_status "2. Create IAM credentials at: https://console.aws.amazon.com/iam/"
+    print_status "3. Edit file: tools/config/test-api-keys.conf"
+    print_status "4. Add AWS credentials (see template for examples)"
+    echo ""
+fi
+
 # Main configuration file with domain name
 cat > "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_EOF
 # OpenSILEX Production Configuration
@@ -197,13 +231,44 @@ big-data:
 # File system configuration with proper structure
 file-system:
   fs:
-    defaultFS: local
     config:
+      defaultFS: $([ "$S3_ENABLED" = true ] && echo "s3" || echo "local")
       connections:
         local:
           implementation: org.opensilex.fs.local.LocalFileSystemConnection
           config:
             basePath: "/home/azureuser/opensilex/data/files"
+CONFIG_EOF
+
+# Add S3 configuration if enabled
+if [ "$S3_ENABLED" = true ]; then
+    print_status "Adding AWS S3 storage configuration..."
+
+    # Create AWS credentials directory and file
+    mkdir -p "$HOME/.aws"
+    cat > "$HOME/.aws/credentials" << AWS_CREDS_EOF
+[default]
+aws_access_key_id = $AWS_ACCESS_KEY_ID
+aws_secret_access_key = $AWS_SECRET_ACCESS_KEY
+region = $AWS_REGION
+AWS_CREDS_EOF
+
+    chmod 600 "$HOME/.aws/credentials"
+    print_success "AWS credentials configured at ~/.aws/credentials"
+
+    # Append S3 connection to config
+    cat >> "$OPENSILEX_HOME/config/opensilex.yml" << S3_CONFIG_EOF
+        s3:
+          implementation: org.opensilex.fs.s3.S3FileStorageConnection
+          config:
+            endpoint: $AWS_S3_ENDPOINT
+            region: $AWS_REGION
+            bucket: $AWS_S3_BUCKET
+S3_CONFIG_EOF
+    print_success "S3 storage configured: s3://$AWS_S3_BUCKET (region: $AWS_REGION)"
+fi
+
+cat >> "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_CONTINUE_EOF
 
 server:
   host: "0.0.0.0"
@@ -308,7 +373,7 @@ phisws:
     allowedHeaders:
       - "*"
     allowCredentials: true
-CONFIG_EOF
+CONFIG_CONTINUE_EOF
 
 # Add Agroportal configuration if enabled
 if [ "$AGROPORTAL_ENABLED" = true ]; then
@@ -1632,9 +1697,9 @@ print_success "Automatic group assignment configured!"
 
 print_success "OpenSILEX production installation completed!"
 echo ""
-echo "==============================================" 
+echo "=============================================="
 echo "        Installation Summary"
-echo "==============================================" 
+echo "=============================================="
 echo "• Using azureuser for OpenSILEX installation"
 echo "• Directory structure: /home/azureuser/opensilex/{bin,config,data,logs}"
 echo "• Configuration files created with logging"
@@ -1644,7 +1709,14 @@ echo "• Admin user created (admin@opensilex.org / admin)"
 echo "• Nginx reverse proxy configured on port 80"
 echo "• Startup scripts and aliases configured"
 echo "• Systemd service configured"
-echo "• Feide/OpenID authentication configured"
+if [ "$S3_ENABLED" = true ]; then
+    echo "• File storage: AWS S3 (s3://$AWS_S3_BUCKET)"
+else
+    echo "• File storage: Local (/home/azureuser/opensilex/data/files)"
+fi
+if [ "$FEIDE_ENABLED" = true ]; then
+    echo "• Feide/OpenID authentication configured"
+fi
 echo "• Automatic group assignment system installed"
 echo ""
 echo "🔐 User Management:"
