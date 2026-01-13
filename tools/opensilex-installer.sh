@@ -182,7 +182,7 @@ if [ "$FEIDE_ENABLED" = false ]; then
     echo ""
     print_status "To enable FEIDE (Dataporten) authentication:"
     print_status "1. Register your application at: https://dashboard.dataporten.no/"
-    print_status "2. Set redirect URI to: http://$DOMAIN_NAME/app/openid"
+    print_status "2. Set redirect URI to: https://$DOMAIN_NAME/app/openid"
     print_status "3. Enable attribute groups: email, userinfo-name, userinfo-mail"
     print_status "4. Enable scopes: openid, userid, profile, email"
     print_status "5. Create file: config/api-keys.conf"
@@ -208,7 +208,7 @@ fi
 cat > "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_EOF
 # OpenSILEX Production Configuration
 ontologies:
-  baseURI: "http://$DOMAIN_NAME/"
+  baseURI: "https://$DOMAIN_NAME/"
   baseURIAlias: "prod"
   sparql:
     config:
@@ -273,7 +273,7 @@ cat >> "$OPENSILEX_HOME/config/opensilex.yml" << CONFIG_CONTINUE_EOF
 server:
   host: "0.0.0.0"
   port: 8666
-  publicURI: "http://$DOMAIN_NAME"
+  publicURI: "https://$DOMAIN_NAME"
 
 # Security configuration with email support
 security:
@@ -362,7 +362,6 @@ phisws:
   # Enable CORS for production
   cors:
     allowedOrigins:
-      - "http://$DOMAIN_NAME"
       - "https://$DOMAIN_NAME"
     allowedMethods:
       - "GET"
@@ -407,7 +406,7 @@ security:
     userFirstNameClaim: "given_name"
     userLastNameClaim: "family_name"
     providerURI: "https://auth.dataporten.no"
-    redirectURI: "http://$DOMAIN_NAME/app/openid"
+    redirectURI: "https://$DOMAIN_NAME/app/openid"
     clientID: "$FEIDE_CLIENT_ID"
     clientSecret: "$FEIDE_CLIENT_SECRET"
     connectionTitle:
@@ -604,7 +603,7 @@ else
          sail:sailType \"graphdb:Sail\" ;
          owlim:ruleset \"rdfs-optimized\" ;
          owlim:storage-folder \"storage\" ;
-         owlim:base-URL \"http://$DOMAIN_NAME/\" ;
+         owlim:base-URL \"https://$DOMAIN_NAME/\" ;
          owlim:repository-type \"file-repository\" ;
          owlim:entity-index-size \"10000000\" ;
          owlim:enable-context-index \"false\" ;
@@ -697,19 +696,30 @@ echo 'alias opensilex-logs="sudo journalctl -u opensilex -f"' >> ~/.bashrc
 
 print_success "OpenSILEX aliases configured"
 
-# Configure nginx reverse proxy
-print_status "Configuring nginx reverse proxy..."
+# Install Certbot for Let's Encrypt SSL certificates
+print_status "Installing Certbot for SSL certificate management..."
+sudo apt update
+sudo apt install -y certbot python3-certbot-nginx
 
-# Create nginx config with error handling
-if sudo tee /etc/nginx/sites-available/opensilex << NGINX_CONFIG
+# Configure nginx reverse proxy - STAGE 1: HTTP only (for certificate acquisition)
+print_status "Configuring nginx reverse proxy (HTTP stage for certificate acquisition)..."
+
+# Create initial HTTP-only nginx config
+if sudo tee /etc/nginx/sites-available/opensilex << NGINX_HTTP_CONFIG
+# HTTP server - for ACME challenges and initial setup
 server {
     listen 80;
     server_name $DOMAIN_NAME;
 
+    # Allow Certbot challenges for SSL certificate acquisition
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
     # Increase client max body size for file uploads
     client_max_body_size 100M;
 
-    # Proxy settings for OpenSILEX
+    # Proxy settings for OpenSILEX (temporary HTTP access)
     location / {
         proxy_pass http://127.0.0.1:8666;
         proxy_set_header Host \$host;
@@ -733,9 +743,9 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
-NGINX_CONFIG
+NGINX_HTTP_CONFIG
 then
-    print_success "Nginx configuration file created successfully"
+    print_success "Nginx HTTP configuration file created successfully"
 else
     print_error "Failed to create nginx configuration file"
     exit 1
@@ -788,6 +798,163 @@ if curl -s -I http://localhost/ | grep -q "nginx"; then
     print_success "Nginx configured as reverse proxy on port 80"
 else
     print_warning "Nginx may not be properly configured - please check manually"
+fi
+
+# Obtain SSL certificate with Certbot
+print_status "Obtaining SSL certificate from Let's Encrypt..."
+print_warning "IMPORTANT: DNS must be properly configured for $DOMAIN_NAME before proceeding"
+print_warning "Make sure $DOMAIN_NAME points to this server's public IP address"
+echo ""
+
+# Check if domain is a valid domain name (not an IP address)
+if [[ "$DOMAIN_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    print_warning "Domain is an IP address ($DOMAIN_NAME) - SSL certificate cannot be obtained"
+    print_warning "Let's Encrypt requires a valid domain name"
+    print_warning "The installation will continue but HTTPS will not work until you:"
+    print_warning "1. Configure a domain name (e.g., phis.pheno.no)"
+    print_warning "2. Run: sudo certbot --nginx -d your-domain.com"
+    print_warning "3. Restart OpenSILEX: sudo systemctl restart opensilex"
+    echo ""
+    print_status "Creating self-signed certificate for testing..."
+
+    # Create self-signed certificate directory
+    sudo mkdir -p /etc/letsencrypt/live/$DOMAIN_NAME
+
+    # Generate self-signed certificate
+    sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem \
+        -out /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem \
+        -subj "/C=NO/ST=Oslo/L=Oslo/O=OpenSILEX/CN=$DOMAIN_NAME"
+
+    print_success "Self-signed certificate created (browsers will show security warning)"
+    SSL_CONFIGURED=false
+else
+    # Valid domain name - try to get Let's Encrypt certificate
+    print_status "Attempting to obtain Let's Encrypt certificate for $DOMAIN_NAME..."
+
+    # Try to obtain certificate non-interactively (without modifying nginx config)
+    if sudo certbot certonly --webroot -w /var/www/html -d "$DOMAIN_NAME" --non-interactive --agree-tos --register-unsafely-without-email; then
+        print_success "SSL certificate obtained successfully from Let's Encrypt!"
+        print_success "Certificate will auto-renew via cron/systemd timer"
+        SSL_CONFIGURED=true
+    else
+        print_error "Failed to obtain Let's Encrypt certificate"
+        print_warning "This usually happens because:"
+        print_warning "1. DNS is not properly configured for $DOMAIN_NAME"
+        print_warning "2. Port 80 is not accessible from the internet"
+        print_warning "3. Domain validation failed"
+        echo ""
+        print_status "Creating self-signed certificate as fallback..."
+
+        # Create self-signed certificate directory
+        sudo mkdir -p /etc/letsencrypt/live/$DOMAIN_NAME
+
+        # Generate self-signed certificate
+        sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem \
+            -out /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem \
+            -subj "/C=NO/ST=Oslo/L=Oslo/O=OpenSILEX/CN=$DOMAIN_NAME"
+
+        print_success "Self-signed certificate created (browsers will show security warning)"
+        print_warning "To get a valid certificate later, run:"
+        print_warning "  sudo certbot certonly --webroot -w /var/www/html -d $DOMAIN_NAME"
+        SSL_CONFIGURED=false
+    fi
+fi
+
+# STAGE 2: Update nginx configuration to use HTTPS with the obtained certificate
+print_status "Updating nginx configuration to enable HTTPS..."
+
+if sudo tee /etc/nginx/sites-available/opensilex << NGINX_HTTPS_CONFIG
+# HTTP server - redirect to HTTPS
+server {
+    listen 80;
+    server_name $DOMAIN_NAME;
+
+    # Allow Certbot challenges for SSL certificate renewal
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    # Redirect all other HTTP traffic to HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+# HTTPS server - main application
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN_NAME;
+
+    # SSL certificate paths
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem;
+
+    # SSL configuration - modern security settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # HSTS (optional but recommended)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Increase client max body size for file uploads
+    client_max_body_size 100M;
+
+    # Proxy settings for OpenSILEX
+    location / {
+        proxy_pass http://127.0.0.1:8666;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Handle WebSocket connections for real-time features
+    location /ws {
+        proxy_pass http://127.0.0.1:8666;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+NGINX_HTTPS_CONFIG
+then
+    print_success "Nginx HTTPS configuration updated successfully"
+else
+    print_error "Failed to update nginx HTTPS configuration"
+    exit 1
+fi
+
+# Test nginx configuration
+print_status "Testing nginx HTTPS configuration..."
+if sudo nginx -t; then
+    print_success "Nginx HTTPS configuration test passed"
+else
+    print_error "Nginx HTTPS configuration test failed"
+    exit 1
+fi
+
+# Reload nginx to apply SSL configuration
+print_status "Reloading nginx with SSL configuration..."
+sudo systemctl reload nginx
+
+# Verify HTTPS is working
+sleep 5
+if curl -k -s -I https://localhost/ | grep -q "HTTP"; then
+    print_success "HTTPS is now active on port 443"
+else
+    print_warning "HTTPS may not be properly configured - please check manually"
 fi
 
 # Test log file creation
@@ -1706,7 +1873,8 @@ echo "• Configuration files created with logging"
 echo "• MongoDB and GraphDB services configured"
 echo "• Triplestore initialized with ontologies"
 echo "• Admin user created (admin@opensilex.org / admin)"
-echo "• Nginx reverse proxy configured on port 80"
+echo "• Nginx reverse proxy configured with HTTPS (ports 80→443)"
+echo "• SSL certificate configured (Let's Encrypt or self-signed)"
 echo "• Startup scripts and aliases configured"
 echo "• Systemd service configured"
 if [ "$S3_ENABLED" = true ]; then
@@ -1728,9 +1896,21 @@ echo "• Monitor service: systemctl status opensilex-auto-groups"
 echo "• Monitor logs: journalctl -u opensilex-auto-groups -f"
 echo "• Manual reset (if needed): /opt/opensilex-auto-groups/reset_monitoring.sh"
 echo ""
+echo "🔒 SSL/HTTPS Configuration:"
+if [ "$SSL_CONFIGURED" = true ]; then
+    echo "• ✅ Valid SSL certificate obtained from Let's Encrypt"
+    echo "• ✅ Auto-renewal configured"
+    echo "• ✅ HTTPS fully functional"
+else
+    echo "• ⚠️  Self-signed certificate in use (browser security warning expected)"
+    echo "• ℹ️  To get valid certificate: sudo certbot --nginx -d $DOMAIN_NAME"
+fi
+echo ""
 echo "Next steps:"
-echo "1. Access: http://$DOMAIN_NAME/ (nginx) or http://$DOMAIN_NAME:8666 (direct)"
-echo "2. Login with Feide credentials (new users auto-assigned to Users group)"
-echo "3. For admin access: manually add users to Administrators group"
-echo "4. Run help: /home/azureuser/opensilex-help.sh"
+echo "1. Access: https://$DOMAIN_NAME/ (secure HTTPS)"
+echo "2. HTTP traffic automatically redirects to HTTPS"
+echo "3. Login with Feide credentials (new users auto-assigned to Users group)"
+echo "4. For admin access: manually add users to Administrators group"
+echo "5. Direct access (bypassing nginx): http://$DOMAIN_NAME:8666"
+echo "6. Run help: /home/azureuser/opensilex-help.sh"
 echo "==============================================" 
