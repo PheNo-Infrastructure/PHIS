@@ -61,7 +61,11 @@ print_status "Obtaining Let's Encrypt SSL certificate..."
 print_status "This may take a few moments..."
 echo ""
 
-if sudo certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email; then
+# Create webroot directory for ACME challenges
+sudo mkdir -p /var/www/letsencrypt
+sudo chown -R www-data:www-data /var/www/letsencrypt
+
+if sudo certbot certonly --webroot -w /var/www/letsencrypt -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email; then
     print_success "SSL certificate obtained successfully!"
     print_success "Certificate location: /etc/letsencrypt/live/$DOMAIN/"
 else
@@ -101,7 +105,7 @@ server {
 
     # Allow Certbot challenges for SSL certificate renewal
     location /.well-known/acme-challenge/ {
-        root /var/www/html;
+        root /var/www/letsencrypt;
     }
 
     # Redirect all other HTTP traffic to HTTPS
@@ -139,6 +143,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
+        # Fix OpenSILEX HTTP redirects to use HTTPS
+        proxy_redirect http://phis.pheno.no/ https://phis.pheno.no/;
+        proxy_redirect http://phis.pheno.no https://phis.pheno.no;
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
