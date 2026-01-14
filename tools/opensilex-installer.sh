@@ -806,6 +806,10 @@ print_warning "IMPORTANT: DNS must be properly configured for $DOMAIN_NAME befor
 print_warning "Make sure $DOMAIN_NAME points to this server's public IP address"
 echo ""
 
+# Create webroot directory for ACME challenges
+sudo mkdir -p /var/www/letsencrypt
+sudo chown -R www-data:www-data /var/www/letsencrypt
+
 # Check if domain is a valid domain name (not an IP address)
 if [[ "$DOMAIN_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     print_warning "Domain is an IP address ($DOMAIN_NAME) - SSL certificate cannot be obtained"
@@ -833,7 +837,7 @@ else
     print_status "Attempting to obtain Let's Encrypt certificate for $DOMAIN_NAME..."
 
     # Try to obtain certificate non-interactively (without modifying nginx config)
-    if sudo certbot certonly --webroot -w /var/www/html -d "$DOMAIN_NAME" --non-interactive --agree-tos --register-unsafely-without-email; then
+    if sudo certbot certonly --webroot -w /var/www/letsencrypt -d "$DOMAIN_NAME" --non-interactive --agree-tos --register-unsafely-without-email; then
         print_success "SSL certificate obtained successfully from Let's Encrypt!"
         print_success "Certificate will auto-renew via cron/systemd timer"
         SSL_CONFIGURED=true
@@ -873,7 +877,7 @@ server {
 
     # Allow Certbot challenges for SSL certificate renewal
     location /.well-known/acme-challenge/ {
-        root /var/www/html;
+        root /var/www/letsencrypt;
     }
 
     # Redirect all other HTTP traffic to HTTPS
@@ -911,6 +915,9 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
+        # Fix OpenSILEX HTTP redirects to use HTTPS
+        proxy_redirect http://\$host/ https://\$host/;
+        proxy_redirect http://\$host https://\$host;
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
