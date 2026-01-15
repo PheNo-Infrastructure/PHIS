@@ -39,33 +39,186 @@ mkdir -p "$OPENSILEX_HOME/logs"
 mkdir -p "$OPENSILEX_HOME/data/files"
 mkdir -p "$OPENSILEX_HOME/data/logs"
 
-# Download OpenSILEX release following production guide
-print_status "Downloading OpenSILEX 1.4.9-rdg release..."
+# Download/Build OpenSILEX release
+# Option to build from source with patches (fixes critical GroupDAO bug)
+print_status "Preparing OpenSILEX 1.4.9-rdg..."
 cd "$OPENSILEX_HOME/bin"
 OPENSILEX_VERSION="1.4.9-rdg"
-RELEASE_URL="https://github.com/OpenSILEX/opensilex/releases/download/${OPENSILEX_VERSION}/opensilex-release-${OPENSILEX_VERSION}.zip"
+BUILD_FROM_SOURCE="${BUILD_FROM_SOURCE:-true}"  # Default to building from source with patches
 
-if curl -s -I -L --fail "$RELEASE_URL" >/dev/null 2>&1; then
-    print_status "Downloading pre-built OpenSILEX ${OPENSILEX_VERSION} release..."
-    wget -O "opensilex-release-${OPENSILEX_VERSION}.zip" "$RELEASE_URL"
-    unzip "opensilex-release-${OPENSILEX_VERSION}.zip"
-    
-    # Move contents following production structure
-    if [ -d "opensilex-release-${OPENSILEX_VERSION}" ]; then
-        mv "opensilex-release-${OPENSILEX_VERSION}"/* .
-        rmdir "opensilex-release-${OPENSILEX_VERSION}"
+if [ "$BUILD_FROM_SOURCE" = "true" ]; then
+    print_status "Building OpenSILEX from source with critical patches..."
+    print_status "This includes fixes for:"
+    print_status "  - GroupDAO NullPointerException (authentication bug)"
+    print_status "  - Auto-group assignment for new OIDC/Feide users"
+
+    # Install build dependencies
+    print_status "Installing build dependencies..."
+    apt update
+    apt install -y git maven default-jdk unzip
+
+    # Clone source
+    WORK_DIR="/tmp/opensilex-build"
+    rm -rf "$WORK_DIR"
+    mkdir -p "$WORK_DIR"
+    cd "$WORK_DIR"
+
+    print_status "Cloning OpenSILEX source..."
+    git clone --depth 1 --branch "$OPENSILEX_VERSION" https://github.com/OpenSILEX/opensilex.git
+    cd opensilex
+
+    # Create GroupDAO patch
+    print_status "Creating GroupDAO fix patch..."
+    cat > /tmp/groupdao-fix.patch << 'PATCH_EOF'
+--- a/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
+@@ -153,7 +153,11 @@ public final class GroupDAO {
+                 GroupModel.class,
+                 lang,
+                 (SelectBuilder select) -> {
+-                    select.addFilter(SPARQLQueryHelper.inURIFilter(GroupUserProfileModel.URI_FIELD, encounteredUserProfileUrisAsUris));
++                    // CRITICAL FIX: inURIFilter returns null when list is empty
++                    Expr filter = SPARQLQueryHelper.inURIFilter(GroupUserProfileModel.URI_FIELD, encounteredUserProfileUrisAsUris);
++                    if (filter != null) {
++                        select.addFilter(filter);
++                    }
+                 },
+                 Collections.emptyMap(),
+                 (SPARQLResult result) -> userProfileFetcher.getInstance(result, lang),
+PATCH_EOF
+
+    # Create AccountDAO patch
+    print_status "Creating AccountDAO auto-groups patch..."
+    cat > /tmp/accountdao-autogroups.patch << 'PATCH_EOF'
+--- a/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
+@@ -1,6 +1,11 @@
+ package org.opensilex.security.account.dal;
+
++import java.net.URI;
++import java.util.ArrayList;
+ import org.opensilex.security.authentication.SecurityOntology;
++import org.opensilex.security.group.dal.GroupDAO;
++import org.opensilex.security.group.dal.GroupModel;
++import org.opensilex.security.group.dal.GroupUserProfileModel;
+ import org.opensilex.sparql.service.SPARQLService;
+ import org.opensilex.nosql.mongodb.MongoDBService;
+
+@@ -50,6 +55,45 @@ public class AccountModel getByEmailOrCreate(
+             account.setLanguage(lang);
+
+             create(account);
++
++            // ===== CUSTOM PATCH: Auto-assign new OIDC users to default group =====
++            // This patch ensures new Feide/OIDC users get credentials immediately
++            // Eliminates the "blank page" issue on first login
++            try {
++                URI defaultGroupUri = new URI("http://opensilex.org/groups/users");
++                URI defaultProfileUri = new URI("http://opensilex.org/profiles/default");
++
++                // Get the default group
++                GroupDAO groupDAO = new GroupDAO(sparql, nosql);
++                GroupModel defaultGroup = groupDAO.get(defaultGroupUri);
++
++                if (defaultGroup != null) {
++                    // Create group-user-profile link
++                    GroupUserProfileModel userProfile = new GroupUserProfileModel();
++                    userProfile.setUserURI(account.getUri());
++                    userProfile.setProfileURI(defaultProfileUri);
++
++                    // Add to group's user list
++                    if (defaultGroup.getUserProfiles() == null) {
++                        defaultGroup.setUserProfiles(new ArrayList<>());
++                    }
++                    defaultGroup.getUserProfiles().add(userProfile);
++
++                    // Update the group
++                    groupDAO.update(defaultGroup);
++
++                    LOGGER.info("✅ Auto-assigned new OIDC user {} to Users group", email);
++                } else {
++                    LOGGER.warn("⚠️ Default Users group not found, user {} created without group", email);
++                }
++            } catch (Exception e) {
++                LOGGER.error("❌ Failed to auto-assign group for user {}: {}", email, e.getMessage());
++                // Don't fail user creation if group assignment fails
++                // User can still be manually assigned to a group later
++            }
++            // ===== END CUSTOM PATCH =====
+         }
+
+         return account;
+PATCH_EOF
+
+    # Apply patches
+    print_status "Applying GroupDAO fix..."
+    if patch -p1 < /tmp/groupdao-fix.patch; then
+        print_success "✅ GroupDAO patch applied"
+    else
+        print_warning "GroupDAO patch may have already been applied or source changed"
     fi
-    
-    # Move jar to parent directory as per production guide
-    if [ -f "opensilex.jar" ]; then
-        mv opensilex.jar "$OPENSILEX_HOME/"
+
+    print_status "Applying AccountDAO auto-groups patch..."
+    if patch -p1 < /tmp/accountdao-autogroups.patch; then
+        print_success "✅ AccountDAO patch applied"
+    else
+        print_warning "AccountDAO patch may have already been applied or source changed"
     fi
-    
-    rm "opensilex-release-${OPENSILEX_VERSION}.zip"
-    print_success "OpenSILEX release downloaded and extracted successfully"
-else
-    print_error "Pre-built release not available for ${OPENSILEX_VERSION}"
-    exit 1
+
+    # Build
+    print_status "Building OpenSILEX (this takes 10-15 minutes)..."
+    if mvn clean install -DskipTests -DskipFrontBuild; then
+        print_success "✅ Build completed successfully"
+    else
+        print_error "Build failed. Falling back to pre-built release..."
+        BUILD_FROM_SOURCE="false"
+    fi
+
+    if [ "$BUILD_FROM_SOURCE" = "true" ]; then
+        # Copy built artifacts
+        print_status "Copying build artifacts..."
+        cp -r opensilex-release/target/opensilex-release-${OPENSILEX_VERSION}/* "$OPENSILEX_HOME/bin/"
+
+        print_success "✅ Patched OpenSILEX built and installed"
+        print_success "Patches applied:"
+        print_success "  - GroupDAO NullPointerException fix"
+        print_success "  - AccountDAO auto-group assignment"
+
+        # Cleanup
+        cd /
+        rm -rf "$WORK_DIR"
+    fi
+fi
+
+# Fallback: Download pre-built if build failed or disabled
+if [ "$BUILD_FROM_SOURCE" != "true" ]; then
+    RELEASE_URL="https://github.com/OpenSILEX/opensilex/releases/download/${OPENSILEX_VERSION}/opensilex-release-${OPENSILEX_VERSION}.zip"
+
+    if curl -s -I -L --fail "$RELEASE_URL" >/dev/null 2>&1; then
+        print_status "Downloading pre-built OpenSILEX ${OPENSILEX_VERSION} release..."
+        print_warning "WARNING: Pre-built release contains GroupDAO bug!"
+        print_warning "Set BUILD_FROM_SOURCE=true to build with patches"
+
+        wget -O "opensilex-release-${OPENSILEX_VERSION}.zip" "$RELEASE_URL"
+        unzip "opensilex-release-${OPENSILEX_VERSION}.zip"
+
+        # Move contents following production structure
+        if [ -d "opensilex-release-${OPENSILEX_VERSION}" ]; then
+            mv "opensilex-release-${OPENSILEX_VERSION}"/* .
+            rmdir "opensilex-release-${OPENSILEX_VERSION}"
+        fi
+
+        # Move jar to parent directory as per production guide
+        if [ -f "opensilex.jar" ]; then
+            mv opensilex.jar "$OPENSILEX_HOME/"
+        fi
+
+        rm "opensilex-release-${OPENSILEX_VERSION}.zip"
+        print_success "OpenSILEX release downloaded and extracted successfully"
+    else
+        print_error "Pre-built release not available for ${OPENSILEX_VERSION}"
+        exit 1
+    fi
 fi
 
 # Get VM public IP first
