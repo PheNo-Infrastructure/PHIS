@@ -177,16 +177,26 @@ PATCH_EOF
     if [ "$BUILD_FROM_SOURCE" = "true" ]; then
         # Copy built artifacts
         print_status "Copying build artifacts..."
-        cp -r opensilex-release/target/opensilex-release-${OPENSILEX_VERSION}/* "$OPENSILEX_HOME/bin/"
 
-        print_success "✅ Patched OpenSILEX built and installed"
-        print_success "Patches applied:"
-        print_success "  - GroupDAO NullPointerException fix"
-        print_success "  - AccountDAO auto-group assignment"
+        # Find the actual release directory (could be BUILD-SNAPSHOT or version number)
+        RELEASE_DIR=$(find opensilex-release/target -maxdepth 1 -type d -name "opensilex-release-*" | head -1)
 
-        # Cleanup
-        cd /
-        rm -rf "$WORK_DIR"
+        if [ -z "$RELEASE_DIR" ]; then
+            print_error "Build artifacts not found in opensilex-release/target/"
+            BUILD_FROM_SOURCE="false"
+        else
+            print_status "Found build artifacts: $RELEASE_DIR"
+            cp -r "$RELEASE_DIR"/* "$OPENSILEX_HOME/bin/"
+
+            print_success "✅ Patched OpenSILEX built and installed"
+            print_success "Patches applied:"
+            print_success "  - GroupDAO NullPointerException fix"
+            print_success "  - AccountDAO auto-group assignment"
+
+            # Cleanup
+            cd /
+            rm -rf "$WORK_DIR"
+        fi
     fi
 fi
 
