@@ -13,7 +13,30 @@ The installer now **automatically builds OpenSILEX from source with patches** in
 
 ## How to Reinstall
 
-### Option 1: Full Reinstall (Recommended)
+### Option 1: PowerShell Script (Easiest - From Windows)
+
+```powershell
+# On your Windows machine:
+cd C:\Users\siv017\Documents\GitHub\PHIS\tools
+
+# Pull latest changes (includes patches)
+git pull
+
+# Run full install with patches
+.\opensilex-github.ps1 -Command FullInstall -VMIPAddress 172.211.86.191
+
+# Or use the interactive menu:
+.\opensilex-github.ps1
+# Then select option for "Full Install"
+```
+
+**What it does:**
+- Uploads the patched `opensilex-installer.sh` to your server
+- Builds OpenSILEX from source with both patches automatically
+- Configures everything (HTTPS, Feide, monitoring, etc.)
+- **Build time:** ~15-20 minutes
+
+### Option 2: Direct SSH Install (On Server)
 
 ```bash
 # On your server (as azureuser):

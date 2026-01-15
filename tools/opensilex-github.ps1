@@ -2,6 +2,11 @@
 # PowerShell script for managing OpenSILEX version 1.4.9-rdg installation on Azure VMs
 # Follows official OpenSILEX repository guidelines: https://github.com/OpenSILEX/opensilex
 #
+# IMPORTANT: This script now builds OpenSILEX from source with critical patches:
+#   - GroupDAO NullPointerException fix (authentication bug)
+#   - AccountDAO auto-group assignment (instant credentials for new Feide users)
+#   Build time: ~15-20 minutes (includes Maven compilation)
+#
 # API Key Configuration:
 #   For Agroportal ontology integration, you need an API key from:
 #   https://agroportal.lirmm.fr/account
