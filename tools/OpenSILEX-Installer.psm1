@@ -126,8 +126,9 @@ function Install-OpenSILEX {
             ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/setup-system.sh"
         }
         
-        Write-Info "Installing OpenSILEX following production guide (this may take 10-15 minutes)..."
-        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "~/install-opensilex.sh"
+        Write-Info "Installing OpenSILEX following production guide (this may take 15-20 minutes with patches)..."
+        Write-Info "Building from source with GroupDAO fix and auto-group assignment patches..."
+        ssh -i $privateKeyPath -o StrictHostKeyChecking=no $AdminUsername@$TargetIP "sudo bash ~/install-opensilex.sh"
         
         Write-Success "OpenSILEX installation completed successfully!"
     } catch {
