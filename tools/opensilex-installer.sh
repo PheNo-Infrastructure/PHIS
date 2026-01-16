@@ -210,7 +210,7 @@ if [ "$BUILD_FROM_SOURCE" != "true" ]; then
         print_warning "Set BUILD_FROM_SOURCE=true to build with patches"
 
         wget -O "opensilex-release-${OPENSILEX_VERSION}.zip" "$RELEASE_URL"
-        unzip "opensilex-release-${OPENSILEX_VERSION}.zip"
+        unzip -o "opensilex-release-${OPENSILEX_VERSION}.zip"
 
         # Move contents following production structure
         if [ -d "opensilex-release-${OPENSILEX_VERSION}" ]; then
