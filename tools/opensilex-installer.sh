@@ -702,8 +702,15 @@ docker exec opensilex-mongodb mongosh --eval "rs.status()"
 print_status "Creating OpenSILEX wrapper script..."
 VERSION="1.4.9-rdg"
 mkdir -p "$OPENSILEX_HOME/bin/$VERSION"
-mv "$OPENSILEX_HOME/opensilex.jar" "$OPENSILEX_HOME/bin/$VERSION/"
-mv "$OPENSILEX_HOME/bin/modules" "$OPENSILEX_HOME/bin/$VERSION/"
+# JAR is in bin directory (not moved to parent), so move from bin to bin/VERSION
+if [ -f "$OPENSILEX_HOME/opensilex.jar" ]; then
+    mv "$OPENSILEX_HOME/opensilex.jar" "$OPENSILEX_HOME/bin/$VERSION/"
+elif [ -f "$OPENSILEX_HOME/bin/opensilex.jar" ]; then
+    mv "$OPENSILEX_HOME/bin/opensilex.jar" "$OPENSILEX_HOME/bin/$VERSION/"
+fi
+if [ -d "$OPENSILEX_HOME/bin/modules" ]; then
+    mv "$OPENSILEX_HOME/bin/modules" "$OPENSILEX_HOME/bin/$VERSION/"
+fi
 
 # Create opensilex.sh script
 cat > "$OPENSILEX_HOME/bin/$VERSION/opensilex.sh" << 'WRAPPER_EOF'
