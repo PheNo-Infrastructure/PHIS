@@ -1,0 +1,38 @@
+# OpenSILEX Configuration
+# This file will be mounted into the container at /app/config/opensilex.yml
+
+# MongoDB Configuration
+mongodb:
+  host: mongodb
+  port: 27017
+  database: opensilex
+
+# GraphDB Configuration
+rdf4j:
+  host: graphdb
+  port: 7200
+  repository: opensilex
+
+# Server Configuration
+server:
+  host: 0.0.0.0
+  port: 8666
+  adminPort: 8667
+  baseURL: http://localhost:8666
+  pathPrefix: /
+
+# Security Configuration
+security:
+  passwordMinLength: 8
+  sessionTimeout: 1800
+
+# File Storage
+file-system:
+  storageBasePath: /app/data/files
+  gridFS:
+    enabled: false
+
+# Logging
+log:
+  level: INFO
+  config: /app/config/logback.xml

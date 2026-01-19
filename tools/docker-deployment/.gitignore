@@ -1,0 +1,21 @@
+# Docker volumes and runtime data
+*.log
+logs/
+
+# Build artifacts
+*.jar
+*.war
+*.class
+
+# Environment files with secrets
+.env
+.env.local
+*.secret
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
