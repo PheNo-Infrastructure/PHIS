@@ -12,9 +12,12 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 RUN git clone --depth 1 --branch 1.4.9-rdg https://github.com/OpenSILEX/opensilex.git .
 
-# Apply GroupDAO patch - fixes NullPointerException when loading groups
-RUN sed -i '156s/.*/                    Expr filter = SPARQLQueryHelper.inURIFilter(GroupUserProfileModel.URI_FIELD, encounteredUserProfileUrisAsUris);\n                    if (filter != null) {\n                        select.addFilter(filter);\n                    }/' \
-    opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
+# Copy and apply patches
+COPY patches/ /patches/
+RUN for patch in /patches/*.patch; do \
+        echo "Applying patch: $(basename $patch)"; \
+        patch -p1 < "$patch" || exit 1; \
+    done
 
 # Build OpenSILEX (skip tests to speed up build)
 RUN mvn clean install -DskipTests -DskipFrontBuild || \
