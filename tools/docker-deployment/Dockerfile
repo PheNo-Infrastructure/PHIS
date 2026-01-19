@@ -34,8 +34,8 @@ RUN apt-get update && \
     apt-get install -y curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Create OpenSILEX user
-RUN useradd -m -u 1000 opensilex
+# Create OpenSILEX user (or use existing UID 1000)
+RUN id -u opensilex &>/dev/null || useradd -m opensilex
 
 # Set up application directory
 WORKDIR /app
