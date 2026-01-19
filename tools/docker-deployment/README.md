@@ -1,201 +1,135 @@
-# OpenSILEX Docker Deployment
+# OpenSILEX Docker Deployment - One-Click Installation
 
 This directory contains a Docker-based deployment for OpenSILEX 1.4.9-rdg with critical patches applied.
 
-## What This Solves
+## 🚀 One-Click Installation
 
-This approach eliminates the file path and build issues from the original bash script installation by:
-- Building OpenSILEX in a controlled container environment with fixed paths
-- Applying patches during build time (GroupDAO NullPointerException fix)
-- Using Docker Compose for orchestration of all services
-- Making the deployment reproducible and portable
+### From Windows (PowerShell)
+```powershell
+cd tools/docker-deployment
+.\deploy-opensilex-docker.ps1 -TargetIP YOUR_SERVER_IP
+```
+
+### From Linux/Mac or directly on server
+```bash
+cd tools/docker-deployment
+sudo bash install-opensilex-docker.sh
+```
+
+**That's it!** The script automatically:
+- ✅ Installs Docker
+- ✅ Builds OpenSILEX with patches (15-20 min)
+- ✅ Deploys MongoDB, GraphDB, and OpenSILEX
+- ✅ Initializes the system
+- ✅ Creates admin user
+- ✅ Displays access information
+
+Access OpenSILEX at: **http://YOUR_SERVER_IP:8666**
+
+## Custom Configuration
+
+```powershell
+# PowerShell with custom credentials
+.\deploy-opensilex-docker.ps1 `
+  -TargetIP 108.143.82.78 `
+  -AdminEmail "admin@example.com" `
+  -AdminPassword "SecurePass123"
+```
+
+```bash
+# Bash with environment variables
+export ADMIN_EMAIL="admin@example.com"
+export ADMIN_PASSWORD="SecurePass123"
+sudo -E bash install-opensilex-docker.sh
+```
 
 ## Architecture
 
 The stack consists of:
 - **MongoDB 6.0** - Document database with replica set
 - **GraphDB 10.0.2** - RDF triplestore for semantic data
-- **OpenSILEX 1.4.9-rdg** - Built from source with patches
+- **OpenSILEX 1.4.9-rdg** - Built from source with GroupDAO patch
 
 ## Prerequisites
 
 - Debian 11 server
 - Root or sudo access
-- At least 4GB RAM
-- 20GB disk space
-
-## Quick Start
-
-### 1. Install Docker
-
-Run the installation script on your server:
-
-```bash
-sudo bash install-docker.sh
-```
-
-This will install Docker and Docker Compose.
-
-### 2. Deploy the Stack
-
-Build and start all services:
-
-```bash
-docker compose up -d --build
-```
-
-The first build will take 15-20 minutes as it compiles OpenSILEX from source.
-
-### 3. Monitor Startup
-
-Watch the logs:
-
-```bash
-docker compose logs -f
-```
-
-Wait for all services to be healthy:
-
-```bash
-docker compose ps
-```
-
-### 4. Initialize OpenSILEX
-
-Run the system installation:
-
-```bash
-docker compose exec opensilex java -jar /app/opensilex.jar system install
-```
-
-### 5. Create Admin User
-
-```bash
-docker compose exec opensilex java -jar /app/opensilex.jar user add \
-  --admin \
-  --email="admin@opensilex.org" \
-  --firstName="Admin" \
-  --lastName="User" \
-  --password="admin"
-```
-
-### 6. Access the Application
-
-Open your browser to:
-- OpenSILEX: http://YOUR_SERVER_IP:8666
-- GraphDB: http://YOUR_SERVER_IP:7200
+- 4GB+ RAM
+- 20GB+ disk space
 
 ## File Structure
 
 ```
 docker-deployment/
-├── Dockerfile                 # OpenSILEX build with patches
-├── docker-compose.yml         # Full stack definition
-├── install-docker.sh          # Docker installation script
+├── Dockerfile                      # OpenSILEX build with patches
+├── docker-compose.yml              # Full stack definition
+├── install-opensilex-docker.sh     # One-click bash installer
+├── deploy-opensilex-docker.ps1     # One-click PowerShell installer
+├── install-docker.sh               # Docker installation only
 ├── config/
-│   └── opensilex.yml         # OpenSILEX configuration
-└── README.md                  # This file
-```
-
-## Configuration
-
-Edit `config/opensilex.yml` to customize OpenSILEX settings. Changes require restart:
-
-```bash
-docker compose restart opensilex
+│   └── opensilex.yml              # OpenSILEX configuration
+└── README.md                       # This file
 ```
 
 ## Management Commands
 
-### Start the stack
 ```bash
+# View logs
+docker compose -f /opt/opensilex-docker/docker-compose.yml logs -f
+
+# Stop services
+docker compose -f /opt/opensilex-docker/docker-compose.yml down
+
+# Start services
+docker compose -f /opt/opensilex-docker/docker-compose.yml up -d
+
+# Restart a service
+docker compose -f /opt/opensilex-docker/docker-compose.yml restart opensilex
+
+# Check status
+docker compose -f /opt/opensilex-docker/docker-compose.yml ps
+```
+
+## Adding New Patches
+
+Edit the Dockerfile to add patches:
+
+```dockerfile
+# Add after existing patch
+RUN sed -i '200s/old code/new code/' path/to/File.java
+```
+
+Rebuild:
+```bash
+docker compose build --no-cache opensilex
 docker compose up -d
 ```
 
-### Stop the stack
-```bash
-docker compose down
-```
+## Advantages Over Bash Installation
 
-### View logs
-```bash
-docker compose logs -f opensilex
-```
-
-### Rebuild after changes
-```bash
-docker compose up -d --build
-```
-
-### Access OpenSILEX CLI
-```bash
-docker compose exec opensilex java -jar /app/opensilex.jar --help
-```
-
-## Data Persistence
-
-All data is stored in Docker volumes:
-- `mongodb_data` - MongoDB database
-- `graphdb_data` - GraphDB repositories
-- `opensilex_data` - OpenSILEX user data
-- `opensilex_logs` - Application logs
-
-To backup:
-```bash
-docker run --rm -v opensilex_data:/data -v $(pwd):/backup ubuntu tar czf /backup/opensilex-backup.tar.gz /data
-```
+1. **Reproducible** - Same build every time, no path issues
+2. **Portable** - Works anywhere Docker runs
+3. **Isolated** - No host dependency conflicts
+4. **Testable** - Test locally before deploying
+5. **Fast rollback** - `docker compose down && up`
+6. **One-click** - Complete installation in one command
 
 ## Troubleshooting
 
-### Container won't start
-Check logs:
+**Container won't start:**
 ```bash
-docker compose logs opensilex
+docker compose -f /opt/opensilex-docker/docker-compose.yml logs opensilex
 ```
 
-### Port already in use
-Stop conflicting services or change ports in docker-compose.yml
-
-### Out of memory
-Increase Docker memory limit or server RAM
-
-### Rebuild from scratch
+**Rebuild from scratch:**
 ```bash
-docker compose down -v  # WARNING: Deletes all data
-docker compose up -d --build
+docker compose -f /opt/opensilex-docker/docker-compose.yml down -v
+docker compose -f /opt/opensilex-docker/docker-compose.yml up -d --build
 ```
-
-## Patches Applied
-
-This Dockerfile applies the following critical patches:
-
-1. **GroupDAO NullPointerException Fix**
-   - File: `opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java:156`
-   - Issue: `inURIFilter()` returns null causing authentication failures
-   - Fix: Add null check before adding filter
-
-## Advantages Over Bash Installation
-
-1. **Reproducible** - Same build every time
-2. **Portable** - Works anywhere Docker runs
-3. **Isolated** - No host dependency conflicts
-4. **Testable** - Can test locally before deploying
-5. **Rollback** - Easy to revert to previous versions
-6. **Scalable** - Can add replicas for load balancing
-
-## Migration Path to Production
-
-This deployment can evolve into:
-1. **Pre-built images** - Push to Docker registry, skip build time
-2. **Kubernetes** - Scale horizontally across multiple nodes
-3. **Ansible automation** - Combine with configuration management
-4. **CI/CD pipeline** - Automated testing and deployment
 
 ## Next Steps
 
-After successful deployment, consider:
-1. Set up HTTPS with reverse proxy (nginx/Traefik)
-2. Configure automatic backups
-3. Set up monitoring (Prometheus/Grafana)
-4. Create pre-built Docker images for faster deployment
-5. Migrate to Ansible for multi-server management
+- Set up HTTPS with reverse proxy (nginx/Traefik)
+- Configure automatic backups
+- Create pre-built images for faster deployment
+- Migrate to Ansible for multi-server management
