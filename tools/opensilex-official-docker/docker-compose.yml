@@ -68,8 +68,8 @@ services:
         OPENSILEX_RELEASE_TAG: $OPENSILEX_RELEASE_TAG
         INTERNAL_DATA_DIRECTORY: $INTERNAL_DATA_DIRECTORY
         OPENSILEX_TOMCAT_IMAGE_VERSION: $OPENSILEX_TOMCAT_IMAGE_VERSION
-        UID: $UID
-        GID: $GID
+        UID: $OPENSILEX_UID
+        GID: $OPENSILEX_GID
       dockerfile: opensilex-build-step.docker
     env_file: opensilex.env
     depends_on:
