@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # MongoDB for OpenSILEX
+  mongodb:
+    image: mongo:6.0
+    container_name: opensilex-mongodb
+    command: mongod --replSet opensilex --port 27017
+    environment:
+      MONGO_INITDB_DATABASE: opensilex
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    ports:
+      - "27017:27017"
+    networks:
+      - opensilex-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # MongoDB initialization (runs once to set up replica set)
+  mongodb-init:
+    image: mongo:6.0
+    container_name: opensilex-mongodb-init
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: >
+      mongosh --host mongodb:27017 --eval "
+      try {
+        rs.status();
+        print('Replica set already initialized');
+      } catch(e) {
+        rs.initiate({
+          _id: 'opensilex',
+          members: [{_id: 0, host: 'mongodb:27017'}]
+        });
+        print('Replica set initialized');
+      }"
+    networks:
+      - opensilex-network
+    restart: "no"
+
+  # GraphDB for RDF data
+  graphdb:
+    image: ontotext/graphdb:10.0.2
+    container_name: opensilex-graphdb
+    environment:
+      GDB_JAVA_OPTS: >-
+        -Xmx2g -Xms1g
+        -Dgraphdb.home=/opt/graphdb/home
+        -Dgraphdb.workbench.cors.enable=true
+        -Dgraphdb.workbench.cors.origin=*
+    volumes:
+      - graphdb_data:/opt/graphdb/home
+    ports:
+      - "7200:7200"
+    networks:
+      - opensilex-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7200/rest/repositories"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # OpenSILEX application (built with patches)
+  opensilex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: opensilex-app
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      graphdb:
+        condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
+    environment:
+      OPENSILEX_CONFIG_DIR: /app/config
+      OPENSILEX_DATA_DIR: /app/data
+      OPENSILEX_LOGS_DIR: /app/logs
+    volumes:
+      - ./config:/app/config:ro
+      - opensilex_data:/app/data
+      - opensilex_logs:/app/logs
+    ports:
+      - "8666:8666"
+      - "8667:8667"
+    networks:
+      - opensilex-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8666/rest/core/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  graphdb_data:
+    driver: local
+  opensilex_data:
+    driver: local
+  opensilex_logs:
+    driver: local
+
+networks:
+  opensilex-network:
+    driver: bridge
