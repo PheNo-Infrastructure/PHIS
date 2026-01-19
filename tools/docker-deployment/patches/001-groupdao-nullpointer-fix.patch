@@ -1,0 +1,14 @@
+--- a/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
+@@ -153,7 +153,10 @@ public class GroupDAO {
+                     encounteredUserProfileUrisAsUris.add(userProfileUri);
+                 }
+
+-                Expr filter = SPARQLQueryHelper.inURIFilter(GroupUserProfileModel.URI_FIELD, encounteredUserProfileUrisAsUris);
++                Expr filter = SPARQLQueryHelper.inURIFilter(GroupUserProfileModel.URI_FIELD, encounteredUserProfileUrisAsUris);
++                if (filter != null) {
++                    select.addFilter(filter);
++                }
+             }
+         }
+     }
