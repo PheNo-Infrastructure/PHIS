@@ -146,6 +146,11 @@ if [ -f "$SCRIPT_DIR/Dockerfile" ]; then
     if [ -f "$SCRIPT_DIR/config/opensilex.yml" ]; then
         cp "$SCRIPT_DIR/config/opensilex.yml" "$DEPLOY_DIR/config/"
     fi
+    # Copy patches directory if it exists
+    if [ -d "$SCRIPT_DIR/patches" ]; then
+        cp -r "$SCRIPT_DIR/patches" "$DEPLOY_DIR/"
+        print_success "Copied patches directory"
+    fi
     print_success "Deployment files copied"
 else
     print_error "Dockerfile not found. Please run this script from the docker-deployment directory."
@@ -170,26 +175,28 @@ print_status "══════════════════════
 print_warning "This step takes 15-20 minutes (building OpenSILEX from source)"
 print_status "Building OpenSILEX Docker image with patches..."
 
-# Build the image
-if docker compose build --progress=plain 2>&1 | tee /tmp/opensilex-build.log | grep -E "(Step|Successfully)"; then
+# Build the image (--no-cache to ensure Dockerfile changes are applied)
+print_status "Building OpenSILEX image (logs in /tmp/opensilex-build.log)..."
+if docker compose build --no-cache --progress=plain > /tmp/opensilex-build.log 2>&1; then
     print_success "OpenSILEX image built successfully"
 else
     print_error "Build failed. Check /tmp/opensilex-build.log for details"
+    tail -50 /tmp/opensilex-build.log
     exit 1
 fi
 
-print_status "Starting services (MongoDB, GraphDB, OpenSILEX)..."
-docker compose up -d
+print_status "Starting database services (MongoDB, GraphDB)..."
+docker compose up -d mongodb graphdb
 
-print_success "Services started!"
+print_success "Database services started!"
 
 ################################################################################
-# STEP 4: Wait for services to be healthy
+# STEP 4: Wait for databases to be healthy
 ################################################################################
 
 print_status ""
 print_status "═══════════════════════════════════════════════════════════"
-print_status "STEP 4/5: Waiting for services to be ready"
+print_status "STEP 4/6: Waiting for databases to be ready"
 print_status "═══════════════════════════════════════════════════════════"
 
 print_status "Waiting for MongoDB to be healthy..."
@@ -220,6 +227,101 @@ while [ $elapsed -lt $timeout ]; do
 done
 echo ""
 
+################################################################################
+# STEP 4.5: Create GraphDB repository
+################################################################################
+
+print_status "Checking if GraphDB repository exists..."
+if docker compose exec -T graphdb curl -s http://localhost:7200/rest/repositories/opensilex >/dev/null 2>&1; then
+    print_success "OpenSILEX repository already exists"
+else
+    print_status "Creating GraphDB repository..."
+
+    # Create repository configuration file
+    docker compose exec -T graphdb sh -c 'cat > /tmp/repo-config.ttl << EOF
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rep: <http://www.openrdf.org/config/repository#> .
+@prefix sr: <http://www.openrdf.org/config/repository/sail#> .
+@prefix sail: <http://www.openrdf.org/config/sail#> .
+@prefix owlim: <http://www.ontotext.com/trree/owlim#> .
+
+[] a rep:Repository ;
+   rep:repositoryID "opensilex" ;
+   rdfs:label "OpenSILEX Repository" ;
+   rep:repositoryImpl [
+      rep:repositoryType "graphdb:SailRepository" ;
+      sr:sailImpl [
+         sail:sailType "graphdb:Sail" ;
+         owlim:ruleset "rdfs-optimized" ;
+         owlim:storage-folder "storage" ;
+         owlim:base-URL "http://localhost:8666/" ;
+         owlim:repository-type "file-repository" ;
+         owlim:entity-index-size "10000000" ;
+         owlim:enable-context-index "false" ;
+         owlim:enablePredicateList "true" ;
+         owlim:enable-literal-index "true" ;
+         owlim:check-for-inconsistencies "false" ;
+         owlim:disable-sameAs "true" ;
+         owlim:query-timeout "0" ;
+         owlim:throw-QueryEvaluationException-on-timeout "false" ;
+         owlim:read-only "false"
+      ]
+   ] .
+EOF'
+
+    # Create the repository using the TTL file
+    if docker compose exec -T graphdb curl -X POST \
+        -H "Content-Type: multipart/form-data" \
+        -F "config=@/tmp/repo-config.ttl" \
+        http://localhost:7200/rest/repositories 2>&1 | grep -q "201\|Created"; then
+        print_success "GraphDB repository created successfully"
+    else
+        print_warning "Repository creation may have failed, but continuing with installation"
+    fi
+
+    sleep 5
+fi
+
+################################################################################
+# STEP 5: Initialize OpenSILEX database
+################################################################################
+
+print_status ""
+print_status "═══════════════════════════════════════════════════════════"
+print_status "STEP 5/6: Initializing OpenSILEX database"
+print_status "═══════════════════════════════════════════════════════════"
+
+print_status "Running system installation (this takes 30-60 seconds)..."
+if docker compose run --rm opensilex java -jar /app/opensilex.jar --CONFIG_FILE=/app/config/opensilex.yml system install 2>&1 | tee /tmp/system-install.log | tail -5; then
+    print_success "System initialized successfully"
+else
+    print_warning "System install may have already been run (this is OK if reinstalling)"
+fi
+
+print_status "Creating admin user: $ADMIN_EMAIL"
+if docker compose run --rm opensilex java -jar /app/opensilex.jar --CONFIG_FILE=/app/config/opensilex.yml user add \
+    --admin \
+    --email="$ADMIN_EMAIL" \
+    --firstName="Admin" \
+    --lastName="User" \
+    --password="$ADMIN_PASSWORD" 2>&1 | tee /tmp/user-add.log | grep -q "already exists"; then
+    print_warning "Admin user already exists"
+else
+    print_success "Admin user created successfully"
+fi
+
+################################################################################
+# STEP 6: Start OpenSILEX application
+################################################################################
+
+print_status ""
+print_status "═══════════════════════════════════════════════════════════"
+print_status "STEP 6/6: Starting OpenSILEX application"
+print_status "═══════════════════════════════════════════════════════════"
+
+print_status "Starting OpenSILEX..."
+docker compose up -d opensilex
+
 print_status "Waiting for OpenSILEX to be healthy (this may take 2-3 minutes)..."
 timeout=180
 elapsed=0
@@ -239,36 +341,8 @@ done
 echo ""
 
 # Check final status
-print_status "Service status:"
+print_status "Final service status:"
 docker compose ps
-
-################################################################################
-# STEP 5: Initialize OpenSILEX
-################################################################################
-
-print_status ""
-print_status "═══════════════════════════════════════════════════════════"
-print_status "STEP 5/5: Initializing OpenSILEX system"
-print_status "═══════════════════════════════════════════════════════════"
-
-print_status "Running system installation..."
-if docker compose exec -T opensilex java -jar /app/opensilex.jar system install --DEBUG; then
-    print_success "System initialized successfully"
-else
-    print_warning "System install may have already been run (this is OK if reinstalling)"
-fi
-
-print_status "Creating admin user: $ADMIN_EMAIL"
-if docker compose exec -T opensilex java -jar /app/opensilex.jar user add \
-    --admin \
-    --email="$ADMIN_EMAIL" \
-    --firstName="Admin" \
-    --lastName="User" \
-    --password="$ADMIN_PASSWORD" 2>&1 | grep -q "already exists"; then
-    print_warning "Admin user already exists"
-else
-    print_success "Admin user created successfully"
-fi
 
 ################################################################################
 # Installation Complete

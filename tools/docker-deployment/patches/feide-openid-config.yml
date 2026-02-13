@@ -1,0 +1,18 @@
+
+# Feide/Dataporten OpenID Connect authentication
+security:
+  openID:
+    enable: true
+    scopes: ["openid", "userid", "profile", "email", "userinfo-name", "userinfo-mail"]
+    userIdClaim: "sub"
+    userNameClaim: "name"
+    userEmailClaim: "https://n.feide.no/claims/eduPersonPrincipalName"
+    userFirstNameClaim: "given_name"
+    userLastNameClaim: "family_name"
+    providerURI: "https://auth.dataporten.no"
+    redirectURI: "${OPENSILEX_PUBLIC_URL}${OPENSILEX_PATH_PREFIX}/app/openid"
+    clientID: "${FEIDE_CLIENT_ID}"
+    clientSecret: "${FEIDE_CLIENT_SECRET}"
+    connectionTitle:
+      en: "Login with Feide"
+      no: "Logg inn med Feide"

@@ -40,10 +40,10 @@ param(
     [string]$Command = "Menu",
     
     [Parameter(Mandatory=$false)]
-    [string]$VMName = "PHIS-TEST2",
+    [string]$VMName = "PHIS-TEST-DOCKER",
     
     [Parameter(Mandatory=$false)]
-    [string]$ResourceGroupName = "PHIS-TEST2",
+    [string]$ResourceGroupName = "PHIS-TEST-DOCKER",
     
     [Parameter(Mandatory=$false)]
     [string]$Location = "westeurope",
