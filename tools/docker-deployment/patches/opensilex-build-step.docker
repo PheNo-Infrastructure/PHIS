@@ -1,0 +1,83 @@
+# OpenSILEX Multi-Stage Source Build with Patches
+#
+# Stage 1: Clones source at the release tag, applies .patch files, builds with Maven
+# Stage 2: Tomcat production image (same base as official docker-compose)
+#
+# This replaces the official wget+unzip approach so we can apply Java source
+# patches (e.g., GroupDAO NullPointerException fix) at compile time.
+
+# Global ARGs (available in FROM directives)
+ARG OPENSILEX_TOMCAT_IMAGE_VERSION
+ARG OPENSILEX_RELEASE_TAG
+
+# ─── Stage 1: Build from source ──────────────────────────────────────────────
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+ARG OPENSILEX_RELEASE_TAG
+
+RUN apt-get update && apt-get install -y git patch && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+RUN git clone --depth 1 --branch ${OPENSILEX_RELEASE_TAG} \
+        https://github.com/OpenSILEX/opensilex.git .
+
+# Apply patches (only .patch files are processed)
+COPY patches/ /patches/
+RUN for patch in /patches/*.patch; do \
+        [ -f "$patch" ] || continue; \
+        echo "Applying patch: $(basename $patch)"; \
+        patch -p1 < "$patch" || exit 1; \
+    done
+
+# Build OpenSILEX (skip tests for speed; frontend IS built for the web UI)
+# Aether timeouts prevent indefinite hangs when Maven checks remote repos
+# for internal SNAPSHOT artifacts that don't exist on Central/osgeo.
+# Force Wagon transport for reliable timeout behavior with Maven 3.9+.
+RUN mvn clean install -DskipTests \
+    -Dmaven.resolver.transport=wagon \
+    -Dmaven.wagon.http.connectionTimeout=5000 \
+    -Dmaven.wagon.http.readTimeout=10000 \
+    -Dmaven.wagon.http.retryHandler.count=1
+
+# Extract the built release to a known path
+RUN RELEASE_DIR=$(find opensilex-release/target -maxdepth 1 -type d -name "opensilex-release-*" | head -1) \
+    && if [ -z "$RELEASE_DIR" ]; then echo "ERROR: No release directory found after build"; ls -la opensilex-release/target/; exit 1; fi \
+    && echo "Built release: $RELEASE_DIR" \
+    && mkdir -p /built-release \
+    && cp -r "$RELEASE_DIR"/* /built-release/
+
+# ─── Stage 2: Production image ───────────────────────────────────────────────
+FROM tomcat:${OPENSILEX_TOMCAT_IMAGE_VERSION:-9.0.99-jre17-temurin-noble}
+
+ARG OPENSILEX_RELEASE_TAG
+ARG INTERNAL_DATA_DIRECTORY
+ARG USERNAME=opensilex
+
+RUN apt-get update \
+    && apt-get install -y sudo wget zip gettext-base libc6 libc-bin rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m $USERNAME || true \
+    && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME
+
+RUN mkdir -p /home/$USERNAME/$INTERNAL_DATA_DIRECTORY \
+    /home/$USERNAME/config \
+    /home/$USERNAME/data \
+    /home/$USERNAME/logs \
+    /home/$USERNAME/bin/modules
+
+RUN chown $USERNAME:$USERNAME -R /home/$USERNAME
+USER $USERNAME
+WORKDIR /home/$USERNAME/bin
+
+# Copy built release (opensilex.jar + modules/) directly into bin/
+# opensilex.sh expects the jar at $SCRIPT_DIR/opensilex.jar (= /home/opensilex/bin/)
+COPY --from=builder --chown=opensilex:opensilex /built-release/ ./
+
+COPY ./bin/opensilex.sh /home/$USERNAME/bin/
+COPY ./bin/logback.xml /home/$USERNAME/bin/
+COPY ./config/opensilex-template.yml /home/$USERNAME/config/
+COPY ./config/other /home/$USERNAME/config/other
+COPY ./modules /home/$USERNAME/bin/modules
+
+WORKDIR /home/$USERNAME

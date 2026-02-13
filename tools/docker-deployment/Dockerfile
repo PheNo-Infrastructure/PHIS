@@ -3,10 +3,10 @@
 # - GroupDAO NullPointerException (authentication bug)
 # - AccountDAO auto-group assignment (Feide user credentials)
 
-FROM maven:3.8-eclipse-temurin-11 AS builder
+FROM maven:3.9-eclipse-temurin-17 AS builder
 
-# Install git
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install git and patch utility
+RUN apt-get update && apt-get install -y git patch && rm -rf /var/lib/apt/lists/*
 
 # Clone OpenSILEX source
 WORKDIR /build
@@ -19,6 +19,10 @@ RUN for patch in /patches/*.patch; do \
         patch -p1 < "$patch" || exit 1; \
     done
 
+# Modify default MongoDB configuration for Docker deployment
+RUN find . -name "opensilex.yml" -path "*/config/prod/*" -exec sed -i 's/host: localhost/host: mongodb/g' {} \; && \
+    find . -name "opensilex.yml" -path "*/config/prod/*" -exec grep -A 3 "mongodb:" {} \;
+
 # Build OpenSILEX (skip tests to speed up build)
 RUN mvn clean install -DskipTests -DskipFrontBuild || \
     (echo "Build failed, attempting without Swagger validation..." && \
@@ -30,23 +34,37 @@ RUN RELEASE_DIR=$(find opensilex-release/target -maxdepth 1 -type d -name "opens
     cp -r $RELEASE_DIR/* /app/
 
 # Production image
-FROM eclipse-temurin:11-jre
+FROM eclipse-temurin:17-jre
 
-# Install required packages
+# Install required packages and create user
 RUN apt-get update && \
     apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# Create OpenSILEX user (or use existing UID 1000)
-RUN id -u opensilex &>/dev/null || useradd -m opensilex
+    rm -rf /var/lib/apt/lists/* && \
+    useradd -m opensilex
 
 # Set up application directory
 WORKDIR /app
 COPY --from=builder --chown=opensilex:opensilex /app /app
 
-# Create directories for configuration and data
-RUN mkdir -p /app/config /app/data /app/logs && \
-    chown -R opensilex:opensilex /app
+# Create directories and copy default config
+RUN mkdir -p /app/config/prod /app/data /app/logs
+
+# Create default configuration file for Docker deployment
+RUN echo '# MongoDB Configuration\n\
+mongodb:\n\
+  host: mongodb\n\
+  port: 27017\n\
+  database: opensilex\n\
+  replicaSet: opensilex\n\
+\n\
+# GraphDB Configuration\n\
+rdf4j:\n\
+  host: graphdb\n\
+  port: 7200\n\
+  repository: opensilex' > /app/config/prod/opensilex.yml
+
+# Set ownership for opensilex user
+RUN chown -R opensilex:opensilex /app
 
 USER opensilex
 
@@ -59,4 +77,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Default command
 ENTRYPOINT ["java", "-jar", "/app/opensilex.jar"]
-CMD ["server", "start", "--host=0.0.0.0", "--port=8666", "--adminPort=8667"]
+CMD ["server", "start", "--CONFIG_FILE=/app/config/opensilex.yml", "--host=0.0.0.0", "--port=8666", "--adminPort=8667"]
