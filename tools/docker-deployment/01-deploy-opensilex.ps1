@@ -288,13 +288,13 @@ Write-Success "Repository ready at ~/$DeployDir"
 
 Write-Step "3/9" "Apply fixes and configure environment"
 
-# Fix 1: Replace Dockerfile with multi-stage source build
+# Fix 1: Replace Dockerfile with runtime JAR patching
 # The original Dockerfile downloads a pre-built release ZIP. Our version
-# builds from source with Maven so we can apply Java patches (e.g., GroupDAO
-# NullPointerException fix) at compile time.
-Write-Status "Deploying source-build Dockerfile and patches..."
+# downloads the same release but patches the GroupDAO.class file at runtime
+# to fix the NullPointerException bug without needing Maven source build.
+Write-Status "Deploying runtime JAR patching Dockerfile..."
 
-$patchFile = Join-Path $ScriptDir "patches\opensilex-build-step.docker"
+$patchFile = Join-Path $ScriptDir "patches\opensilex-runtime-patch.docker"
 if (-not (Test-Path $patchFile)) {
     Write-Err "Patch file not found: $patchFile"
     exit 1
@@ -302,21 +302,11 @@ if (-not (Test-Path $patchFile)) {
 
 & scp -i $PrivateKeyPath -o StrictHostKeyChecking=no $patchFile "${AdminUsername}@${TargetIP}:~/${DeployDir}/opensilex-build-step.docker"
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "Failed to copy patched Dockerfile to server"
+    Write-Err "Failed to copy runtime-patch Dockerfile to server"
     exit 1
 }
 
-# Copy Java source patches to Docker build context
-Invoke-ServerCommand -Command "mkdir -p ~/$DeployDir/patches" -Quiet
-$patchFiles = Get-ChildItem (Join-Path $ScriptDir "patches\*.patch") -ErrorAction SilentlyContinue
-if ($patchFiles) {
-    foreach ($pf in $patchFiles) {
-        & scp -i $PrivateKeyPath -o StrictHostKeyChecking=no $pf.FullName "${AdminUsername}@${TargetIP}:~/${DeployDir}/patches/" 2>&1 | Out-Null
-    }
-    Write-Success "Source-build Dockerfile + $($patchFiles.Count) patch(es) deployed"
-} else {
-    Write-Success "Source-build Dockerfile deployed (no patches)"
-}
+Write-Success "Runtime JAR patching Dockerfile deployed (GroupDAO fix built-in)"
 
 # Fix 2: Directory permissions -- the container's opensilex user needs to
 # write generated config files (envsubst output) into the mounted config dir.

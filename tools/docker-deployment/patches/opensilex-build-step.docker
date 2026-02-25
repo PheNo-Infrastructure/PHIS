@@ -15,7 +15,7 @@ FROM maven:3.9-eclipse-temurin-17 AS builder
 
 ARG OPENSILEX_RELEASE_TAG
 
-RUN apt-get update && apt-get install -y git patch && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git patch wget unzip && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 RUN git clone --depth 1 --branch ${OPENSILEX_RELEASE_TAG} \
@@ -29,17 +29,28 @@ RUN for patch in /patches/*.patch; do \
         patch -p1 < "$patch" || exit 1; \
     done
 
-# Build OpenSILEX (skip tests for speed; frontend IS built for the web UI)
-# Aether timeouts prevent indefinite hangs when Maven checks remote repos
-# for internal SNAPSHOT artifacts that don't exist on Central/osgeo.
+# Build OpenSILEX with frontend
+# Try building, and if it fails due to vuelayers bind operator, patch and retry
+# Aether timeouts prevent indefinite hangs when Maven checks remote repos.
 # Force Wagon transport for reliable timeout behavior with Maven 3.9+.
-RUN mvn clean install -DskipTests \
-    -Dmaven.resolver.transport=wagon \
-    -Dmaven.wagon.http.connectionTimeout=5000 \
-    -Dmaven.wagon.http.readTimeout=10000 \
-    -Dmaven.wagon.http.retryHandler.count=1
+RUN (mvn clean install -DskipTests \
+       -Dmaven.resolver.transport=wagon \
+       -Dmaven.wagon.http.connectionTimeout=5000 \
+       -Dmaven.wagon.http.readTimeout=10000 \
+       -Dmaven.wagon.http.retryHandler.count=1) || \
+    (echo "Build failed, patching vuelayers bind operator..." && \
+     find opensilex-front/node_modules/vuelayers/src -name '*.vue' -type f \
+       -exec sed -i 's/this::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.bind(this)/g' {} + && \
+     find opensilex-front/node_modules/vuelayers/src -name '*.vue' -type f \
+       -exec sed -i 's/\([a-zA-Z_][a-zA-Z0-9_]*\)::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.\2.bind(\1)/g' {} + && \
+     echo "Retrying build with patched vuelayers..." && \
+     mvn install -DskipTests -rf :opensilex-front \
+       -Dmaven.resolver.transport=wagon \
+       -Dmaven.wagon.http.connectionTimeout=5000 \
+       -Dmaven.wagon.http.readTimeout=10000 \
+       -Dmaven.wagon.http.retryHandler.count=1)
 
-# Extract the built release to a known path
+# Extract the built release (includes frontend from full Maven build)
 RUN RELEASE_DIR=$(find opensilex-release/target -maxdepth 1 -type d -name "opensilex-release-*" | head -1) \
     && if [ -z "$RELEASE_DIR" ]; then echo "ERROR: No release directory found after build"; ls -la opensilex-release/target/; exit 1; fi \
     && echo "Built release: $RELEASE_DIR" \

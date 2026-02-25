@@ -1,0 +1,108 @@
+# OpenSILEX Runtime JAR Patching Dockerfile
+#
+# Uses pre-built release ZIP (which works), then patches specific .class files
+# to fix bugs without needing Maven source build.
+#
+# Fixes applied:
+# - GroupDAO NullPointerException (null check for SPARQLQueryHelper.inURIFilter)
+
+ARG OPENSILEX_TOMCAT_IMAGE_VERSION
+ARG OPENSILEX_RELEASE_TAG
+
+# ─── Stage 1: Patch the pre-built JAR ───────────────────────────────────────
+FROM eclipse-temurin:17-jdk AS patcher
+
+ARG OPENSILEX_RELEASE_TAG
+ENV RELEASE_ZIP="opensilex-release-${OPENSILEX_RELEASE_TAG}.zip"
+ENV RELEASE_URL="https://github.com/OpenSILEX/opensilex/releases/download/${OPENSILEX_RELEASE_TAG}/${RELEASE_ZIP}"
+
+# Install tools for JAR manipulation
+RUN apt-get update && \
+    apt-get install -y wget unzip && \
+    rm -rf /var/lib/apt/lists/* && \
+    wget -q https://github.com/leibnitz27/cfr/releases/download/0.152/cfr-0.152.jar -O /usr/local/bin/cfr.jar
+
+WORKDIR /patch
+
+# Download and extract pre-built release
+# The ZIP extracts directly (no subdirectory): modules/, logback.xml, opensilex.jar
+RUN echo "Downloading ${RELEASE_URL}" && \
+    wget -q "${RELEASE_URL}" && \
+    unzip -q "${RELEASE_ZIP}" && \
+    rm "${RELEASE_ZIP}" && \
+    echo "=== Release extracted successfully ===" && \
+    ls -la
+
+# Extract modules/opensilex-security.jar (where GroupDAO is located)
+RUN mkdir -p /patch/extracted && \
+    cd /patch/extracted && \
+    jar xf /patch/modules/opensilex-security.jar && \
+    echo "=== Security module extracted ===" && \
+    ls -la org/opensilex/security/group/dal/ | grep GroupDAO
+
+# Decompile GroupDAO.class using CFR
+RUN mkdir -p /patch/source && \
+    java -jar /usr/local/bin/cfr.jar \
+    /patch/extracted/org/opensilex/security/group/dal/GroupDAO.class \
+    --outputdir /patch/source
+
+# Apply the null-check fix using sed
+# CFR preserves package structure: /patch/source/org/opensilex/security/group/dal/GroupDAO.java
+RUN sed -i \
+    's/select\.addFilter(SPARQLQueryHelper\.inURIFilter(GroupUserProfileModel\.URI_FIELD, encounteredUserProfileUrisAsUris));/Expr filter = SPARQLQueryHelper.inURIFilter(GroupUserProfileModel.URI_FIELD, encounteredUserProfileUrisAsUris); if (filter != null) { select.addFilter(filter); }/g' \
+    /patch/source/org/opensilex/security/group/dal/GroupDAO.java
+
+# Compile the patched class
+# Classpath includes: main JAR (has all deps), all module JARs, extracted security classes
+RUN javac -cp "/patch/opensilex.jar:/patch/modules/*:/patch/extracted" \
+    -d /patch/recompiled \
+    /patch/source/org/opensilex/security/group/dal/GroupDAO.java
+
+# Replace the class in the extracted security JAR
+RUN cp /patch/recompiled/org/opensilex/security/group/dal/GroupDAO.class \
+    /patch/extracted/org/opensilex/security/group/dal/
+
+# Repackage the security JAR
+WORKDIR /patch/extracted
+RUN jar cf /patch/opensilex-security-patched.jar *
+
+# Replace original security JAR with patched version
+RUN cp /patch/opensilex-security-patched.jar /patch/modules/opensilex-security.jar && \
+    echo "=== GroupDAO patched successfully ==="
+
+# ─── Stage 2: Production Tomcat Image ──────────────────────────────────────
+FROM tomcat:${OPENSILEX_TOMCAT_IMAGE_VERSION:-9.0.107-jre17-temurin-noble}
+
+ARG INTERNAL_DATA_DIRECTORY
+ARG USERNAME=opensilex
+
+# Setup user and directories (same as official)
+RUN apt-get update && \
+    apt-get install -y sudo wget zip gettext-base libc6 libc-bin rsync && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd -m $USERNAME || true && \
+    echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME && \
+    chmod 0440 /etc/sudoers.d/$USERNAME
+
+RUN mkdir -p /home/$USERNAME/$INTERNAL_DATA_DIRECTORY \
+    /home/$USERNAME/config \
+    /home/$USERNAME/data \
+    /home/$USERNAME/logs \
+    /home/$USERNAME/bin/modules && \
+    chown $USERNAME:$USERNAME -R /home/$USERNAME
+
+USER $USERNAME
+WORKDIR /home/$USERNAME/bin
+
+# Copy patched OpenSILEX release from stage 1
+# Release structure (flat): modules/, logback.xml, opensilex.jar (patched)
+COPY --from=patcher --chown=$USERNAME:$USERNAME /patch/ /home/$USERNAME/bin/
+
+# Copy configs and scripts (same as official)
+COPY ./bin/opensilex.sh /home/$USERNAME/bin/
+COPY ./bin/logback.xml /home/$USERNAME/bin/
+COPY ./config/opensilex-template.yml /home/$USERNAME/config/
+COPY ./config/other /home/$USERNAME/config/other
+COPY ./modules /home/$USERNAME/bin/modules
+
+WORKDIR /home/$USERNAME
