@@ -1,23 +1,25 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    One-Click OpenSILEX Docker Deployment (Official Stack)
+    One-Click Vanilla OpenSILEX Docker Deployment (Official Stack)
 
 .DESCRIPTION
-    Deploys OpenSILEX using the official opensilex-docker-compose repository.
-    Builds OpenSILEX from source with Maven to apply Java patches.
+    Deploys vanilla OpenSILEX using the official opensilex-docker-compose repository.
+    Uses official pre-built release ZIP (fast, 2-3 min build).
     Stack: OpenSILEX + RDF4J + MongoDB + HAProxy + Mongo Express
 
     Steps performed:
     1. Validates prerequisites (SSH key, connectivity, Docker on server)
     2. Clones official opensilex-docker-compose repository
-    3. Applies required fixes (Dockerfile UID/GID, directory permissions)
+    3. Applies required fixes (directory permissions)
     4. Configures environment (version, prefix, public URL)
-    5. Builds Docker images (OpenSILEX compiled from source with patches)
+    5. Builds Docker images with UID/GID 1001 (uses official pre-built ZIP)
     6. Starts the stack and waits for health
     7. Configures Nginx reverse proxy (port 80 -> OpenSILEX)
     8. Creates admin user and verifies deployment
-    9. Sets up Feide auto-group assignment (profiles, groups, monitor)
+
+    For source patches (GroupDAO fix, OpenID auto-group assignment), run:
+        .\02-apply-patches.ps1 -Rebuild -ApiKeysFile ..\config\test-api-keys.conf
 
 .PARAMETER TargetIP
     The IP address of the target server
@@ -73,10 +75,13 @@ param(
     [string]$AdminPassword = "admin",
 
     [Parameter(Mandatory=$false)]
-    [string]$OpenSilexVersion = "1.4.9",
+    [string]$OpenSilexVersion = "1.4.7",
 
     [Parameter(Mandatory=$false)]
     [string]$ProjectPrefix = "sandbox",
+
+    [Parameter(Mandatory=$false)]
+    [string]$HaproxyPort = 80,
 
     [Parameter(Mandatory=$false)]
     [string]$ApiKeysFile = ""
@@ -90,7 +95,6 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Derived settings
 $DeployDir = "opensilex-docker-compose"
 $RepoURL = "https://github.com/OpenSILEX/opensilex-docker-compose.git"
-$OpenSilexPort = 28081
 $RDF4JPort = 28887
 $MongoExpressPort = 28889
 
@@ -233,7 +237,7 @@ Write-Host ""
 # STEP 1: Prerequisites
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "1/9" "Prerequisites"
+Write-Step "1/8" "Prerequisites"
 
 # Expand ~ in key path
 if ($PrivateKeyPath -match '^~') {
@@ -271,7 +275,7 @@ Write-Success "Docker is installed"
 # STEP 2: Clone official repository
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "2/9" "Clone official opensilex-docker-compose repository"
+Write-Step "2/8" "Clone official opensilex-docker-compose repository"
 
 $repoExists = Invoke-ServerCommand -Command "test -d ~/$DeployDir/.git && echo EXISTS || echo MISSING" -NoFail -Quiet
 if ($repoExists -match "EXISTS") {
@@ -286,40 +290,20 @@ Write-Success "Repository ready at ~/$DeployDir"
 # STEP 3: Apply fixes and configure
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "3/9" "Apply fixes and configure environment"
+Write-Step "3/8" "Apply fixes and configure environment"
 
-# Fix 1: Replace Dockerfile with runtime JAR patching
-# The original Dockerfile downloads a pre-built release ZIP. Our version
-# downloads the same release but patches the GroupDAO.class file at runtime
-# to fix the NullPointerException bug without needing Maven source build.
-Write-Status "Deploying runtime JAR patching Dockerfile..."
-
-$patchFile = Join-Path $ScriptDir "patches\opensilex-runtime-patch.docker"
-if (-not (Test-Path $patchFile)) {
-    Write-Err "Patch file not found: $patchFile"
-    exit 1
-}
-
-& scp -i $PrivateKeyPath -o StrictHostKeyChecking=no $patchFile "${AdminUsername}@${TargetIP}:~/${DeployDir}/opensilex-build-step.docker"
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Failed to copy runtime-patch Dockerfile to server"
-    exit 1
-}
-
-Write-Success "Runtime JAR patching Dockerfile deployed (GroupDAO fix built-in)"
-
-# Fix 2: Directory permissions -- the container's opensilex user needs to
+# Fix 1: Directory permissions -- the container's opensilex user needs to
 # write generated config files (envsubst output) into the mounted config dir.
 Invoke-ServerCommand -Command "chmod 777 ~/$DeployDir/config/ && sudo mkdir -p ~/$DeployDir/logs/opensilex && sudo chmod 777 ~/$DeployDir/logs/opensilex" -Description "Fixing directory permissions..."
 Write-Success "Directory permissions set"
 
-# Fix 3: Configure opensilex.env with user-provided values
+# Fix 2: Configure opensilex.env with user-provided values
 Write-Status "Configuring opensilex.env..."
 
-$envConfig = "cd ~/$DeployDir && sed -i 's|^OPENSILEX_RELEASE_TAG=.*|OPENSILEX_RELEASE_TAG=$OpenSilexVersion|' opensilex.env && sed -i 's|^PROJECT_PREFIX=.*|PROJECT_PREFIX=$ProjectPrefix|' opensilex.env && sed -i 's|^OPENSILEX_PUBLIC_URL=.*|OPENSILEX_PUBLIC_URL=http://${TargetIP}/|' opensilex.env"
+$envConfig = "cd ~/$DeployDir && sed -i 's|^OPENSILEX_RELEASE_TAG=.*|OPENSILEX_RELEASE_TAG=$OpenSilexVersion|' opensilex.env && sed -i 's|^PROJECT_PREFIX=.*|PROJECT_PREFIX=$ProjectPrefix|' opensilex.env && sed -i 's|^OPENSILEX_PUBLIC_URL=.*|OPENSILEX_PUBLIC_URL=http://${TargetIP}/|' opensilex.env && sed -i 's|^HAPROXY_EXPOSED_PORT=.*|HAPROXY_EXPOSED_PORT=$HaproxyPort|' opensilex.env && sed -i '/^HAPROXY_DOCKER_NAME=/d' opensilex.env && sed -i '/^OPENSILEX_DOCKER_NAME=/a HAPROXY_DOCKER_NAME=\`$PROJECT_PREFIX-opensilex-docker-haproxy' opensilex.env"
 
 Invoke-ServerCommand -Command $envConfig
-Write-Success "Environment configured (version=$OpenSilexVersion, prefix=$ProjectPrefix)"
+Write-Success "Environment configured (version=$OpenSilexVersion, prefix=$ProjectPrefix, haproxy_port=$HaproxyPort)"
 
 # Fix 4: Feide/OpenID Connect authentication (optional)
 if ($FeideEnabled) {
@@ -348,20 +332,19 @@ if ($FeideEnabled) {
 # STEP 4: Build Docker images
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "4/9" "Build Docker images (source build with patches)"
-Write-Status "Building OpenSILEX from source, RDF4J, and HAProxy images..."
-Write-Status "(First build takes 15-20 min for Maven compilation; subsequent builds use cache)"
+Write-Step "4/8" "Build Docker images (vanilla with pre-built ZIP)"
+Write-Status "Building OpenSILEX, RDF4J, and HAProxy images..."
+Write-Status "(First build takes 2-3 min; downloads official pre-built release ZIP)"
 
-# Run the build detached (nohup) to survive SSH idle timeouts from Azure NAT.
-# The Maven source build takes 15-20 min with periods of no output, which
-# causes Azure to reset the TCP connection even with SSH keepalive.
+# Run the build detached (nohup) for consistency with long-running operations.
+# The vanilla build is fast (2-3 min), but we use nohup in case of network issues.
 $buildLogFile = "/tmp/docker-build.log"
-Invoke-ServerCommand -Command "cd ~/$DeployDir && sudo rm -f $buildLogFile && sudo nohup bash -c 'BUILDKIT_PROGRESS=plain docker compose --progress=plain --env-file opensilex.env build > $buildLogFile 2>&1; echo EXIT_CODE=\`$?\` >> $buildLogFile' &>/dev/null &" -Description "Starting Docker build in background..." -NoFail -Quiet
+Invoke-ServerCommand -Command "cd ~/$DeployDir && sudo rm -f $buildLogFile && sudo nohup bash -c 'BUILDKIT_PROGRESS=plain docker compose --progress=plain --env-file opensilex.env build --build-arg UID=1001 --build-arg GID=1001 > $buildLogFile 2>&1; rc=`$?; echo EXIT_CODE=`$rc >> $buildLogFile' &>/dev/null &" -Description "Starting Docker build in background..." -NoFail -Quiet
 
 Write-Status "Build running in background. Polling progress..."
 
 # Poll until the build finishes (EXIT_CODE appears in log) or timeout
-$buildTimeout = 1800  # 30 minutes
+$buildTimeout = 600  # 10 minutes (vanilla build takes 2-3 min)
 $pollInterval = 30    # seconds
 $elapsed = 0
 $lastLines = 0
@@ -393,14 +376,24 @@ while ($elapsed -lt $buildTimeout) {
 }
 
 if ($elapsed -ge $buildTimeout) {
-    Write-Err "Docker build timed out after 30 minutes"
+    Write-Err "Docker build timed out after 10 minutes"
     Invoke-ServerCommand -Command "tail -50 $buildLogFile" -Description "Build log (last 50 lines):"
     exit 1
 }
 
-# Check exit code
+# Check exit code (with fallback to checking for "Built" in output)
 $exitLine = Invoke-ServerCommand -Command "grep '^EXIT_CODE=' $buildLogFile" -NoFail -Quiet
-$buildExitCode = if ($exitLine -match 'EXIT_CODE=(\d+)') { $Matches[1] } else { "1" }
+$buildExitCode = if ($exitLine -match 'EXIT_CODE=(\d+)') { $Matches[1] } else { "" }
+
+# If exit code capture failed, check if all images were built (fallback)
+if ($buildExitCode -eq "") {
+    $builtCount = Invoke-ServerCommand -Command "grep -c 'Built' $buildLogFile" -NoFail -Quiet
+    if ($builtCount -ge 3) {
+        $buildExitCode = "0"  # All 3 images built successfully
+    } else {
+        $buildExitCode = "1"  # Build failed
+    }
+}
 
 if ($buildExitCode -ne "0") {
     Write-Err "Docker image build failed (exit code $buildExitCode)"
@@ -413,7 +406,7 @@ Write-Success "All images built successfully"
 # STEP 5: Start stack
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "5/9" "Start OpenSILEX stack"
+Write-Step "5/8" "Start OpenSILEX stack"
 
 # Stop any existing stack first
 Invoke-ServerCommand -Command "cd ~/$DeployDir && sudo docker compose --env-file opensilex.env down 2>/dev/null" -Description "Stopping any existing stack..." -NoFail
@@ -435,7 +428,7 @@ while ($attempt -lt $maxAttempts -and -not $ready) {
     Start-Sleep -Seconds 10
     $attempt++
 
-    $healthCheck = & ssh -i $PrivateKeyPath -o StrictHostKeyChecking=no "${AdminUsername}@${TargetIP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:${OpenSilexPort}/${ProjectPrefix}/app/ 2>/dev/null" 2>&1
+    $healthCheck = & ssh -i $PrivateKeyPath -o StrictHostKeyChecking=no "${AdminUsername}@${TargetIP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost:${HaproxyPort}/${ProjectPrefix}/app/ 2>/dev/null" 2>&1
 
     if ($healthCheck -match "200") {
         $ready = $true
@@ -454,63 +447,23 @@ if (-not $ready) {
 Write-Success "OpenSILEX is running and serving requests"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 6: Configure Nginx reverse proxy
+# STEP 6: Verify HAProxy accessibility
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "6/9" "Configure Nginx reverse proxy"
+Write-Step "6/9" "Verify HAProxy accessibility"
 
-# Install nginx if not present
-$nginxCheck = Invoke-ServerCommand -Command "which nginx 2>/dev/null && echo NGINX_FOUND || echo NGINX_MISSING" -NoFail -Quiet
-if ($nginxCheck -notmatch "NGINX_FOUND") {
-    Write-Status "Installing nginx..."
-    Invoke-ServerCommand -Command "sudo apt-get update -qq && sudo apt-get install -y -qq nginx" -Quiet
-    Write-Success "Nginx installed"
+Write-Status "HAProxy is configured to listen on port $HaproxyPort"
+if ($HaproxyPort -eq 80) {
+    Write-Success "Using standard HTTP port 80 (compatible with OAuth/Feide)"
 } else {
-    Write-Success "Nginx already installed"
-}
-
-# SCP the nginx config template to server
-$nginxConfigFile = Join-Path $ScriptDir "patches\nginx-opensilex.conf"
-if (-not (Test-Path $nginxConfigFile)) {
-    Write-Err "Nginx config template not found: $nginxConfigFile"
-    exit 1
-}
-
-& scp -i $PrivateKeyPath -o StrictHostKeyChecking=no $nginxConfigFile "${AdminUsername}@${TargetIP}:~/nginx-opensilex.conf" 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Failed to copy nginx config to server"
-    exit 1
-}
-
-# Replace placeholders and install the config
-$nginxSetup = "sed -i 's|__OPENSILEX_PORT__|$OpenSilexPort|g' ~/nginx-opensilex.conf && sed -i 's|__SERVER_NAME__|$TargetIP|g' ~/nginx-opensilex.conf && sudo cp ~/nginx-opensilex.conf /etc/nginx/sites-available/opensilex && sudo ln -sf /etc/nginx/sites-available/opensilex /etc/nginx/sites-enabled/opensilex && sudo rm -f /etc/nginx/sites-enabled/default && rm ~/nginx-opensilex.conf"
-Invoke-ServerCommand -Command $nginxSetup -Description "Configuring nginx reverse proxy..." -Quiet
-
-# Test and reload nginx
-$nginxTest = Invoke-ServerCommand -Command "sudo nginx -t 2>&1" -NoFail -Quiet
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Nginx configuration test failed"
-    Write-Host $nginxTest
-    exit 1
-}
-Invoke-ServerCommand -Command "sudo systemctl reload nginx 2>/dev/null || sudo systemctl start nginx" -Quiet
-
-# Verify nginx is proxying correctly
-Start-Sleep -Seconds 2
-$nginxCheck = & ssh -i $PrivateKeyPath -o StrictHostKeyChecking=no "${AdminUsername}@${TargetIP}" "curl -s -o /dev/null -w '%{http_code}' http://localhost/${ProjectPrefix}/app/ 2>/dev/null" 2>&1
-if ($nginxCheck -match "200") {
-    Write-Success "Nginx reverse proxy active (port 80 -> $OpenSilexPort)"
-} else {
-    Write-Err "Nginx proxy verification failed (status: $nginxCheck)"
-    Write-Status "Check: ssh $AdminUsername@$TargetIP 'sudo nginx -t && sudo journalctl -u nginx --no-pager -n 20'"
-    exit 1
+    Write-Host "  Note: Non-standard port. OAuth redirect URIs must include :$HaproxyPort" -ForegroundColor Yellow
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 7: Create admin user
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "7/9" "Create admin user"
+Write-Step "7/8" "Create admin user"
 
 $userAddCmd = "cd ~/$DeployDir && sudo docker compose --env-file opensilex.env exec opensilex ./bin/opensilex.sh user add --admin --email=$AdminEmail --password=$AdminPassword --lang=en --CONFIG_FILE=/home/opensilex/config/opensilex.yml 2>&1"
 
@@ -526,14 +479,14 @@ if ($userResult -match "User created") {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 7: Verify and report
+# STEP 8: Verify and report
 # ─────────────────────────────────────────────────────────────────────────────
 
-Write-Step "8/9" "Verify deployment"
+Write-Step "8/8" "Verify deployment"
 
 # Test authentication
 Write-Status "Testing authentication..."
-$authResult = & ssh -i $PrivateKeyPath -o StrictHostKeyChecking=no "${AdminUsername}@${TargetIP}" "curl -s http://localhost:${OpenSilexPort}/${ProjectPrefix}/rest/security/authenticate -X POST -H 'Content-Type: application/json' -d '{`"identifier`":`"$AdminEmail`",`"password`":`"$AdminPassword`"}' 2>&1"
+$authResult = & ssh -i $PrivateKeyPath -o StrictHostKeyChecking=no "${AdminUsername}@${TargetIP}" "curl -s http://localhost:${HaproxyPort}/${ProjectPrefix}/rest/security/authenticate -X POST -H 'Content-Type: application/json' -d '{`"identifier`":`"$AdminEmail`",`"password`":`"$AdminPassword`"}' 2>&1"
 
 if ($authResult -match '"token"') {
     Write-Success "Authentication verified -- JWT token received"
@@ -547,78 +500,6 @@ Write-Status "Container status:"
 Invoke-ServerCommand -Command "cd ~/$DeployDir && sudo docker compose --env-file opensilex.env ps" -NoFail
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 9: Feide auto-group assignment
-# ─────────────────────────────────────────────────────────────────────────────
-
-Write-Step "9/9" "Feide auto-group assignment"
-
-if ($FeideEnabled) {
-    # Install Python, cron, and set up virtualenv
-    Write-Status "Installing prerequisites (python3, cron)..."
-    Invoke-ServerCommand -Command "sudo apt-get update -qq && sudo apt-get install -y -qq python3 python3-venv python3-pip cron" -Quiet
-    Invoke-ServerCommand -Command "sudo systemctl enable cron && sudo systemctl start cron" -Quiet
-
-    # Create directory and copy scripts
-    Invoke-ServerCommand -Command "sudo mkdir -p /opt/opensilex-auto-groups && sudo chown ${AdminUsername}:${AdminUsername} /opt/opensilex-auto-groups" -Quiet
-
-    $setupScript = Join-Path $ScriptDir "scripts\setup_groups.py"
-    $monitorScript = Join-Path $ScriptDir "scripts\monitor_new_users.py"
-
-    & scp -i $PrivateKeyPath -o StrictHostKeyChecking=no $setupScript $monitorScript "${AdminUsername}@${TargetIP}:/opt/opensilex-auto-groups/" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Err "Failed to copy auto-group scripts to server"
-        exit 1
-    }
-
-    # Create virtualenv and install requests
-    $venvSetup = "cd /opt/opensilex-auto-groups && python3 -m venv venv 2>/dev/null && ./venv/bin/pip install -q requests 2>&1"
-    Invoke-ServerCommand -Command $venvSetup -Description "Setting up Python virtualenv..." -Quiet
-
-    # Run initial setup (create profiles and groups)
-    $ApiUrl = "http://localhost:${OpenSilexPort}/${ProjectPrefix}/rest"
-    $setupCmd = "cd /opt/opensilex-auto-groups && ./venv/bin/python setup_groups.py --api-url $ApiUrl --email $AdminEmail --password $AdminPassword"
-    Write-Status "Creating profiles and groups..."
-    Invoke-ServerCommand -Command $setupCmd
-
-    # Create the monitor wrapper script (SCP approach avoids PowerShell/bash quoting issues)
-    $RDF4JUrl = "http://localhost:${RDF4JPort}/rdf4j-server"
-    $RepoName = "opensilex-docker-db"
-    $wrapperContent = @"
-#!/bin/bash
-PIDFILE=/opt/opensilex-auto-groups/monitor.pid
-LOGFILE=/opt/opensilex-auto-groups/monitor.log
-if [ -f "`$PIDFILE" ] && kill -0 "`$(cat "`$PIDFILE")" 2>/dev/null; then
-    exit 0
-fi
-cd /opt/opensilex-auto-groups
-./venv/bin/python monitor_new_users.py --api-url $ApiUrl --rdf4j-url $RDF4JUrl --repo $RepoName --email $AdminEmail --password $AdminPassword >> "`$LOGFILE" 2>&1 &
-echo `$! > "`$PIDFILE"
-"@
-
-    # Write wrapper to temp file and SCP it (avoids heredoc-through-SSH issues)
-    $tempWrapper = Join-Path ([System.IO.Path]::GetTempPath()) "run_monitor.sh"
-    $wrapperContent | Set-Content -Path $tempWrapper -Encoding utf8NoBOM -NoNewline
-    # Fix line endings to Unix
-    (Get-Content $tempWrapper -Raw) -replace "`r`n", "`n" | Set-Content -Path $tempWrapper -Encoding utf8NoBOM -NoNewline
-    & scp -i $PrivateKeyPath -o StrictHostKeyChecking=no $tempWrapper "${AdminUsername}@${TargetIP}:/opt/opensilex-auto-groups/run_monitor.sh" 2>&1 | Out-Null
-    Remove-Item $tempWrapper -ErrorAction SilentlyContinue
-
-    Invoke-ServerCommand -Command "chmod +x /opt/opensilex-auto-groups/run_monitor.sh" -Quiet
-
-    # Install cron job (idempotent: remove old entries first, then add)
-    $cronSetup = "(crontab -l 2>/dev/null | grep -v 'opensilex-auto-groups') | crontab - && (crontab -l 2>/dev/null; echo '@reboot /opt/opensilex-auto-groups/run_monitor.sh'; echo '* * * * * /opt/opensilex-auto-groups/run_monitor.sh') | crontab -"
-    Invoke-ServerCommand -Command $cronSetup -Description "Installing cron job for auto-group monitor..." -Quiet
-
-    # Start the monitor now
-    Invoke-ServerCommand -Command "/opt/opensilex-auto-groups/run_monitor.sh" -Quiet
-    Write-Success "Auto-group monitor running (cron-managed)"
-    Write-Success "Profiles: Administrator, Default User"
-    Write-Success "Groups: Users (auto-assign), Administrators (manual)"
-} else {
-    Write-Status "Feide auto-groups: skipped (Feide not enabled)"
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -629,9 +510,13 @@ Write-Host ("=" * 65) -ForegroundColor Green
 Write-Host ""
 Write-Status "Access Information:"
 Write-Host ("-" * 65) -ForegroundColor Gray
-Write-Success "OpenSILEX Web UI:    http://${TargetIP}/${ProjectPrefix}/app/"
-Write-Success "OpenSILEX API Docs:  http://${TargetIP}/${ProjectPrefix}/api-docs"
-Write-Success "Direct (no proxy):   http://${TargetIP}:${OpenSilexPort}/${ProjectPrefix}/app/"
+if ($HaproxyPort -eq 80) {
+    Write-Success "OpenSILEX Web UI:    http://${TargetIP}/${ProjectPrefix}/app/"
+    Write-Success "OpenSILEX API Docs:  http://${TargetIP}/${ProjectPrefix}/api-docs"
+} else {
+    Write-Success "OpenSILEX Web UI:    http://${TargetIP}:${HaproxyPort}/${ProjectPrefix}/app/"
+    Write-Success "OpenSILEX API Docs:  http://${TargetIP}:${HaproxyPort}/${ProjectPrefix}/api-docs"
+}
 Write-Success "RDF4J Workbench:     http://${TargetIP}:${RDF4JPort}/rdf4j-workbench/"
 Write-Success "MongoDB Express:     http://${TargetIP}:${MongoExpressPort}/"
 Write-Success "Admin Email:         $AdminEmail"
@@ -647,4 +532,9 @@ Write-Host "  View logs:     ssh $AdminUsername@$TargetIP 'cd ~/$DeployDir && su
 Write-Host "  Stop stack:    ssh $AdminUsername@$TargetIP 'cd ~/$DeployDir && sudo docker compose --env-file opensilex.env down'" -ForegroundColor Gray
 Write-Host "  Start stack:   ssh $AdminUsername@$TargetIP 'cd ~/$DeployDir && sudo docker compose --env-file opensilex.env up -d'" -ForegroundColor Gray
 Write-Host "  Restart:       ssh $AdminUsername@$TargetIP 'cd ~/$DeployDir && sudo docker compose --env-file opensilex.env restart opensilex'" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Optional: Add Feide login and source patches:" -ForegroundColor Cyan
+Write-Host "  cd tools/docker-deployment" -ForegroundColor Gray
+Write-Host "  .\02-configure-feide.ps1 -TargetIP $TargetIP  # Feide/OpenID authentication" -ForegroundColor Gray
+Write-Host "  .\03-apply-patches.ps1 -Rebuild                        # GroupDAO fix + auto-group assignment" -ForegroundColor Gray
 Write-Host ""
