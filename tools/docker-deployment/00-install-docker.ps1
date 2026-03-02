@@ -36,10 +36,7 @@ Write-Host ""
 # Step 2: Update apt and install prerequisites
 Write-Host "[2/6] Installing prerequisites..." -ForegroundColor Yellow
 
-$InstallPrereqsCmd = @'
-sudo apt-get update && \
-sudo apt-get install -y ca-certificates curl gnupg
-'@
+$InstallPrereqsCmd = 'sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg'
 
 ssh -i $SSHKey "$User@$TargetIP" $InstallPrereqsCmd
 
@@ -54,11 +51,7 @@ Write-Host ""
 # Step 3: Add Docker GPG key
 Write-Host "[3/6] Adding Docker GPG key..." -ForegroundColor Yellow
 
-$AddGPGKeyCmd = @'
-sudo install -m 0755 -d /etc/apt/keyrings && \
-curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg && \
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-'@
+$AddGPGKeyCmd = 'sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg && sudo chmod a+r /etc/apt/keyrings/docker.gpg'
 
 ssh -i $SSHKey "$User@$TargetIP" $AddGPGKeyCmd
 
@@ -73,10 +66,7 @@ Write-Host ""
 # Step 4: Add Docker repository
 Write-Host "[4/6] Adding Docker repository..." -ForegroundColor Yellow
 
-$AddRepoCmd = @'
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-sudo apt-get update
-'@
+$AddRepoCmd = 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && sudo apt-get update'
 
 ssh -i $SSHKey "$User@$TargetIP" $AddRepoCmd
 
@@ -108,11 +98,7 @@ Write-Host ""
 # Step 6: Configure user permissions
 Write-Host "[6/6] Configuring Docker permissions..." -ForegroundColor Yellow
 
-$ConfigurePermsCmd = @'
-sudo usermod -aG docker $USER && \
-sudo systemctl enable docker && \
-sudo systemctl start docker
-'@
+$ConfigurePermsCmd = 'sudo usermod -aG docker $USER && sudo systemctl enable docker && sudo systemctl start docker'
 
 ssh -i $SSHKey "$User@$TargetIP" $ConfigurePermsCmd
 
@@ -127,9 +113,7 @@ Write-Host ""
 # Verify installation
 Write-Host "Verifying Docker installation..." -ForegroundColor Yellow
 
-$VerifyCmd = @'
-sudo docker --version && sudo docker compose version
-'@
+$VerifyCmd = 'sudo docker --version && sudo docker compose version'
 
 $VerifyOutput = ssh -i $SSHKey "$User@$TargetIP" $VerifyCmd
 

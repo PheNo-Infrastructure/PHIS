@@ -8,7 +8,7 @@
     1. Backs up the vanilla Dockerfile on the server
     2. Uploads the source-build Dockerfile (with patch support)
     3. Uploads all .patch files to the server
-    4. Optionally rebuilds the OpenSILEX container with patches applied
+    4. Rebuilds the OpenSILEX container with patches applied (by default)
 
 .PARAMETER Server
     Server IP or hostname (default: 20.61.108.197)
@@ -19,8 +19,8 @@
 .PARAMETER SSHKey
     Path to SSH private key (default: ~/.ssh/id_ed25519)
 
-.PARAMETER Rebuild
-    Automatically rebuild the container after uploading patches
+.PARAMETER SkipRebuild
+    Skip rebuilding the container after uploading patches (just upload files)
 
 .PARAMETER ApiKeysFile
     Path to API keys config file containing FEIDE_CLIENT_ID and FEIDE_CLIENT_SECRET.
@@ -28,15 +28,15 @@
     Default: ../config/test-api-keys.conf
 
 .EXAMPLE
-    .\apply-patches.ps1
+    .\03-apply-patches.ps1
+    Upload patches and rebuild container (default behavior)
+
+.EXAMPLE
+    .\03-apply-patches.ps1 -SkipRebuild
     Upload patches without rebuilding
 
 .EXAMPLE
-    .\apply-patches.ps1 -Rebuild
-    Upload patches and rebuild container
-
-.EXAMPLE
-    .\apply-patches.ps1 -Rebuild -ApiKeysFile ..\config\test-api-keys.conf
+    .\03-apply-patches.ps1 -ApiKeysFile ..\config\test-api-keys.conf
     Upload patches, configure Feide authentication, and rebuild
 #>
 
@@ -44,7 +44,7 @@ param(
     [string]$Server = "20.61.108.197",
     [string]$User = "azureuser",
     [string]$SSHKey = "~/.ssh/id_ed25519",
-    [switch]$Rebuild,
+    [switch]$SkipRebuild,
     [string]$ApiKeysFile = ""
 )
 
@@ -166,8 +166,8 @@ Write-Host ""
 # Step 4: Upload source-build Dockerfile and patches
 Write-Host "[4/5] Uploading source-build Dockerfile and patches..." -ForegroundColor Yellow
 
-# Create patches directory on server
-ssh -i $SSHKey "$User@$Server" "mkdir -p $RemotePatchesDir" 2>&1 | Out-Null
+# Clean up old patches directory and recreate fresh (prevents accumulation of renamed/removed patches)
+ssh -i $SSHKey "$User@$Server" "rm -rf $RemotePatchesDir && mkdir -p $RemotePatchesDir" 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to create patches directory on server"
     exit 1
@@ -261,8 +261,8 @@ EOF"
     Write-Host ""
 }
 
-# Step 6: Rebuild (optional)
-if ($Rebuild) {
+# Step 6: Rebuild (default behavior, skip only if -SkipRebuild flag used)
+if (-not $SkipRebuild) {
     Write-Host "[6/6] Rebuilding OpenSILEX container with patches..." -ForegroundColor Yellow
     Write-Host "  This will take 15-20 minutes (Maven build from source)" -ForegroundColor Gray
     Write-Host ""
@@ -316,7 +316,7 @@ if ($Rebuild) {
 
         $CreateGroupCmd = @'
 #!/bin/bash
-OPENSILEX_URL="http://localhost:8080/sandbox"
+OPENSILEX_URL="http://localhost/sandbox"
 ADMIN_EMAIL="admin@opensilex.org"
 ADMIN_PASSWORD="admin"
 MAX_WAIT=180
@@ -324,7 +324,7 @@ MAX_WAIT=180
 # Wait for OpenSILEX to be ready
 echo "  Waiting for OpenSILEX..."
 for i in $(seq 1 $MAX_WAIT); do
-    if curl -sf "$OPENSILEX_URL/rest/core/ping" >/dev/null 2>&1; then
+    if curl -sf "$OPENSILEX_URL/" >/dev/null 2>&1; then
         echo "  OpenSILEX is ready"
         break
     fi
@@ -348,7 +348,7 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # Check if Users group already exists
-EXISTING_GROUP=$(curl -sf -X GET "$OPENSILEX_URL/rest/core/groups?name=Users" \
+EXISTING_GROUP=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
   -H "Authorization: Bearer $TOKEN" | grep -o '"name":"Users"')
 
 if [ -n "$EXISTING_GROUP" ]; then
@@ -367,7 +367,7 @@ if [ -z "$PROFILE_URI" ]; then
 fi
 
 # Create Users group with Default profile
-RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/core/groups" \
+RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{
@@ -411,20 +411,18 @@ fi
         exit 1
     }
 } else {
-    Write-Host "[6/6] Skipping rebuild (use -Rebuild flag to build now)" -ForegroundColor Yellow
+    Write-Host "[6/6] Skipping rebuild (-SkipRebuild flag used)" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Patches uploaded successfully!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "To rebuild manually, SSH to server and run:" -ForegroundColor Cyan
+    Write-Host "To rebuild with patches, run this script again without -SkipRebuild" -ForegroundColor Cyan
+    Write-Host "  .\03-apply-patches.ps1" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Or rebuild manually via SSH:" -ForegroundColor Cyan
     Write-Host "  cd $RemoteDeployDir" -ForegroundColor Gray
-    Write-Host "  # If using .env file:" -ForegroundColor Gray
-    Write-Host "  docker compose stop opensilex" -ForegroundColor Gray
-    Write-Host "  docker compose build --build-arg UID=1001 --build-arg GID=1001 opensilex" -ForegroundColor Gray
-    Write-Host "  docker compose up start_opensilex_stack -d" -ForegroundColor Gray
-    Write-Host "  # OR if using opensilex.env file:" -ForegroundColor Gray
     Write-Host "  docker compose --env-file opensilex.env stop opensilex" -ForegroundColor Gray
     Write-Host "  docker compose --env-file opensilex.env build --build-arg UID=1001 --build-arg GID=1001 opensilex" -ForegroundColor Gray
-    Write-Host "  docker compose --env-file opensilex.env up start_opensilex_stack -d" -ForegroundColor Gray
+    Write-Host "  docker compose --env-file opensilex.env up -d opensilex" -ForegroundColor Gray
 }
 
 Write-Host ""

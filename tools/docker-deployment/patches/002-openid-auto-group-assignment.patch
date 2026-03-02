@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..e3fe319
 --- /dev/null
 +++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,122 @@
 +package org.opensilex.security.service;
 +
 +import org.opensilex.security.account.dal.AccountModel;
@@ -94,7 +94,7 @@ index 0000000..e3fe319
 +                null,           // userFilter
 +                0,              // page
 +                0               // pageSize (0 = all)
-+            );
++            ).getList();
 +
 +            for (GroupModel group : allGroups) {
 +                if (name.equals(group.getName())) {
@@ -113,7 +113,7 @@ index 0000000..e3fe319
 +     */
 +    private static ProfileModel findProfileByName(ProfileDAO profileDAO, String name) throws Exception {
 +        try {
-+            List<ProfileModel> allProfiles = profileDAO.search(name, null, 0, 0);
++            List<ProfileModel> allProfiles = profileDAO.search(name, null, 0, 0).getList();
 +
 +            for (ProfileModel profile : allProfiles) {
 +                if (name.equals(profile.getName())) {
