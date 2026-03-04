@@ -337,10 +337,11 @@ done
 
 # Authenticate as admin
 echo "  Authenticating..."
-TOKEN=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/authenticate" \
+AUTH_RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/authenticate" \
   -H "Content-Type: application/json" \
-  -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | \
-  grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+  -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+
+TOKEN=$(echo "$AUTH_RESPONSE" | sed -n 's/.*"token"\s*:\s*"\([^"]*\)".*/\1/p')
 
 if [ -z "$TOKEN" ]; then
     echo "ERROR: Failed to authenticate"
@@ -348,18 +349,19 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # Check if Users group already exists
-EXISTING_GROUP=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
-  -H "Authorization: Bearer $TOKEN" | grep -o '"name":"Users"')
+EXISTING_RESPONSE=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
+  -H "Authorization: Bearer $TOKEN")
 
-if [ -n "$EXISTING_GROUP" ]; then
+if echo "$EXISTING_RESPONSE" | grep -q '"name"\s*:\s*"Users"'; then
     echo "  ✓ Users group already exists"
     exit 0
 fi
 
 # Get Default profile URI
-PROFILE_URI=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/profiles?name=Default%20profile" \
-  -H "Authorization: Bearer $TOKEN" | \
-  grep -o '"uri":"[^"]*"' | head -1 | cut -d'"' -f4)
+PROFILE_RESPONSE=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/profiles?name=Default%20profile" \
+  -H "Authorization: Bearer $TOKEN")
+
+PROFILE_URI=$(echo "$PROFILE_RESPONSE" | sed -n 's/.*"uri"\s*:\s*"\([^"]*\)".*/\1/p' | head -1)
 
 if [ -z "$PROFILE_URI" ]; then
     echo "ERROR: Default profile not found"
@@ -376,7 +378,7 @@ RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
     \"user_profiles\": []
   }")
 
-if echo "$RESPONSE" | grep -q '"uri"'; then
+if echo "$RESPONSE" | grep -q '"result".*"http://opensilex.test/id/group'; then
     echo "  ✓ Created Users group"
 else
     echo "ERROR: Failed to create Users group"
