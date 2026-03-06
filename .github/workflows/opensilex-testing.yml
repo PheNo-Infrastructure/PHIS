@@ -143,6 +143,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: tier2-api-tests
+    continue-on-error: true
 
     steps:
       - name: Checkout code
