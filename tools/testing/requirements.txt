@@ -1,0 +1,20 @@
+# Python dependencies for OpenSILEX testing
+
+# Core testing
+requests>=2.31.0
+pytest>=7.4.0
+pytest-html>=3.2.0
+pytest-timeout>=2.1.0
+
+# For load testing (Tier 3)
+locust>=2.15.0
+
+# For test data generation
+faker>=19.0.0
+
+# For SPARQL queries (advanced tests)
+rdflib>=6.3.0
+SPARQLWrapper>=2.0.0
+
+# For test reporting
+jinja2>=3.1.2
