@@ -1,2 +1,6 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Ensure GitHub Actions workflow files always use LF (Unix) line endings
+.github/workflows/*.yml text eol=lf
+.github/workflows/*.yaml text eol=lf
+
+# Shell scripts should use LF
+*.sh text eol=lf
