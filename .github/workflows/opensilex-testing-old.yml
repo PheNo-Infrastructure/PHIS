@@ -1,0 +1,292 @@
+# GitHub Actions Workflow for OpenSILEX Testing
+#
+# Automated testing for OpenSILEX deployment on 20.61.108.197
+#
+# Runs on:
+# - Every push to docker-compose-official, main, master, production branches
+# - Daily at 2 AM UTC (scheduled health check)
+# - Manual trigger via GitHub Actions UI
+#
+# Required GitHub Secrets (Settings > Secrets and variables > Actions):
+# - OPENSILEX_API_URL: http://20.61.108.197/sandbox/rest
+# - OPENSILEX_ADMIN_PASSWORD: Your OpenSILEX admin password
+# - OPENSILEX_SERVER: 20.61.108.197
+# - SSH_PRIVATE_KEY: SSH private key for azureuser@20.61.108.197
+
+name: OpenSILEX Testing Suite
+
+on:
+  push:
+    branches:
+      - docker-compose-official
+      - main
+      - master
+      - production
+      - debian-11-production
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  tier2-api-tests:
+    name: Tier 2 - Comprehensive API Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r tools/testing/requirements.txt
+
+      - name: Run Tier 2 API tests
+        env:
+          OPENSILEX_API_URL: ${{ secrets.OPENSILEX_API_URL }}
+          OPENSILEX_ADMIN_EMAIL: 'admin@opensilex.org'
+          OPENSILEX_ADMIN_PASSWORD: ${{ secrets.OPENSILEX_ADMIN_PASSWORD }}
+          OPENSILEX_TEST_PREFIX: 'ci_test_'
+          OPENSILEX_CLEANUP_TEST_DATA: 'true'
+          OPENSILEX_API_TIMEOUT: '30'
+        run: |
+          cd tools/testing/tier2/api-tests
+          python -m pytest \
+            --html=report.html \
+            --self-contained-html \
+            -v \
+            --tb=short \
+            --maxfail=5
+
+      - name: Upload API test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tier2-api-test-report-${{ github.run_number }}
+          path: tools/testing/tier2/api-tests/report.html
+          retention-days: 30
+
+  tier3-performance:
+    name: Tier 3 - Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: tier2-api-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Tier 3 dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r tools/testing/requirements-tier3.txt
+
+      - name: Run API performance benchmarks
+        env:
+          OPENSILEX_API_URL: ${{ secrets.OPENSILEX_API_URL }}
+          OPENSILEX_ADMIN_EMAIL: 'admin@opensilex.org'
+          OPENSILEX_ADMIN_PASSWORD: ${{ secrets.OPENSILEX_ADMIN_PASSWORD }}
+        run: |
+          cd tools/testing/tier3/performance-tests
+          python -m pytest test_api_benchmarks.py \
+            -v \
+            --tb=short
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-benchmarks-${{ github.run_number }}
+          path: tools/testing/tier3/performance-tests/
+          retention-days: 90
+
+  tier3-security:
+    name: Tier 3 - Security Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: tier2-api-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Tier 3 dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r tools/testing/requirements-tier3.txt
+
+      - name: Run authorization tests
+        env:
+          OPENSILEX_API_URL: ${{ secrets.OPENSILEX_API_URL }}
+          OPENSILEX_ADMIN_EMAIL: 'admin@opensilex.org'
+          OPENSILEX_ADMIN_PASSWORD: ${{ secrets.OPENSILEX_ADMIN_PASSWORD }}
+        run: |
+          cd tools/testing/tier3/security-tests
+          python -m pytest test_authorization.py \
+            -v \
+            --tb=short
+
+      - name: Run JWT security tests
+        env:
+          OPENSILEX_API_URL: ${{ secrets.OPENSILEX_API_URL }}
+          OPENSILEX_ADMIN_EMAIL: 'admin@opensilex.org'
+          OPENSILEX_ADMIN_PASSWORD: ${{ secrets.OPENSILEX_ADMIN_PASSWORD }}
+        run: |
+          cd tools/testing/tier3/security-tests
+          python -m pytest test_jwt_security.py \
+            -v \
+            --tb=short
+
+      - name: Upload security test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-test-results-${{ github.run_number }}
+          path: tools/testing/tier3/security-tests/
+          retention-days: 30
+
+  tier3-database-integrity:
+    name: Tier 3 - Database Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: tier2-api-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r tools/testing/requirements-tier3.txt
+
+      - name: Set up SSH key for server access
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.OPENSILEX_SERVER }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Test SSH connectivity
+        env:
+          OPENSILEX_SERVER: ${{ secrets.OPENSILEX_SERVER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no azureuser@${OPENSILEX_SERVER} "echo 'SSH connection successful'"
+
+      - name: Run MongoDB integrity checks
+        env:
+          OPENSILEX_SERVER: ${{ secrets.OPENSILEX_SERVER }}
+          OPENSILEX_DEPLOY_DIR: '~/opensilex-docker-compose'
+        run: |
+          cd tools/testing/tier3/database-tests
+          bash test-mongodb-integrity.sh
+
+      - name: Run RDF4J integrity checks
+        env:
+          OPENSILEX_API_URL: ${{ secrets.OPENSILEX_API_URL }}
+          OPENSILEX_ADMIN_EMAIL: 'admin@opensilex.org'
+          OPENSILEX_ADMIN_PASSWORD: ${{ secrets.OPENSILEX_ADMIN_PASSWORD }}
+        run: |
+          cd tools/testing/tier3/database-tests
+          bash test-rdf4j-integrity.sh
+
+      - name: Run cross-database consistency tests
+        env:
+          OPENSILEX_API_URL: ${{ secrets.OPENSILEX_API_URL }}
+          OPENSILEX_ADMIN_EMAIL: 'admin@opensilex.org'
+          OPENSILEX_ADMIN_PASSWORD: ${{ secrets.OPENSILEX_ADMIN_PASSWORD }}
+        run: |
+          cd tools/testing/tier3/database-tests
+          python -m pytest test_cross_db_consistency.py \
+            -v \
+            --tb=short
+
+      - name: Upload integrity test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: database-integrity-results-${{ github.run_number }}
+          path: tools/testing/tier3/database-tests/
+          retention-days: 30
+
+  test-summary:
+    name: Test Summary & Notifications
+    runs-on: ubuntu-latest
+    needs: [tier2-api-tests, tier3-performance, tier3-security, tier3-database-integrity]
+    if: always()
+
+    steps:
+      - name: Check overall test status
+        run: |
+          echo "=========================================="
+          echo "OpenSILEX Testing Summary"
+          echo "=========================================="
+          echo ""
+          echo "All testing stages completed"
+          echo "Review artifacts for detailed results"
+          echo ""
+          echo "Job results:"
+          echo "  - Tier 2 API Tests: ${{ needs.tier2-api-tests.result }}"
+          echo "  - Tier 3 Performance: ${{ needs.tier3-performance.result }}"
+          echo "  - Tier 3 Security: ${{ needs.tier3-security.result }}"
+          echo "  - Tier 3 Database: ${{ needs.tier3-database-integrity.result }}"
+
+      - name: Create issue on scheduled test failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const date = new Date().toISOString().split('T')[0];
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Scheduled Test Failure - ${date}`,
+              body: `The scheduled OpenSILEX test run has failed.
+
+## Test Results
+
+- Tier 2 API Tests: ${{ needs.tier2-api-tests.result }}
+- Tier 3 Performance: ${{ needs.tier3-performance.result }}
+- Tier 3 Security: ${{ needs.tier3-security.result }}
+- Tier 3 Database: ${{ needs.tier3-database-integrity.result }}
+
+## Action Required
+
+Please investigate the test failures and ensure the OpenSILEX deployment is functioning correctly.
+
+**Workflow run:** ${runUrl}
+
+**Server:** ${process.env.OPENSILEX_SERVER || '20.61.108.197'}
+`,
+              labels: ['testing', 'automated', 'health-check']
+            });
+
