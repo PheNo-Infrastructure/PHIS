@@ -1,0 +1,79 @@
+// App-specific overrides for Vue component styles
+// These styles target Vue scoped components with data-v attributes
+
+// Header and logo styling
+.app-logo[data-v-5d66e734] {
+    background-color: $pheno-forest-green !important;
+}
+
+.title-icon[data-v-5d66e734] {
+    background-color: $pheno-leaf-green-dark !important;
+}
+
+// Hamburger menu styling - make it white to be visible on green background
+.hamburger-inner[data-v-5d66e734],
+.hamburger-inner[data-v-5d66e734]:before,
+.hamburger-inner[data-v-5d66e734]:after {
+    background-color: $white !important;
+}
+
+// Mobile navigation toggle in header - make it white to be visible
+.wrapper .header-top .top-menu .mobile-nav-toggle {
+    span {
+        background-color: $white !important;
+
+        &::before,
+        &::after {
+            background-color: $white !important;
+        }
+    }
+}
+
+// Also ensure nav-toggle and nav-close buttons are visible
+.wrapper .page-wrap .app-sidebar .sidebar-header .nav-toggle,
+.wrapper .page-wrap .app-sidebar .sidebar-header .nav-close {
+    color: $white !important;
+}
+
+// Hide the text element completely - we'll use the full logo instead
+.header-brand .text[data-v-5d66e734],
+span.text[data-v-5d66e734] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+// Make the logo bigger to accommodate the full PheNo logo
+.header-brand .logo-img[data-v-5d66e734],
+.logo-img[data-v-5d66e734],
+img.logo-img[data-v-5d66e734] {
+    max-width: 200px !important;
+    width: auto !important;
+    height: 50px !important;
+    max-height: 50px !important;
+    object-fit: contain !important;
+    margin: 0 !important;
+}
+
+// Ensure logo container expands to fill available space
+.header-brand[data-v-5d66e734],
+a.header-brand[data-v-5d66e734] {
+    display: flex !important;
+    align-items: center !important;
+    width: auto !important;
+    min-width: 180px !important;
+}
+
+// Remove any flex gaps or spacing between logo and text
+.header-brand[data-v-5d66e734] > * {
+    margin-left: 0 !important;
+}
+
+// Also target the wrapper div around header-brand if it exists
+div[data-v-5d66e734].header-brand {
+    gap: 0 !important;
+}
