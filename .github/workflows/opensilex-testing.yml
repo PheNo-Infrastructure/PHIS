@@ -7,7 +7,7 @@
 # - Daily at 2 AM UTC (scheduled health check)
 # - Manual trigger via GitHub Actions UI
 #
-# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+# Required GitHub Secrets (Settings > Secrets and variables > Actions):
 # - OPENSILEX_API_URL: http://20.61.108.197/sandbox/rest
 # - OPENSILEX_ADMIN_PASSWORD: Your OpenSILEX admin password
 # - OPENSILEX_SERVER: 20.61.108.197
@@ -289,3 +289,4 @@ Please investigate the test failures and ensure the OpenSILEX deployment is func
 `,
               labels: ['testing', 'automated', 'health-check']
             });
+
