@@ -1,0 +1,157 @@
+/*!
+ * PheNo Theme for OpenSILEX
+ * Based on PheNo Design Guidelines
+ * Norwegian Plant Phenotyping Infrastructure
+ */
+
+// Import mixins first (required by settings)
+@import 'mixins';
+
+// Import PheNo color settings
+@import 'settings';
+
+// Import component styles from default theme
+// These files will be copied from the default OpenSILEX theme
+@import 'cards';
+@import 'widgets';
+@import 'tables';
+@import 'badges';
+@import 'navigation';
+@import 'buttons';
+@import 'modal';
+@import 'forms';
+@import 'carousel';
+@import 'calendar';
+@import 'alert';
+@import 'rating';
+@import 'range-slider';
+@import 'layout';
+@import 'auth';
+@import 'main';
+@import 'app-overrides';
+@import 'navigation-colors';
+
+// PheNo-specific overrides
+.navbar,
+.navbar-default,
+header.navbar {
+  background-color: $pheno-forest-green !important;
+
+  .navbar-brand,
+  .navbar-nav > li > a {
+    color: $white !important;
+  }
+
+  .navbar-nav > li > a:hover,
+  .navbar-nav > li > a:focus {
+    color: $pheno-straw-light !important;
+  }
+}
+
+// Sidebar styling
+.sidebar,
+.sidebar-menu {
+  background-color: $pheno-straw-light;
+
+  .menu-item {
+    color: $pheno-forest-green;
+
+    &:hover,
+    &.active {
+      background-color: $pheno-leaf-green-light;
+      color: $white;
+    }
+  }
+}
+
+// Buttons - apply PheNo colors
+.btn-primary {
+  background-color: $pheno-leaf-green-dark;
+  border-color: $pheno-leaf-green-dark;
+
+  &:hover,
+  &:focus {
+    background-color: darken($pheno-leaf-green-dark, 10%);
+    border-color: darken($pheno-leaf-green-dark, 10%);
+  }
+}
+
+.btn-success {
+  background-color: $pheno-leaf-green-light;
+  border-color: $pheno-leaf-green-light;
+  color: $pheno-forest-green;
+
+  &:hover,
+  &:focus {
+    background-color: darken($pheno-leaf-green-light, 10%);
+    border-color: darken($pheno-leaf-green-light, 10%);
+  }
+}
+
+// Cards and panels
+.card,
+.panel {
+  border-color: $pheno-straw-dark;
+
+  .card-header,
+  .panel-heading {
+    background-color: $pheno-straw-light;
+    color: $pheno-forest-green;
+    border-bottom-color: $pheno-straw-dark;
+  }
+}
+
+// Tables
+.table {
+  thead {
+    background-color: $pheno-straw-light;
+    color: $pheno-forest-green;
+  }
+
+  tbody tr:hover {
+    background-color: lighten($pheno-straw-light, 5%);
+  }
+}
+
+// Forms
+.form-control {
+  border-color: $pheno-straw-dark;
+
+  &:focus {
+    border-color: $pheno-leaf-green-dark;
+    box-shadow: 0 0 0 0.2rem rgba($pheno-leaf-green-dark, 0.25);
+  }
+}
+
+// Badges
+.badge-primary {
+  background-color: $pheno-leaf-green-dark;
+}
+
+.badge-success {
+  background-color: $pheno-leaf-green-light;
+  color: $pheno-forest-green;
+}
+
+// Alerts
+.alert-success {
+  background-color: lighten($pheno-leaf-green-light, 20%);
+  border-color: $pheno-leaf-green-light;
+  color: $pheno-forest-green;
+}
+
+.alert-info {
+  background-color: lighten($pheno-straw-light, 5%);
+  border-color: $pheno-straw-dark;
+  color: $pheno-forest-green;
+}
+
+// Links
+a {
+  color: $pheno-leaf-green-dark;
+
+  &:hover,
+  &:focus {
+    color: darken($pheno-leaf-green-dark, 15%);
+  }
+}
