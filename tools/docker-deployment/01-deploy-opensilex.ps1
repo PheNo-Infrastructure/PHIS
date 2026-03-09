@@ -19,7 +19,7 @@
     8. Creates admin user and verifies deployment
 
     For source patches (GroupDAO fix, OpenID auto-group assignment), run:
-        .\02-apply-patches.ps1 -Rebuild -ApiKeysFile ..\config\test-api-keys.conf
+        .\02-apply-patches.ps1 -Rebuild -ApiKeysFile ..\config\api-keys-test.conf
 
 .PARAMETER TargetIP
     The IP address of the target server
@@ -51,7 +51,7 @@
     .\deploy-opensilex-docker.ps1 -TargetIP 20.61.108.197
 
 .EXAMPLE
-    .\deploy-opensilex-docker.ps1 -TargetIP 20.61.108.197 -ApiKeysFile ..\config\test-api-keys.conf
+    .\deploy-opensilex-docker.ps1 -TargetIP 20.61.108.197 -ApiKeysFile ..\config\api-keys-test.conf
 
 .EXAMPLE
     .\deploy-opensilex-docker.ps1 -TargetIP 10.0.0.5 -OpenSilexVersion 1.4.9 -ProjectPrefix production
@@ -253,11 +253,9 @@ if (-not (Test-Path $PrivateKeyPath)) {
 Write-Success "SSH key found: $PrivateKeyPath"
 
 # Test SSH connectivity
-Write-Status "Testing SSH connectivity..."
-$sshTest = & ssh -i $PrivateKeyPath -o StrictHostKeyChecking=no -o ConnectTimeout=10 "${AdminUsername}@${TargetIP}" "echo SSH_OK" 2>&1
+$sshTest = Invoke-ServerCommand -Command "echo SSH_OK" -Description "Testing SSH connectivity..." -Quiet
 if ($sshTest -notmatch "SSH_OK") {
     Write-Err "Cannot connect to $TargetIP via SSH"
-    Write-Err "Output: $sshTest"
     exit 1
 }
 Write-Success "SSH connection to $TargetIP successful"
@@ -336,68 +334,13 @@ Write-Step "4/8" "Build Docker images (vanilla with pre-built ZIP)"
 Write-Status "Building OpenSILEX, RDF4J, and HAProxy images..."
 Write-Status "(First build takes 2-3 min; downloads official pre-built release ZIP)"
 
-# Run the build detached (nohup) for consistency with long-running operations.
-# The vanilla build is fast (2-3 min), but we use nohup in case of network issues.
-$buildLogFile = "/tmp/docker-build.log"
-Invoke-ServerCommand -Command "cd ~/$DeployDir && sudo rm -f $buildLogFile && sudo nohup bash -c 'BUILDKIT_PROGRESS=plain docker compose --progress=plain --env-file opensilex.env build --build-arg UID=1001 --build-arg GID=1001 > $buildLogFile 2>&1; rc=`$?; echo EXIT_CODE=`$rc >> $buildLogFile' &>/dev/null &" -Description "Starting Docker build in background..." -NoFail -Quiet
+# Run Docker build in foreground with streaming output
+# SSH keep-alive settings prevent timeout during the 2-3 minute build
+Write-Status "Running Docker build (streaming output)..."
+Invoke-ServerCommand -Command "cd ~/$DeployDir && BUILDKIT_PROGRESS=plain sudo docker compose --progress=plain --env-file opensilex.env build --build-arg UID=1001 --build-arg GID=1001" -Description "Building images..."
 
-Write-Status "Build running in background. Polling progress..."
-
-# Poll until the build finishes (EXIT_CODE appears in log) or timeout
-$buildTimeout = 600  # 10 minutes (vanilla build takes 2-3 min)
-$pollInterval = 30    # seconds
-$elapsed = 0
-$lastLines = 0
-
-while ($elapsed -lt $buildTimeout) {
-    Start-Sleep -Seconds $pollInterval
-    $elapsed += $pollInterval
-
-    # Check if build finished (EXIT_CODE line appears at end of log)
-    $status = Invoke-ServerCommand -Command "grep -c '^EXIT_CODE=' $buildLogFile 2>/dev/null || echo 0" -NoFail -Quiet
-    $lineCount = Invoke-ServerCommand -Command "wc -l < $buildLogFile 2>/dev/null || echo 0" -NoFail -Quiet
-    $lastLog = Invoke-ServerCommand -Command "tail -3 $buildLogFile 2>/dev/null" -NoFail -Quiet
-
-    # Show progress
-    $mins = [math]::Floor($elapsed / 60)
-    $secs = $elapsed % 60
-    if ($lastLog) {
-        # Extract a short summary from the last log line
-        $summary = ($lastLog -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -Last 1)
-        if ($summary.Length -gt 100) { $summary = $summary.Substring(0, 100) + "..." }
-        Write-Status "  [${mins}m${secs}s] $summary"
-    } else {
-        Write-Status "  [${mins}m${secs}s] Building... ($lineCount lines logged)"
-    }
-
-    if ($status -and $status.Trim() -ne "0") {
-        break
-    }
-}
-
-if ($elapsed -ge $buildTimeout) {
-    Write-Err "Docker build timed out after 10 minutes"
-    Invoke-ServerCommand -Command "tail -50 $buildLogFile" -Description "Build log (last 50 lines):"
-    exit 1
-}
-
-# Check exit code (with fallback to checking for "Built" in output)
-$exitLine = Invoke-ServerCommand -Command "grep '^EXIT_CODE=' $buildLogFile" -NoFail -Quiet
-$buildExitCode = if ($exitLine -match 'EXIT_CODE=(\d+)') { $Matches[1] } else { "" }
-
-# If exit code capture failed, check if all images were built (fallback)
-if ($buildExitCode -eq "") {
-    $builtCount = Invoke-ServerCommand -Command "grep -c 'Built' $buildLogFile" -NoFail -Quiet
-    if ($builtCount -ge 3) {
-        $buildExitCode = "0"  # All 3 images built successfully
-    } else {
-        $buildExitCode = "1"  # Build failed
-    }
-}
-
-if ($buildExitCode -ne "0") {
-    Write-Err "Docker image build failed (exit code $buildExitCode)"
-    Invoke-ServerCommand -Command "tail -50 $buildLogFile" -Description "Build log (last 50 lines):"
+if ($LASTEXITCODE -ne 0) {
+    Write-Err "Docker image build failed"
     exit 1
 }
 Write-Success "All images built successfully"

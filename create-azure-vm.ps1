@@ -3,32 +3,106 @@
 .SYNOPSIS
     Create Azure VM for OpenSILEX Docker deployment
 .DESCRIPTION
-    Creates a Debian 12 VM on Azure using ARM template with SSH key authentication
+    Creates a Debian 12 VM on Azure using ARM template with SSH key authentication.
+    Supports environment-based configuration profiles for easy multi-environment management.
+.PARAMETER Environment
+    Environment profile to use (sandbox, test, production). Loads config from tools/config/vm-config-{environment}.json
 .PARAMETER VMName
-    Name of the VM (default: PHIS-TEST-DOCKER)
+    Name of the VM (overrides config file if specified)
 .PARAMETER ResourceGroupName
-    Azure resource group name (default: PHIS-TEST-DOCKER)
+    Azure resource group name (overrides config file if specified)
 .PARAMETER Location
-    Azure region (default: westeurope)
+    Azure region (overrides config file if specified)
+.PARAMETER VMSize
+    Azure VM size (overrides config file if specified)
 .PARAMETER AdminUsername
     SSH username (default: azureuser)
 .PARAMETER SSHKeyPath
     Path to SSH public key (default: ~/.ssh/id_ed25519.pub)
+.PARAMETER UseExistingPublicIP
+    Use existing public IP instead of creating new one
+.PARAMETER ExistingPublicIPName
+    Name of existing public IP to use (required if UseExistingPublicIP is true)
 .EXAMPLE
-    .\create-azure-vm.ps1
-    .\create-azure-vm.ps1 -VMName "my-opensilex-vm" -Location "northeurope"
+    # Deploy using environment config
+    .\create-azure-vm.ps1 -Environment test
+    .\create-azure-vm.ps1 -Environment production
+
+    # Deploy with manual parameters
+    .\create-azure-vm.ps1 -VMName "my-vm" -ResourceGroupName "my-rg" -Location "northeurope"
+
+    # Deploy with existing public IP
+    .\create-azure-vm.ps1 -Environment test -UseExistingPublicIP -ExistingPublicIPName "my-ip"
 #>
 
 param(
-    [string]$VMName = "PHIS-TEST-DOCKER",
-    [string]$ResourceGroupName = "PHIS-TEST-DOCKER",
+    [string]$Environment = "",
+    [string]$VMName = "",
+    [string]$ResourceGroupName = "",
     [string]$Location = "westeurope",
+    [string]$VMSize = "Standard_B4ms",
     [string]$AdminUsername = "azureuser",
-    [string]$SSHKeyPath = "~/.ssh/id_ed25519.pub"
+    [string]$SSHKeyPath = "~/.ssh/id_ed25519.pub",
+    [switch]$UseExistingPublicIP,
+    [string]$ExistingPublicIPName = "",
+    [string]$VnetAddressPrefix = "10.0.0.0/16",
+    [string]$SubnetAddressPrefix = "10.0.0.0/24"
 )
 
 Write-Host "=== Azure VM Creation for OpenSILEX Docker ===" -ForegroundColor Cyan
 Write-Host ""
+
+# Load configuration from environment profile if specified
+if ($Environment) {
+    $ConfigPath = Join-Path $PSScriptRoot "tools\config\vm-config-$Environment.json"
+
+    if (-not (Test-Path $ConfigPath)) {
+        Write-Host "[FAIL] Config file not found: $ConfigPath" -ForegroundColor Red
+        Write-Host "Available environments: sandbox, test, production" -ForegroundColor Gray
+        exit 1
+    }
+
+    Write-Host "Loading configuration from: $ConfigPath" -ForegroundColor Cyan
+    $config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+
+    # Override defaults with config values (can still be overridden by command-line parameters)
+    if (-not $VMName) { $VMName = $config.vmName }
+    if (-not $ResourceGroupName) { $ResourceGroupName = $config.resourceGroupName }
+    $Location = if ($PSBoundParameters.ContainsKey('Location')) { $Location } else { $config.location }
+    $VMSize = if ($PSBoundParameters.ContainsKey('VMSize')) { $VMSize } else { $config.vmSize }
+    $AdminUsername = if ($PSBoundParameters.ContainsKey('AdminUsername')) { $AdminUsername } else { $config.adminUsername }
+
+    if ($config.useExistingPublicIP) {
+        $UseExistingPublicIP = $true
+        $ExistingPublicIPName = $config.publicIPName
+    }
+
+    if ($config.networkConfig) {
+        $VnetAddressPrefix = $config.networkConfig.vnetAddressPrefix
+        $SubnetAddressPrefix = $config.networkConfig.subnetAddressPrefix
+    }
+
+    Write-Host "  Environment: $($config.environment)" -ForegroundColor Green
+    Write-Host "  VM Name: $VMName" -ForegroundColor Gray
+    Write-Host "  Resource Group: $ResourceGroupName" -ForegroundColor Gray
+    Write-Host "  Location: $Location" -ForegroundColor Gray
+    if ($config.staticIP) {
+        Write-Host "  Static IP: $($config.staticIP)" -ForegroundColor Yellow
+    }
+    Write-Host ""
+}
+
+# Validate required parameters
+if (-not $VMName -or -not $ResourceGroupName) {
+    Write-Host "[FAIL] VMName and ResourceGroupName are required" -ForegroundColor Red
+    Write-Host "Either specify -Environment (sandbox/test/production) or provide -VMName and -ResourceGroupName" -ForegroundColor Gray
+    exit 1
+}
+
+if ($UseExistingPublicIP -and -not $ExistingPublicIPName) {
+    Write-Host "[FAIL] ExistingPublicIPName is required when UseExistingPublicIP is true" -ForegroundColor Red
+    exit 1
+}
 
 # Resolve paths
 if ($SSHKeyPath -match '^~') {
@@ -98,6 +172,33 @@ if ($existingVM) {
         Write-Host "  .\01-deploy-opensilex.ps1 -TargetIP $VMIPAddress" -ForegroundColor Gray
         exit 0
     }
+} else {
+    # VM doesn't exist - clean up orphaned network resources before deploying
+    Write-Host "  VM does not exist" -ForegroundColor Gray
+
+    # Check for orphaned NIC (from manually deleted VM)
+    $orphanedNIC = Get-AzNetworkInterface -ResourceGroupName $ResourceGroupName -Name "$VMName-nic" -ErrorAction SilentlyContinue
+    if ($orphanedNIC) {
+        Write-Host "  Cleaning up orphaned network interface..." -ForegroundColor Yellow
+        Remove-AzNetworkInterface -ResourceGroupName $ResourceGroupName -Name "$VMName-nic" -Force | Out-Null
+        Write-Host "    Removed: $VMName-nic" -ForegroundColor Gray
+    }
+
+    # Check for orphaned VNet (from manually deleted VM)
+    $orphanedVNet = Get-AzVirtualNetwork -ResourceGroupName $ResourceGroupName -Name "$VMName-vnet" -ErrorAction SilentlyContinue
+    if ($orphanedVNet) {
+        Write-Host "  Cleaning up orphaned virtual network..." -ForegroundColor Yellow
+        Remove-AzVirtualNetwork -ResourceGroupName $ResourceGroupName -Name "$VMName-vnet" -Force | Out-Null
+        Write-Host "    Removed: $VMName-vnet" -ForegroundColor Gray
+    }
+
+    # Public IP and NSG are intentionally preserved for reuse
+    if ($UseExistingPublicIP) {
+        $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $ExistingPublicIPName -ErrorAction SilentlyContinue
+        if ($publicIP) {
+            Write-Host "  Public IP preserved: $ExistingPublicIPName ($($publicIP.IpAddress))" -ForegroundColor Green
+        }
+    }
 }
 
 Write-Host ""
@@ -124,7 +225,23 @@ $templateParameters = @{
     vmName = $VMName
     adminUsername = $AdminUsername
     sshPublicKey = $sshPublicKey
+    location = $Location
+    vmSize = $VMSize
+    vnetAddressPrefix = $VnetAddressPrefix
+    subnetAddressPrefix = $SubnetAddressPrefix
+    useExistingPublicIP = $UseExistingPublicIP.IsPresent
+    existingPublicIPName = $ExistingPublicIPName
 }
+
+Write-Host "Deployment parameters:" -ForegroundColor Cyan
+Write-Host "  VM Name: $VMName" -ForegroundColor Gray
+Write-Host "  VM Size: $VMSize" -ForegroundColor Gray
+Write-Host "  Location: $Location" -ForegroundColor Gray
+Write-Host "  Use Existing IP: $($UseExistingPublicIP.IsPresent)" -ForegroundColor Gray
+if ($UseExistingPublicIP) {
+    Write-Host "  Existing IP Name: $ExistingPublicIPName" -ForegroundColor Gray
+}
+Write-Host ""
 
 try {
     $deployment = New-AzResourceGroupDeployment `

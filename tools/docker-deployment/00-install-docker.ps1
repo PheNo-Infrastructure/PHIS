@@ -16,6 +16,22 @@ param(
 
 $SSHKey = Resolve-Path $SSHKey -ErrorAction Stop
 
+# Remove old SSH host key (VM was recreated, host key changed)
+Write-Host "=== Preparing SSH Connection ===" -ForegroundColor Cyan
+Write-Host "Target: $TargetIP" -ForegroundColor Gray
+Write-Host ""
+
+$knownHostsFile = Join-Path $env:USERPROFILE ".ssh\known_hosts"
+if (Test-Path $knownHostsFile) {
+    $oldKeyExists = Select-String -Path $knownHostsFile -Pattern "^$([regex]::Escape($TargetIP))\s" -Quiet
+    if ($oldKeyExists) {
+        Write-Host "Removing old SSH host key for $TargetIP..." -ForegroundColor Yellow
+        & ssh-keygen -R $TargetIP 2>&1 | Out-Null
+        Write-Host "  Old host key removed (VM was recreated)" -ForegroundColor Green
+        Write-Host ""
+    }
+}
+
 Write-Host "=== Install Docker on Debian 11 ===" -ForegroundColor Cyan
 Write-Host "Target: $TargetIP" -ForegroundColor Gray
 Write-Host "User: $User" -ForegroundColor Gray

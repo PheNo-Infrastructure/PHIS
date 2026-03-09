@@ -25,7 +25,7 @@
 .PARAMETER ApiKeysFile
     Path to API keys config file containing FEIDE_CLIENT_ID and FEIDE_CLIENT_SECRET.
     If provided and contains Feide credentials, OpenID Connect login will be configured.
-    Default: ../config/test-api-keys.conf
+    Default: ../config/api-keys-test.conf
 
 .EXAMPLE
     .\03-apply-patches.ps1
@@ -36,7 +36,7 @@
     Upload patches without rebuilding
 
 .EXAMPLE
-    .\03-apply-patches.ps1 -ApiKeysFile ..\config\test-api-keys.conf
+    .\03-apply-patches.ps1 -ApiKeysFile ..\config\api-keys-test.conf
     Upload patches, configure Feide authentication, and rebuild
 #>
 

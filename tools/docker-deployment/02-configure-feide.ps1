@@ -24,7 +24,7 @@
 
 .PARAMETER ApiKeysFile
     Path to API keys config file containing FEIDE_CLIENT_ID and FEIDE_CLIENT_SECRET
-    (default: ..\config\test-api-keys.conf)
+    (default: ..\config\api-keys-test.conf)
 
 .EXAMPLE
     .\02-configure-feide.ps1 -TargetIP 20.61.108.197
@@ -37,7 +37,7 @@ param(
     [string]$TargetIP = "20.61.108.197",
     [string]$AdminUsername = "azureuser",
     [string]$PrivateKeyPath = "~/.ssh/id_ed25519",
-    [string]$ApiKeysFile = "..\config\test-api-keys.conf"
+    [string]$ApiKeysFile = "..\config\api-keys-test.conf"
 )
 
 $ErrorActionPreference = "Stop"
