@@ -262,7 +262,7 @@ jobs:
 
             **Workflow run:** ${runUrl}
 
-            **Server:** 20.61.108.197
+            **Server:** ${{ secrets.OPENSILEX_SERVER }}
             `,
               labels: ['testing', 'automated', 'health-check']
             });

@@ -1,2 +1,18 @@
 *.pyc
 /1.4.8-rdg
+/tools/config
+
+# Deployment logs and outputs
+deploy-output.log
+*.log
+
+# Temporary files
+nul
+**/nul
+
+# SSH keys and configs (if accidentally copied to repo)
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.ssh/

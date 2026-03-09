@@ -13,24 +13,64 @@
     "sshPublicKey": {
       "type": "string",
       "defaultValue": "---INCLUDE SSH PUBLIC KEY HERE---"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "westeurope",
+      "metadata": {
+        "description": "Azure region for resources"
+      }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B4ms",
+      "metadata": {
+        "description": "VM size (e.g., Standard_B4ms, Standard_D4s_v3)"
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "Virtual network address space"
+      }
+    },
+    "subnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/24",
+      "metadata": {
+        "description": "Subnet address range"
+      }
+    },
+    "useExistingPublicIP": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "If true, uses existing public IP; if false, creates new static IP"
+      }
+    },
+    "existingPublicIPName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing public IP to use (required if useExistingPublicIP is true)"
+      }
     }
   },
   "variables": {
-    "location": "westeurope",
-    "vmSize": "Standard_B4ms",
-    "resourceGroupName": "RG-PHIS",
     "vnetName": "[concat(parameters('vmName'), '-vnet')]",
     "subnetName": "default",
     "nicName": "[concat(parameters('vmName'), '-nic')]",
-    "publicIPName": "[concat(parameters('vmName'), '-ip')]",
+    "publicIPName": "[if(parameters('useExistingPublicIP'), parameters('existingPublicIPName'), concat(parameters('vmName'), '-ip'))]",
     "nsgName": "[concat(parameters('vmName'), '-nsg')]"
   },
   "resources": [
     {
+      "condition": "[not(parameters('useExistingPublicIP'))]",
       "type": "Microsoft.Network/publicIPAddresses",
       "apiVersion": "2021-02-01",
       "name": "[variables('publicIPName')]",
-      "location": "[variables('location')]",
+      "location": "[parameters('location')]",
       "sku": {
         "name": "Standard"
       },
@@ -42,7 +82,7 @@
       "type": "Microsoft.Network/networkSecurityGroups",
       "apiVersion": "2021-02-01",
       "name": "[variables('nsgName')]",
-      "location": "[variables('location')]",
+      "location": "[parameters('location')]",
       "properties": {
         "securityRules": [
           {
@@ -143,19 +183,19 @@
       "type": "Microsoft.Network/virtualNetworks",
       "apiVersion": "2021-02-01",
       "name": "[variables('vnetName')]",
-      "location": "[variables('location')]",
+      "location": "[parameters('location')]",
       "dependsOn": [
         "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
       ],
       "properties": {
         "addressSpace": {
-          "addressPrefixes": ["10.0.0.0/16"]
+          "addressPrefixes": ["[parameters('vnetAddressPrefix')]"]
         },
         "subnets": [
           {
             "name": "[variables('subnetName')]",
             "properties": {
-              "addressPrefix": "10.0.0.0/24",
+              "addressPrefix": "[parameters('subnetAddressPrefix')]",
               "networkSecurityGroup": {
                 "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
               }
@@ -168,7 +208,7 @@
       "type": "Microsoft.Network/networkInterfaces",
       "apiVersion": "2021-02-01",
       "name": "[variables('nicName')]",
-      "location": "[variables('location')]",
+      "location": "[parameters('location')]",
       "dependsOn": [
         "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))]",
         "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
@@ -194,13 +234,13 @@
       "type": "Microsoft.Compute/virtualMachines",
       "apiVersion": "2021-03-01",
       "name": "[parameters('vmName')]",
-      "location": "[variables('location')]",
+      "location": "[parameters('location')]",
       "dependsOn": [
         "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
       ],
       "properties": {
         "hardwareProfile": {
-          "vmSize": "[variables('vmSize')]"
+          "vmSize": "[parameters('vmSize')]"
         },
         "storageProfile": {
           "imageReference": {
@@ -269,7 +309,7 @@
   "outputs": {
     "publicIPAddress": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))).ipAddress]"
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName')), '2021-02-01').ipAddress]"
     }
   }
 }

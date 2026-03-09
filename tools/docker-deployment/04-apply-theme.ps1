@@ -217,99 +217,71 @@ Write-Host "  [OK] Processed $processedCount SCSS component files with PheNo col
 Write-Host ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Upload Theme Files
+# Upload Theme Files (using tar for fast single upload)
 # ─────────────────────────────────────────────────────────────────────────────
 
 Write-Host "[4/7] Uploading PheNo theme files..." -ForegroundColor Yellow
 
-# Clean up old theme directory and recreate
-ssh -i $SSHKey "$User@$Server" "rm -rf $RemoteThemeDir && mkdir -p $RemoteThemeDir/front/theme/opensilex/images" 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to create theme directory on server"
-    exit 1
-}
+# Create staging directory with proper structure
+$StagingDir = Join-Path $env:TEMP "pheno-theme-staging-$(Get-Date -Format 'yyyyMMddHHmmss')"
+$StagingThemeDir = Join-Path $StagingDir "front\theme\opensilex"
+New-Item -ItemType Directory -Path "$StagingThemeDir\images" -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $StagingDir "front") -Force | Out-Null
 
-# Upload CSS files
-$cssFiles = @(
-    @{ File = "main.css"; Dest = "front/theme/opensilex/main.css" }
-    @{ File = "hamburgers.css"; Dest = "front/theme/opensilex/hamburgers.css" }
-    @{ File = "fix.css"; Dest = "front/theme/opensilex/fix.css" }
-    @{ File = "pheno-override.css"; Dest = "front/theme/opensilex/pheno-override.css" }
-)
+Write-Host "  Staging theme files for upload..." -ForegroundColor Gray
 
-foreach ($css in $cssFiles) {
-    $localFile = Join-Path $ThemeDir $css.File
-    $remotePath = "${RemoteThemeDir}/$($css.Dest)"
+# Copy CSS files
+Copy-Item (Join-Path $ThemeDir "main.css") "$StagingThemeDir\main.css"
+Copy-Item (Join-Path $ThemeDir "hamburgers.css") "$StagingThemeDir\hamburgers.css"
+Copy-Item (Join-Path $ThemeDir "fix.css") "$StagingThemeDir\fix.css"
+Copy-Item (Join-Path $ThemeDir "pheno-override.css") "$StagingThemeDir\pheno-override.css"
 
-    scp -i $SSHKey $localFile "${User}@${Server}:${remotePath}" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to upload $($css.File)"
-        exit 1
-    }
-}
-Write-Host "  [OK] Uploaded CSS files (main, hamburgers, fix)" -ForegroundColor Green
+# Copy SCSS settings and config
+Copy-Item (Join-Path $ThemeDir "_settings.scss") "$StagingThemeDir\_settings.scss"
+Copy-Item (Join-Path $ThemeDir "opensilex.yml") "$StagingThemeDir\opensilex.yml"
 
-# Upload SCSS settings and theme config
-$configFiles = @(
-    @{ File = "_settings.scss"; Dest = "front/theme/opensilex/_settings.scss" }
-    @{ File = "opensilex.yml"; Dest = "front/theme/opensilex/opensilex.yml" }
-)
-
-foreach ($config in $configFiles) {
-    $localFile = Join-Path $ThemeDir $config.File
-    $remotePath = "${RemoteThemeDir}/$($config.Dest)"
-
-    scp -i $SSHKey $localFile "${User}@${Server}:${remotePath}" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to upload $($config.File)"
-        exit 1
-    }
-}
-Write-Host "  [OK] Uploaded SCSS settings and theme config" -ForegroundColor Green
-
-# Upload processed SCSS component files
+# Copy processed SCSS component files
 $scssUploadCount = 0
 foreach ($scssFile in $ScssComponents) {
     $localFile = Join-Path $TempScssDir $scssFile
-
-    # Skip if file wasn't processed (doesn't exist in temp dir)
-    if (-not (Test-Path $localFile)) {
-        continue
-    }
-
-    $remotePath = "${RemoteThemeDir}/front/theme/opensilex/$scssFile"
-
-    scp -i $SSHKey $localFile "${User}@${Server}:${remotePath}" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to upload $scssFile"
-        exit 1
-    }
-    $scssUploadCount++
-}
-Write-Host "  [OK] Uploaded $scssUploadCount processed SCSS component files" -ForegroundColor Green
-
-# Upload logos (array of objects to allow same source file to multiple destinations)
-$logoMappings = @(
-    @{ Local = "images\pheno-logo-green.svg"; Remote = "front/opensilex.png" }
-    @{ Local = "images\pheno-logo-green.svg"; Remote = "front/theme/opensilex/images/logo-opensilex.png" }
-    @{ Local = "images\pheno-logo-green.svg"; Remote = "front/theme/opensilex/images/logo-opensilex_miniature.png" }
-    @{ Local = "images\pheno-logo-green.svg"; Remote = "front/theme/opensilex/images/dashboardLogo.svg" }
-    @{ Local = "images\PheNo_logo_long_Green.svg"; Remote = "front/theme/opensilex/images/logo-phis.svg" }
-    @{ Local = "images\PheNo_logo_long_White.svg"; Remote = "front/theme/opensilex/images/pheno-logo-white.svg" }
-    @{ Local = "images\PheNo_logo_long_White.svg"; Remote = "front/pheno-logo-white.svg" }
-)
-
-foreach ($mapping in $logoMappings) {
-    $localFile = Join-Path $ThemeDir $mapping.Local
-    $remotePath = "${RemoteThemeDir}/$($mapping.Remote)"
-
-    scp -i $SSHKey $localFile "${User}@${Server}:${remotePath}" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to upload $($mapping.Local)"
-        exit 1
+    if (Test-Path $localFile) {
+        Copy-Item $localFile "$StagingThemeDir\$scssFile"
+        $scssUploadCount++
     }
 }
-Write-Host "  [OK] Uploaded logo files" -ForegroundColor Green
+
+# Copy logos to multiple destinations
+Copy-Item (Join-Path $ThemeDir "images\pheno-logo-green.svg") (Join-Path $StagingDir "front\opensilex.png")
+Copy-Item (Join-Path $ThemeDir "images\pheno-logo-green.svg") "$StagingThemeDir\images\logo-opensilex.png"
+Copy-Item (Join-Path $ThemeDir "images\pheno-logo-green.svg") "$StagingThemeDir\images\logo-opensilex_miniature.png"
+Copy-Item (Join-Path $ThemeDir "images\pheno-logo-green.svg") "$StagingThemeDir\images\dashboardLogo.svg"
+Copy-Item (Join-Path $ThemeDir "images\PheNo_logo_long_Green.svg") "$StagingThemeDir\images\logo-phis.svg"
+Copy-Item (Join-Path $ThemeDir "images\PheNo_logo_long_White.svg") "$StagingThemeDir\images\pheno-logo-white.svg"
+Copy-Item (Join-Path $ThemeDir "images\PheNo_logo_long_White.svg") (Join-Path $StagingDir "front\pheno-logo-white.svg")
+
+Write-Host "  [OK] Staged $($scssUploadCount + 13) theme files" -ForegroundColor Green
+
+# Clean up old theme directory on server and recreate
+Write-Host "  Preparing server directory..." -ForegroundColor Gray
+& ssh -i $SSHKey "$User@$Server" "rm -rf $RemoteThemeDir && mkdir -p $RemoteThemeDir"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to prepare server directory"
+    exit 1
+}
+
+# Upload entire staging directory using recursive scp
+Write-Host "  Uploading theme files to server..." -ForegroundColor Gray
+& scp -i $SSHKey -q -r "$StagingDir/*" "${User}@${Server}:${RemoteThemeDir}/"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to upload theme files"
+    exit 1
+}
+Write-Host "  [OK] Uploaded theme files" -ForegroundColor Green
+
+# Clean up local staging
+Remove-Item $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "  [OK] Theme upload complete ($($scssUploadCount + 13) files)" -ForegroundColor Green
 Write-Host ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -319,7 +291,7 @@ Write-Host ""
 Write-Host "[5/7] Injecting theme into opensilex-front.jar..." -ForegroundColor Yellow
 
 # Create backup of JAR
-$backupCmd = "docker exec $ContainerName bash -c 'cp /home/opensilex/bin/modules/opensilex-front.jar /home/opensilex/bin/modules/opensilex-front.jar.backup-\$(date +%Y%m%d-%H%M%S) && echo Backup created'"
+$backupCmd = "docker exec $ContainerName bash -c 'cp /home/opensilex/bin/modules/opensilex-front.jar /home/opensilex/bin/modules/opensilex-front.jar.backup-`$(date +%Y%m%d-%H%M%S) && echo Backup created'"
 $output = ssh -i $SSHKey "$User@$Server" $backupCmd 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to create JAR backup"
