@@ -266,3 +266,115 @@ jobs:
             `,
               labels: ['testing', 'automated', 'health-check']
             });
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [tier2-api-tests, tier3-performance, tier3-security]
+    # Only deploy on push events (not scheduled runs) and only if core tests pass
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/debian-11-production' &&
+      needs.tier2-api-tests.result == 'success' &&
+      needs.tier3-performance.result == 'success' &&
+      needs.tier3-security.result == 'success'
+
+    # Require manual approval for production deployments
+    environment:
+      name: production
+      url: https://phis.pheno.no/sandbox/app/
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.OPENSILEX_SERVER }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy updated code to server
+        env:
+          SERVER: ${{ secrets.OPENSILEX_SERVER }}
+        run: |
+          echo "=========================================="
+          echo "Deploying to Production Server"
+          echo "=========================================="
+
+          # Upload deployment scripts and configs
+          scp -i ~/.ssh/id_ed25519 -r \
+            tools/docker-deployment \
+            deploy-environment.ps1 \
+            azureuser@${SERVER}:/tmp/phis-deploy/
+
+          # Note: We don't upload tools/config/* (contains secrets, already on server)
+
+          echo "[OK] Uploaded deployment files"
+
+      - name: Apply patches and theme
+        env:
+          SERVER: ${{ secrets.OPENSILEX_SERVER }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 azureuser@${SERVER} << 'ENDSSH'
+            set -e
+
+            echo "=========================================="
+            echo "Applying Production Updates"
+            echo "=========================================="
+
+            cd ~/opensilex-docker-compose
+
+            # Apply patches (if source code changed)
+            if [ -f "/tmp/phis-deploy/tools/docker-deployment/03-apply-patches.ps1" ]; then
+              echo "[1/2] Applying security patches..."
+              pwsh /tmp/phis-deploy/tools/docker-deployment/03-apply-patches.ps1 \
+                -Server localhost \
+                -ApiKeysFile ~/phis-config/api-keys-production.conf || echo "Patches already applied or not needed"
+            fi
+
+            # Apply theme (if theme files changed)
+            if [ -f "/tmp/phis-deploy/tools/docker-deployment/04-apply-theme.ps1" ]; then
+              echo "[2/2] Applying PheNo theme..."
+              pwsh /tmp/phis-deploy/tools/docker-deployment/04-apply-theme.ps1 \
+                -Server localhost || echo "Theme already applied or not needed"
+            fi
+
+            # Verify OpenSILEX is running
+            docker compose ps opensilex
+
+            echo "=========================================="
+            echo "Production Deployment Complete"
+            echo "=========================================="
+          ENDSSH
+
+      - name: Verify deployment
+        env:
+          API_URL: ${{ secrets.OPENSILEX_API_URL }}
+        run: |
+          echo "Verifying production API is responsive..."
+          sleep 10  # Give service time to restart if needed
+
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${API_URL}/security/authentication)
+
+          if [ "$response" -eq 200 ]; then
+            echo "✅ Production API is healthy (HTTP $response)"
+          else
+            echo "❌ Production API returned HTTP $response"
+            exit 1
+          fi
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "🚀 DEPLOYMENT SUCCESSFUL"
+          echo "=========================================="
+          echo ""
+          echo "Production URL: https://phis.pheno.no/sandbox/app/"
+          echo "API Endpoint: https://phis.pheno.no/sandbox/rest"
+          echo ""
+          echo "Deployed changes from: ${{ github.sha }}"
+          echo "=========================================="
