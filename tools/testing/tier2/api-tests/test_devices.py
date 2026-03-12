@@ -33,7 +33,12 @@ class TestDevicesAPI:
 
         # If we get 500, check the error message for more context
         if response.status_code == 500:
-            error_msg = response.json().get('metadata', {}).get('status', [{}])[0].get('message', 'Unknown error')
+            try:
+                metadata = response.json().get('metadata', {})
+                status_list = metadata.get('status', [])
+                error_msg = status_list[0].get('message', 'Unknown error') if len(status_list) > 0 else 'Unknown error'
+            except (KeyError, IndexError, AttributeError):
+                error_msg = 'Unknown error'
             pytest.fail(f"Server error creating device: {error_msg}")
 
         assert response.status_code in [200, 201], f"Expected 200/201, got {response.status_code}: {response.text}"
@@ -51,7 +56,12 @@ class TestDevicesAPI:
 
         # If we get 500, provide helpful error
         if response.status_code == 500:
-            error_msg = response.json().get('metadata', {}).get('status', [{}])[0].get('message', 'Unknown error')
+            try:
+                metadata = response.json().get('metadata', {})
+                status_list = metadata.get('status', [])
+                error_msg = status_list[0].get('message', 'Unknown error') if len(status_list) > 0 else 'Unknown error'
+            except (KeyError, IndexError, AttributeError):
+                error_msg = 'Unknown error'
             pytest.fail(f"Server error listing devices: {error_msg}")
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
@@ -104,7 +114,12 @@ class TestDevicesAPI:
 
         # Provide helpful error message if update fails
         if response.status_code != 200:
-            error_msg = response.json().get('metadata', {}).get('status', [{}])[0].get('message', 'Unknown error')
+            try:
+                metadata = response.json().get('metadata', {})
+                status_list = metadata.get('status', [])
+                error_msg = status_list[0].get('message', 'Unknown error') if len(status_list) > 0 else 'Unknown error'
+            except (KeyError, IndexError, AttributeError):
+                error_msg = 'Unknown error'
             pytest.fail(f"Failed to update device (HTTP {response.status_code}): {error_msg}")
 
         assert response.status_code == 200
