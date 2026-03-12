@@ -74,7 +74,8 @@ echo ""
 print_warning "IMPORTANT: Before proceeding, update FEIDE configuration:"
 print_warning "1. Go to: https://dashboard.dataporten.no/"
 print_warning "2. Find your application (PHIS)"
-print_warning "3. Update Redirect URI to: https://$DOMAIN/app/openid"
+print_warning "3. Update Redirect URI to: https://$DOMAIN/sandbox/app/openid"
+print_warning "   Note: The config template uses /sandbox/app/openid for FEIDE OAuth"
 print_warning "4. Save changes"
 echo ""
 read -p "Have you updated FEIDE Dashboard? (yes/no): " FEIDE_UPDATED
@@ -166,7 +167,7 @@ server {
     }
 }
 
-# HTTPS server - main application (proxy to HAProxy)
+# HTTPS server - main application (proxy to OpenSILEX)
 server {
     listen 443 ssl http2;
     server_name ${DOMAIN};
@@ -188,7 +189,19 @@ server {
     # Increase client max body size for file uploads
     client_max_body_size 100M;
 
-    # Proxy settings - forward directly to OpenSILEX container
+    # Redirect /sandbox/app/ to /app/ (for Feide/OpenID callback compatibility)
+    # Note: Feide may redirect to /sandbox/app/openid but OpenSILEX serves frontend at /app/
+    location /sandbox/app/ {
+        rewrite ^/sandbox(/app/.*)$ \$1 permanent;
+    }
+
+    # Redirect root to /app/ (OpenSILEX serves frontend here)
+    # Note: OpenSILEX has inconsistent path behavior - frontend on /app/, API on /sandbox/rest/
+    location = / {
+        return 301 /app/;
+    }
+
+    # Proxy all other requests to OpenSILEX container
     # Note: We proxy to OpenSILEX directly instead of HAProxy to avoid port 80 conflict
     # HAProxy was using port 80, but nginx now handles HTTPS on port 80/443
     location / {
@@ -255,6 +268,18 @@ if [ -f "$OPENSILEX_CUSTOM_CONFIG" ]; then
     # Hardcode HTTPS redirectURI in template (replaces template variable)
     sed -i "/redirectURI:/c\    redirectURI: \"https://${DOMAIN}/sandbox/app/openid\"" "$OPENSILEX_CUSTOM_CONFIG"
 
+    # Add publicURI override at the end of the config (ensures it takes precedence)
+    # This fixes the "Web API" button redirect issue
+    if ! grep -q "# Override publicURI to use HTTPS domain" "$OPENSILEX_CUSTOM_CONFIG"; then
+        echo "" >> "$OPENSILEX_CUSTOM_CONFIG"
+        echo "# Override publicURI to use HTTPS domain" >> "$OPENSILEX_CUSTOM_CONFIG"
+        echo "server:" >> "$OPENSILEX_CUSTOM_CONFIG"
+        echo "  publicURI: \"https://${DOMAIN}/\"" >> "$OPENSILEX_CUSTOM_CONFIG"
+        print_status "Added publicURI override to config template"
+    else
+        print_status "publicURI override already exists in config template"
+    fi
+
     print_success "Template updated: opensilex-custom-config.yml"
 else
     print_warning "Custom config template not found at: $OPENSILEX_CUSTOM_CONFIG"
@@ -317,6 +342,8 @@ print_success "OpenSILEX is now accessible via HTTPS"
 echo ""
 echo "Configuration Summary:"
 echo "• Domain: https://$DOMAIN"
+echo "• Web App: https://$DOMAIN/app/"
+echo "• REST API: https://$DOMAIN/sandbox/rest/"
 echo "• SSL Certificate: Let's Encrypt (auto-renewing)"
 echo "• HTTP → HTTPS: Automatic redirect enabled"
 echo "• FEIDE OAuth: Using HTTPS endpoint"
