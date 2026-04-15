@@ -294,12 +294,12 @@ if (-not $SkipRebuild) {
         Write-Host "  Using down/up to reload Feide environment variables" -ForegroundColor Gray
         $RebuildCmd = "cd $RemoteDeployDir && " +
                       "$DockerComposeBase down opensilex && " +
-                      "$DockerComposeBase build --build-arg UID=1001 --build-arg GID=1001 opensilex && " +
+                      "$DockerComposeBase build --no-cache --progress=plain --build-arg UID=1001 --build-arg GID=1001 opensilex && " +
                       "$DockerComposeBase up -d opensilex"
     } else {
         $RebuildCmd = "cd $RemoteDeployDir && " +
                       "$DockerComposeBase stop opensilex && " +
-                      "$DockerComposeBase build --build-arg UID=1001 --build-arg GID=1001 opensilex && " +
+                      "$DockerComposeBase build --no-cache --progress=plain --build-arg UID=1001 --build-arg GID=1001 opensilex && " +
                       "$DockerComposeBase up -d opensilex"
     }
 
@@ -386,6 +386,9 @@ else
     exit 1
 fi
 '@
+
+        # Convert Windows CRLF to Unix LF (PowerShell heredocs create \r\n endings)
+        $CreateGroupCmd = $CreateGroupCmd -replace "`r`n", "`n"
 
         # Execute group creation script on server
         $CreateGroupResult = ssh -i $SSHKey "$User@$Server" $CreateGroupCmd 2>&1
