@@ -157,7 +157,9 @@ if ($existingVM) {
         Start-Sleep -Seconds 10
     }
 
-    $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip" -ErrorAction SilentlyContinue
+    # Use the correct public IP name (existing or newly created)
+    $publicIPName = if ($UseExistingPublicIP) { $ExistingPublicIPName } else { "$VMName-ip" }
+    $publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $publicIPName -ErrorAction SilentlyContinue
     if ($publicIP) {
         $VMIPAddress = $publicIP.IpAddress
         Write-Host "  VM is running at: $VMIPAddress" -ForegroundColor Green
@@ -263,7 +265,9 @@ Write-Host "Waiting for VM to be ready..." -ForegroundColor Yellow
 
 Start-Sleep -Seconds 20
 
-$publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name "$VMName-ip"
+# Use the correct public IP name (existing or newly created)
+$publicIPName = if ($UseExistingPublicIP) { $ExistingPublicIPName } else { "$VMName-ip" }
+$publicIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $publicIPName
 $VMIPAddress = $publicIP.IpAddress
 
 Write-Host "  VM IP Address: $VMIPAddress" -ForegroundColor Green
