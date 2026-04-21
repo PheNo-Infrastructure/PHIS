@@ -133,7 +133,7 @@ Click "Save" and wait 1-2 minutes for changes to propagate.
 ```powershell
 # Upload the HTTPS configuration script
 scp -i ~/.ssh/id_ed25519 `
-  tools/docker-deployment/05-configure-https.sh `
+  tools/docker-deployment/06-configure-https.sh `
   azureuser@172.211.86.191:~/
 ```
 
@@ -146,8 +146,8 @@ ssh azureuser@172.211.86.191
 
 **Run the script:**
 ```bash
-chmod +x ~/05-configure-https.sh
-sudo ~/05-configure-https.sh
+chmod +x ~/06-configure-https.sh
+sudo ~/06-configure-https.sh
 ```
 
 ### 3.3 What the Script Does
@@ -174,7 +174,7 @@ If the script fails at DNS verification but you know DNS is configured:
 ```bash
 # Set domain explicitly and skip DNS check
 export DOMAIN="phis.pheno.no"
-sudo DOMAIN="$DOMAIN" ~/05-configure-https.sh
+sudo DOMAIN="$DOMAIN" ~/06-configure-https.sh
 ```
 
 ---
