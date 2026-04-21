@@ -210,9 +210,13 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+
+        # Timeout configuration - allow up to 6 minutes for complex RDF4J queries
+        # This prevents nginx from killing connections before patch 003 can complete
+        # Patch 003 forces JSON format to avoid RDF4J binary parser bug on device creation
+        proxy_connect_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 360s;
 
         # WebSocket support
         proxy_http_version 1.1;
