@@ -57,7 +57,6 @@ param(
     [switch]$SkipVM,
     [switch]$SkipDocker,
     [switch]$SkipOpenSILEX,
-    [switch]$SkipGraphDB,
     [switch]$SkipFeide,
     [switch]$SkipPatches,
     [switch]$SkipTheme
@@ -110,6 +109,9 @@ if (-not $TargetIP) {
     }
     Write-Host "  VM will be created with new IP (will be determined after VM creation)" -ForegroundColor Yellow
 }
+
+# Derive base URI: use HTTPS domain for production, IP for sandbox/test
+$BaseURI = if ($config.domain) { "https://$($config.domain)/" } else { "http://$TargetIP/" }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1: Create/Verify Azure VM
@@ -175,17 +177,19 @@ if (-not $SkipDocker) {
 if (-not $SkipOpenSILEX) {
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  [3/6] Deploying OpenSILEX" -ForegroundColor Cyan
+    Write-Host "  [3/6] Deploying OpenSILEX with GraphDB" -ForegroundColor Cyan
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
     if (Test-Path $ApiKeysPath) {
-        & "$PSScriptRoot\tools\docker-deployment\01-deploy-opensilex.ps1" `
+        & "$PSScriptRoot\tools\docker-deployment\01-deploy-opensilex-graphdb.ps1" `
             -TargetIP $TargetIP `
+            -BaseURI $BaseURI `
             -ApiKeysFile $ApiKeysPath
     } else {
-        & "$PSScriptRoot\tools\docker-deployment\01-deploy-opensilex.ps1" `
-            -TargetIP $TargetIP
+        & "$PSScriptRoot\tools\docker-deployment\01-deploy-opensilex-graphdb.ps1" `
+            -TargetIP $TargetIP `
+            -BaseURI $BaseURI
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -198,51 +202,17 @@ if (-not $SkipOpenSILEX) {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 3.5: Migrate to GraphDB (Always - GraphDB is more stable than RDF4J)
-# ─────────────────────────────────────────────────────────────────────────────
-
-if (-not $SkipOpenSILEX -and -not $SkipGraphDB) {
-    Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  [3.5/7] Migrating to GraphDB (RDF4J → GraphDB)" -ForegroundColor Cyan
-    Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  GraphDB is now the default triplestore (RDF4J has parser bugs on large datasets)." -ForegroundColor Yellow
-    Write-Host ""
-
-    & "$PSScriptRoot\tools\docker-deployment\02-migrate-to-graphdb.ps1" -Server $TargetIP
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ""
-        Write-Host "[FAIL] GraphDB migration failed" -ForegroundColor Red
-        Write-Host "You can retry manually later:" -ForegroundColor Yellow
-        Write-Host "  .\tools\docker-deployment\02-migrate-to-graphdb.ps1 -Server $TargetIP" -ForegroundColor Gray
-        exit 1
-    }
-
-    Write-Host ""
-    Write-Host "  ✓ GraphDB migration complete" -ForegroundColor Green
-    Write-Host "  Note: RDF4J patch 003 removed (no longer needed with GraphDB)" -ForegroundColor Gray
-} else {
-    if ($SkipGraphDB) {
-        Write-Host "[SKIP] GraphDB migration (keeping RDF4J)" -ForegroundColor Yellow
-    } else {
-        Write-Host "[SKIP] GraphDB migration (OpenSILEX deployment skipped)" -ForegroundColor Yellow
-    }
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Step 4: Configure Feide/OpenID
 # ─────────────────────────────────────────────────────────────────────────────
 
 if (-not $SkipFeide -and (Test-Path $ApiKeysPath)) {
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  [4/7] Configuring Feide/OpenID" -ForegroundColor Cyan
+    Write-Host "  [4/6] Configuring Feide/OpenID" -ForegroundColor Cyan
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
-    & "$PSScriptRoot\tools\docker-deployment\03-configure-feide.ps1" `
+    & "$PSScriptRoot\tools\docker-deployment\02-configure-feide.ps1" `
         -TargetIP $TargetIP `
         -ApiKeysFile $ApiKeysPath
 
@@ -262,11 +232,11 @@ if (-not $SkipFeide -and (Test-Path $ApiKeysPath)) {
 if (-not $SkipPatches) {
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  [5/7] Applying Security Patches" -ForegroundColor Cyan
+    Write-Host "  [5/6] Applying Security Patches" -ForegroundColor Cyan
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
-    & "$PSScriptRoot\tools\docker-deployment\04-apply-patches.ps1" -Server $TargetIP -ApiKeysFile $ApiKeysPath
+    & "$PSScriptRoot\tools\docker-deployment\03-apply-patches.ps1" -Server $TargetIP -ApiKeysFile $ApiKeysPath
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
@@ -284,11 +254,11 @@ if (-not $SkipPatches) {
 if (-not $SkipTheme) {
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  [6/7] Applying PheNo Theme" -ForegroundColor Cyan
+    Write-Host "  [6/6] Applying PheNo Theme" -ForegroundColor Cyan
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
-    & "$PSScriptRoot\tools\docker-deployment\05-apply-theme.ps1" -Server $TargetIP
+    & "$PSScriptRoot\tools\docker-deployment\04-apply-theme.ps1" -Server $TargetIP
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
@@ -306,11 +276,11 @@ if (-not $SkipTheme) {
 if ($Environment -eq "production" -and $config.domain) {
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  [7/7] Configuring HTTPS (Production)" -ForegroundColor Cyan
+    Write-Host "  [7/6] Configuring HTTPS (Production)" -ForegroundColor Cyan
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
-    & "$PSScriptRoot\tools\docker-deployment\06-configure-https.ps1" `
+    & "$PSScriptRoot\tools\docker-deployment\05-configure-https.ps1" `
         -Server $TargetIP `
         -Domain $config.domain
 

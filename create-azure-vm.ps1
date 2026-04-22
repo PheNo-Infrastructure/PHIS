@@ -216,6 +216,27 @@ if (-not $rg) {
     Write-Host "  Using existing resource group: $ResourceGroupName" -ForegroundColor Green
 }
 
+# Ensure the named public IP exists before ARM deployment (in case resource group was deleted and recreated)
+if ($UseExistingPublicIP) {
+    $existingIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $ExistingPublicIPName -ErrorAction SilentlyContinue
+    if (-not $existingIP) {
+        Write-Host "  Public IP '$ExistingPublicIPName' not found - creating it..." -ForegroundColor Yellow
+        New-AzPublicIpAddress `
+            -ResourceGroupName $ResourceGroupName `
+            -Name $ExistingPublicIPName `
+            -Location $Location `
+            -AllocationMethod Static `
+            -Sku Standard | Out-Null
+        $existingIP = Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $ExistingPublicIPName
+        Write-Host "  Created public IP: $ExistingPublicIPName ($($existingIP.IpAddress))" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  *** NOTE: New IP assigned: $($existingIP.IpAddress) ***" -ForegroundColor Yellow
+        Write-Host "  *** Update DNS records and vm-config-sandbox.json staticIP if needed ***" -ForegroundColor Yellow
+    } else {
+        Write-Host "  Public IP found: $ExistingPublicIPName ($($existingIP.IpAddress))" -ForegroundColor Green
+    }
+}
+
 Write-Host ""
 
 # Deploy VM using ARM template
