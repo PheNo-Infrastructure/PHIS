@@ -42,7 +42,7 @@
 #>
 
 param(
-    [string]$Server = "20.61.108.197",
+    [string]$Server = "",
     [string]$User = "azureuser",
     [string]$SSHKey = "~/.ssh/id_ed25519",
     [string]$PatchedImage = "",
@@ -58,6 +58,14 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PatchesDir = Join-Path $ScriptDir "patches"
 $FeideConfigFile = Join-Path $PatchesDir "feide-openid-config.yml"
 $RemoteDeployDir = "~/opensilex-docker-compose"
+
+# Auto-detect patched image from git remote if not specified
+if (-not $PatchedImage) {
+    $GitRemote = git remote get-url origin 2>$null
+    if ($GitRemote -match 'github\.com[:/]([^/]+)/') {
+        $PatchedImage = "ghcr.io/$($Matches[1])/opensilex-phis:latest"
+    }
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Load Feide credentials from API keys file (if provided)

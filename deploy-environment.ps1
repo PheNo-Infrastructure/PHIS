@@ -120,6 +120,14 @@ $BaseURI = if ($config.domain) { "https://$($config.domain)/" } else { "http://$
 # Derive alias: first segment of domain (e.g. "phis" from "phis.pheno.no") or environment name
 $BaseURIAlias = if ($config.domain) { $config.domain.Split('.')[0] } else { $Environment }
 
+# Auto-detect patched image from git remote if not specified
+if (-not $PatchedImage) {
+    $GitRemote = git remote get-url origin 2>$null
+    if ($GitRemote -match 'github\.com[:/]([^/]+)/') {
+        $PatchedImage = "ghcr.io/$($Matches[1])/opensilex-phis:latest"
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1: Create/Verify Azure VM
 # ─────────────────────────────────────────────────────────────────────────────
