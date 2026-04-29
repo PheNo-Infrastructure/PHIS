@@ -92,7 +92,10 @@ param(
     [string]$ApiKeysFile = "",
 
     [Parameter(Mandatory=$false)]
-    [string]$BaseURI = ""
+    [string]$BaseURI = "",
+
+    [Parameter(Mandatory=$false)]
+    [string]$BaseURIAlias = "local"
 )
 
 $ErrorActionPreference = "Stop"
@@ -437,6 +440,7 @@ cat >> opensilex-custom-config.yml << 'GRAPHDB_CONFIG'
 # GraphDB SPARQL endpoint and resource base URI
 ontologies:
   baseURI: "$BaseURI"
+  baseURIAlias: "$BaseURIAlias"
   sparql:
     config:
       serverURI: http://sandbox-opensilex-docker-graphdb:7200
