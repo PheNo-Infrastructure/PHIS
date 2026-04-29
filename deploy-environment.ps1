@@ -59,7 +59,11 @@ param(
     [switch]$SkipOpenSILEX,
     [switch]$SkipFeide,
     [switch]$SkipPatches,
-    [switch]$SkipTheme
+    [switch]$SkipTheme,
+
+    # Pre-built patched image from ghcr.io. Build via GitHub Actions before deploying.
+    # e.g. ghcr.io/siv017/opensilex-phis:latest
+    [string]$PatchedImage = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -241,7 +245,7 @@ if (-not $SkipPatches) {
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
 
-    & "$PSScriptRoot\tools\docker-deployment\03-apply-patches.ps1" -Server $TargetIP -ApiKeysFile $ApiKeysPath
+    & "$PSScriptRoot\tools\docker-deployment\03-apply-patches.ps1" -Server $TargetIP -ApiKeysFile $ApiKeysPath -PatchedImage $PatchedImage
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
