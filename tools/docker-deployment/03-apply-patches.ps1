@@ -286,6 +286,11 @@ if (-not $SkipRebuild) {
         Write-Host "  Created opensilex.env from .env (required by docker-compose.yml)" -ForegroundColor Gray
     }
 
+    # Configure Docker daemon to remove the 2MiB per-step log cap that clips Maven output
+    # (one-time setup, no-op if already configured)
+    $ConfigureLogSize = 'if [ ! -f /etc/systemd/system/docker.service.d/buildkit-log.conf ]; then sudo mkdir -p /etc/systemd/system/docker.service.d && printf ''[Service]\nEnvironment="BUILDKIT_STEP_LOG_MAX_SIZE=-1"\n'' | sudo tee /etc/systemd/system/docker.service.d/buildkit-log.conf > /dev/null && sudo systemctl daemon-reload && sudo systemctl restart docker && sleep 5 && echo "Docker daemon configured for unlimited build log size"; fi'
+    ssh -i $SSHKey -o StrictHostKeyChecking=no "$User@$Server" $ConfigureLogSize
+
     # Build docker-compose command
     $DockerComposeBase = "docker compose --env-file opensilex.env"
 

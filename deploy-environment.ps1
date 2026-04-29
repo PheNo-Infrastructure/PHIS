@@ -113,6 +113,9 @@ if (-not $TargetIP) {
 # Derive base URI: use HTTPS domain for production, IP for sandbox/test
 $BaseURI = if ($config.domain) { "https://$($config.domain)/" } else { "http://$TargetIP/" }
 
+# Derive alias: first segment of domain (e.g. "phis" from "phis.pheno.no") or environment name
+$BaseURIAlias = if ($config.domain) { $config.domain.Split('.')[0] } else { $Environment }
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1: Create/Verify Azure VM
 # ─────────────────────────────────────────────────────────────────────────────
@@ -185,11 +188,13 @@ if (-not $SkipOpenSILEX) {
         & "$PSScriptRoot\tools\docker-deployment\01-deploy-opensilex-graphdb.ps1" `
             -TargetIP $TargetIP `
             -BaseURI $BaseURI `
+            -BaseURIAlias $BaseURIAlias `
             -ApiKeysFile $ApiKeysPath
     } else {
         & "$PSScriptRoot\tools\docker-deployment\01-deploy-opensilex-graphdb.ps1" `
             -TargetIP $TargetIP `
-            -BaseURI $BaseURI
+            -BaseURI $BaseURI `
+            -BaseURIAlias $BaseURIAlias
     }
 
     if ($LASTEXITCODE -ne 0) {
