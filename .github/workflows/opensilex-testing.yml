@@ -1,15 +1,6 @@
 name: OpenSILEX Testing Suite
 
 on:
-  push:
-    branches:
-      - docker-compose-official
-      - main
-      - master
-      - production
-      - debian-11-production
-  schedule:
-    - cron: '0 2 * * *'
   workflow_dispatch:
 
 jobs:
