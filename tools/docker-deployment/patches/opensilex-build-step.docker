@@ -34,7 +34,7 @@ RUN for patch in /patches/*.patch; do \
 # Aether timeouts prevent indefinite hangs when Maven checks remote repos.
 # Force Wagon transport for reliable timeout behavior with Maven 3.9+.
 RUN (mvn clean install -DskipTests \
-       -Drevision=1.4.7.1 \
+       -Drevision=1.5.0 \
        -Dmaven.resolver.transport=wagon \
        -Dmaven.wagon.http.connectionTimeout=5000 \
        -Dmaven.wagon.http.readTimeout=10000 \
@@ -46,7 +46,7 @@ RUN (mvn clean install -DskipTests \
        -exec sed -i 's/\([a-zA-Z_][a-zA-Z0-9_]*\)::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.\2.bind(\1)/g' {} + && \
      echo "Retrying build with patched vuelayers..." && \
      mvn install -DskipTests -rf :opensilex-front \
-       -Drevision=1.4.7.1 \
+       -Drevision=1.5.0 \
        -Dmaven.resolver.transport=wagon \
        -Dmaven.wagon.http.connectionTimeout=5000 \
        -Dmaven.wagon.http.readTimeout=10000 \
