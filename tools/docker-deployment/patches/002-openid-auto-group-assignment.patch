@@ -30,3 +30,95 @@ index 9dc1c04..1314d05 100644
          if (authentication.authenticate(user, accountDAO.getCredentialList(user.getUri()))) {
              String token = user.getToken();
              URI samlLandingPageUri = authentication.buildSAMLLandingPageURI(token);
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
+new file mode 100644
+index 0000000..50d6a55
+--- /dev/null
++++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
+@@ -0,0 +1,86 @@
++package org.opensilex.security.service;
++
++import org.opensilex.security.account.dal.AccountModel;
++import org.opensilex.security.group.dal.GroupDAO;
++import org.opensilex.security.group.dal.GroupModel;
++import org.opensilex.security.group.dal.GroupUserProfileModel;
++import org.opensilex.security.profile.dal.ProfileDAO;
++import org.opensilex.security.profile.dal.ProfileModel;
++import org.opensilex.sparql.service.SPARQLService;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.net.URI;
++import java.util.ArrayList;
++import java.util.List;
++
++public class SecurityAutoAssignmentService {
++    private static final Logger LOGGER = LoggerFactory.getLogger(SecurityAutoAssignmentService.class);
++    private static final String DEFAULT_GROUP_NAME = "Users";
++    private static final String DEFAULT_PROFILE_NAME = "Default profile";
++
++    public static void assignToDefaultGroupIfNew(AccountModel user, SPARQLService sparql) {
++        if (user == null || user.getUri() == null || sparql == null) {
++            return;
++        }
++        try {
++            GroupDAO groupDAO = new GroupDAO(sparql);
++            List<URI> userGroups = groupDAO.getGroupUriList(user);
++            if (userGroups != null && !userGroups.isEmpty()) {
++                return;
++            }
++            GroupModel usersGroup = findGroupByName(groupDAO, DEFAULT_GROUP_NAME);
++            if (usersGroup == null) {
++                LOGGER.warn("Default group not found. Create it manually in OpenSILEX UI.");
++                return;
++            }
++            ProfileDAO profileDAO = new ProfileDAO(sparql);
++            ProfileModel defaultProfile = findProfileByName(profileDAO, DEFAULT_PROFILE_NAME);
++            if (defaultProfile == null) {
++                LOGGER.warn("Default profile not found. Create it manually in OpenSILEX UI.");
++                return;
++            }
++            GroupUserProfileModel groupUserProfile = new GroupUserProfileModel();
++            groupUserProfile.setUser(user);
++            groupUserProfile.setProfile(defaultProfile);
++            List<GroupUserProfileModel> userProfiles = usersGroup.getUserProfiles();
++            if (userProfiles == null) {
++                userProfiles = new ArrayList<>();
++                usersGroup.setUserProfiles(userProfiles);
++            }
++            userProfiles.add(groupUserProfile);
++            groupDAO.update(usersGroup);
++            LOGGER.info("Auto-assigned new user {} to default group", user.getEmail());
++        } catch (Exception e) {
++            LOGGER.error("Failed to auto-assign user to default group: " + e.getMessage(), e);
++        }
++    }
++
++    private static GroupModel findGroupByName(GroupDAO groupDAO, String name) throws Exception {
++        try {
++            List<GroupModel> allGroups = groupDAO.search(name, null, null, 0, 0).getList();
++            for (GroupModel group : allGroups) {
++                if (name.equals(group.getName())) {
++                    return group;
++                }
++            }
++        } catch (Exception e) {
++            LOGGER.error("Error searching for group: {}", e.getMessage());
++        }
++        return null;
++    }
++
++    private static ProfileModel findProfileByName(ProfileDAO profileDAO, String name) throws Exception {
++        try {
++            List<ProfileModel> allProfiles = profileDAO.search(name, null, 0, 0).getList();
++            for (ProfileModel profile : allProfiles) {
++                if (name.equals(profile.getName())) {
++                    return profile;
++                }
++            }
++        } catch (Exception e) {
++            LOGGER.error("Error searching for profile: {}", e.getMessage());
++        }
++        return null;
++    }
++}
