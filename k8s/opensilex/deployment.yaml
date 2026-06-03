@@ -123,7 +123,7 @@ spec:
               ./bin/opensilex.sh server start
           env:
             - name: OPENSILEX_CONFIG_DIR
-              value: /home/opensilex/config-gen
+              value: /home/opensilex/config
           ports:
             - containerPort: 8666
             - containerPort: 8667
@@ -160,7 +160,7 @@ spec:
               memory: "2Gi"
           volumeMounts:
             - name: config-gen
-              mountPath: /home/opensilex/config-gen
+              mountPath: /home/opensilex/config
               readOnly: true
             - name: data
               mountPath: /home/opensilex/data
