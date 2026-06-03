@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensilex
+  namespace: phis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensilex
+  template:
+    metadata:
+      labels:
+        app: opensilex
+    spec:
+      # Remove imagePullSecrets if the GHCR package is set to public.
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      # initContainers run sequentially before the main container starts.
+      # Each must exit 0. This replaces Docker Compose's depends_on/condition.
+      initContainers:
+        # Fix PVC permissions: Azure Disk mounts as root, but opensilex runs as UID 1001.
+        - name: fix-permissions
+          image: busybox:1.36
+          securityContext:
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - "chown -R 1001:1001 /home/opensilex/data && chmod 755 /home/opensilex/data"
+          volumeMounts:
+            - name: data
+              mountPath: /home/opensilex/data
+
+        # Wait for MongoDB replica set to be ready.
+        - name: wait-for-mongodb
+          image: mongo:6.0
+          command:
+            - sh
+            - -c
+            - |
+              until mongosh --host mongodb:27017 --eval "rs.status().ok" --quiet | grep -q "1"; do
+                sleep 5
+              done
+              echo "MongoDB is ready."
+
+        # Wait for GraphDB, then write the install marker if ontologies are already loaded.
+        # OpenSILEX stores accounts in SPARQL (GraphDB), not MongoDB.
+        # Marker guards against system install re-running on pod restarts.
+        - name: wait-for-graphdb
+          image: curlimages/curl:8.6.0
+          securityContext:
+            runAsUser: 0
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://graphdb:7200/rest/repositories/opensilex; do
+                sleep 10
+              done
+              echo "GraphDB repository is ready."
+              # OpenSILEX stores ontologies in named graphs. Check the oeso vocabulary graph
+              # as a stable install indicator (not IP-dependent, loaded by SPARQLModule).
+              ONTO_RESULT=$(curl -sf \
+                -H "Accept: application/sparql-results+json" \
+                -G http://graphdb:7200/repositories/opensilex \
+                --data-urlencode "query=ASK { GRAPH <http://www.opensilex.org/vocabulary/oeso> { ?s ?p ?o } }")
+              if echo "$ONTO_RESULT" | grep -q '"boolean" : true'; then
+                touch /home/opensilex/data/.installed
+                echo "Ontologies already loaded. Marking as installed."
+              else
+                echo "No ontologies found. system install will run."
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /home/opensilex/data
+
+      containers:
+        - name: opensilex
+          image: ghcr.io/lversen/opensilex-phis:1.5.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              cd /home/opensilex
+              MARKER=/home/opensilex/data/.installed
+              if [ ! -f "$MARKER" ]; then
+                echo "Fresh install: running system install..."
+                ./bin/opensilex.sh system install && touch "$MARKER"
+              else
+                echo "Already installed, skipping system install."
+              fi
+              ./bin/opensilex.sh server start
+          env:
+            - name: OPENSILEX_CONFIG_DIR
+              value: /home/opensilex/config
+          ports:
+            - containerPort: 8666
+            - containerPort: 8667
+          # startupProbe runs until it succeeds (or exhausts failureThreshold).
+          # During this window the liveness probe is suspended — safe for slow starters.
+          # 60 attempts × 10s = 10 minutes max before Kubernetes gives up.
+          startupProbe:
+            httpGet:
+              path: /app/rest/core/ping
+              port: 8666
+            failureThreshold: 60
+            periodSeconds: 10
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /app/rest/core/ping
+              port: 8666
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 4
+          livenessProbe:
+            httpGet:
+              path: /app/rest/core/ping
+              port: 8666
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /home/opensilex/config/opensilex.yml
+              subPath: opensilex.yml
+              readOnly: true
+            - name: data
+              mountPath: /home/opensilex/data
+
+      volumes:
+        # ConfigMap projected as a file at /home/opensilex/config/opensilex.yml
+        - name: config
+          configMap:
+            name: opensilex-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: opensilex-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opensilex-data
+  namespace: phis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

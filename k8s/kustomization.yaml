@@ -1,0 +1,23 @@
+# Apply the entire stack with: kubectl apply -k k8s/
+# Resources are applied in the order listed.
+# K8s processes them all, but actual startup order is governed by
+# the StatefulSet readinessProbe and the initContainers in OpenSILEX.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: phis
+
+resources:
+  - namespace.yaml
+  - mongodb/service.yaml
+  - mongodb/statefulset.yaml
+  - mongodb-init/job.yaml
+  - graphdb/pvc.yaml
+  - graphdb/service.yaml
+  - graphdb/sealedsecret.yaml
+  - graphdb/nginx-config.yaml
+  - graphdb/deployment.yaml
+  - graphdb-init/job.yaml
+  - opensilex/configmap.yaml
+  - opensilex/service.yaml
+  - opensilex/deployment.yaml

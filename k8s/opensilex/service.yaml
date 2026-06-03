@@ -1,0 +1,19 @@
+# LoadBalancer: on AKS/GKE/EKS, the cloud provisions a public load balancer.
+# Run "kubectl get service opensilex -n phis" to see the EXTERNAL-IP
+# once the cloud finishes provisioning it (~1-2 minutes).
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensilex
+  namespace: phis
+spec:
+  type: LoadBalancer
+  selector:
+    app: opensilex
+  ports:
+    - name: http
+      port: 8666
+      targetPort: 8666
+    - name: admin
+      port: 8667
+      targetPort: 8667
