@@ -1,6 +1,5 @@
-# LoadBalancer: on AKS/GKE/EKS, the cloud provisions a public load balancer.
-# Run "kubectl get service opensilex -n phis" to see the EXTERNAL-IP
-# once the cloud finishes provisioning it (~1-2 minutes).
+# Public LoadBalancer: exposes only the web UI port (8666).
+# On AKS, run "kubectl get service opensilex -n phis" to see EXTERNAL-IP.
 apiVersion: v1
 kind: Service
 metadata:
@@ -14,6 +13,19 @@ spec:
     - name: http
       port: 8666
       targetPort: 8666
+---
+# Admin port (8667) on ClusterIP only — never exposed to the internet.
+# Access via: kubectl port-forward -n phis svc/opensilex-admin 8667:8667
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensilex-admin
+  namespace: phis
+spec:
+  type: ClusterIP
+  selector:
+    app: opensilex
+  ports:
     - name: admin
       port: 8667
       targetPort: 8667
