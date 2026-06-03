@@ -32,17 +32,48 @@ spec:
             - name: data
               mountPath: /home/opensilex/data
 
-        # Wait for MongoDB replica set to be ready.
+        # Substitute ${MONGO_APP_PASSWORD} in opensilex.yml using the K8s secret.
+        # The generated config is written to an emptyDir volume at /home/opensilex/config-gen.
+        - name: generate-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              sed "s|\${MONGO_APP_PASSWORD}|${MONGO_APP_PASSWORD}|g" \
+                /config-template/opensilex.yml > /config-gen/opensilex.yml
+              echo "Config generated."
+          env:
+            - name: MONGO_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-credentials
+                  key: opensilex-password
+          volumeMounts:
+            - name: config
+              mountPath: /config-template
+            - name: config-gen
+              mountPath: /config-gen
+
+        # Wait for MongoDB replica set to be ready (using root credentials for auth).
         - name: wait-for-mongodb
           image: mongo:6.0
           command:
             - sh
             - -c
             - |
-              until mongosh --host mongodb:27017 --eval "rs.status().ok" --quiet | grep -q "1"; do
+              until mongosh --host mongodb:27017 \
+                -u root -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+                --eval "rs.status().ok" --quiet 2>/dev/null | grep -q "1"; do
                 sleep 5
               done
               echo "MongoDB is ready."
+          env:
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-credentials
+                  key: root-password
 
         # Wait for GraphDB, then write the install marker if ontologies are already loaded.
         # OpenSILEX stores accounts in SPARQL (GraphDB), not MongoDB.
@@ -92,7 +123,7 @@ spec:
               ./bin/opensilex.sh server start
           env:
             - name: OPENSILEX_CONFIG_DIR
-              value: /home/opensilex/config
+              value: /home/opensilex/config-gen
           ports:
             - containerPort: 8666
             - containerPort: 8667
@@ -120,19 +151,28 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
           volumeMounts:
-            - name: config
-              mountPath: /home/opensilex/config/opensilex.yml
-              subPath: opensilex.yml
+            - name: config-gen
+              mountPath: /home/opensilex/config-gen
               readOnly: true
             - name: data
               mountPath: /home/opensilex/data
 
       volumes:
-        # ConfigMap projected as a file at /home/opensilex/config/opensilex.yml
+        # ConfigMap template (contains ${MONGO_APP_PASSWORD} placeholder).
+        # generate-config initContainer renders it into config-gen emptyDir.
         - name: config
           configMap:
             name: opensilex-config
+        - name: config-gen
+          emptyDir: {}
         - name: data
           persistentVolumeClaim:
             claimName: opensilex-data

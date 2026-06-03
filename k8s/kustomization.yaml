@@ -10,8 +10,8 @@ namespace: phis
 resources:
   - namespace.yaml
   - mongodb/service.yaml
+  - mongodb/sealedsecret.yaml
   - mongodb/statefulset.yaml
-  - mongodb-init/job.yaml
   - graphdb/pvc.yaml
   - graphdb/service.yaml
   - graphdb/sealedsecret.yaml

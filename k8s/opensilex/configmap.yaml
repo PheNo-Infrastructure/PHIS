@@ -30,6 +30,12 @@ data:
           host: "mongodb"
           port: 27017
           database: "opensilex"
+          authentication:
+            implementation: org.opensilex.nosql.mongodb.auth.password.PasswordMongoAuthentication
+            config:
+              login: "opensilex"
+              password: "${MONGO_APP_PASSWORD}"
+              authDB: "admin"
 
     file-system:
       fs:
