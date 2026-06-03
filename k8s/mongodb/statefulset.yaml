@@ -18,16 +18,83 @@ spec:
         - name: mongodb
           image: mongo:6.0
           command:
-            - mongod
-            - --replSet
-            - opensilex
-            - --port
-            - "27017"
-            - --bind_ip_all
+            - sh
+            - -c
+            - |
+              # On fresh cluster: initialize replica set and users before enabling auth.
+              # The .auth_initialized marker prevents re-running on restarts.
+              MARKER=/data/db/.auth_initialized
+              if [ ! -f "$MARKER" ]; then
+                # Start mongod temporarily without auth for initialization
+                mongod --replSet opensilex --port 27017 --bind_ip_all \
+                  --dbpath /data/db --fork --logpath /tmp/mongod-init.log
+
+                # Wait for mongod to accept connections
+                until mongosh --quiet --eval "db.adminCommand('ping').ok" 2>/dev/null | grep -q "^1"; do sleep 2; done
+
+                # Initialize replica set if not already done
+                mongosh --quiet --eval "
+                  try {
+                    rs.status();
+                    print('Replica set already initialized');
+                  } catch(e) {
+                    rs.initiate({
+                      _id: 'opensilex',
+                      members: [{_id: 0, host: 'mongodb-0.mongodb.phis.svc.cluster.local:27017'}]
+                    });
+                    print('Replica set initialized');
+                  }
+                " 2>/dev/null || true
+
+                # Wait for PRIMARY state
+                until mongosh --quiet --eval "rs.status().myState" 2>/dev/null | grep -q "^1"; do sleep 2; done
+
+                # Create users (runs under localhost exception — no auth yet)
+                mongosh --quiet --eval "
+                  var u = db.getSiblingDB('admin').getUser('root');
+                  if (!u) {
+                    db.getSiblingDB('admin').createUser({
+                      user: 'root',
+                      pwd: process.env.MONGO_ROOT_PASSWORD,
+                      roles: [{role: 'root', db: 'admin'}]
+                    });
+                    db.getSiblingDB('admin').createUser({
+                      user: 'opensilex',
+                      pwd: process.env.MONGO_APP_PASSWORD,
+                      roles: [
+                        {role: 'readWrite', db: 'opensilex'},
+                        {role: 'clusterMonitor', db: 'admin'}
+                      ]
+                    });
+                    print('Users created');
+                  } else {
+                    print('Users already exist');
+                  }
+                " 2>/dev/null || true
+
+                touch "$MARKER"
+
+                # Shut down the init mongod
+                mongod --port 27017 --dbpath /data/db --shutdown 2>/dev/null || true
+                sleep 3
+              fi
+
+              # Start final mongod with auth and keyFile
+              exec mongod --replSet opensilex --port 27017 --bind_ip_all \
+                --dbpath /data/db --auth --keyFile /etc/mongodb/keyfile
+          env:
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-credentials
+                  key: root-password
+            - name: MONGO_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mongodb-credentials
+                  key: opensilex-password
           ports:
             - containerPort: 27017
-          # readinessProbe: K8s equivalent of Docker Compose healthcheck.
-          # Traffic is only sent to the pod once this passes.
           readinessProbe:
             exec:
               command:
@@ -48,11 +115,30 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
           volumeMounts:
             - name: mongodb-data
               mountPath: /data/db
             - name: mongodb-config
               mountPath: /data/configdb
+            - name: mongodb-keyfile
+              mountPath: /etc/mongodb/keyfile
+              subPath: keyfile
+              readOnly: true
+      volumes:
+        - name: mongodb-keyfile
+          secret:
+            secretName: mongodb-credentials
+            items:
+              - key: keyfile
+                path: keyfile
+            defaultMode: 0400
   # volumeClaimTemplates: StatefulSet-specific feature.
   # Each pod gets its OWN PVC generated from this template (named
   # mongodb-data-mongodb-0, mongodb-config-mongodb-0, etc.).
