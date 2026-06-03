@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graphdb-nginx-config
+  namespace: phis
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 7201;
+
+        # OpenSILEX system install tries to PUT a repository config with rdf4j:LmdbStore,
+        # which GraphDB rejects. Return 204 so install proceeds to ontology loading.
+        location ~ ^/repositories/[^/]+/config$ {
+          if ($request_method ~ "^(PUT|POST)$") {
+            return 204;
+          }
+          proxy_pass http://127.0.0.1:7200;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+        }
+
+        location / {
+          proxy_pass http://127.0.0.1:7200;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_read_timeout 300s;
+          proxy_connect_timeout 10s;
+        }
+      }
+    }

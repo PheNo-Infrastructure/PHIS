@@ -16,3 +16,4 @@ nul
 id_rsa*
 id_ed25519*
 .ssh/
+k8s/graphdb/secret.yaml

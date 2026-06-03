@@ -1,0 +1,18 @@
+# ClusterIP Service: the default type.
+# Allocates a stable virtual IP accessible only within the cluster.
+# "graphdb:7200" in opensilex.yml resolves to this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphdb
+  namespace: phis
+spec:
+  selector:
+    app: graphdb
+  ports:
+    - name: http
+      port: 7200
+      targetPort: 7201
+    - name: http-default
+      port: 80
+      targetPort: 7201

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensilex-config
+  namespace: phis
+data:
+  opensilex.yml: |
+    # Service hostnames resolve via K8s DNS within the "phis" namespace.
+    # "mongodb" and "graphdb" match the Service names in this repo.
+
+    server:
+      publicURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com:8666/"
+
+    ontologies:
+      baseURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com/"
+      baseURIAlias: "phis"
+      sparql:
+        config:
+          serverURI: "http://graphdb:7200"
+          repository: "opensilex"
+          maxConnections: 10
+          connectionTimeout: 30000
+          readTimeout: 60000
+          queryTimeout: 120000
+
+    big-data:
+      mongodb:
+        implementation: org.opensilex.nosql.mongodb.MongoDBService
+        config:
+          host: "mongodb"
+          port: 27017
+          database: "opensilex"
+
+    file-system:
+      fs:
+        config:
+          defaultFS: "local"
+          connections:
+            local:
+              implementation: org.opensilex.fs.local.LocalFileSystemConnection
+              config:
+                basePath: "/home/opensilex/data/files"

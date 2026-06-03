@@ -1,0 +1,18 @@
+# Headless Service: clusterIP: None means no virtual IP is allocated.
+# DNS for "mongodb" resolves directly to pod IPs instead.
+# StatefulSet uses this to give mongodb-0 the stable hostname:
+#   mongodb-0.mongodb.phis.svc.cluster.local
+# OpenSILEX's config (host: "mongodb") also resolves here fine.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: phis
+spec:
+  clusterIP: None
+  selector:
+    app: mongodb
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
