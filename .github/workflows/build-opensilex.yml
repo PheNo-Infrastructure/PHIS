@@ -31,7 +31,7 @@ jobs:
         run: git clone --depth 1 https://github.com/OpenSILEX/opensilex-docker-compose.git build-context
 
       - name: Copy patches into build context
-        run: cp -r tools/docker-deployment/patches build-context/patches
+        run: cp -r tools/patches build-context/patches
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -47,7 +47,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: build-context
-          file: tools/docker-deployment/patches/opensilex-build-step.docker
+          file: tools/patches/opensilex-build-step.docker
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
