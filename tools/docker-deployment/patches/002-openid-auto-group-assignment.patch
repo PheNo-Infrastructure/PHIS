@@ -81,12 +81,12 @@ index 0000000..50d6a55
 +            GroupUserProfileModel groupUserProfile = new GroupUserProfileModel();
 +            groupUserProfile.setUser(user);
 +            groupUserProfile.setProfile(defaultProfile);
-+            List<GroupUserProfileModel> userProfiles = usersGroup.getUserProfiles();
-+            if (userProfiles == null) {
-+                userProfiles = new ArrayList<>();
-+                usersGroup.setUserProfiles(userProfiles);
-+            }
-+            userProfiles.add(groupUserProfile);
++            List<GroupUserProfileModel> existing = usersGroup.getUserProfiles();
++            List<GroupUserProfileModel> mutable = existing != null
++                ? new ArrayList<>(existing)
++                : new ArrayList<>();
++            mutable.add(groupUserProfile);
++            usersGroup.setUserProfiles(mutable);
 +            groupDAO.update(usersGroup);
 +            LOGGER.info("Auto-assigned new user {} to default group", user.getEmail());
 +        } catch (Exception e) {
