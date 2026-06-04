@@ -1,0 +1,58 @@
+# Service hostnames resolve via K8s DNS within the "phis" namespace.
+# "mongodb" and "graphdb" match the Service names in this repo.
+
+server:
+  publicURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com:8666/"
+
+ontologies:
+  baseURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com/"
+  baseURIAlias: "phis"
+  sparql:
+    config:
+      serverURI: "http://graphdb:7200"
+      repository: "opensilex"
+      maxConnections: 10
+      connectionTimeout: 30000
+      readTimeout: 60000
+      queryTimeout: 120000
+
+big-data:
+  mongodb:
+    implementation: org.opensilex.nosql.mongodb.MongoDBService
+    config:
+      host: "mongodb"
+      port: 27017
+      database: "opensilex"
+      authentication:
+        implementation: org.opensilex.nosql.mongodb.auth.password.PasswordMongoAuthentication
+        config:
+          login: "opensilex"
+          password: "${MONGO_APP_PASSWORD}"
+          authDB: "admin"
+
+file-system:
+  fs:
+    config:
+      defaultFS: "local"
+      connections:
+        local:
+          implementation: org.opensilex.fs.local.LocalFileSystemConnection
+          config:
+            basePath: "/home/opensilex/data/files"
+
+security:
+  openID:
+    enable: true
+    scopes: ["openid", "userid", "profile", "email", "userinfo-name", "userinfo-mail"]
+    userIdClaim: "sub"
+    userNameClaim: "name"
+    userEmailClaim: "https://n.feide.no/claims/eduPersonPrincipalName"
+    userFirstNameClaim: "given_name"
+    userLastNameClaim: "family_name"
+    providerURI: "https://auth.dataporten.no"
+    redirectURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com:8666/app/openid"
+    clientID: "${FEIDE_CLIENT_ID}"
+    clientSecret: "${FEIDE_CLIENT_SECRET}"
+    connectionTitle:
+      en: "Login with Feide"
+      no: "Logg inn med Feide"
