@@ -19,5 +19,6 @@ resources:
   - graphdb/deployment.yaml
   - graphdb-init/job.yaml
   - opensilex/configmap.yaml
+  - opensilex/feide-sealedsecret.yaml
   - opensilex/service.yaml
   - opensilex/deployment.yaml
