@@ -3,8 +3,12 @@ name: Build Patched OpenSILEX
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'OpenSILEX release tag (e.g. 1.5.0)'
+      image_version:
+        description: 'Image tag to push to GHCR (e.g. 1.5.0.1)'
+        required: true
+        default: '1.5.0.1'
+      opensilex_tag:
+        description: 'Upstream OpenSILEX git tag to build from (e.g. 1.5.0)'
         required: true
         default: '1.5.0'
 
@@ -47,9 +51,9 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ inputs.image_version }}
           build-args: |
-            OPENSILEX_RELEASE_TAG=${{ inputs.version }}
+            OPENSILEX_RELEASE_TAG=${{ inputs.opensilex_tag }}
             INTERNAL_DATA_DIRECTORY=data
           cache-from: type=gha
           cache-to: type=gha,mode=max
