@@ -145,21 +145,21 @@ spec:
           # 60 attempts × 10s = 10 minutes max before Kubernetes gives up.
           startupProbe:
             httpGet:
-              path: /app/rest/core/ping
+              path: /rest/core/system/info
               port: 8666
             failureThreshold: 60
             periodSeconds: 10
             timeoutSeconds: 10
           readinessProbe:
             httpGet:
-              path: /app/rest/core/ping
+              path: /rest/core/system/info
               port: 8666
             periodSeconds: 15
             timeoutSeconds: 10
             failureThreshold: 4
           livenessProbe:
             httpGet:
-              path: /app/rest/core/ping
+              path: /rest/core/system/info
               port: 8666
             periodSeconds: 30
             timeoutSeconds: 10
