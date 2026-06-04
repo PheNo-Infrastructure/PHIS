@@ -46,3 +46,20 @@ data:
               implementation: org.opensilex.fs.local.LocalFileSystemConnection
               config:
                 basePath: "/home/opensilex/data/files"
+
+    security:
+      openID:
+        enable: true
+        scopes: ["openid", "userid", "profile", "email", "userinfo-name", "userinfo-mail"]
+        userIdClaim: "sub"
+        userNameClaim: "name"
+        userEmailClaim: "https://n.feide.no/claims/eduPersonPrincipalName"
+        userFirstNameClaim: "given_name"
+        userLastNameClaim: "family_name"
+        providerURI: "https://auth.dataporten.no"
+        redirectURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com:8666/app/openid"
+        clientID: "${FEIDE_CLIENT_ID}"
+        clientSecret: "${FEIDE_CLIENT_SECRET}"
+        connectionTitle:
+          en: "Login with Feide"
+          no: "Logg inn med Feide"
