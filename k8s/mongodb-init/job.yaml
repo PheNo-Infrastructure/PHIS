@@ -4,6 +4,7 @@ metadata:
   name: mongodb-init
   namespace: phis
 spec:
+  ttlSecondsAfterFinished: 86400
   # Job retries up to 10 times with exponential backoff.
   # Retries cover the window while MongoDB is starting up.
   backoffLimit: 10

@@ -4,6 +4,7 @@ metadata:
   name: graphdb-init
   namespace: phis
 spec:
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 10
   template:
     spec:
