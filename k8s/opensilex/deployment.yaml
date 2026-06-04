@@ -108,7 +108,7 @@ spec:
 
       containers:
         - name: opensilex
-          image: ghcr.io/lversen/opensilex-phis:1.5.0
+          image: ghcr.io/lversen/opensilex-phis:1.5.0.1
           command: ["sh", "-c"]
           args:
             - |
