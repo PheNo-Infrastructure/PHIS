@@ -54,6 +54,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ inputs.image_version }}
           build-args: |
             OPENSILEX_RELEASE_TAG=${{ inputs.opensilex_tag }}
+            IMAGE_VERSION=${{ inputs.image_version }}
             INTERNAL_DATA_DIRECTORY=data
           cache-from: type=gha
           cache-to: type=gha,mode=max
