@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opensilex-init
+  namespace: phis
+spec:
+  # Auto-delete 24h after completion so FluxCD can re-create it on cluster reset.
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 20
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: opensilex-init
+          image: curlimages/curl:8.6.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              OPENSILEX_URL="http://opensilex:8666"
+              ADMIN_EMAIL="admin@opensilex.org"
+              ADMIN_PASSWORD="admin"
+
+              echo "Waiting for OpenSILEX REST API..."
+              until curl -sf "$OPENSILEX_URL/rest/core/system/info" > /dev/null 2>&1; do
+                echo "  Not ready, retrying in 15s..."
+                sleep 15
+              done
+              echo "OpenSILEX is ready."
+
+              echo "Authenticating as $ADMIN_EMAIL..."
+              AUTH_RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/authenticate" \
+                -H "Content-Type: application/json" \
+                -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}") || true
+
+              TOKEN=$(echo "$AUTH_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+
+              if [ -z "$TOKEN" ]; then
+                echo "WARNING: Could not authenticate with default credentials."
+                echo "  If the admin password was changed, create the 'Users' group manually"
+                echo "  in the OpenSILEX UI under Security -> Groups."
+                exit 0
+              fi
+              echo "Authenticated."
+
+              echo "Checking for 'Users' group..."
+              GROUPS=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
+                -H "Authorization: Bearer $TOKEN") || true
+
+              if echo "$GROUPS" | grep -q '"name":"Users"'; then
+                echo "'Users' group already exists. Nothing to do."
+                exit 0
+              fi
+
+              echo "Creating 'Users' group..."
+              RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Content-Type: application/json" \
+                -d '{"name":"Users","description":"Default group for Feide/OpenID users","user_profiles":[]}') || true
+
+              if echo "$RESPONSE" | grep -q '"result"'; then
+                echo "'Users' group created successfully."
+              else
+                echo "WARNING: Unexpected response creating 'Users' group: $RESPONSE"
+              fi
+
+              echo "Init complete."

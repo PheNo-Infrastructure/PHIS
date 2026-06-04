@@ -22,3 +22,4 @@ resources:
   - opensilex/feide-sealedsecret.yaml
   - opensilex/service.yaml
   - opensilex/deployment.yaml
+  - opensilex-init/job.yaml
