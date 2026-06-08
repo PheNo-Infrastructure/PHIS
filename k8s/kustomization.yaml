@@ -10,15 +10,15 @@ namespace: phis
 resources:
   - namespace.yaml
   - mongodb/service.yaml
-  - mongodb/sealedsecret.yaml
+  - mongodb/externalsecret.yaml
   - mongodb/statefulset.yaml
   - graphdb/pvc.yaml
   - graphdb/service.yaml
-  - graphdb/sealedsecret.yaml
+  - graphdb/externalsecret.yaml
   - graphdb/nginx-config.yaml
   - graphdb/deployment.yaml
   - graphdb-init/job.yaml
-  - opensilex/feide-sealedsecret.yaml
+  - opensilex/externalsecret.yaml
   - opensilex/service.yaml
   - opensilex/deployment.yaml
   - opensilex-init/job.yaml
