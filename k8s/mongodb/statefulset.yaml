@@ -147,6 +147,7 @@ spec:
     - metadata:
         name: mongodb-data
       spec:
+        storageClassName: managed-csi
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
@@ -154,6 +155,7 @@ spec:
     - metadata:
         name: mongodb-config
       spec:
+        storageClassName: managed-csi
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
