@@ -122,7 +122,7 @@ spec:
       containers:
         - name: opensilex
           image: ghcr.io/lversen/opensilex-phis:1.5.0.2
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           command: ["sh", "-c"]
           args:
             - |
@@ -197,6 +197,7 @@ metadata:
   name: opensilex-data
   namespace: phis
 spec:
+  storageClassName: managed-csi
   accessModes:
     - ReadWriteOnce
   resources:

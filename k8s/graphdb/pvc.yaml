@@ -6,6 +6,7 @@ metadata:
 spec:
   # ReadWriteOnce: only one node can mount this volume at a time.
   # This is fine for a single-replica Deployment.
+  storageClassName: managed-csi
   accessModes:
     - ReadWriteOnce
   resources:
