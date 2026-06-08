@@ -18,3 +18,10 @@ id_ed25519*
 .ssh/
 k8s/graphdb/secret.yaml
 k8s/mongodb/secret.yaml
+
+# Terraform — never commit real variable values or state
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
