@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+subscription_id = "<your-azure-subscription-id>"   # az account show --query id -o tsv
+
+# Key Vault name must be globally unique across all Azure tenants (3-24 chars).
+# If "phis-kv" is taken, add your initials: "phis-kv-si"
+key_vault_name  = "phis-kv"
