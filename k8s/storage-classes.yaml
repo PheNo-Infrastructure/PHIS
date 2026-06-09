@@ -11,8 +11,8 @@
 
 ---
 # For OpenSILEX application data.
-# uid/gid=1001 makes all files appear owned by the opensilex process user,
-# eliminating the need for a chown initContainer (which blobfuse2 doesn't support).
+# 0777 mode gives the opensilex process (uid 1001) write access since --uid/--gid
+# flags are not supported on this AKS blobfuse2 version (mount is owned by root).
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -27,10 +27,8 @@ allowVolumeExpansion: true
 volumeBindingMode: Immediate
 mountOptions:
   - -o allow_other
-  - --uid=1001
-  - --gid=1001
-  - --file-mode=0755
-  - --dir-mode=0755
+  - --file-mode=0777
+  - --dir-mode=0777
   - --file-cache-timeout-in-seconds=120
 
 ---
