@@ -10,9 +10,9 @@
 # account (in phis-rg, not the MC_ node resource group) is intact.
 
 ---
-# For OpenSILEX application data.
-# 0777 mode gives the opensilex process (uid 1001) write access since --uid/--gid
-# flags are not supported on this AKS blobfuse2 version (mount is owned by root).
+# For OpenSILEX application data. OpenSILEX runs as root (uid=0) so no uid
+# mapping is needed. blobfuse2 v2.5.3 does not support --uid/--gid/--file-mode
+# CLI flags; the mount is root-owned and root can write directly.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -26,10 +26,8 @@ reclaimPolicy: Retain
 allowVolumeExpansion: true
 volumeBindingMode: Immediate
 mountOptions:
-  - -o allow_other
-  - --file-mode=0777
-  - --dir-mode=0777
-  - --file-cache-timeout-in-seconds=120
+  - --allow-other
+  - --file-cache-timeout=120
 
 ---
 # For backup CronJob PVs. No uid/gid override — backup jobs run as root.
@@ -47,5 +45,5 @@ reclaimPolicy: Retain
 allowVolumeExpansion: true
 volumeBindingMode: Immediate
 mountOptions:
-  - -o allow_other
-  - --file-cache-timeout-in-seconds=0
+  - --allow-other
+  - --file-cache-timeout=0
