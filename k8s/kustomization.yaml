@@ -9,6 +9,7 @@ namespace: phis
 
 resources:
   - namespace.yaml
+  - storage-classes.yaml
   - mongodb/service.yaml
   - mongodb/externalsecret.yaml
   - mongodb/statefulset.yaml
@@ -18,10 +19,12 @@ resources:
   - graphdb/nginx-config.yaml
   - graphdb/deployment.yaml
   - graphdb-init/job.yaml
+  - opensilex/pvc.yaml
   - opensilex/externalsecret.yaml
   - opensilex/service.yaml
   - opensilex/deployment.yaml
   - opensilex-init/job.yaml
+  - backup/
 
 # Generates a ConfigMap with a content-hash suffix so any change to
 # opensilex.yml automatically triggers a pod rollout via the Deployment

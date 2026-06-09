@@ -18,20 +18,11 @@ spec:
         - name: ghcr-pull-secret
       # initContainers run sequentially before the main container starts.
       # Each must exit 0. This replaces Docker Compose's depends_on/condition.
+      #
+      # Note: no fix-permissions initContainer needed. The azureblob-fuse2-phis
+      # StorageClass sets uid=1001/gid=1001 at mount time, which blobfuse2
+      # enforces at the FUSE level. chown is not supported on blobfuse2 mounts.
       initContainers:
-        # Fix PVC permissions: Azure Disk mounts as root, but opensilex runs as UID 1001.
-        - name: fix-permissions
-          image: busybox:1.36
-          securityContext:
-            runAsUser: 0
-          command:
-            - sh
-            - -c
-            - "chown -R 1001:1001 /home/opensilex/data && chmod 755 /home/opensilex/data"
-          volumeMounts:
-            - name: data
-              mountPath: /home/opensilex/data
-
         # Substitute ${MONGO_APP_PASSWORD} in opensilex.yml using the K8s secret.
         # The generated config is written to an emptyDir volume at /home/opensilex/config-gen.
         - name: generate-config
@@ -190,16 +181,3 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: opensilex-data
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: opensilex-data
-  namespace: phis
-spec:
-  storageClassName: managed-csi
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
