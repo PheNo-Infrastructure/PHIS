@@ -1,0 +1,27 @@
+# Static PV binding to the mongodb-backups container in phistfstate.
+# Using static provisioning so the container has a predictable, human-readable name.
+# The kubelet identity must have Storage Blob Data Contributor on the storage account
+# (set in terraform/resource-group.tf azurerm_role_assignment.kubelet_blob_access).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-backup-pv
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: azureblob-fuse2-backup
+  mountOptions:
+    - -o allow_other
+    - --file-cache-timeout-in-seconds=0
+  csi:
+    driver: blob.csi.azure.com
+    readOnly: false
+    volumeHandle: phis-mongodb-backups
+    volumeAttributes:
+      resourceGroup: phis-rg
+      storageAccount: phistfstate
+      containerName: mongodb-backups
+      protocol: fuse2

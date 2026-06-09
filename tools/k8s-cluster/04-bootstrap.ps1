@@ -101,14 +101,16 @@ if (-not $SkipTerraform) {
 Step 4 "Reading terraform outputs..."
 Push-Location "$RootDir\terraform"
 try {
-    $kvUri    = terraform output -raw key_vault_uri
-    $clientId = terraform output -raw eso_identity_client_id
-    $kvName   = $kvUri -replace "https://", "" -replace "\.vault\.azure\.net/", ""
+    $kvUri              = terraform output -raw key_vault_uri
+    $clientId           = terraform output -raw eso_identity_client_id
+    $storageAccountName = terraform output -raw storage_account_name
+    $kvName             = $kvUri -replace "https://", "" -replace "\.vault\.azure\.net/", ""
 
     terraform output -raw kube_config | Set-Content -Path "$HOME\.kube\config" -Encoding utf8
     Ok "kubeconfig written to $HOME\.kube\config"
     Ok "Key Vault URI: $kvUri"
     Ok "ESO identity client ID: $clientId"
+    Ok "Storage account: $storageAccountName"
 }
 finally { Pop-Location }
 
@@ -176,6 +178,7 @@ kubectl create configmap phis-tf-outputs `
     --namespace flux-system `
     --from-literal="ESO_IDENTITY_CLIENT_ID=$clientId" `
     --from-literal="KEY_VAULT_URI=$kvUri" `
+    --from-literal="STORAGE_ACCOUNT_NAME=$storageAccountName" `
     --dry-run=client -o yaml | kubectl apply -f -
 Ok "ConfigMap applied."
 
