@@ -125,6 +125,14 @@ spec:
               else
                 echo "Already installed, skipping system install."
               fi
+              echo "Ensuring admin@opensilex.org exists..."
+              ./bin/opensilex.sh user add \
+                --admin \
+                --email=admin@opensilex.org \
+                --firstName=Admin \
+                --lastName=Admin \
+                --password=admin \
+                --lang=en 2>&1 | tail -3 || true
               ./bin/opensilex.sh server start
           env:
             - name: OPENSILEX_CONFIG_DIR
