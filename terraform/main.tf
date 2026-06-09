@@ -12,17 +12,18 @@ terraform {
     }
   }
 
-  # Local state for now. To migrate to Azure Blob later:
-  #   1. Add a Storage Account to resource-group.tf
-  #   2. Uncomment the backend block below
-  #   3. Run: terraform init -migrate-state
+  # Terraform state migration to Azure Blob (two-step, run in order):
+  #   Step 1 — DONE: Storage account added to resource-group.tf.
+  #   Step 2: Run: terraform apply    (creates the storage account with local state)
+  #   Step 3: Uncomment the backend block below.
+  #   Step 4: Run: terraform init -migrate-state
   #
-  # backend "azurerm" {
-  #   resource_group_name  = "phis-rg"
-  #   storage_account_name = "phistfstate"
-  #   container_name       = "tfstate"
-  #   key                  = "phis.tfstate"
-  # }
+  backend "azurerm" {
+    resource_group_name  = "phis-rg"
+    storage_account_name = "phistfstate"
+    container_name       = "tfstate"
+    key                  = "phis.tfstate"
+  }
 }
 
 provider "azurerm" {

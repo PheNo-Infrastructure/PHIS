@@ -23,3 +23,8 @@ output "eso_identity_tenant_id" {
   value       = data.azurerm_client_config.current.tenant_id
   description = "Azure tenant ID — same for all resources in this subscription"
 }
+
+output "storage_account_name" {
+  value       = azurerm_storage_account.main.name
+  description = "Storage account for Terraform state, file storage, and backups"
+}

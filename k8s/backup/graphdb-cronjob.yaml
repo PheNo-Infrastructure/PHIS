@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: graphdb-backup
+  namespace: phis
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 0
+          containers:
+            - name: rdf-export
+              image: curlimages/curl:8.6.0
+              securityContext:
+                runAsUser: 0
+              command:
+                - sh
+                - -c
+                - |
+                  FILENAME="/backup/$(date +%Y%m%d-%H%M).trig"
+                  curl -sf \
+                    -u "admin:${GDB_ADMIN_PASSWORD}" \
+                    -H "Accept: application/x-trig" \
+                    "http://graphdb:7200/rest/repositories/opensilex/export" \
+                    -o "$FILENAME"
+                  echo "Backup written: $FILENAME"
+                  find /backup -name "*.trig" -mtime +30 -delete
+                  echo "Old backups pruned (>30 days)."
+              env:
+                - name: GDB_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: graphdb-credentials
+                      key: admin-password
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "200m"
+                  memory: "256Mi"
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: graphdb-backup-pvc

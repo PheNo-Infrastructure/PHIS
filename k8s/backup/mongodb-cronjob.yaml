@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongodb-backup
+  namespace: phis
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 0
+          containers:
+            - name: mongodump
+              image: mongo:6.0
+              command:
+                - sh
+                - -c
+                - |
+                  FILENAME="/backup/$(date +%Y%m%d-%H%M).gz"
+                  mongodump \
+                    --uri="mongodb://opensilex:${MONGO_APP_PASSWORD}@mongodb:27017/opensilex?authSource=admin&replicaSet=opensilex" \
+                    --gzip \
+                    --archive="$FILENAME"
+                  echo "Backup written: $FILENAME"
+                  find /backup -name "*.gz" -mtime +30 -delete
+                  echo "Old backups pruned (>30 days)."
+              env:
+                - name: MONGO_APP_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mongodb-credentials
+                      key: opensilex-password
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "1Gi"
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: mongodb-backup-pvc

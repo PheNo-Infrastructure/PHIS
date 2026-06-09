@@ -1,0 +1,53 @@
+# These StorageClasses use the Azure Blob CSI driver (blob.csi.azure.com).
+# The blob driver must be enabled on the AKS cluster — see terraform/aks.tf
+# storage_profile { blob_driver_enabled = true }.
+#
+# resourceGroup and storageAccount must match var.resource_group_name
+# and var.storage_account_name in terraform/variables.tf.
+#
+# reclaimPolicy: Retain — deleting a PVC does NOT delete the blob container
+# or its contents. Data survives cluster deletion as long as the storage
+# account (in phis-rg, not the MC_ node resource group) is intact.
+
+---
+# For OpenSILEX application data.
+# uid/gid=1001 makes all files appear owned by the opensilex process user,
+# eliminating the need for a chown initContainer (which blobfuse2 doesn't support).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azureblob-fuse2-phis
+provisioner: blob.csi.azure.com
+parameters:
+  resourceGroup: phis-rg
+  storageAccount: phistfstate
+  skuName: Standard_LRS
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+mountOptions:
+  - -o allow_other
+  - --uid=1001
+  - --gid=1001
+  - --file-mode=0755
+  - --dir-mode=0755
+  - --file-cache-timeout-in-seconds=120
+
+---
+# For backup CronJob PVs. No uid/gid override — backup jobs run as root.
+# file-cache-timeout=0 disables caching so backup files are visible immediately.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azureblob-fuse2-backup
+provisioner: blob.csi.azure.com
+parameters:
+  resourceGroup: phis-rg
+  storageAccount: phistfstate
+  skuName: Standard_LRS
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+mountOptions:
+  - -o allow_other
+  - --file-cache-timeout-in-seconds=0

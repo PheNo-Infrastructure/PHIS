@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: graphdb-backup-pvc
+  namespace: phis
+spec:
+  storageClassName: azureblob-fuse2-backup
+  volumeName: graphdb-backup-pv
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi

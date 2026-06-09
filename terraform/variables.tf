@@ -66,3 +66,9 @@ variable "eso_service_account_name" {
   type        = string
   default     = "external-secrets"
 }
+
+variable "storage_account_name" {
+  description = "Storage account for Terraform state, file storage, and backups (globally unique, 3-24 alphanumeric, no hyphens)"
+  type        = string
+  default     = "phistfstate"
+}

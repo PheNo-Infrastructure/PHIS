@@ -25,4 +25,10 @@ resource "azurerm_kubernetes_cluster" "phis" {
   }
 
   role_based_access_control_enabled = true
+
+  # Enable the Azure Blob CSI driver so blobfuse2 PVCs can be provisioned.
+  # This is a non-disruptive addon — no node pool recreation.
+  storage_profile {
+    blob_driver_enabled = true
+  }
 }
