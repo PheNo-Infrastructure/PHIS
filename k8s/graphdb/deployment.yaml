@@ -29,7 +29,7 @@ spec:
                   key: admin-password
             - name: GDB_JAVA_OPTS
               value: >-
-                -Xmx2g -Xms512m
+                -Xmx5g -Xms512m
                 -Dgraphdb.home=/opt/graphdb/home
                 -Dgraphdb.workbench.cors.enable=false
           ports:
@@ -56,7 +56,7 @@ spec:
               memory: "1Gi"
             limits:
               cpu: "2000m"
-              memory: "4Gi"
+              memory: "6Gi"
           volumeMounts:
             - name: graphdb-data
               mountPath: /opt/graphdb/home
