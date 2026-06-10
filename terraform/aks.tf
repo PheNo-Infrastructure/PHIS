@@ -3,6 +3,7 @@ resource "azurerm_kubernetes_cluster" "phis" {
   location            = azurerm_resource_group.phis.location
   resource_group_name = azurerm_resource_group.phis.name
   dns_prefix          = var.cluster_name
+  kubernetes_version  = var.kubernetes_version
 
   # Workload Identity lets pods authenticate to Azure AD using a projected
   # service account token — no stored credentials anywhere in the cluster.

@@ -16,13 +16,19 @@ variable "resource_group_name" {
 variable "location" {
   description = "Azure region"
   type        = string
-  default     = "norwayeast"
+  default     = "westeurope"
 }
 
 variable "cluster_name" {
   description = "AKS cluster name"
   type        = string
   default     = "phis-cluster"
+}
+
+variable "kubernetes_version" {
+  description = "Kubernetes version for the AKS cluster"
+  type        = string
+  default     = "1.33"
 }
 
 variable "node_vm_size" {
