@@ -2,10 +2,10 @@
 # "mongodb" and "graphdb" match the Service names in this repo.
 
 server:
-  publicURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com:8666/"
+  publicURI: "https://phis.pheno.no/"
 
 ontologies:
-  baseURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com/"
+  baseURI: "https://phis.pheno.no/"
   baseURIAlias: "phis"
   sparql:
     config:
@@ -50,7 +50,7 @@ security:
     userFirstNameClaim: "given_name"
     userLastNameClaim: "family_name"
     providerURI: "https://auth.dataporten.no"
-    redirectURI: "http://phis-opensilex.norwayeast.cloudapp.azure.com:8666/app/openid"
+    redirectURI: "https://phis.pheno.no/app/openid"
     clientID: "${FEIDE_CLIENT_ID}"
     clientSecret: "${FEIDE_CLIENT_SECRET}"
     connectionTitle:

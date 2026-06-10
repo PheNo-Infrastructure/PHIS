@@ -22,6 +22,7 @@ resources:
   - opensilex/pvc.yaml
   - opensilex/externalsecret.yaml
   - opensilex/service.yaml
+  - opensilex/ingress.yaml
   - opensilex/deployment.yaml
   - opensilex-init/job.yaml
   - backup/

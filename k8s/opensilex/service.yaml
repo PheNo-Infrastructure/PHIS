@@ -7,10 +7,8 @@ kind: Service
 metadata:
   name: opensilex
   namespace: phis
-  annotations:
-    service.beta.kubernetes.io/azure-dns-label-name: phis-opensilex
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: opensilex
   ports:
