@@ -30,7 +30,7 @@ spec:
                   curl -sf \
                     -u "admin:${GDB_ADMIN_PASSWORD}" \
                     -H "Accept: application/x-trig" \
-                    "http://graphdb:7200/rest/repositories/opensilex/export" \
+                    "http://graphdb:7200/repositories/opensilex/statements" \
                     -o "$FILENAME"
                   echo "Backup written: $FILENAME"
                   find /backup -name "*.trig" -mtime +30 -delete
