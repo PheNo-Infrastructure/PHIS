@@ -41,6 +41,14 @@ resource "azurerm_role_assignment" "kubelet_blob_access" {
   principal_id         = azurerm_kubernetes_cluster.phis.kubelet_identity[0].object_id
 }
 
+# The blob CSI node plugin (runs on each node as the kubelet identity) calls
+# listKeys during MountDevice/NodeStageVolume for static PV fuse2 mounts.
+resource "azurerm_role_assignment" "kubelet_storage_key_operator" {
+  scope                = azurerm_storage_account.main.id
+  role_definition_name = "Storage Account Key Operator Service Role"
+  principal_id         = azurerm_kubernetes_cluster.phis.kubelet_identity[0].object_id
+}
+
 # AKS cluster identity (control plane) needs Storage Blob Data Contributor so
 # the blob CSI controller pod can dynamically provision new blob containers
 # when a PVC with storageClass blob.csi.azure.com is created.
