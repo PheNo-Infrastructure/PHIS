@@ -20,3 +20,6 @@ spec:
     controller:
       service:
         externalTrafficPolicy: Local
+        annotations:
+          service.beta.kubernetes.io/azure-pip-name: "phis-debian12-TEST-ip"
+          service.beta.kubernetes.io/azure-pip-resource-group: "MC_phis-rg_phis-cluster_westeurope"
