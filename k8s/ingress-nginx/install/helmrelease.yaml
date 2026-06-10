@@ -21,6 +21,10 @@ spec:
       service:
         # Use the static IP previously assigned to the production VM.
         # The IP was moved to MC_phis-rg_phis-cluster_norwayeast so AKS can claim it.
+        # azure-pip-name + azure-pip-resource-group bypass the IP-address search and
+        # give the cloud controller an exact resource reference, avoiding case-mismatch
+        # issues that occur when the controller uppercases the resource group name.
         annotations:
-          service.beta.kubernetes.io/azure-load-balancer-ipv4: "172.211.86.191"
+          service.beta.kubernetes.io/azure-pip-name: "phis-debian12-TEST-ip"
+          service.beta.kubernetes.io/azure-pip-resource-group: "MC_phis-rg_phis-cluster_norwayeast"
         externalTrafficPolicy: Local
