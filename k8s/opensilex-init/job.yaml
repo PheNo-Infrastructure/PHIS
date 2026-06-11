@@ -34,7 +34,7 @@ spec:
                 -H "Content-Type: application/json" \
                 -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$OPENSILEX_ADMIN_PASSWORD\"}") || true
 
-              TOKEN=$(echo "$AUTH_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+              TOKEN=$(echo "$AUTH_RESPONSE" | sed -n 's/.*"token" *: *"\([^"]*\)".*/\1/p')
 
               if [ -z "$TOKEN" ]; then
                 echo "ERROR: Could not authenticate. Check opensilex-admin-password in Key Vault."
