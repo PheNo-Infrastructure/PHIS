@@ -22,7 +22,7 @@ spec:
               ADMIN_EMAIL="admin@opensilex.org"
 
               echo "Waiting for OpenSILEX REST API..."
-              until curl -sf "$OPENSILEX_URL/rest/core/system/info" > /dev/null 2>&1; do
+              until curl -sf -H "Host: phis.pheno.no" "$OPENSILEX_URL/rest/core/system/info" > /dev/null 2>&1; do
                 echo "  Not ready, retrying in 15s..."
                 sleep 15
               done
@@ -30,6 +30,7 @@ spec:
 
               echo "Authenticating as $ADMIN_EMAIL..."
               AUTH_RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/authenticate" \
+                -H "Host: phis.pheno.no" \
                 -H "Content-Type: application/json" \
                 -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$OPENSILEX_ADMIN_PASSWORD\"}") || true
 
@@ -43,6 +44,7 @@ spec:
 
               echo "Checking for 'Users' group..."
               GROUPS=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
+                -H "Host: phis.pheno.no" \
                 -H "Authorization: Bearer $TOKEN") || true
 
               if echo "$GROUPS" | grep -q '"name":"Users"'; then
@@ -52,6 +54,7 @@ spec:
 
               echo "Creating 'Users' group..."
               RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
+                -H "Host: phis.pheno.no" \
                 -H "Authorization: Bearer $TOKEN" \
                 -H "Content-Type: application/json" \
                 -d '{"name":"Users","description":"Default group for Feide/OpenID users","user_profiles":[]}') || true
