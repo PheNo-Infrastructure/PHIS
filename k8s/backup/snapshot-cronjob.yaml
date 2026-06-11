@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: disk-snapshot
+  namespace: phis
+spec:
+  schedule: "0 1 * * *"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: snapshot-manager
+          containers:
+            - name: snapshot
+              image: bitnami/kubectl:1.30
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  DATE=$(date +%Y%m%d-%H%M)
+                  RETAIN=7
+
+                  take_snapshot() {
+                    local name="$1-${DATE}"
+                    local pvc="$2"
+                    kubectl apply -f - <<EOF
+                  apiVersion: snapshot.storage.k8s.io/v1
+                  kind: VolumeSnapshot
+                  metadata:
+                    name: ${name}
+                    namespace: phis
+                    labels:
+                      managed-by: snapshot-cronjob
+                      source-pvc: ${pvc}
+                  spec:
+                    volumeSnapshotClassName: csi-disk-snapshots
+                    source:
+                      persistentVolumeClaimName: ${pvc}
+                  EOF
+                    echo "Snapshot created: ${name}"
+                  }
+
+                  prune_snapshots() {
+                    local pvc="$1"
+                    local snaps
+                    snaps=$(kubectl get volumesnapshot -n phis \
+                      -l "managed-by=snapshot-cronjob,source-pvc=${pvc}" \
+                      --sort-by=.metadata.creationTimestamp \
+                      -o name)
+                    local count
+                    count=$(echo "$snaps" | grep -c . || true)
+                    if [ "$count" -gt "$RETAIN" ]; then
+                      local to_delete
+                      to_delete=$(echo "$snaps" | head -n "-${RETAIN}")
+                      echo "$to_delete" | xargs kubectl delete -n phis
+                      echo "Pruned $((count - RETAIN)) old snapshot(s) for ${pvc}"
+                    else
+                      echo "No pruning needed for ${pvc} (${count}/${RETAIN})"
+                    fi
+                  }
+
+                  take_snapshot "mongodb-data" "mongodb-data-mongodb-0"
+                  take_snapshot "graphdb-data" "graphdb-data"
+
+                  prune_snapshots "mongodb-data-mongodb-0"
+                  prune_snapshots "graphdb-data"
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
