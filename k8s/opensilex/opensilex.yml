@@ -41,6 +41,16 @@ file-system:
             basePath: "/home/opensilex/data/files"
 
 security:
+  email:
+    config:
+      enable: true
+      simulateSending: false
+      sender: "DoNotReply@321e53e1-dadf-4465-b273-7e986540596c.azurecomm.net"
+      smtp:
+        host: "smtp.azurecomm.net"
+        port: 587
+        userId: "${SMTP_USERNAME}"
+        userPassword: "${SMTP_PASSWORD}"
   openID:
     enable: true
     scopes: ["openid", "userid", "profile", "email", "userinfo-name", "userinfo-mail"]
