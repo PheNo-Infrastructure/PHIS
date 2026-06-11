@@ -10,3 +10,6 @@ resources:
   - graphdb-backup-pv.yaml
   - graphdb-backup-pvc.yaml
   - graphdb-cronjob.yaml
+  - volumesnapshotclass.yaml
+  - snapshot-rbac.yaml
+  - snapshot-cronjob.yaml
