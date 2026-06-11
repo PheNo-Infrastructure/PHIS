@@ -20,7 +20,6 @@ spec:
               set -e
               OPENSILEX_URL="http://opensilex:8666"
               ADMIN_EMAIL="admin@opensilex.org"
-              ADMIN_PASSWORD="admin"
 
               echo "Waiting for OpenSILEX REST API..."
               until curl -sf "$OPENSILEX_URL/rest/core/system/info" > /dev/null 2>&1; do
@@ -32,15 +31,13 @@ spec:
               echo "Authenticating as $ADMIN_EMAIL..."
               AUTH_RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/authenticate" \
                 -H "Content-Type: application/json" \
-                -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}") || true
+                -d "{\"identifier\":\"$ADMIN_EMAIL\",\"password\":\"$OPENSILEX_ADMIN_PASSWORD\"}") || true
 
               TOKEN=$(echo "$AUTH_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
               if [ -z "$TOKEN" ]; then
-                echo "WARNING: Could not authenticate with default credentials."
-                echo "  If the admin password was changed, create the 'Users' group manually"
-                echo "  in the OpenSILEX UI under Security -> Groups."
-                exit 0
+                echo "ERROR: Could not authenticate. Check opensilex-admin-password in Key Vault."
+                exit 1
               fi
               echo "Authenticated."
 
@@ -66,3 +63,9 @@ spec:
               fi
 
               echo "Init complete."
+          env:
+            - name: OPENSILEX_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensilex-credentials
+                  key: admin-password
