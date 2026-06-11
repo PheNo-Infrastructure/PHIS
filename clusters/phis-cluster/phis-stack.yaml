@@ -5,9 +5,13 @@ metadata:
   name: phis-stack
   namespace: flux-system
 spec:
-  interval: 1m0s
+  interval: 5m0s
   path: ./k8s
   prune: true
+  # external-secrets-stack must reconcile first so ESO CRDs and ClusterSecretStore
+  # exist before Flux tries to apply the ExternalSecret CRs in k8s/.
+  dependsOn:
+    - name: external-secrets-config
   sourceRef:
     kind: GitRepository
     name: flux-system
