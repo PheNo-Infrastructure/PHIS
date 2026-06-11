@@ -35,6 +35,8 @@ spec:
                 -e "s|\${MONGO_APP_PASSWORD}|${MONGO_APP_PASSWORD}|g" \
                 -e "s|\${FEIDE_CLIENT_ID}|${FEIDE_CLIENT_ID}|g" \
                 -e "s|\${FEIDE_CLIENT_SECRET}|${FEIDE_CLIENT_SECRET}|g" \
+                -e "s|\${SMTP_USERNAME}|${SMTP_USERNAME}|g" \
+                -e "s|\${SMTP_PASSWORD}|${SMTP_PASSWORD}|g" \
                 /config-template/opensilex.yml > /config-gen/opensilex.yml
               echo "Config generated."
           env:
@@ -53,6 +55,16 @@ spec:
                 secretKeyRef:
                   name: feide-credentials
                   key: client-secret
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: opensilex-credentials
+                  key: smtp-username
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensilex-credentials
+                  key: smtp-password
           volumeMounts:
             - name: config
               mountPath: /config-template
