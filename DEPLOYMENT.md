@@ -2,7 +2,7 @@
 
 ## Cluster
 
-- **Cluster**: `phis-cluster`, resource group `phis-rg`, region `norwayeast`
+- **Cluster**: `phis-cluster`, resource group `phis-rg`, region `westeurope`
 - **Namespace**: `phis`
 - **Connect**: `az aks get-credentials --resource-group phis-rg --name phis-cluster`
 
@@ -26,7 +26,7 @@ kubectl get kustomization -n flux-system
 
 | Service | Address |
 |---------|---------|
-| OpenSILEX | `http://20.100.143.97:8666/app/` |
+| OpenSILEX | `https://phis.pheno.no/` |
 | Admin port | `kubectl port-forward -n phis svc/opensilex-admin 8667:8667` |
 | GraphDB | ClusterIP only — port 7200 |
 | MongoDB | ClusterIP only — port 27017 |
@@ -50,15 +50,37 @@ kubectl rollout restart deployment/opensilex -n phis
 
 ## Secrets
 
-All secrets are SealedSecrets — encrypted, safe to commit, cluster-specific.
+All secrets are managed by External Secrets Operator (ESO), synced from Azure Key Vault `phis-kv`.
+Kubernetes secrets are created automatically — never commit secret values to git.
 
-| Secret | Keys |
-|--------|------|
-| `mongodb-credentials` | `root-password`, `opensilex-password`, `keyfile` |
-| `graphdb-credentials` | `admin-password` |
-| `feide-credentials` | `client-id`, `client-secret` |
+| Kubernetes Secret | Key Vault Secret(s) | Keys |
+|-------------------|---------------------|------|
+| `mongodb-credentials` | `mongodb-root-password`, `mongodb-opensilex-password`, `mongodb-keyfile` | `root-password`, `opensilex-password`, `keyfile` |
+| `graphdb-credentials` | `graphdb-admin-password` | `admin-password` |
+| `feide-credentials` | `feide-client-id`, `feide-client-secret` | `client-id`, `client-secret` |
+| `opensilex-credentials` | `opensilex-admin-password` | `admin-password` |
+| `ghcr-pull-secret` | `ghcr-pull-secret-json` | `.dockerconfigjson` |
 
-If the cluster is recreated, re-seal all secrets with `kubeseal` using the new cluster's certificate.
+If the cluster is recreated, ESO re-syncs all secrets automatically from Key Vault — no manual step needed.
+
+### Changing the OpenSILEX admin password
+
+The admin password must be kept in sync between Key Vault and OpenSILEX's internal database (GraphDB).
+**Always update Key Vault first**, then OpenSILEX.
+
+1. Update the secret in Key Vault:
+   ```bash
+   az keyvault secret set --vault-name phis-kv --name opensilex-admin-password --value "<new-password>"
+   ```
+2. ESO syncs the Kubernetes secret within 1 hour (or force it: `kubectl annotate externalsecret opensilex-credentials -n phis force-sync=$(date +%s) --overwrite`).
+3. Change the password in the OpenSILEX UI: **Security → My account** (logged in as `admin@opensilex.org`).
+4. Restart the pod so the new password is picked up by the startup script:
+   ```bash
+   kubectl rollout restart deployment/opensilex -n phis
+   ```
+
+If Key Vault and OpenSILEX get out of sync, the `opensilex-init` Job will fail to authenticate on next run and log:
+`ERROR: Could not authenticate. Check opensilex-admin-password in Key Vault.`
 
 ## Updating OpenSILEX Config
 
@@ -83,8 +105,8 @@ tools/k8s-cluster/03-stop-cluster.ps1     # Stop cluster (reduce costs)
 
 ## Before Promoting to Production
 
-- [ ] Add TLS/HTTPS ingress (currently plain HTTP on port 8666)
-- [ ] Point DNS to cluster IP and update `publicURI` in `k8s/opensilex/opensilex.yml`
+- [x] Add TLS/HTTPS ingress
+- [x] Point DNS to cluster IP (`phis.pheno.no`)
 - [ ] Upgrade AKS from Free tier to Standard for SLA
 - [ ] Add autoscaler / multiple nodes for HA
-- [ ] Change default admin password (`admin@opensilex.org` / `admin`)
+- [ ] Change default admin password — see [Changing the OpenSILEX admin password](#changing-the-opensilex-admin-password)
