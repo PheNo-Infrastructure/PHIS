@@ -4,6 +4,14 @@ Patches applied to OpenSILEX source during the GitHub Actions image build (`buil
 
 ## Active Patches
 
+### 003-fix-reset-password-token.patch
+
+Fixes two bugs in the password-reset flow (shipped in image `1.5.0.3`):
+
+1. **Token expiry** (`AuthenticationService.java`): `Thread.sleep(getRenewTokenExpiresInSec())` passed seconds to a method that takes milliseconds. Tokens expired in ~86 seconds instead of 24 hours. Fixed: `* 1000L`.
+
+2. **Reset URL construction** (`AuthenticationAPI.java`): `Paths.get()` normalizes `https://` to `https:/` (filesystem path logic). `URLEncoder.encode()` encoded `:` to `%3A` in the token. Fixed: plain string concatenation.
+
 ### 002-openid-auto-group-assignment.patch
 
 Automatically assigns new Feide/OpenID users to the "Users" group on first login.
