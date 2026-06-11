@@ -24,20 +24,21 @@ spec:
                 - sh
                 - -c
                 - |
+                  set -e
                   FILENAME="/backup/$(date +%Y%m%d-%H%M).gz"
                   mongodump \
-                    --uri="mongodb://opensilex:${MONGO_APP_PASSWORD}@mongodb:27017/opensilex?authSource=admin&replicaSet=opensilex" \
+                    --uri="mongodb://root:${MONGO_ROOT_PASSWORD}@mongodb:27017/opensilex?authSource=admin&replicaSet=opensilex" \
                     --gzip \
                     --archive="$FILENAME"
                   echo "Backup written: $FILENAME"
                   find /backup -name "*.gz" -mtime +30 -delete
                   echo "Old backups pruned (>30 days)."
               env:
-                - name: MONGO_APP_PASSWORD
+                - name: MONGO_ROOT_PASSWORD
                   valueFrom:
                     secretKeyRef:
                       name: mongodb-credentials
-                      key: opensilex-password
+                      key: root-password
               volumeMounts:
                 - name: backup
                   mountPath: /backup
