@@ -26,6 +26,7 @@ spec:
                 - sh
                 - -c
                 - |
+                  set -e
                   FILENAME="/backup/$(date +%Y%m%d-%H%M).trig"
                   curl -sf \
                     -u "admin:${GDB_ADMIN_PASSWORD}" \
