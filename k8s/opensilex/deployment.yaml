@@ -131,12 +131,17 @@ spec:
                 --email=admin@opensilex.org \
                 --firstName=Admin \
                 --lastName=Admin \
-                --password=admin \
+                --password="$OPENSILEX_ADMIN_PASSWORD" \
                 --lang=en 2>&1 | tail -3 || true
               ./bin/opensilex.sh server start
           env:
             - name: OPENSILEX_CONFIG_DIR
               value: /home/opensilex/config
+            - name: OPENSILEX_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensilex-credentials
+                  key: admin-password
           ports:
             - containerPort: 8666
             - containerPort: 8667
