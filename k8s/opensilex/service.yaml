@@ -1,12 +1,14 @@
 # Public LoadBalancer: exposes only the web UI port (8666).
 # On AKS, run "kubectl get service opensilex -n phis" to see EXTERNAL-IP.
+# The dns-label annotation makes AKS attach the label to the public IP so
+# phis-opensilex.norwayeast.cloudapp.azure.com resolves to the LoadBalancer.
 apiVersion: v1
 kind: Service
 metadata:
   name: opensilex
   namespace: phis
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app: opensilex
   ports:
