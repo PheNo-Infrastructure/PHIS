@@ -27,7 +27,7 @@ spec:
                   set -e
                   FILENAME="/backup/$(date +%Y%m%d-%H%M).gz"
                   mongodump \
-                    --uri="mongodb://root:${MONGO_ROOT_PASSWORD}@mongodb:27017/opensilex?authSource=admin&replicaSet=opensilex" \
+                    --uri="mongodb://root:${MONGO_ROOT_PASSWORD}@mongodb:27017/opensilex?authSource=admin&directConnection=true" \
                     --gzip \
                     --archive="$FILENAME"
                   echo "Backup written: $FILENAME"
