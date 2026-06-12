@@ -2,7 +2,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/account/api
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-security/src/main/java/org/opensilex/security/account/api/AccountRegisterDTO.java
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,42 @@
 +package org.opensilex.security.account.api;
 +
 +import io.swagger.annotations.ApiModelProperty;
@@ -152,7 +152,7 @@ diff --git a/opensilex-security/src/main/resources/email/register-confirmation.m
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-security/src/main/resources/email/register-confirmation.mustache
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,41 @@
 +<!doctype html>
 +<html lang="en-US">
 +<head>
@@ -223,7 +223,7 @@ diff --git a/opensilex-front/front/src/components/layout/Register.vue b/opensile
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/Register.vue
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,152 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
