@@ -1,0 +1,40 @@
+diff --git a/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue b/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue
+--- a/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue
++++ b/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue
+@@ -99,14 +99,17 @@
+             </span>
+
+             <!-- Form -->
+-            <opensilex-FormSelector
+-              v-if="connectionOptions.length > 1"
+-              :label="$t('LoginComponent.selectLoginMethod')"
+-              :options="connectionOptions"
+-              :selected.sync="loginMethod"
+-              @select="loginMethodChange"
+-            ></opensilex-FormSelector>
+-            <ValidationObserver v-if="loginMethod == 'password'" ref="validatorRef">
++            <div v-if="ssoOptions.length > 0" class="login-method-buttons">
++              <b-button
++                v-for="option in ssoOptions"
++                :key="option.id"
++                variant="outline-success"
++                class="w-100 mb-2"
++                @click="loginMethodChange(option)"
++              >{{ option.label }}</b-button>
++              <hr class="my-3"/>
++            </div>
++            <ValidationObserver ref="validatorRef">
+               <b-form @submit.prevent="onLogin" class="fullmodal-form">
+                 <b-form-group id="login-group" required>
+                   <ValidationProvider
+@@ -293,6 +296,10 @@
+     return options;
+   }
+
++  get ssoOptions() {
++    return this.connectionOptions.filter(o => o.id !== "password");
++  }
++
+   created() {
+     this.versionInfo = this.$opensilex.versionInfo;
+   }
