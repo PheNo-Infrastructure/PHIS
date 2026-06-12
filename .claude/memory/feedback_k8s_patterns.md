@@ -39,6 +39,22 @@ Any pod that calls `http://opensilex:8666` internally (e.g., init jobs, health s
 
 **How to apply:** All new Jobs or scripts that hit the OpenSILEX internal service must use `curl ... -H "Host: phis.pheno.no"`.
 
+## bitnami/kubectl tag must match cluster K8s version
+
+Always use `bitnami/kubectl:<cluster-version>` (currently `1.33`) in CronJobs and Jobs that need kubectl.
+
+**Why:** Bitnami removes old minor-version tags from Docker Hub. `1.30` was silently `ImagePullBackOff` for 8 hours before being caught. The tag is not automatically kept in sync with cluster upgrades.
+
+**How to apply:** When the cluster K8s version is upgraded (see [[feedback-aks-k8s-version]]), also update the `bitnami/kubectl` tag in `k8s/backup/snapshot-cronjob.yaml`.
+
+## Browser cache masks frontend deploys
+
+After a new image rolls out, if the UI looks unchanged, do a hard-refresh (Ctrl+Shift+R) before assuming the patch failed.
+
+**Why:** The SPA JS/CSS bundle is cached by the browser. The old bundle keeps rendering the old UI even after the pod is running the new image.
+
+**How to apply:** Always verify a frontend change with a hard-refresh or incognito window before concluding the patch didn't apply.
+
 ## configMapGenerator for auto-rollout
 
 The OpenSILEX ConfigMap uses Kustomize's `configMapGenerator` (not a hand-written ConfigMap resource). Source file is `k8s/opensilex/opensilex.yml`.
