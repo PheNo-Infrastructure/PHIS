@@ -1,0 +1,473 @@
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/account/api/AccountRegisterDTO.java b/opensilex-security/src/main/java/org/opensilex/security/account/api/AccountRegisterDTO.java
+new file mode 100644
+--- /dev/null
++++ b/opensilex-security/src/main/java/org/opensilex/security/account/api/AccountRegisterDTO.java
+@@ -0,0 +1,36 @@
++package org.opensilex.security.account.api;
++
++import io.swagger.annotations.ApiModelProperty;
++import org.opensilex.server.rest.validation.Required;
++
++public class AccountRegisterDTO {
++
++    @Required
++    @ApiModelProperty(value = "Account email address", required = true)
++    private String email;
++
++    @Required
++    @ApiModelProperty(value = "Account password", required = true)
++    private String password;
++
++    @ApiModelProperty(value = "Account language (ISO code, e.g. 'en')")
++    private String language;
++
++    public String getEmail() {
++        return email;
++    }
++
++    public void setEmail(String email) {
++        this.email = email;
++    }
++
++    public String getPassword() {
++        return password;
++    }
++
++    public void setPassword(String password) {
++        this.password = password;
++    }
++
++    public String getLanguage() {
++        return language;
++    }
++
++    public void setLanguage(String language) {
++        this.language = language;
++    }
++}
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
+--- a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
+@@ -19,5 +19,6 @@ import org.opensilex.security.authentication.injection.CurrentUser;
+ import org.opensilex.security.email.EmailService;
+ import org.opensilex.security.account.dal.AccountDAO;
+ import org.opensilex.security.account.dal.AccountModel;
++import org.opensilex.security.account.api.AccountRegisterDTO;
+ import org.opensilex.server.ServerModule;
+ import org.opensilex.server.exceptions.BadRequestException;
+@@ -462,4 +462,93 @@ authenticateSAML
+         return new ErrorResponse(Status.FORBIDDEN, "Invalid SAML authentication", "Could not authenticate user with SAML")
+                 .getResponse();
+     }
++
++    @POST
++    @Path("register")
++    @ApiOperation("Register a new account — sends a confirmation email")
++    @ApiResponses({
++        @ApiResponse(code = 200, message = "Confirmation email sent"),
++        @ApiResponse(code = 409, message = "Email already registered"),
++        @ApiResponse(code = 503, message = "Email service not available")
++    })
++    @Consumes(MediaType.APPLICATION_JSON)
++    @Produces(MediaType.APPLICATION_JSON)
++    public Response register(
++            @ApiParam(value = "Registration details", required = true) @Valid AccountRegisterDTO dto
++    ) throws Exception {
++        if (!emailService.isEnable()) {
++            return new ErrorResponse(Response.Status.SERVICE_UNAVAILABLE,
++                    "Functionality not available",
++                    "Email service must be configured to enable self-registration").getResponse();
++        }
++        AccountDAO accountDAO = new AccountDAO(sparql);
++        InternetAddress email;
++        try {
++            email = new InternetAddress(dto.getEmail());
++        } catch (Exception e) {
++            return new ErrorResponse(Response.Status.BAD_REQUEST,
++                    "Invalid email", "The provided email address is not valid").getResponse();
++        }
++        if (accountDAO.getByEmail(email) != null) {
++            return new ErrorResponse(Response.Status.CONFLICT,
++                    "Email already registered",
++                    "An account with this email already exists").getResponse();
++        }
++        String lang = (dto.getLanguage() != null && !dto.getLanguage().isEmpty()) ? dto.getLanguage() : "en";
++        String passwordHash = authentication.getPasswordHash(dto.getPassword());
++        AccountModel account = accountDAO.create(null, email, false, passwordHash, lang, false, null);
++        URI confirmToken = authentication.addForgotPasswordId(account.getUri());
++        sendRegistrationConfirmEmail(email.getAddress(), confirmToken);
++        return new ObjectUriResponse(Response.Status.OK, account.getUri()).getResponse();
++    }
++
++    @GET
++    @Path("confirm-registration")
++    @ApiOperation("Confirm account registration via email token")
++    @ApiResponses({
++        @ApiResponse(code = 200, message = "Account confirmed"),
++        @ApiResponse(code = 400, message = "Invalid or expired token")
++    })
++    @Produces(MediaType.APPLICATION_JSON)
++    public Response confirmRegistration(
++            @ApiParam(value = "Confirmation token", required = true)
++            @QueryParam("token") @NotNull @ValidURI URI token
++    ) throws Exception {
++        URI userUri = authentication.getForgottenPasswordUserURIFromRenewToken(token);
++        if (userUri == null) {
++            return new ErrorResponse(Response.Status.BAD_REQUEST,
++                    "Invalid token", "This confirmation link is invalid or has expired").getResponse();
++        }
++        AccountDAO accountDAO = new AccountDAO(sparql);
++        AccountModel account = accountDAO.get(userUri);
++        if (account == null) {
++            return new ErrorResponse(Response.Status.NOT_FOUND,
++                    "Account not found", "Could not find the account for this confirmation link").getResponse();
++        }
++        accountDAO.update(account.getUri(), account.getEmail(), Boolean.TRUE.equals(account.isAdmin()),
++                account.getPasswordHash(), account.getLanguage(), true,
++                account.getLinkedPerson(),
++                account.getFavorites() != null ? account.getFavorites() : new java.util.ArrayList<>());
++        authentication.removeForgottenPasswordUserFromRenewToken(token);
++        return new ObjectUriResponse(Response.Status.OK, userUri).getResponse();
++    }
++
++    private void sendRegistrationConfirmEmail(String emailAddress, URI confirmToken) {
++        try {
++            String baseURL = emailService.getOpenSilex().getModuleByClass(ServerModule.class).getBaseURL();
++            if (!baseURL.endsWith("/")) {
++                baseURL += "/";
++            }
++            String redirectUrl = baseURL + "app/confirm-registration/" + confirmToken.toString();
++            Map<String, Object> infos = new HashMap<>();
++            List<InternetAddress> receivers = new LinkedList<>();
++            receivers.add(new InternetAddress(emailAddress));
++            infos.put("username", emailAddress);
++            infos.put("redirectUrl", redirectUrl);
++            emailService.sendAnEmail(receivers, "[OpenSILEX] Confirm your account",
++                    "register-confirmation.mustache", infos, true);
++        } catch (Exception e) {
++            LOGGER.error("Failed to send registration confirmation email: " + e.getMessage(), e);
++        }
++    }
+ }
+diff --git a/opensilex-security/src/main/resources/email/register-confirmation.mustache b/opensilex-security/src/main/resources/email/register-confirmation.mustache
+new file mode 100644
+--- /dev/null
++++ b/opensilex-security/src/main/resources/email/register-confirmation.mustache
+@@ -0,0 +1,36 @@
++<!doctype html>
++<html lang="en-US">
++<head>
++    <meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
++    <title>Confirm your OpenSILEX account</title>
++    <style type="text/css">a:hover {text-decoration: underline !important;}</style>
++</head>
++<body marginheight="0" topmargin="0" marginwidth="0" style="margin: 0px; background-color: #f2f3f8;" leftmargin="0">
++    <table cellspacing="0" border="0" cellpadding="0" width="100%" bgcolor="#f2f3f8"
++        style="@import url(https://fonts.googleapis.com/css?family=Rubik:300,400,500,700|Open+Sans:300,400,600,700); font-family: 'Open Sans', sans-serif;">
++        <tr><td>
++            <table style="background-color: #f2f3f8; max-width:670px; margin:0 auto;" width="100%" border="0" align="center" cellpadding="0" cellspacing="0">
++                <tr><td style="height:80px;">&nbsp;</td></tr>
++                <tr><td style="text-align:center;">
++                    <img width="100" src="http://www.opensilex.org/img/opensilex_logo.png" title="logo" alt="logo">
++                </td></tr>
++                <tr><td style="height:20px;">&nbsp;</td></tr>
++                <tr><td>
++                    <table width="95%" border="0" align="center" cellpadding="0" cellspacing="0"
++                        style="max-width:670px;background:#fff; border-radius:3px; text-align:center;-webkit-box-shadow:0 6px 18px 0 rgba(0,0,0,.06);-moz-box-shadow:0 6px 18px 0 rgba(0,0,0,.06);box-shadow:0 6px 18px 0 rgba(0,0,0,.06);">
++                        <tr><td style="height:40px;">&nbsp;</td></tr>
++                        <tr><td style="padding:0 35px;">
++                            <h1 style="color:#1e1e2d; font-weight:500; margin:0;font-size:32px;font-family:'Rubik',sans-serif;">Confirm your OpenSILEX account</h1>
++                            <span style="display:inline-block; vertical-align:middle; margin:29px 0 26px; border-bottom:1px solid #cecece; width:100px;"></span>
++                            <p style="color:#455056; font-size:15px;line-height:24px; margin:0;">
++                                Hi {{username}},<br/><br/>
++                                Thank you for registering. Click the button below to confirm your email address and activate your account.
++                                This link is valid for 24 hours.
++                            </p>
++                            <a href="{{redirectUrl}}" style="background:#20e277;text-decoration:none !important; font-weight:500; margin-top:35px; color:#fff;text-transform:uppercase; font-size:14px;padding:10px 24px;display:inline-block;border-radius:50px;">Confirm my account</a>
++                        </td></tr>
++                        <tr><td style="height:40px;">&nbsp;</td></tr>
++                    </table>
++                </td></tr>
++                <tr><td style="height:20px;">&nbsp;</td></tr>
++                <tr><td style="height:80px;">&nbsp;</td></tr>
++            </table>
++        </td></tr>
++    </table>
++</body>
++</html>
+diff --git a/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue b/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue
+--- a/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue
++++ b/opensilex-front/front/src/components/layout/DefaultLoginComponent.vue
+@@ -177,5 +177,9 @@
+                   })
+                   }}
+                 </p>
++              <p style="margin-top: 12px; font-size: 0.9em;">
++                {{ $t("LoginComponent.noAccount") }}
++                <router-link to="/register">{{ $t("LoginComponent.registerLink") }}</router-link>
++              </p>
+               </slot>
+             </div>
+@@ -508,3 +508,5 @@
+     passwordConnectionTitle: Connect with password
+     forgotPassword: Forgot your password ?
++    noAccount: "Don't have an account?"
++    registerLink: "Register here"
+     defaultOpenIDConnectionTitle: Log in with SSO (OpenID)
+@@ -527,3 +531,5 @@
+     passwordConnectionTitle: Connexion par mot de passe
+     forgotPassword: Mot de passe oublié ?
++    noAccount: "Vous n'avez pas de compte ?"
++    registerLink: "S'inscrire ici"
+     defaultOpenIDConnectionTitle: Connexion par SSO (OpenID)
+diff --git a/opensilex-front/front/src/components/layout/Register.vue b/opensilex-front/front/src/components/layout/Register.vue
+new file mode 100644
+--- /dev/null
++++ b/opensilex-front/front/src/components/layout/Register.vue
+@@ -0,0 +1,133 @@
++<template>
++  <div class="container-fluid">
++    <b-row class="justify-content-center" style="margin-top: 80px;">
++      <b-col cols="12" md="6" lg="4">
++        <div class="card p-4">
++          <h2 class="text-center mb-4">{{ $t("Register.title") }}</h2>
++
++          <div v-if="success" class="alert alert-success">
++            {{ $t("Register.successMessage") }}
++            <br/>
++            <router-link to="/">{{ $t("Register.backToLogin") }}</router-link>
++          </div>
++
++          <ValidationObserver v-else ref="validatorRef">
++            <b-form @submit.prevent="onRegister">
++              <ValidationProvider
++                :name="$t('Register.email')"
++                rules="required|email"
++                v-slot="{ errors }"
++              >
++                <b-form-group :label="$t('Register.email')">
++                  <b-form-input
++                    v-model="email"
++                    type="email"
++                    :placeholder="$t('Register.email')"
++                    :state="errors.length > 0 ? false : null"
++                  ></b-form-input>
++                  <b-form-invalid-feedback>{{ errors[0] }}</b-form-invalid-feedback>
++                </b-form-group>
++              </ValidationProvider>
++
++              <ValidationProvider
++                :name="$t('Register.password')"
++                rules="required"
++                v-slot="{ errors }"
++                vid="password-first"
++              >
++                <b-form-group :label="$t('Register.password')">
++                  <b-form-input
++                    v-model="password"
++                    type="password"
++                    :placeholder="$t('Register.password')"
++                    :state="errors.length > 0 ? false : null"
++                  ></b-form-input>
++                  <b-form-invalid-feedback>{{ errors[0] }}</b-form-invalid-feedback>
++                </b-form-group>
++              </ValidationProvider>
++
++              <ValidationProvider
++                :name="$t('Register.confirmPassword')"
++                rules="required|confirmed:password-first"
++                v-slot="{ errors }"
++              >
++                <b-form-group :label="$t('Register.confirmPassword')">
++                  <b-form-input
++                    v-model="confirmPassword"
++                    type="password"
++                    :placeholder="$t('Register.confirmPassword')"
++                    :state="errors.length > 0 ? false : null"
++                  ></b-form-input>
++                  <b-form-invalid-feedback>{{ errors[0] }}</b-form-invalid-feedback>
++                </b-form-group>
++              </ValidationProvider>
++
++              <div v-if="errorMsg" class="alert alert-danger mt-2">{{ errorMsg }}</div>
++
++              <b-button type="submit" variant="primary" class="w-100 mt-2" :disabled="loading">
++                {{ loading ? $t("Register.loading") : $t("Register.submit") }}
++              </b-button>
++            </b-form>
++          </ValidationObserver>
++
++          <p class="text-center mt-3" style="font-size:0.9em;">
++            <router-link to="/">{{ $t("Register.backToLogin") }}</router-link>
++          </p>
++        </div>
++      </b-col>
++    </b-row>
++  </div>
++</template>
++
++<script lang="ts">
++import { Component, Vue, Ref } from "vue-property-decorator";
++import { ValidationObserver, ValidationProvider } from "vee-validate";
++
++@Component({
++  components: { ValidationObserver, ValidationProvider }
++})
++export default class Register extends Vue {
++  @Ref("validatorRef") readonly validatorRef!: InstanceType<typeof ValidationObserver>;
++
++  email = "";
++  password = "";
++  confirmPassword = "";
++  errorMsg = "";
++  loading = false;
++  success = false;
++
++  async onRegister() {
++    const valid = await this.validatorRef.validate();
++    if (!valid) return;
++    this.loading = true;
++    this.errorMsg = "";
++    try {
++      let service = await this.$opensilex.loadService("opensilex-security/AuthenticationService");
++      await service.register({ email: this.email, password: this.password, language: "en" });
++      this.success = true;
++    } catch (error: any) {
++      if (error && error.status === 409) {
++        this.errorMsg = this.$t("Register.errorEmailTaken") as string;
++      } else if (error && error.status === 503) {
++        this.errorMsg = this.$t("Register.errorEmailService") as string;
++      } else {
++        this.errorMsg = this.$t("Register.errorGeneric") as string;
++      }
++    } finally {
++      this.loading = false;
++    }
++  }
++}
++</script>
++
++<style scoped lang="scss"></style>
++
++<i18n>
++en:
++  Register:
++    title: "Create an account"
++    email: "Email"
++    password: "Password"
++    confirmPassword: "Confirm password"
++    submit: "Register"
++    loading: "Registering..."
++    successMessage: "Registration successful! Check your email for a confirmation link."
++    backToLogin: "Back to login"
++    errorEmailTaken: "This email address is already registered."
++    errorEmailService: "Email service is unavailable. Please contact an administrator."
++    errorGeneric: "Registration failed. Please try again."
++fr:
++  Register:
++    title: "Créer un compte"
++    email: "Email"
++    password: "Mot de passe"
++    confirmPassword: "Confirmer le mot de passe"
++    submit: "S'inscrire"
++    loading: "Inscription..."
++    successMessage: "Inscription réussie ! Vérifiez votre email pour un lien de confirmation."
++    backToLogin: "Retour à la connexion"
++    errorEmailTaken: "Cette adresse email est déjà enregistrée."
++    errorEmailService: "Le service email est indisponible. Veuillez contacter un administrateur."
++    errorGeneric: "L'inscription a échoué. Veuillez réessayer."
++</i18n>
+diff --git a/opensilex-front/front/src/components/layout/ConfirmRegistration.vue b/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
+new file mode 100644
+--- /dev/null
++++ b/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
+@@ -0,0 +1,79 @@
++<template>
++  <div class="container-fluid">
++    <b-row class="justify-content-center" style="margin-top: 80px;">
++      <b-col cols="12" md="6" lg="4">
++        <div class="card p-4 text-center">
++          <div v-if="loading">
++            <p>{{ $t("ConfirmRegistration.loading") }}</p>
++          </div>
++          <div v-else-if="confirmed">
++            <h2 class="text-success mb-3">{{ $t("ConfirmRegistration.successTitle") }}</h2>
++            <p>{{ $t("ConfirmRegistration.successMessage") }}</p>
++            <router-link to="/" class="btn btn-primary mt-3">
++              {{ $t("ConfirmRegistration.loginButton") }}
++            </router-link>
++          </div>
++          <div v-else>
++            <h2 class="text-danger mb-3">{{ $t("ConfirmRegistration.errorTitle") }}</h2>
++            <p>{{ $t("ConfirmRegistration.errorMessage") }}</p>
++            <router-link to="/" class="btn btn-secondary mt-3">
++              {{ $t("ConfirmRegistration.backToLogin") }}
++            </router-link>
++          </div>
++        </div>
++      </b-col>
++    </b-row>
++  </div>
++</template>
++
++<script lang="ts">
++import { Component, Vue } from "vue-property-decorator";
++
++@Component
++export default class ConfirmRegistration extends Vue {
++  loading = true;
++  confirmed = false;
++
++  async mounted() {
++    const token = decodeURIComponent(this.$route.params.token as string);
++    try {
++      let service = await this.$opensilex.loadService("opensilex-security/AuthenticationService");
++      await service.confirmRegistration(token);
++      this.confirmed = true;
++    } catch (error: any) {
++      this.confirmed = false;
++    } finally {
++      this.loading = false;
++    }
++  }
++}
++</script>
++
++<style scoped lang="scss"></style>
++
++<i18n>
++en:
++  ConfirmRegistration:
++    loading: "Confirming your account..."
++    successTitle: "Account confirmed!"
++    successMessage: "Your account has been activated. You can now log in."
++    loginButton: "Log in"
++    errorTitle: "Invalid link"
++    errorMessage: "This confirmation link is invalid or has expired. Please register again."
++    backToLogin: "Back to login"
++fr:
++  ConfirmRegistration:
++    loading: "Confirmation de votre compte..."
++    successTitle: "Compte confirmé !"
++    successMessage: "Votre compte a été activé. Vous pouvez maintenant vous connecter."
++    loginButton: "Se connecter"
++    errorTitle: "Lien invalide"
++    errorMessage: "Ce lien de confirmation est invalide ou a expiré. Veuillez vous inscrire à nouveau."
++    backToLogin: "Retour à la connexion"
++</i18n>
+diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml
+--- a/opensilex-front/front/opensilex.front.yml
++++ b/opensilex-front/front/opensilex.front.yml
+@@ -521,4 +521,11 @@
+   - path: /reset-password/:uri
+     component: opensilex-ResetPassword
+     credentials:
+       - public
++  - path: /register
++    component: opensilex-Register
++    credentials:
++      - public
++  - path: /confirm-registration/:token
++    component: opensilex-ConfirmRegistration
++    credentials:
++      - public
