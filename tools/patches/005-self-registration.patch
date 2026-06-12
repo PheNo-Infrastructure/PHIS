@@ -48,13 +48,12 @@ new file mode 100644
 diff --git a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
 --- a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
 +++ b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
-@@ -19,5 +19,6 @@ import org.opensilex.security.authentication.injection.CurrentUser;
- import org.opensilex.security.email.EmailService;
- import org.opensilex.security.account.dal.AccountDAO;
- import org.opensilex.security.account.dal.AccountModel;
-+import org.opensilex.security.account.api.AccountRegisterDTO;
+@@ -22,4 +22,5 @@
  import org.opensilex.server.ServerModule;
  import org.opensilex.server.exceptions.BadRequestException;
++import org.opensilex.security.account.api.AccountRegisterDTO;
+ import org.opensilex.server.response.*;
+ import org.opensilex.server.rest.validation.Required;
 @@ -462,4 +462,93 @@ authenticateSAML
          return new ErrorResponse(Status.FORBIDDEN, "Invalid SAML authentication", "Could not authenticate user with SAML")
                  .getResponse();
@@ -381,7 +380,7 @@ diff --git a/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,73 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
