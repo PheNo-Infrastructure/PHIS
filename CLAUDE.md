@@ -24,5 +24,20 @@ Update image tag in `k8s/opensilex/deployment.yaml` → commit + push → Flux r
 Do the read-only version first (`kubectl get`, `kubectl describe`, `kubectl logs`), report findings, then ask before mutating.
 
 ## Project Memory
-Full context (cluster, infra, build process, architecture) lives in:
-`.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/`
+
+Memory files live in `.claude/memory/` in this repo and travel with the code.
+
+**Session start:** copy `.claude/memory/` → `~/.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/` then read `MEMORY.md` and linked files.
+
+```bash
+cp .claude/memory/*.md ~/.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/
+```
+
+**Session end (after significant changes):** copy updated memory files back, commit, push.
+
+```bash
+cp ~/.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/*.md .claude/memory/
+git add .claude/memory/
+git commit -m "docs: update project memory"
+git push
+```
