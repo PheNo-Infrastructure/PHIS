@@ -224,7 +224,7 @@ diff --git a/opensilex-front/front/src/components/layout/Register.vue b/opensile
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/Register.vue
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,152 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
@@ -323,13 +323,6 @@ new file mode 100644
 +  loading = false;
 +  success = false;
 +
-+  created() {
-+    const $o = (this as any).$opensilex;
-+    if ($o && $o.getUser && $o.getUser()) {
-+      this.$router.push('/home');
-+    }
-+  }
-+
 +  async onRegister() {
 +    const valid = await this.validatorRef.validate();
 +    if (!valid) return;
@@ -388,7 +381,7 @@ diff --git a/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,73 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
@@ -424,13 +417,6 @@ new file mode 100644
 +export default class ConfirmRegistration extends Vue {
 +  loading = true;
 +  confirmed = false;
-+
-+  created() {
-+    const $o = (this as any).$opensilex;
-+    if ($o && $o.getUser && $o.getUser()) {
-+      this.$router.push('/home');
-+    }
-+  }
 +
 +  async mounted() {
 +    const token = decodeURIComponent(this.$route.params.token as string);
