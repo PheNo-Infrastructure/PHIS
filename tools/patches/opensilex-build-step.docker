@@ -30,6 +30,15 @@ RUN for patch in /patches/*.patch; do \
         patch -p1 < "$patch" || exit 1; \
     done
 
+# Register.vue and ConfirmRegistration.vue need entries in index.ts.
+# patch -p1 fails on this file consistently; sed r-command is used instead.
+RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["opensilex-Register"] = Register;\nimport ConfirmRegistration from '"'"'./layout/ConfirmRegistration.vue'"'"';\ncomponents["opensilex-ConfirmRegistration"] = ConfirmRegistration;\n' \
+        > /tmp/reg_comps.txt \
+    && sed -i '/^components\["opensilex-ForgotPassword"\] = ForgotPassword;/r /tmp/reg_comps.txt' \
+       opensilex-front/front/src/components/index.ts \
+    && grep -q 'opensilex-Register' opensilex-front/front/src/components/index.ts \
+    && echo "index.ts patched OK"
+
 # Build OpenSILEX with frontend
 # Try building, and if it fails due to vuelayers bind operator, patch and retry
 # Aether timeouts prevent indefinite hangs when Maven checks remote repos.

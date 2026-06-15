@@ -454,20 +454,6 @@ new file mode 100644
 +    errorMessage: "Ce lien de confirmation est invalide ou a expiré. Veuillez vous inscrire à nouveau."
 +    backToLogin: "Retour à la connexion"
 +</i18n>
-diff --git a/opensilex-front/front/src/components/index.ts b/opensilex-front/front/src/components/index.ts
---- a/opensilex-front/front/src/components/index.ts
-+++ b/opensilex-front/front/src/components/index.ts
-@@ -25,6 +25,10 @@
- import ToDoComponent from './layout/ToDoComponent.vue';
- components["opensilex-ToDoComponent"] = ToDoComponent;
- import ResetPassword from './layout/ResetPassword.vue';
- components["opensilex-ResetPassword"] = ResetPassword;
- import ForgotPassword from './layout/ForgotPassword.vue';
- components["opensilex-ForgotPassword"] = ForgotPassword;
-+import Register from './layout/Register.vue';
-+components["opensilex-Register"] = Register;
-+import ConfirmRegistration from './layout/ConfirmRegistration.vue';
-+components["opensilex-ConfirmRegistration"] = ConfirmRegistration;
 diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml
 --- a/opensilex-front/front/opensilex.front.yml
 +++ b/opensilex-front/front/opensilex.front.yml
