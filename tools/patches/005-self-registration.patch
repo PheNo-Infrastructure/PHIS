@@ -2,19 +2,18 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/account/api
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-security/src/main/java/org/opensilex/security/account/api/AccountRegisterDTO.java
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,41 @@
 +package org.opensilex.security.account.api;
 +
++import io.swagger.annotations.ApiModel;
 +import io.swagger.annotations.ApiModelProperty;
-+import org.opensilex.server.rest.validation.Required;
 +
++@ApiModel("AccountRegisterDTO")
 +public class AccountRegisterDTO {
 +
-+    @Required
 +    @ApiModelProperty(value = "Account email address", required = true)
 +    private String email;
 +
-+    @Required
 +    @ApiModelProperty(value = "Account password", required = true)
 +    private String password;
 +
