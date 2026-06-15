@@ -12,6 +12,8 @@ spec:
     metadata:
       labels:
         app: opensilex
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2026-06-15T09:30:00Z"
     spec:
       # Remove imagePullSecrets if the GHCR package is set to public.
       imagePullSecrets:
