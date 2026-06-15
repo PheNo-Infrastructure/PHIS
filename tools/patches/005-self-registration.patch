@@ -324,10 +324,10 @@ new file mode 100644
 +  success = false;
 +
 +  created() {
-+    try {
-+      const user = (this as any).$opensilex.getUser();
-+      if (user) this.$router.push('/home');
-+    } catch {}
++    const $o = (this as any).$opensilex;
++    if ($o && $o.getUser && $o.getUser()) {
++      this.$router.push('/home');
++    }
 +  }
 +
 +  async onRegister() {
@@ -426,10 +426,10 @@ new file mode 100644
 +  confirmed = false;
 +
 +  created() {
-+    try {
-+      const user = (this as any).$opensilex.getUser();
-+      if (user) this.$router.push('/home');
-+    } catch {}
++    const $o = (this as any).$opensilex;
++    if ($o && $o.getUser && $o.getUser()) {
++      this.$router.push('/home');
++    }
 +  }
 +
 +  async mounted() {
