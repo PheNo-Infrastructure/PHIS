@@ -328,7 +328,7 @@ new file mode 100644
 +    this.loading = true;
 +    this.errorMsg = "";
 +    try {
-+      let service = await this.$opensilex.loadService("opensilex-security/AuthenticationService");
++      let service = await (this as any).$opensilex.loadService("opensilex-security/AuthenticationService");
 +      await service.register({ email: this.email, password: this.password, language: "en" });
 +      this.success = true;
 +    } catch (error) {
@@ -420,7 +420,7 @@ new file mode 100644
 +  async mounted() {
 +    const token = decodeURIComponent(this.$route.params.token as string);
 +    try {
-+      let service = await this.$opensilex.loadService("opensilex-security/AuthenticationService");
++      let service = await (this as any).$opensilex.loadService("opensilex-security/AuthenticationService");
 +      await service.confirmRegistration(token);
 +      this.confirmed = true;
 +    } catch (error) {
