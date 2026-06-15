@@ -13,7 +13,7 @@ spec:
       labels:
         app: opensilex
       annotations:
-        kubectl.kubernetes.io/restartedAt: "2026-06-15T11:00:00Z"
+        kubectl.kubernetes.io/restartedAt: "2026-06-15T12:00:00Z"
     spec:
       # Remove imagePullSecrets if the GHCR package is set to public.
       imagePullSecrets:
@@ -126,7 +126,7 @@ spec:
 
       containers:
         - name: opensilex
-          image: ghcr.io/lversen/opensilex-phis:1.5.0.5.1
+          image: ghcr.io/lversen/opensilex-phis:1.5.0.5.2
           imagePullPolicy: Always
           command: ["sh", "-c"]
           args:
