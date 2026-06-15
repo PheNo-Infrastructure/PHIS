@@ -457,7 +457,10 @@ new file mode 100644
 diff --git a/opensilex-front/front/src/components/index.ts b/opensilex-front/front/src/components/index.ts
 --- a/opensilex-front/front/src/components/index.ts
 +++ b/opensilex-front/front/src/components/index.ts
-@@ -28,3 +28,7 @@
+@@ -25,6 +25,10 @@
+ import ToDoComponent from './layout/ToDoComponent.vue';
+ components["opensilex-ToDoComponent"] = ToDoComponent;
+ import ResetPassword from './layout/ResetPassword.vue';
  components["opensilex-ResetPassword"] = ResetPassword;
  import ForgotPassword from './layout/ForgotPassword.vue';
  components["opensilex-ForgotPassword"] = ForgotPassword;
