@@ -54,7 +54,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/authenticat
 +import org.opensilex.security.account.api.AccountRegisterDTO;
  import org.opensilex.server.response.*;
  import org.opensilex.server.rest.validation.Required;
-@@ -462,4 +462,93 @@ authenticateSAML
+@@ -462,4 +462,94 @@ authenticateSAML
          return new ErrorResponse(Status.FORBIDDEN, "Invalid SAML authentication", "Could not authenticate user with SAML")
                  .getResponse();
      }
@@ -92,7 +92,8 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/authenticat
 +        }
 +        String lang = (dto.getLanguage() != null && !dto.getLanguage().isEmpty()) ? dto.getLanguage() : "en";
 +        String passwordHash = authentication.getPasswordHash(dto.getPassword());
-+        AccountModel account = accountDAO.create(null, email, false, passwordHash, lang, false, null);
++        AccountModel account = accountDAO.create(null, email, false, passwordHash, lang, true, null);
++        SecurityAutoAssignmentService.assignToDefaultGroupIfNew(account, sparql);
 +        URI confirmToken = authentication.addForgotPasswordId(account.getUri());
 +        sendRegistrationConfirmEmail(email.getAddress(), confirmToken);
 +        return new ObjectUriResponse(Response.Status.OK, account.getUri()).getResponse();
@@ -223,7 +224,7 @@ diff --git a/opensilex-front/front/src/components/layout/Register.vue b/opensile
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/Register.vue
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,159 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
@@ -322,6 +323,13 @@ new file mode 100644
 +  loading = false;
 +  success = false;
 +
++  created() {
++    try {
++      const user = (this as any).$opensilex.getUser();
++      if (user) this.$router.push('/home');
++    } catch {}
++  }
++
 +  async onRegister() {
 +    const valid = await this.validatorRef.validate();
 +    if (!valid) return;
@@ -357,7 +365,7 @@ new file mode 100644
 +    confirmPassword: "Confirm password"
 +    submit: "Register"
 +    loading: "Registering..."
-+    successMessage: "Registration successful! Check your email for a confirmation link."
++    successMessage: "Registration successful! Your account is active — you can now log in."
 +    backToLogin: "Back to login"
 +    errorEmailTaken: "This email address is already registered."
 +    errorEmailService: "Email service is unavailable. Please contact an administrator."
@@ -370,7 +378,7 @@ new file mode 100644
 +    confirmPassword: "Confirmer le mot de passe"
 +    submit: "S'inscrire"
 +    loading: "Inscription..."
-+    successMessage: "Inscription réussie ! Vérifiez votre email pour un lien de confirmation."
++    successMessage: "Inscription réussie ! Votre compte est actif — vous pouvez vous connecter."
 +    backToLogin: "Retour à la connexion"
 +    errorEmailTaken: "Cette adresse email est déjà enregistrée."
 +    errorEmailService: "Le service email est indisponible. Veuillez contacter un administrateur."
@@ -380,7 +388,7 @@ diff --git a/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/ConfirmRegistration.vue
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,80 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
@@ -417,6 +425,13 @@ new file mode 100644
 +  loading = true;
 +  confirmed = false;
 +
++  created() {
++    try {
++      const user = (this as any).$opensilex.getUser();
++      if (user) this.$router.push('/home');
++    } catch {}
++  }
++
 +  async mounted() {
 +    const token = decodeURIComponent(this.$route.params.token as string);
 +    try {
@@ -442,7 +457,7 @@ new file mode 100644
 +    successMessage: "Your account has been activated. You can now log in."
 +    loginButton: "Log in"
 +    errorTitle: "Invalid link"
-+    errorMessage: "This confirmation link is invalid or has expired. Please register again."
++    errorMessage: "This confirmation link is invalid or has expired. Your account is still active — you can log in directly."
 +    backToLogin: "Back to login"
 +fr:
 +  ConfirmRegistration:
@@ -451,7 +466,7 @@ new file mode 100644
 +    successMessage: "Votre compte a été activé. Vous pouvez maintenant vous connecter."
 +    loginButton: "Se connecter"
 +    errorTitle: "Lien invalide"
-+    errorMessage: "Ce lien de confirmation est invalide ou a expiré. Veuillez vous inscrire à nouveau."
++    errorMessage: "Ce lien de confirmation est invalide ou a expiré. Votre compte est toujours actif — vous pouvez vous connecter directement."
 +    backToLogin: "Retour à la connexion"
 +</i18n>
 diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml
