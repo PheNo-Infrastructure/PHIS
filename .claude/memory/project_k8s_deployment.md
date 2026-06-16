@@ -73,6 +73,31 @@ To force ESO re-sync: `kubectl annotate externalsecret -n phis --all force-sync=
 | `mongodb-backup-pvc` | 100Gi | azureblob-fuse2-backup | Azure Blob |
 | `graphdb-backup-pvc` | 100Gi | azureblob-fuse2-backup | Azure Blob |
 
+All PVs use `persistentVolumeReclaimPolicy: Retain`.
+
+## Data Protection (added 2026-06-16)
+
+Three-layer protection — all live in production:
+
+**Layer 1 — Azure Resource Locks (`CanNotDelete`)** via `terraform/locks.tf`:
+- 3 managed disks in `MC_phis-rg_phis-cluster_westeurope` (graphdb-data, mongodb-data, mongodb-config)
+- `phistfstate` storage account
+- Blob/container soft-delete enabled: 30-day recovery window
+
+**Layer 2 — Terraform `prevent_destroy`** on: `azurerm_resource_group.phis`, `azurerm_storage_account.main`, all 3 storage containers, `azurerm_kubernetes_cluster.phis`
+
+**Layer 3 — Kyverno 3.8.1** (Flux-managed, `kyverno` namespace, `failurePolicy: Fail`):
+- `ClusterPolicy/block-pvc-delete-phis` — blocks `kubectl delete pvc` in `phis` unless annotation `phis.pheno.no/confirm-delete=true` is present
+- Flux Kustomizations: `kyverno-stack` (install) + `kyverno-policy` (ClusterPolicy), in `clusters/phis-cluster/`
+
+**To intentionally delete a PVC:**
+```bash
+kubectl annotate pvc <name> -n phis phis.pheno.no/confirm-delete=true
+kubectl delete pvc <name> -n phis
+```
+
+**Known gap:** New managed disks (future PVCs) are NOT auto-locked — must add entries to `terraform/locks.tf` manually.
+
 ## Current image
 
 `ghcr.io/lversen/opensilex-phis:1.5.0.5.3` — patches: Feide auto-group assignment, password-reset fix, SSO login buttons UX, self-service registration (patch 005).
