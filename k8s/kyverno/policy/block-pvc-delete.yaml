@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-pvc-delete-phis
+  annotations:
+    policies.kyverno.io/title: Block PVC Deletion in phis
+    policies.kyverno.io/description: >
+      Blocks accidental deletion of PVCs in namespace phis.
+      To delete a PVC, first annotate it:
+      kubectl annotate pvc <name> -n phis phis.pheno.no/confirm-delete=true
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: require-confirm-annotation
+      match:
+        any:
+          - resources:
+              kinds:
+                - PersistentVolumeClaim
+              namespaces:
+                - phis
+              operations:
+                - DELETE
+      validate:
+        message: >
+          Deletion of PVC '{{ request.oldObject.metadata.name }}' is blocked.
+          Research data is irreplaceable. To proceed:
+          kubectl annotate pvc {{ request.oldObject.metadata.name }} -n phis phis.pheno.no/confirm-delete=true
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.oldObject.metadata.annotations.\"phis.pheno.no/confirm-delete\" || '' }}"
+                operator: NotEquals
+                value: "true"
