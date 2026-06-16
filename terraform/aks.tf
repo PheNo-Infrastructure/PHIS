@@ -32,4 +32,8 @@ resource "azurerm_kubernetes_cluster" "phis" {
   storage_profile {
     blob_driver_enabled = true
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
