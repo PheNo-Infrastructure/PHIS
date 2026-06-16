@@ -11,5 +11,7 @@
 - [Azure infrastructure](project_azure_infra.md) — Terraform state blob backend, azurerm 4.x, IP/region constraints, LTS K8s restriction, Git Bash MSYS_NO_PATHCONV
 - [k8s architecture & design](project_k8s_architecture.md) — MongoDB StatefulSet, GraphDB nginx sidecar, initContainers, config injection, resource limits
 - [Build process](project_build_process.md) — workflow_dispatch, patch versioning (1.5.0.N), Maven ~15-20 min, full release loop
+- [Image tag versioning](project_versioning.md) — 1.5.0.N = new patch, 1.5.0.N.M = fix iteration on same patch
 - [k8s patterns & feedback](feedback_k8s_patterns.md) — imagePullPolicy Always, ttlSecondsAfterFinished, configMapGenerator, curl Host header
+- [OpenSILEX patch patterns](feedback_opensilex_patch_patterns.md) — @ApiModel on DTOs, no @Required, enable=true on create, getUser() unreliable, GHA cache invalidation
 - [Old Docker VMs](project_active_vms.md) — All empty, pending RG deletion (PHIS-SANDBOX, PHIS-TEST-DOCKER, RG-OPENSILEX-DEBIAN12-TEST, PHIS-IP)

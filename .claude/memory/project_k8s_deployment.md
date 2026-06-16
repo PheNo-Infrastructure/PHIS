@@ -75,8 +75,8 @@ To force ESO re-sync: `kubectl annotate externalsecret -n phis --all force-sync=
 
 ## Current image
 
-`ghcr.io/lversen/opensilex-phis:1.5.0.4` — patches: Feide auto-group assignment, password-reset fix, SSO login buttons UX
-Build 1.5.0.4 triggered 2026-06-12; 1.5.0.3 was the previous production image.
+`ghcr.io/lversen/opensilex-phis:1.5.0.5.3` — patches: Feide auto-group assignment, password-reset fix, SSO login buttons UX, self-service registration (patch 005).
+Deployed 2026-06-16. Patch 005 (self-registration) adds `/app/register` + `/app/confirm-registration/:token`, creates accounts with `enable=true`, auto-assigns to "Users" group.
 
 ## Pending
 
