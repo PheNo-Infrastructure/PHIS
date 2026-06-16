@@ -1,6 +1,10 @@
 resource "azurerm_resource_group" "phis" {
   name     = var.resource_group_name
   location = var.location
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Single storage account for all external state: Terraform state, OpenSILEX
@@ -13,24 +17,49 @@ resource "azurerm_storage_account" "main" {
   account_tier             = "Standard"
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
+
+  blob_properties {
+    delete_retention_policy {
+      days = 30
+    }
+    container_delete_retention_policy {
+      days = 30
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_storage_container" "tfstate" {
   name                  = "tfstate"
   storage_account_name  = azurerm_storage_account.main.name
   container_access_type = "private"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_storage_container" "mongodb_backups" {
   name                  = "mongodb-backups"
   storage_account_name  = azurerm_storage_account.main.name
   container_access_type = "private"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "azurerm_storage_container" "graphdb_backups" {
   name                  = "graphdb-backups"
   storage_account_name  = azurerm_storage_account.main.name
   container_access_type = "private"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # AKS kubelet identity (node pool) needs Storage Blob Data Contributor for
