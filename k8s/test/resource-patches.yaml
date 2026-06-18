@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphdb
+spec:
+  template:
+    spec:
+      containers:
+        - name: graphdb
+          resources:
+            requests:
+              cpu: "100m"
+          env:
+            - name: GDB_JAVA_OPTS
+              value: >-
+                -Xmx1g -Xms256m
+                -Dgraphdb.home=/opt/graphdb/home
+                -Dgraphdb.workbench.cors.enable=false
+        - name: graphdb-proxy
+          resources:
+            requests:
+              cpu: "10m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensilex
+spec:
+  template:
+    spec:
+      containers:
+        - name: opensilex
+          resources:
+            requests:
+              cpu: "100m"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+spec:
+  template:
+    spec:
+      containers:
+        - name: mongodb
+          resources:
+            requests:
+              cpu: "100m"

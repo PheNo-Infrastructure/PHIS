@@ -1,0 +1,37 @@
+# Base template for test environments.
+# Not meant to be applied directly — use scripts/test-env.ps1 instead.
+# Placeholders substituted by the script:
+#   __NS__    → namespace (e.g. phis-myfeature)
+#   __LB_IP__ → LoadBalancer IP (filled in after first deploy)
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: __NS__
+
+resources:
+  - namespace.yaml
+  - mongodb-service.yaml
+  - mongodb-credentials.yaml
+  - mongodb-statefulset.yaml
+  - graphdb-pvc.yaml
+  - graphdb-service.yaml
+  - graphdb-nginx-config.yaml
+  - graphdb-deployment.yaml
+  - graphdb-credentials.yaml
+  - graphdb-init-job.yaml
+  - opensilex-pvc.yaml
+  - opensilex-credentials.yaml
+  - feide-credentials.yaml
+  - ghcr-pull-secret.yaml
+  - opensilex-service.yaml
+  - opensilex-deployment.yaml
+  - opensilex-init-job.yaml
+
+patches:
+  - path: resource-patches.yaml
+
+configMapGenerator:
+  - name: opensilex-config
+    files:
+      - opensilex.yml
