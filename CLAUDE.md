@@ -23,6 +23,19 @@ Update image tag in `k8s/opensilex/deployment.yaml` → commit + push → Flux r
 ### When in doubt
 Do the read-only version first (`kubectl get`, `kubectl describe`, `kubectl logs`), report findings, then ask before mutating.
 
+## Test Environments
+
+On-demand environments for testing changes without touching production. Managed by `scripts/test-env.ps1` (interactive PowerShell menu).
+
+- Namespaces: `phis-<name>` (e.g. `phis-test`, `phis-myfeature`)
+- Max **1 test environment** at a time — Azure Disk limit (7/8 slots used by prod+test on the D4s_v3)
+- Test PVCs use `managed-csi` with Delete reclaim policy — data is destroyed with `kubectl delete namespace`
+- Production deployment files are sourced at spin-up time — new environments automatically get the latest image tags
+- `email: enable: false` is required in `k8s/test/opensilex.yml` — `simulateSending: true` alone still crashes on SMTP connect
+- `k8s/test/resource-patches.yaml` lowers CPU requests to 100m — do not remove, the node hits scheduler limits without it
+
+**Data protection note:** Test PVCs are intentionally ephemeral (Delete reclaim policy). The Kyverno `block-pvc-delete-phis` policy only covers the `phis` namespace — test namespace PVCs are unprotected by design.
+
 ## Project Memory
 
 Memory files live in `.claude/memory/` in this repo and travel with the code.

@@ -5,6 +5,7 @@
 - [Direct az/kubectl/terraform access](feedback_az_access.md) — Run Azure CLI, kubectl, terraform, flux directly; don't just instruct the user
 - [Destructive action confirmation](feedback_destructive_actions.md) — Never delete VMs/RGs based on "proceed" alone; require explicit confirmation
 - [AKS K8s version selection](feedback_aks_k8s_version.md) — Use K8s 1.33; 1.30-1.32 LTS-only (Premium required), 1.34+ invisible to azurerm 4.76
+- [Test env patterns](feedback_test_env_patterns.md) — email must be disabled (not simulateSending), CPU requests 100m, max 1 test env (disk limit), secret recovery steps
 
 ## Project state
 - [k8s deployment (PRODUCTION)](project_k8s_deployment.md) — West Europe cluster, HTTPS on phis.pheno.no, Flux GitOps, ESO secrets, all pods running
@@ -15,3 +16,4 @@
 - [k8s patterns & feedback](feedback_k8s_patterns.md) — imagePullPolicy Always, ttlSecondsAfterFinished, configMapGenerator, curl Host header
 - [OpenSILEX patch patterns](feedback_opensilex_patch_patterns.md) — @ApiModel on DTOs, no @Required, enable=true on create, getUser() unreliable, GHA cache invalidation
 - [Old Docker VMs](project_active_vms.md) — All empty, pending RG deletion (PHIS-SANDBOX, PHIS-TEST-DOCKER, RG-OPENSILEX-DEBIAN12-TEST, PHIS-IP)
+- [Test environment system](project_test_environment.md) — k8s/test/ + scripts/test-env.ps1, phis-<name> namespaces, max 1 env at a time, syncs deployments from production at spin-up

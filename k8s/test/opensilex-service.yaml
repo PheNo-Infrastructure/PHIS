@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensilex
+  namespace: __NS__
+spec:
+  type: LoadBalancer
+  selector:
+    app: opensilex
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8666
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensilex-admin
+  namespace: __NS__
+spec:
+  type: ClusterIP
+  selector:
+    app: opensilex
+  ports:
+    - name: admin
+      port: 8667
+      targetPort: 8667
