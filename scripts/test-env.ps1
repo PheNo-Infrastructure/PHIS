@@ -217,6 +217,17 @@ function Invoke-Up {
                       $graphDbPass $adminPass $feideId $feideSecret $shared.GhcrB64
         kubectl apply -k ($tmpDir -replace '\\', '/')
 
+        # Verify no __LB_IP__ placeholders remain in any ConfigMap (catches stale CMs
+        # that got applied outside this script and would silently break Feide login).
+        $stale = kubectl get configmap -n $ns -o yaml 2>$null | Select-String '__LB_IP__'
+        if ($stale) {
+            Write-Warning ""
+            Write-Warning "WARNING: __LB_IP__ placeholder found in cluster ConfigMaps after deploy."
+            Write-Warning "Feide redirect URI will be broken. Stale ConfigMap detected:"
+            $stale | ForEach-Object { Write-Warning "  $_" }
+            Write-Warning "Re-run this script or manually patch the ConfigMap with: $lbIp"
+        }
+
     } finally {
         Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
     }
