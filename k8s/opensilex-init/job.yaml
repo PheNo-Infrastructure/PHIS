@@ -56,6 +56,9 @@ spec:
                   -H "Authorization: Bearer $TOKEN" \
                   -H "Content-Type: application/json" \
                   -d '{"name":"Default profile","description":"Default permissions for Feide/OpenID users","credentials":[]}') || true
+                # credentials:[] = no permissions. After deployment, manually grant credentials
+                # via Admin UI → Security → Profiles → Default profile. To automate, query
+                # GET /rest/security/credentials to get valid URIs and add them here.
 
                 if echo "$RESPONSE" | grep -q '"result"'; then
                   echo "'Default profile' created successfully."
