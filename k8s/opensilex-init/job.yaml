@@ -42,27 +42,48 @@ spec:
               fi
               echo "Authenticated."
 
+              echo "Checking for 'Default profile'..."
+              PROFILES=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/profiles?name=Default+profile" \
+                -H "Host: phis.pheno.no" \
+                -H "Authorization: Bearer $TOKEN") || true
+
+              if echo "$PROFILES" | grep -q '"name":"Default profile"'; then
+                echo "'Default profile' already exists."
+              else
+                echo "Creating 'Default profile'..."
+                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/profiles" \
+                  -H "Host: phis.pheno.no" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d '{"name":"Default profile","description":"Default permissions for Feide/OpenID users","credentials":[]}') || true
+
+                if echo "$RESPONSE" | grep -q '"result"'; then
+                  echo "'Default profile' created successfully."
+                else
+                  echo "WARNING: Unexpected response creating 'Default profile': $RESPONSE"
+                fi
+              fi
+
               echo "Checking for 'Users' group..."
               GROUPS=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
                 -H "Host: phis.pheno.no" \
                 -H "Authorization: Bearer $TOKEN") || true
 
               if echo "$GROUPS" | grep -q '"name":"Users"'; then
-                echo "'Users' group already exists. Nothing to do."
-                exit 0
-              fi
-
-              echo "Creating 'Users' group..."
-              RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
-                -H "Host: phis.pheno.no" \
-                -H "Authorization: Bearer $TOKEN" \
-                -H "Content-Type: application/json" \
-                -d '{"name":"Users","description":"Default group for Feide/OpenID users","user_profiles":[]}') || true
-
-              if echo "$RESPONSE" | grep -q '"result"'; then
-                echo "'Users' group created successfully."
+                echo "'Users' group already exists."
               else
-                echo "WARNING: Unexpected response creating 'Users' group: $RESPONSE"
+                echo "Creating 'Users' group..."
+                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
+                  -H "Host: phis.pheno.no" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d '{"name":"Users","description":"Default group for Feide/OpenID users","user_profiles":[]}') || true
+
+                if echo "$RESPONSE" | grep -q '"result"'; then
+                  echo "'Users' group created successfully."
+                else
+                  echo "WARNING: Unexpected response creating 'Users' group: $RESPONSE"
+                fi
               fi
 
               echo "Init complete."
