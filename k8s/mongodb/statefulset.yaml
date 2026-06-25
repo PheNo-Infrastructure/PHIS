@@ -68,7 +68,9 @@ spec:
                     });
                     print('Users created');
                   } else {
-                    print('Users already exist');
+                    db.getSiblingDB('admin').updateUser('root', {pwd: process.env.MONGO_ROOT_PASSWORD});
+                    db.getSiblingDB('admin').updateUser('opensilex', {pwd: process.env.MONGO_APP_PASSWORD});
+                    print('Users passwords reset to current secrets');
                   }
                 " 2>/dev/null || true
 
