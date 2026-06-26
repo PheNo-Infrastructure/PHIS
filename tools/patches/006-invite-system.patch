@@ -64,7 +64,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/Sec
 +++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
 @@ -1,57 +1,69 @@
  package org.opensilex.security.service;
-
+ 
  import org.opensilex.security.account.dal.AccountModel;
  import org.opensilex.security.group.dal.GroupDAO;
  import org.opensilex.security.group.dal.GroupModel;
@@ -74,13 +74,13 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/Sec
  import org.opensilex.sparql.service.SPARQLService;
  import org.slf4j.Logger;
  import org.slf4j.LoggerFactory;
-
+ 
  import java.net.URI;
  import java.util.ArrayList;
  import java.util.List;
 +import java.util.Set;
 +import java.util.concurrent.ConcurrentHashMap;
-
+ 
  public class SecurityAutoAssignmentService {
      private static final Logger LOGGER = LoggerFactory.getLogger(SecurityAutoAssignmentService.class);
      private static final String DEFAULT_GROUP_NAME = "Users";
@@ -90,7 +90,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/Sec
 +
 +    /** Emails of users who accepted a researcher invite and are waiting for their next login. */
 +    static final Set<String> pendingResearchers = ConcurrentHashMap.newKeySet();
-
+ 
      public static void assignToDefaultGroupIfNew(AccountModel user, SPARQLService sparql) {
          if (user == null || user.getUri() == null || sparql == null) {
              return;
@@ -146,13 +146,13 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/Sec
 diff --git a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
 --- a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
 +++ b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
-@@ -22,6 +22,7 @@ import org.opensilex.server.ServerModule;
+@@ -22,4 +22,5 @@ import org.opensilex.server.ServerModule;
  import org.opensilex.server.exceptions.BadRequestException;
  import org.opensilex.security.account.api.AccountRegisterDTO;
 +import org.opensilex.security.service.InviteService;
  import org.opensilex.server.response.*;
  import org.opensilex.server.rest.validation.Required;
-@@ -556,4 +556,74 @@ authenticateSAML
+@@ -556,4 +556,73 @@ authenticateSAML
          return new ErrorResponse(Status.FORBIDDEN, "Invalid SAML authentication", "Could not authenticate user with SAML")
                  .getResponse();
      }
