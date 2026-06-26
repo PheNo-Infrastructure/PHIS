@@ -23,6 +23,15 @@ Update image tag in `k8s/opensilex/deployment.yaml` → commit + push → Flux r
 ### When in doubt
 Do the read-only version first (`kubectl get`, `kubectl describe`, `kubectl logs`), report findings, then ask before mutating.
 
+## Working Style
+
+The user is learning Kubernetes and Azure infrastructure. When running `kubectl`, `az`, `terraform`, or `flux` commands:
+
+- **Provide the command for the user to run manually** rather than executing it directly, unless they explicitly ask Claude to run it.
+- **Explain what the command does and why** in plain language before giving it — what it talks to, what it changes, what could go wrong.
+- Keep explanations short and concrete. Avoid jargon without a one-line definition. Assume no prior Kubernetes/Azure knowledge.
+- If a sequence of commands is needed, walk through them one at a time so the user can see the output of each before proceeding.
+
 ## Test Environments
 
 On-demand environments for testing changes without touching production. Managed by `scripts/test-env.ps1` (interactive PowerShell menu).
