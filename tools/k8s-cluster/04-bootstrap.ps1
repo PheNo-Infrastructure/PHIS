@@ -148,6 +148,8 @@ SetSecret "mongodb-root-password"       (RandHex 20)
 SetSecret "mongodb-opensilex-password"  (RandHex 20)
 # MongoDB keyfile: 756 random bytes, base64-encoded, no newlines (replica set auth)
 SetSecret "mongodb-keyfile"             (RandBase64 756)
+$opensilexAdminPassword = RandHex 20
+SetSecret "opensilex-admin-password"    $opensilexAdminPassword
 
 Write-Host ""
 Write-Host "  You need to enter the following secrets manually." -ForegroundColor Yellow
@@ -226,6 +228,10 @@ Ok "ghcr-pull-secret created in phis namespace."
 
 Write-Host ""
 Write-Host "Bootstrap complete." -ForegroundColor Green
+Write-Host ""
+Write-Host "OpenSILEX admin credentials (save these now):" -ForegroundColor Yellow
+Write-Host "  Email:    admin@opensilex.org"
+Write-Host "  Password: $opensilexAdminPassword"
 Write-Host ""
 Write-Host "Flux will now reconcile the stack. Watch progress:" -ForegroundColor Cyan
 Write-Host "  flux get kustomizations --all-namespaces --watch"
