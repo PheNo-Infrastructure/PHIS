@@ -62,7 +62,7 @@ new file mode 100644
 diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
 --- a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
 +++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
-@@ -1,16 +1,20 @@
+@@ -1,57 +1,69 @@
  package org.opensilex.security.service;
 
  import org.opensilex.security.account.dal.AccountModel;
