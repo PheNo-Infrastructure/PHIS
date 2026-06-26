@@ -7,6 +7,9 @@
 - [AKS K8s version selection](feedback_aks_k8s_version.md) — Use K8s 1.33; 1.30-1.32 LTS-only (Premium required), 1.34+ invisible to azurerm 4.76
 - [Test env patterns](feedback_test_env_patterns.md) — email must be disabled (not simulateSending), CPU requests 100m, max 1 test env (disk limit), secret recovery steps
 
+## User context
+- [Learning goals & career](learning_goals.md) — Background in ML/stats, learning Terraform/K8s/Flux, MLOps portfolio plan
+
 ## Project state
 - [k8s deployment (PRODUCTION)](project_k8s_deployment.md) — West Europe cluster, HTTPS on phis.pheno.no, Flux GitOps, ESO secrets, all pods running
 - [Azure infrastructure](project_azure_infra.md) — Terraform state blob backend, azurerm 4.x, IP/region constraints, LTS K8s restriction, Git Bash MSYS_NO_PATHCONV
