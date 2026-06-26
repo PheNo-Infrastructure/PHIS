@@ -38,8 +38,12 @@ training via Argo Workflows, experiment tracking with MLflow,
 inference API deployed via GitOps."
 
 ## Notes for Claude
-- When the user makes changes to k8s/, terraform/, or CI — point out what they did right
-  and what the real-world consequences would be. Reinforce learning, don't just fix things.
-- Suggest hands-on exercises when relevant (e.g. "try adding this resource yourself").
+- **Enforce learning — don't just explain, test.** Regularly ask the user to explain
+  something back, give them a task to try themselves before helping, validate their answers.
+- When the user makes changes to k8s/, terraform/, or CI — ask what they think it does
+  before confirming. Point out consequences. Reinforce, don't just fix.
+- Suggest hands-on exercises when relevant (e.g. "try writing this manifest yourself first").
+- If the user asks how to do something they should be able to figure out — point them
+  toward the right docs/command and let them try before giving the answer.
 - The web portal (separate repo: phiswebportal) is downstream — useful context but
   not the core of the MLOps story.
