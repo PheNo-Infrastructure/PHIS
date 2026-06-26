@@ -32,7 +32,7 @@ RUN for patch in /patches/*.patch; do \
 
 # Register.vue and ConfirmRegistration.vue need entries in index.ts.
 # patch -p1 fails on this file consistently; sed r-command is used instead.
-RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["opensilex-Register"] = Register;\nimport ConfirmRegistration from '"'"'./layout/ConfirmRegistration.vue'"'"';\ncomponents["opensilex-ConfirmRegistration"] = ConfirmRegistration;\n' \
+RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["opensilex-Register"] = Register;\nimport ConfirmRegistration from '"'"'./layout/ConfirmRegistration.vue'"'"';\ncomponents["opensilex-ConfirmRegistration"] = ConfirmRegistration;\nimport AcceptInvite from '"'"'./layout/AcceptInvite.vue'"'"';\ncomponents["opensilex-AcceptInvite"] = AcceptInvite;\n' \
         > /tmp/reg_comps.txt \
     && sed -i '/^components\["opensilex-ForgotPassword"\] = ForgotPassword;/r /tmp/reg_comps.txt' \
        opensilex-front/front/src/components/index.ts \
