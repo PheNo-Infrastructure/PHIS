@@ -189,7 +189,7 @@ function Invoke-Up {
     $mongoApp     = New-RandomHex
     $mongoKeyfile = New-Keyfile
     $graphDbPass  = New-RandomHex
-    $adminPass    = 'admin'
+    $adminPass    = New-RandomHex
 
     $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
     New-Item -ItemType Directory -Path $tmpDir | Out-Null

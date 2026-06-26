@@ -90,6 +90,44 @@ spec:
                 fi
               fi
 
+              echo "Checking for 'Researcher profile'..."
+              RESEARCHER_PROFILES=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/profiles?name=Researcher+profile" \
+                -H "Authorization: Bearer $TOKEN") || true
+
+              if echo "$RESEARCHER_PROFILES" | grep -q '"name":"Researcher profile"'; then
+                echo "'Researcher profile' already exists."
+              else
+                echo "Creating 'Researcher profile'..."
+                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/profiles" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d '{"name":"Researcher profile","description":"Full access profile for invited researchers","credentials":[]}') || true
+                if echo "$RESPONSE" | grep -q '"result"'; then
+                  echo "'Researcher profile' created."
+                else
+                  echo "WARNING: Unexpected response creating 'Researcher profile': $RESPONSE"
+                fi
+              fi
+
+              echo "Checking for 'Researchers' group..."
+              RESEARCHER_GROUPS=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Researchers" \
+                -H "Authorization: Bearer $TOKEN") || true
+
+              if echo "$RESEARCHER_GROUPS" | grep -q '"name":"Researchers"'; then
+                echo "'Researchers' group already exists."
+              else
+                echo "Creating 'Researchers' group..."
+                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d '{"name":"Researchers","description":"Invited researchers with full access","user_profiles":[]}') || true
+                if echo "$RESPONSE" | grep -q '"result"'; then
+                  echo "'Researchers' group created."
+                else
+                  echo "WARNING: Unexpected response creating 'Researchers' group: $RESPONSE"
+                fi
+              fi
+
               echo "Init complete."
           env:
             - name: OPENSILEX_ADMIN_PASSWORD
