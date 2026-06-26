@@ -91,8 +91,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/authenticat
 +        }
 +        String lang = (dto.getLanguage() != null && !dto.getLanguage().isEmpty()) ? dto.getLanguage() : "en";
 +        String passwordHash = authentication.getPasswordHash(dto.getPassword());
-+        AccountModel account = accountDAO.create(null, email, false, passwordHash, lang, true, null);
-+        SecurityAutoAssignmentService.assignToDefaultGroupIfNew(account, sparql);
++        AccountModel account = accountDAO.create(null, email, false, passwordHash, lang, false, null);
 +        URI confirmToken = authentication.addForgotPasswordId(account.getUri());
 +        sendRegistrationConfirmEmail(email.getAddress(), confirmToken);
 +        return new ObjectUriResponse(Response.Status.OK, account.getUri()).getResponse();
@@ -125,6 +124,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/authenticat
 +                account.getPasswordHash(), account.getLanguage(), true,
 +                account.getLinkedPerson(),
 +                account.getFavorites() != null ? account.getFavorites() : new java.util.ArrayList<>());
++        SecurityAutoAssignmentService.assignToDefaultGroupIfNew(account, sparql);
 +        authentication.removeForgottenPasswordUserFromRenewToken(token);
 +        return new ObjectUriResponse(Response.Status.OK, userUri).getResponse();
 +    }
@@ -357,7 +357,7 @@ new file mode 100644
 +    confirmPassword: "Confirm password"
 +    submit: "Register"
 +    loading: "Registering..."
-+    successMessage: "Registration successful! Your account is active — you can now log in."
++    successMessage: "Registration successful! Please check your email and click the confirmation link to activate your account."
 +    backToLogin: "Back to login"
 +    errorEmailTaken: "This email address is already registered."
 +    errorEmailService: "Email service is unavailable. Please contact an administrator."
@@ -370,7 +370,7 @@ new file mode 100644
 +    confirmPassword: "Confirmer le mot de passe"
 +    submit: "S'inscrire"
 +    loading: "Inscription..."
-+    successMessage: "Inscription réussie ! Votre compte est actif — vous pouvez vous connecter."
++    successMessage: "Inscription réussie ! Veuillez vérifier votre email et cliquer sur le lien de confirmation pour activer votre compte."
 +    backToLogin: "Retour à la connexion"
 +    errorEmailTaken: "Cette adresse email est déjà enregistrée."
 +    errorEmailService: "Le service email est indisponible. Veuillez contacter un administrateur."
@@ -442,7 +442,7 @@ new file mode 100644
 +    successMessage: "Your account has been activated. You can now log in."
 +    loginButton: "Log in"
 +    errorTitle: "Invalid link"
-+    errorMessage: "This confirmation link is invalid or has expired. Your account is still active — you can log in directly."
++    errorMessage: "This confirmation link is invalid or has expired. Please contact an administrator or try registering again."
 +    backToLogin: "Back to login"
 +fr:
 +  ConfirmRegistration:
@@ -451,7 +451,7 @@ new file mode 100644
 +    successMessage: "Votre compte a été activé. Vous pouvez maintenant vous connecter."
 +    loginButton: "Se connecter"
 +    errorTitle: "Lien invalide"
-+    errorMessage: "Ce lien de confirmation est invalide ou a expiré. Votre compte est toujours actif — vous pouvez vous connecter directement."
++    errorMessage: "Ce lien de confirmation est invalide ou a expiré. Veuillez contacter un administrateur ou essayer de vous inscrire à nouveau."
 +    backToLogin: "Retour à la connexion"
 +</i18n>
 diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml

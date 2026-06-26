@@ -1,0 +1,364 @@
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/InviteService.java b/opensilex-security/src/main/java/org/opensilex/security/service/InviteService.java
+new file mode 100644
+--- /dev/null
++++ b/opensilex-security/src/main/java/org/opensilex/security/service/InviteService.java
+@@ -0,0 +1,28 @@
++package org.opensilex.security.service;
++
++import java.util.UUID;
++import java.util.concurrent.ConcurrentHashMap;
++
++/**
++ * Manages researcher invite tokens (in-memory; cleared on pod restart — resend invite if needed).
++ */
++public class InviteService {
++
++    private static final ConcurrentHashMap<String, String> pendingTokens = new ConcurrentHashMap<>();
++
++    /** Creates an invite token for the given email and returns it. */
++    public static String createInvite(String email) {
++        String token = UUID.randomUUID().toString();
++        pendingTokens.put(token, email.toLowerCase());
++        return token;
++    }
++
++    /** Accepts an invite token: moves the email into the pending-researchers set. Returns false if token is unknown. */
++    public static boolean acceptInvite(String token) {
++        String email = pendingTokens.remove(token);
++        if (email == null) {
++            return false;
++        }
++        SecurityAutoAssignmentService.pendingResearchers.add(email);
++        return true;
++    }
++}
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/InviteDTO.java b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/InviteDTO.java
+new file mode 100644
+--- /dev/null
++++ b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/InviteDTO.java
+@@ -0,0 +1,20 @@
++package org.opensilex.security.authentication.api;
++
++import io.swagger.annotations.ApiModel;
++import io.swagger.annotations.ApiModelProperty;
++
++import javax.validation.constraints.NotNull;
++
++@ApiModel("InviteDTO")
++public class InviteDTO {
++
++    @NotNull
++    @ApiModelProperty(value = "Email address to invite as researcher", required = true)
++    private String email;
++
++    public String getEmail() {
++        return email;
++    }
++
++    public void setEmail(String email) {
++        this.email = email;
++    }
++}
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
+--- a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
+@@ -1,16 +1,20 @@
+ package org.opensilex.security.service;
+
+ import org.opensilex.security.account.dal.AccountModel;
+ import org.opensilex.security.group.dal.GroupDAO;
+ import org.opensilex.security.group.dal.GroupModel;
+ import org.opensilex.security.group.dal.GroupUserProfileModel;
+ import org.opensilex.security.profile.dal.ProfileDAO;
+ import org.opensilex.security.profile.dal.ProfileModel;
+ import org.opensilex.sparql.service.SPARQLService;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+
+ import java.net.URI;
+ import java.util.ArrayList;
+ import java.util.List;
++import java.util.Set;
++import java.util.concurrent.ConcurrentHashMap;
+
+ public class SecurityAutoAssignmentService {
+     private static final Logger LOGGER = LoggerFactory.getLogger(SecurityAutoAssignmentService.class);
+     private static final String DEFAULT_GROUP_NAME = "Users";
+     private static final String DEFAULT_PROFILE_NAME = "Default profile";
++    private static final String RESEARCHER_GROUP_NAME = "Researchers";
++    private static final String RESEARCHER_PROFILE_NAME = "Researcher profile";
++
++    /** Emails of users who accepted a researcher invite and are waiting for their next login. */
++    static final Set<String> pendingResearchers = ConcurrentHashMap.newKeySet();
+
+     public static void assignToDefaultGroupIfNew(AccountModel user, SPARQLService sparql) {
+         if (user == null || user.getUri() == null || sparql == null) {
+             return;
+         }
+         try {
+             GroupDAO groupDAO = new GroupDAO(sparql);
+             List<URI> userGroups = groupDAO.getGroupUriList(user);
+             if (userGroups != null && !userGroups.isEmpty()) {
+                 return;
+             }
+-            GroupModel usersGroup = findGroupByName(groupDAO, DEFAULT_GROUP_NAME);
+-            if (usersGroup == null) {
+-                LOGGER.warn("Default group not found. Create it manually in OpenSILEX UI.");
++
++            boolean isResearcher = pendingResearchers.remove(user.getEmail().getAddress().toLowerCase());
++            String targetGroupName   = isResearcher ? RESEARCHER_GROUP_NAME   : DEFAULT_GROUP_NAME;
++            String targetProfileName = isResearcher ? RESEARCHER_PROFILE_NAME : DEFAULT_PROFILE_NAME;
++
++            GroupModel targetGroup = findGroupByName(groupDAO, targetGroupName);
++            if (targetGroup == null) {
++                LOGGER.warn("Group '{}' not found. Create it via the init job or OpenSILEX UI.", targetGroupName);
+                 return;
+             }
+             ProfileDAO profileDAO = new ProfileDAO(sparql);
+-            ProfileModel defaultProfile = findProfileByName(profileDAO, DEFAULT_PROFILE_NAME);
+-            if (defaultProfile == null) {
+-                LOGGER.warn("Default profile not found. Create it manually in OpenSILEX UI.");
++            ProfileModel targetProfile = findProfileByName(profileDAO, targetProfileName);
++            if (targetProfile == null) {
++                LOGGER.warn("Profile '{}' not found. Create it via the init job or OpenSILEX UI.", targetProfileName);
+                 return;
+             }
+             GroupUserProfileModel groupUserProfile = new GroupUserProfileModel();
+             groupUserProfile.setUser(user);
+-            groupUserProfile.setProfile(defaultProfile);
+-            List<GroupUserProfileModel> existing = usersGroup.getUserProfiles();
++            groupUserProfile.setProfile(targetProfile);
++            List<GroupUserProfileModel> existing = targetGroup.getUserProfiles();
+             List<GroupUserProfileModel> mutable = existing != null
+                 ? new ArrayList<>(existing)
+                 : new ArrayList<>();
+             mutable.add(groupUserProfile);
+-            usersGroup.setUserProfiles(mutable);
+-            groupDAO.update(usersGroup);
+-            LOGGER.info("Auto-assigned new user {} to default group", user.getEmail());
++            targetGroup.setUserProfiles(mutable);
++            groupDAO.update(targetGroup);
++            LOGGER.info("Auto-assigned new user {} to group '{}'", user.getEmail(), targetGroupName);
+         } catch (Exception e) {
+             LOGGER.error("Failed to auto-assign user to default group: " + e.getMessage(), e);
+         }
+     }
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
+--- a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
+@@ -22,6 +22,7 @@ import org.opensilex.server.ServerModule;
+ import org.opensilex.server.exceptions.BadRequestException;
+ import org.opensilex.security.account.api.AccountRegisterDTO;
++import org.opensilex.security.service.InviteService;
+ import org.opensilex.server.response.*;
+ import org.opensilex.server.rest.validation.Required;
+@@ -556,4 +556,74 @@ authenticateSAML
+         return new ErrorResponse(Status.FORBIDDEN, "Invalid SAML authentication", "Could not authenticate user with SAML")
+                 .getResponse();
+     }
++
++    // ── Researcher invite ─────────────────────────────────────────────────────
++
++    @POST
++    @Path("invite")
++    @ApiOperation("Invite a researcher by email (admin only)")
++    @ApiResponses({
++        @ApiResponse(code = 200, message = "Invite email sent"),
++        @ApiResponse(code = 403, message = "Admin access required"),
++        @ApiResponse(code = 503, message = "Email service not available")
++    })
++    @Consumes(MediaType.APPLICATION_JSON)
++    @Produces(MediaType.APPLICATION_JSON)
++    public Response invite(
++            @ApiParam(value = "Invite details", required = true) @Valid InviteDTO dto
++    ) throws Exception {
++        if (!currentUser.isAdmin()) {
++            return new ErrorResponse(Response.Status.FORBIDDEN,
++                    "Forbidden", "Admin access required").getResponse();
++        }
++        if (!emailService.isEnable()) {
++            return new ErrorResponse(Response.Status.SERVICE_UNAVAILABLE,
++                    "Functionality not available",
++                    "Email service must be configured to send invites").getResponse();
++        }
++        String token = InviteService.createInvite(dto.getEmail());
++        sendInviteEmail(dto.getEmail(), token);
++        return Response.ok().build();
++    }
++
++    @GET
++    @Path("accept-invite")
++    @ApiOperation("Accept a researcher invite via email link")
++    @ApiResponses({
++        @ApiResponse(code = 200, message = "Invite accepted — log in with Feide to activate researcher access"),
++        @ApiResponse(code = 400, message = "Invalid or already-used invite token")
++    })
++    @Produces(MediaType.APPLICATION_JSON)
++    public Response acceptInvite(
++            @ApiParam(value = "Invite token", required = true)
++            @QueryParam("token") @NotNull String token
++    ) throws Exception {
++        boolean accepted = InviteService.acceptInvite(token);
++        if (!accepted) {
++            return new ErrorResponse(Response.Status.BAD_REQUEST,
++                    "Invalid token", "This invite link is invalid or has already been used").getResponse();
++        }
++        return Response.ok().build();
++    }
++
++    private void sendInviteEmail(String emailAddress, String inviteToken) {
++        try {
++            String baseURL = emailService.getOpenSilex().getModuleByClass(ServerModule.class).getBaseURL();
++            if (!baseURL.endsWith("/")) {
++                baseURL += "/";
++            }
++            String inviteUrl = baseURL + "app/accept-invite/" + inviteToken;
++            Map<String, Object> infos = new HashMap<>();
++            List<InternetAddress> receivers = new LinkedList<>();
++            receivers.add(new InternetAddress(emailAddress));
++            infos.put("inviteUrl", inviteUrl);
++            emailService.sendAnEmail(receivers, "[OpenSILEX] You have been invited as a researcher",
++                    "invite.mustache", infos, true);
++        } catch (Exception e) {
++            LOGGER.error("Failed to send invite email: " + e.getMessage(), e);
++        }
++    }
++
++    // ── Register (patch 005) ──────────────────────────────────────────────────
+ }
+diff --git a/opensilex-security/src/main/resources/email/invite.mustache b/opensilex-security/src/main/resources/email/invite.mustache
+new file mode 100644
+--- /dev/null
++++ b/opensilex-security/src/main/resources/email/invite.mustache
+@@ -0,0 +1,41 @@
++<!doctype html>
++<html lang="en-US">
++<head>
++    <meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
++    <title>You have been invited to OpenSILEX</title>
++    <style type="text/css">a:hover {text-decoration: underline !important;}</style>
++</head>
++<body marginheight="0" topmargin="0" marginwidth="0" style="margin: 0px; background-color: #f2f3f8;" leftmargin="0">
++    <table cellspacing="0" border="0" cellpadding="0" width="100%" bgcolor="#f2f3f8"
++        style="@import url(https://fonts.googleapis.com/css?family=Rubik:300,400,500,700|Open+Sans:300,400,600,700); font-family: 'Open Sans', sans-serif;">
++        <tr><td>
++            <table style="background-color: #f2f3f8; max-width:670px; margin:0 auto;" width="100%" border="0" align="center" cellpadding="0" cellspacing="0">
++                <tr><td style="height:80px;">&nbsp;</td></tr>
++                <tr><td style="text-align:center;">
++                    <img width="100" src="http://www.opensilex.org/img/opensilex_logo.png" title="logo" alt="logo">
++                </td></tr>
++                <tr><td style="height:20px;">&nbsp;</td></tr>
++                <tr><td>
++                    <table width="95%" border="0" align="center" cellpadding="0" cellspacing="0"
++                        style="max-width:670px;background:#fff; border-radius:3px; text-align:center;-webkit-box-shadow:0 6px 18px 0 rgba(0,0,0,.06);-moz-box-shadow:0 6px 18px 0 rgba(0,0,0,.06);box-shadow:0 6px 18px 0 rgba(0,0,0,.06);">
++                        <tr><td style="height:40px;">&nbsp;</td></tr>
++                        <tr><td style="padding:0 35px;">
++                            <h1 style="color:#1e1e2d; font-weight:500; margin:0;font-size:32px;font-family:'Rubik',sans-serif;">You have been invited as a researcher</h1>
++                            <span style="display:inline-block; vertical-align:middle; margin:29px 0 26px; border-bottom:1px solid #cecece; width:100px;"></span>
++                            <p style="color:#455056; font-size:15px;line-height:24px; margin:0;">
++                                You have been granted researcher access to OpenSILEX.<br/><br/>
++                                Click the button below to accept your invite, then log in with Feide to activate your researcher account.
++                                This link is valid until the next server restart.
++                            </p>
++                            <a href="{{inviteUrl}}" style="background:#20e277;text-decoration:none !important; font-weight:500; margin-top:35px; color:#fff;text-transform:uppercase; font-size:14px;padding:10px 24px;display:inline-block;border-radius:50px;">Accept invite</a>
++                        </td></tr>
++                        <tr><td style="height:40px;">&nbsp;</td></tr>
++                    </table>
++                </td></tr>
++                <tr><td style="height:20px;">&nbsp;</td></tr>
++                <tr><td style="height:80px;">&nbsp;</td></tr>
++            </table>
++        </td></tr>
++    </table>
++</body>
++</html>
+diff --git a/opensilex-front/front/src/components/layout/AcceptInvite.vue b/opensilex-front/front/src/components/layout/AcceptInvite.vue
+new file mode 100644
+--- /dev/null
++++ b/opensilex-front/front/src/components/layout/AcceptInvite.vue
+@@ -0,0 +1,78 @@
++<template>
++  <div class="container-fluid">
++    <b-row class="justify-content-center" style="margin-top: 80px;">
++      <b-col cols="12" md="6" lg="4">
++        <div class="card p-4 text-center">
++          <div v-if="loading">
++            <p>{{ $t("AcceptInvite.loading") }}</p>
++          </div>
++          <div v-else-if="accepted">
++            <h2 class="text-success mb-3">{{ $t("AcceptInvite.successTitle") }}</h2>
++            <p>{{ $t("AcceptInvite.successMessage") }}</p>
++            <router-link to="/" class="btn btn-primary mt-3">
++              {{ $t("AcceptInvite.loginButton") }}
++            </router-link>
++          </div>
++          <div v-else>
++            <h2 class="text-danger mb-3">{{ $t("AcceptInvite.errorTitle") }}</h2>
++            <p>{{ $t("AcceptInvite.errorMessage") }}</p>
++            <router-link to="/" class="btn btn-secondary mt-3">
++              {{ $t("AcceptInvite.backToLogin") }}
++            </router-link>
++          </div>
++        </div>
++      </b-col>
++    </b-row>
++  </div>
++</template>
++
++<script lang="ts">
++import { Component, Vue } from "vue-property-decorator";
++
++@Component
++export default class AcceptInvite extends Vue {
++  loading = true;
++  accepted = false;
++
++  async mounted() {
++    const token = this.$route.params.token as string;
++    try {
++      let service = await (this as any).$opensilex.loadService("opensilex-security.AuthenticationService");
++      await service.acceptInvite(token);
++      this.accepted = true;
++    } catch (error) {
++      this.accepted = false;
++    } finally {
++      this.loading = false;
++    }
++  }
++}
++</script>
++
++<style scoped lang="scss"></style>
++
++<i18n>
++en:
++  AcceptInvite:
++    loading: "Accepting your invite..."
++    successTitle: "Invite accepted!"
++    successMessage: "Your researcher access is ready. Log in with Feide to activate it."
++    loginButton: "Log in with Feide"
++    errorTitle: "Invalid invite"
++    errorMessage: "This invite link is invalid or has already been used. Please ask an administrator to resend your invite."
++    backToLogin: "Back to login"
++fr:
++  AcceptInvite:
++    loading: "Acceptation de votre invitation..."
++    successTitle: "Invitation acceptée !"
++    successMessage: "Votre accès chercheur est prêt. Connectez-vous avec Feide pour l'activer."
++    loginButton: "Se connecter avec Feide"
++    errorTitle: "Invitation invalide"
++    errorMessage: "Ce lien d'invitation est invalide ou a déjà été utilisé. Demandez à un administrateur de renvoyer votre invitation."
++    backToLogin: "Retour à la connexion"
++</i18n>
+diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml
+--- a/opensilex-front/front/opensilex.front.yml
++++ b/opensilex-front/front/opensilex.front.yml
+@@ -531,4 +531,8 @@
+   - path: /confirm-registration/:token
+     component: opensilex-ConfirmRegistration
+     credentials:
+       - public
++  - path: /accept-invite/:token
++    component: opensilex-AcceptInvite
++    credentials:
++      - public

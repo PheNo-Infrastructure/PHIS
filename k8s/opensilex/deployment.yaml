@@ -126,7 +126,7 @@ spec:
 
       containers:
         - name: opensilex
-          image: ghcr.io/lversen/opensilex-phis:1.5.0.5.3
+          image: ghcr.io/lversen/opensilex-phis:1.5.0.6
           imagePullPolicy: Always
           command: ["sh", "-c"]
           args:
