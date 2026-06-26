@@ -27,7 +27,7 @@ COPY patches/ /patches/
 RUN for patch in /patches/*.patch; do \
         [ -f "$patch" ] || continue; \
         echo "Applying patch: $(basename $patch)"; \
-        patch -p1 < "$patch" || exit 1; \
+        patch --verbose -p1 < "$patch" || exit 1; \
     done
 
 # Register.vue and ConfirmRegistration.vue need entries in index.ts.
