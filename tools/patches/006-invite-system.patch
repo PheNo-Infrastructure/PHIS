@@ -276,7 +276,7 @@ diff --git a/opensilex-front/front/src/components/layout/AcceptInvite.vue b/open
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-front/front/src/components/layout/AcceptInvite.vue
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,73 @@
 +<template>
 +  <div class="container-fluid">
 +    <b-row class="justify-content-center" style="margin-top: 80px;">
