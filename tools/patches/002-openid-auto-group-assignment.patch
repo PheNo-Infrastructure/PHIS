@@ -10,7 +10,17 @@ index 9dc1c04..1314d05 100644
  import org.opensilex.server.ServerModule;
  import org.opensilex.server.exceptions.BadRequestException;
  import org.opensilex.server.response.*;
-@@ -425,6 +426,9 @@ public class AuthenticationAPI {
+@@ -143,6 +144,9 @@
+             }
+         }
+ 
++        // Auto-assign new password-auth users to researcher or default group
++        SecurityAutoAssignmentService.assignToDefaultGroupIfNew(user, sparql);
++
+         // Authenticate found user with provided password
+         if (user != null && authentication.authenticate(user, authenticationDTO.getPassword(), accountDAO.getCredentialList(user.getUri()))) {
+             // Return user token
+@@ -425,6 +429,9 @@ public class AuthenticationAPI {
  
          user = accountDAO.getByEmailOrCreate(user, openSilex.getDefaultLanguage());
  
@@ -20,7 +30,7 @@ index 9dc1c04..1314d05 100644
          // Authenticate found user with provided password
          if (user != null && authentication.authenticate(user, accountDAO.getCredentialList(user.getUri()))) {
              // Return user token
-@@ -450,6 +454,9 @@ public class AuthenticationAPI {
+@@ -450,6 +457,9 @@ public class AuthenticationAPI {
  
          user = accountDAO.getByEmailOrCreate(user, openSilex.getDefaultLanguage());
  

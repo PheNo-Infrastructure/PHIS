@@ -63,7 +63,7 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/Sec
 new file mode 100644
 --- /dev/null
 +++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,103 @@
 +package org.opensilex.security.service;
 +
 +import org.opensilex.security.account.dal.AccountModel;
@@ -98,12 +98,17 @@ new file mode 100644
 +        }
 +        try {
 +            GroupDAO groupDAO = new GroupDAO(sparql);
-+            List<URI> userGroups = groupDAO.getGroupUriList(user);
-+            if (userGroups != null && !userGroups.isEmpty()) {
-+                return;
++
++            // Check pending researchers first — invited users may already have groups
++            boolean isResearcher = pendingResearchers.remove(user.getEmail().getAddress().toLowerCase());
++
++            if (!isResearcher) {
++                List<URI> userGroups = groupDAO.getGroupUriList(user);
++                if (userGroups != null && !userGroups.isEmpty()) {
++                    return;
++                }
 +            }
 +
-+            boolean isResearcher = pendingResearchers.remove(user.getEmail().getAddress().toLowerCase());
 +            String targetGroupName   = isResearcher ? RESEARCHER_GROUP_NAME   : DEFAULT_GROUP_NAME;
 +            String targetProfileName = isResearcher ? RESEARCHER_PROFILE_NAME : DEFAULT_PROFILE_NAME;
 +
