@@ -1,0 +1,81 @@
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java b/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
+--- a/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
+@@ -71,10 +71,25 @@
+         sparql.delete(GroupModel.class, groupURI);
+     }
+ 
+-    public GroupModel update(GroupModel group) throws Exception {
+-        sparql.update(group);
+-        return group;
+-    }
++    public GroupModel update(GroupModel group) throws Exception {
++        List<URI> oldGupUris = sparql.searchURIs(GroupUserProfileModel.class, null, (SelectBuilder select) -> {
++            Var gupVar = sparql.getURIFieldVar(GroupUserProfileModel.class);
++            select.addWhere(SPARQLDeserializers.nodeURI(group.getUri()), SecurityOntology.hasUserProfile, gupVar);
++        });
++        sparql.update(group);
++        if (!oldGupUris.isEmpty()) {
++            Set<URI> currentGupUris = new HashSet<>(sparql.searchURIs(GroupUserProfileModel.class, null, (SelectBuilder select) -> {
++                Var gupVar = sparql.getURIFieldVar(GroupUserProfileModel.class);
++                select.addWhere(SPARQLDeserializers.nodeURI(group.getUri()), SecurityOntology.hasUserProfile, gupVar);
++            }));
++            for (URI oldGupUri : oldGupUris) {
++                if (!currentGupUris.contains(oldGupUri)) {
++                    sparql.delete(GroupUserProfileModel.class, oldGupUri);
++                }
++            }
++        }
++        return group;
++    }
+ 
+     public List<URI> getGroupUriList(AccountModel user) throws Exception {
+ 
+diff --git a/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java b/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
+--- a/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
+@@ -9,10 +9,13 @@
+ import org.apache.jena.arq.querybuilder.SelectBuilder;
+ import org.apache.jena.arq.querybuilder.WhereBuilder;
+ import org.apache.jena.arq.querybuilder.handlers.WhereHandler;
+ import org.apache.jena.sparql.expr.Expr;
++import org.apache.jena.sparql.core.Var;
+ import org.apache.jena.sparql.vocabulary.FOAF;
+ import org.opensilex.OpenSilex;
+ import org.opensilex.security.account.ModuleWithNosqlEntityLinkedToAccount;
++import org.opensilex.security.authentication.SecurityOntology;
++import org.opensilex.security.group.dal.GroupModel;
+ import org.opensilex.security.group.dal.GroupUserProfileModel;
+ import org.opensilex.security.person.dal.PersonDAO;
+ import org.opensilex.security.person.dal.PersonModel;
+@@ -142,6 +145,7 @@
+      */
+     public void delete(URI instanceURI, OpenSilex openSilex) throws Exception {
+         Objects.requireNonNull(instanceURI);
++        cleanOrphanedGroupUserProfiles(instanceURI);
+         List<String> predicateUrisToExclude = new ArrayList<>();
+         predicateUrisToExclude.add(FOAF.account.getURI());
+         sparql.requireUriIsNotLinkedWithOtherResourcesInRDF(instanceURI, predicateUrisToExclude);
+@@ -165,6 +169,22 @@
+             throw new ConflictException("URI <" + accountUri + "> is linked with other ressources");
+         }
+     }
++
++    private void cleanOrphanedGroupUserProfiles(URI accountURI) throws Exception {
++        List<URI> gupUris = sparql.searchURIs(GroupUserProfileModel.class, null, (SelectBuilder select) -> {
++            Var gupVar = sparql.getURIFieldVar(GroupUserProfileModel.class);
++            select.addWhere(gupVar, SecurityOntology.hasUser, SPARQLDeserializers.nodeURI(accountURI));
++        });
++        for (URI gupUri : gupUris) {
++            List<URI> parentGroups = sparql.searchURIs(GroupModel.class, null, (SelectBuilder select) -> {
++                Var groupVar = sparql.getURIFieldVar(GroupModel.class);
++                select.addWhere(groupVar, SecurityOntology.hasUserProfile, SPARQLDeserializers.nodeURI(gupUri));
++            });
++            if (parentGroups.isEmpty()) {
++                sparql.delete(GroupUserProfileModel.class, gupUri);
++            }
++        }
++    }
+ 
+     /**
+      * update the Account with the given information
