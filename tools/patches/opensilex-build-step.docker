@@ -40,7 +40,10 @@ RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["o
     && echo "index.ts patched OK"
 
 # Build OpenSILEX with frontend
-# Try building, and if it fails due to vuelayers bind operator, patch and retry
+# The first attempt always fails for one or both of:
+#   1. vuelayers bind operator syntax incompatible with current Node
+#   2. swagger-codegen skips geoJsonObject/namedResourceDTO due to null GenericRef
+#      (pre-existing upstream bug; these stubs satisfy TypeScript without changing runtime)
 # Aether timeouts prevent indefinite hangs when Maven checks remote repos.
 # Force Wagon transport for reliable timeout behavior with Maven 3.9+.
 RUN (mvn clean install -DskipTests \
@@ -49,12 +52,17 @@ RUN (mvn clean install -DskipTests \
        -Dmaven.wagon.http.connectionTimeout=5000 \
        -Dmaven.wagon.http.readTimeout=10000 \
        -Dmaven.wagon.http.retryHandler.count=1) || \
-    (echo "Build failed, patching vuelayers bind operator..." && \
+    (echo "Build failed, injecting missing TypeScript stubs and patching vuelayers..." && \
+     mkdir -p opensilex-front/front/node_modules/opensilex-core/model && \
+     echo 'export type GeoJsonObject = any;' > \
+       opensilex-front/front/node_modules/opensilex-core/model/geoJsonObject.ts && \
+     echo 'export type NamedResourceDTO = any;' > \
+       opensilex-front/front/node_modules/opensilex-core/model/namedResourceDTO.ts && \
      find opensilex-front/node_modules/vuelayers/src -name '*.vue' -type f \
        -exec sed -i 's/this::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.bind(this)/g' {} + && \
      find opensilex-front/node_modules/vuelayers/src -name '*.vue' -type f \
        -exec sed -i 's/\([a-zA-Z_][a-zA-Z0-9_]*\)::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.\2.bind(\1)/g' {} + && \
-     echo "Retrying build with patched vuelayers..." && \
+     echo "Retrying build with patched vuelayers and stub models..." && \
      mvn install -DskipTests -rf :opensilex-front \
        -Drevision=${IMAGE_VERSION} \
        -Dmaven.resolver.transport=wagon \
