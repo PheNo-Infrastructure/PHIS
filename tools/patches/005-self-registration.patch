@@ -457,7 +457,7 @@ new file mode 100644
 diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml
 --- a/opensilex-front/front/opensilex.front.yml
 +++ b/opensilex-front/front/opensilex.front.yml
-@@ -521,4 +521,11 @@
+@@ -521,4 +521,12 @@
    - path: /reset-password/:uri
      component: opensilex-ResetPassword
      credentials:

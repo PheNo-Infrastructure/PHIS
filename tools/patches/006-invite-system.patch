@@ -60,50 +60,48 @@ new file mode 100644
 +    }
 +}
 diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
---- a/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
+new file mode 100644
+--- /dev/null
 +++ b/opensilex-security/src/main/java/org/opensilex/security/service/SecurityAutoAssignmentService.java
-@@ -1,57 +1,69 @@
- package org.opensilex.security.service;
- 
- import org.opensilex.security.account.dal.AccountModel;
- import org.opensilex.security.group.dal.GroupDAO;
- import org.opensilex.security.group.dal.GroupModel;
- import org.opensilex.security.group.dal.GroupUserProfileModel;
- import org.opensilex.security.profile.dal.ProfileDAO;
- import org.opensilex.security.profile.dal.ProfileModel;
- import org.opensilex.sparql.service.SPARQLService;
- import org.slf4j.Logger;
- import org.slf4j.LoggerFactory;
- 
- import java.net.URI;
- import java.util.ArrayList;
- import java.util.List;
+@@ -0,0 +1,98 @@
++package org.opensilex.security.service;
++
++import org.opensilex.security.account.dal.AccountModel;
++import org.opensilex.security.group.dal.GroupDAO;
++import org.opensilex.security.group.dal.GroupModel;
++import org.opensilex.security.group.dal.GroupUserProfileModel;
++import org.opensilex.security.profile.dal.ProfileDAO;
++import org.opensilex.security.profile.dal.ProfileModel;
++import org.opensilex.sparql.service.SPARQLService;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++import java.net.URI;
++import java.util.ArrayList;
++import java.util.List;
 +import java.util.Set;
 +import java.util.concurrent.ConcurrentHashMap;
- 
- public class SecurityAutoAssignmentService {
-     private static final Logger LOGGER = LoggerFactory.getLogger(SecurityAutoAssignmentService.class);
-     private static final String DEFAULT_GROUP_NAME = "Users";
-     private static final String DEFAULT_PROFILE_NAME = "Default profile";
++
++public class SecurityAutoAssignmentService {
++    private static final Logger LOGGER = LoggerFactory.getLogger(SecurityAutoAssignmentService.class);
++    private static final String DEFAULT_GROUP_NAME = "Users";
++    private static final String DEFAULT_PROFILE_NAME = "Default profile";
 +    private static final String RESEARCHER_GROUP_NAME = "Researchers";
 +    private static final String RESEARCHER_PROFILE_NAME = "Researcher profile";
 +
 +    /** Emails of users who accepted a researcher invite and are waiting for their next login. */
 +    static final Set<String> pendingResearchers = ConcurrentHashMap.newKeySet();
- 
-     public static void assignToDefaultGroupIfNew(AccountModel user, SPARQLService sparql) {
-         if (user == null || user.getUri() == null || sparql == null) {
-             return;
-         }
-         try {
-             GroupDAO groupDAO = new GroupDAO(sparql);
-             List<URI> userGroups = groupDAO.getGroupUriList(user);
-             if (userGroups != null && !userGroups.isEmpty()) {
-                 return;
-             }
--            GroupModel usersGroup = findGroupByName(groupDAO, DEFAULT_GROUP_NAME);
--            if (usersGroup == null) {
--                LOGGER.warn("Default group not found. Create it manually in OpenSILEX UI.");
++
++    public static void assignToDefaultGroupIfNew(AccountModel user, SPARQLService sparql) {
++        if (user == null || user.getUri() == null || sparql == null) {
++            return;
++        }
++        try {
++            GroupDAO groupDAO = new GroupDAO(sparql);
++            List<URI> userGroups = groupDAO.getGroupUriList(user);
++            if (userGroups != null && !userGroups.isEmpty()) {
++                return;
++            }
 +
 +            boolean isResearcher = pendingResearchers.remove(user.getEmail().getAddress().toLowerCase());
 +            String targetGroupName   = isResearcher ? RESEARCHER_GROUP_NAME   : DEFAULT_GROUP_NAME;
@@ -112,37 +110,58 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/service/Sec
 +            GroupModel targetGroup = findGroupByName(groupDAO, targetGroupName);
 +            if (targetGroup == null) {
 +                LOGGER.warn("Group '{}' not found. Create it via the init job or OpenSILEX UI.", targetGroupName);
-                 return;
-             }
-             ProfileDAO profileDAO = new ProfileDAO(sparql);
--            ProfileModel defaultProfile = findProfileByName(profileDAO, DEFAULT_PROFILE_NAME);
--            if (defaultProfile == null) {
--                LOGGER.warn("Default profile not found. Create it manually in OpenSILEX UI.");
++                return;
++            }
++            ProfileDAO profileDAO = new ProfileDAO(sparql);
 +            ProfileModel targetProfile = findProfileByName(profileDAO, targetProfileName);
 +            if (targetProfile == null) {
 +                LOGGER.warn("Profile '{}' not found. Create it via the init job or OpenSILEX UI.", targetProfileName);
-                 return;
-             }
-             GroupUserProfileModel groupUserProfile = new GroupUserProfileModel();
-             groupUserProfile.setUser(user);
--            groupUserProfile.setProfile(defaultProfile);
--            List<GroupUserProfileModel> existing = usersGroup.getUserProfiles();
++                return;
++            }
++            GroupUserProfileModel groupUserProfile = new GroupUserProfileModel();
++            groupUserProfile.setUser(user);
 +            groupUserProfile.setProfile(targetProfile);
 +            List<GroupUserProfileModel> existing = targetGroup.getUserProfiles();
-             List<GroupUserProfileModel> mutable = existing != null
-                 ? new ArrayList<>(existing)
-                 : new ArrayList<>();
-             mutable.add(groupUserProfile);
--            usersGroup.setUserProfiles(mutable);
--            groupDAO.update(usersGroup);
--            LOGGER.info("Auto-assigned new user {} to default group", user.getEmail());
++            List<GroupUserProfileModel> mutable = existing != null
++                ? new ArrayList<>(existing)
++                : new ArrayList<>();
++            mutable.add(groupUserProfile);
 +            targetGroup.setUserProfiles(mutable);
 +            groupDAO.update(targetGroup);
 +            LOGGER.info("Auto-assigned new user {} to group '{}'", user.getEmail(), targetGroupName);
-         } catch (Exception e) {
-             LOGGER.error("Failed to auto-assign user to default group: " + e.getMessage(), e);
-         }
-     }
++        } catch (Exception e) {
++            LOGGER.error("Failed to auto-assign user to default group: " + e.getMessage(), e);
++        }
++    }
++
++    private static GroupModel findGroupByName(GroupDAO groupDAO, String name) throws Exception {
++        try {
++            List<GroupModel> allGroups = groupDAO.search(name, null, null, 0, 0).getList();
++            for (GroupModel group : allGroups) {
++                if (name.equals(group.getName())) {
++                    return group;
++                }
++            }
++        } catch (Exception e) {
++            LOGGER.error("Error searching for group: {}", e.getMessage());
++        }
++        return null;
++    }
++
++    private static ProfileModel findProfileByName(ProfileDAO profileDAO, String name) throws Exception {
++        try {
++            List<ProfileModel> allProfiles = profileDAO.search(name, null, 0, 0).getList();
++            for (ProfileModel profile : allProfiles) {
++                if (name.equals(profile.getName())) {
++                    return profile;
++                }
++            }
++        } catch (Exception e) {
++            LOGGER.error("Error searching for profile: {}", e.getMessage());
++        }
++        return null;
++    }
++}
 diff --git a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
 --- a/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
 +++ b/opensilex-security/src/main/java/org/opensilex/security/authentication/api/AuthenticationAPI.java
@@ -353,7 +372,7 @@ new file mode 100644
 diff --git a/opensilex-front/front/opensilex.front.yml b/opensilex-front/front/opensilex.front.yml
 --- a/opensilex-front/front/opensilex.front.yml
 +++ b/opensilex-front/front/opensilex.front.yml
-@@ -531,4 +531,8 @@
+@@ -529,4 +529,8 @@
    - path: /confirm-registration/:token
      component: opensilex-ConfirmRegistration
      credentials:
