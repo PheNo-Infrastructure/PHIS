@@ -98,9 +98,9 @@ kubectl rollout restart deployment/opensilex -n phis
 ## Cluster Lifecycle
 
 ```powershell
-tools/k8s-cluster/01-create-cluster.ps1   # First-time AKS setup
-tools/k8s-cluster/02-start-cluster.ps1    # Start a stopped cluster
-tools/k8s-cluster/03-stop-cluster.ps1     # Stop cluster (reduce costs)
+tools/k8s-cluster/04-bootstrap.ps1        # First-time: terraform apply + secrets + Flux bootstrap
+tools/k8s-cluster/02-start-cluster.ps1   # Start a stopped cluster
+tools/k8s-cluster/03-stop-cluster.ps1    # Stop cluster (reduce costs)
 ```
 
 ## Before Promoting to Production

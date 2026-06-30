@@ -195,11 +195,12 @@ function Invoke-Up {
     New-Item -ItemType Directory -Path $tmpDir | Out-Null
 
     try {
+        Write-Secrets $tmpDir $ns $mongoRoot $mongoApp $mongoKeyfile `
+                      $graphDbPass $adminPass $feideId $feideSecret $shared.GhcrB64
+
         Write-Host ""
         Write-Host "Deploying $ns (pass 1/2)..."
         Build-Files  $tmpDir $ns 'pending' $false
-        Write-Secrets $tmpDir $ns $mongoRoot $mongoApp $mongoKeyfile `
-                      $graphDbPass $adminPass $feideId $feideSecret $shared.GhcrB64
         kubectl apply -k ($tmpDir -replace '\\', '/')
 
         Write-Host -NoNewline "Waiting for LoadBalancer IP"
@@ -213,8 +214,6 @@ function Invoke-Up {
 
         Write-Host "Applying config with IP $lbIp (pass 2/2)..."
         Build-Files  $tmpDir $ns $lbIp $true
-        Write-Secrets $tmpDir $ns $mongoRoot $mongoApp $mongoKeyfile `
-                      $graphDbPass $adminPass $feideId $feideSecret $shared.GhcrB64
         kubectl apply -k ($tmpDir -replace '\\', '/')
 
         # Verify no __LB_IP__ placeholders remain in any ConfigMap (catches stale CMs
