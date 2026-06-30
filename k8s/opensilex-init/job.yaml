@@ -42,94 +42,38 @@ spec:
               fi
               echo "Authenticated."
 
-              echo "Checking for 'Default profile'..."
-              PROFILES=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/profiles?name=Default+profile" \
-                -H "Host: phis.pheno.no" \
-                -H "Authorization: Bearer $TOKEN") || true
-
-              if echo "$PROFILES" | grep -q '"name":"Default profile"'; then
-                echo "'Default profile' already exists."
-              else
-                echo "Creating 'Default profile'..."
-                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/profiles" \
+              create_if_missing() {
+                local endpoint="$1" name="$2" body="$3"
+                local existing resp
+                existing=$(curl -sf -G "$OPENSILEX_URL$endpoint" \
+                  -H "Host: phis.pheno.no" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  --data-urlencode "name=$name") || true
+                if echo "$existing" | grep -q "\"name\":\"$name\""; then
+                  echo "'$name' already exists."
+                  return
+                fi
+                resp=$(curl -sf -X POST "$OPENSILEX_URL$endpoint" \
                   -H "Host: phis.pheno.no" \
                   -H "Authorization: Bearer $TOKEN" \
                   -H "Content-Type: application/json" \
-                  -d '{"name":"Default profile","description":"Default permissions for Feide/OpenID users","credentials":[]}') || true
-                # credentials:[] = no permissions. After deployment, manually grant credentials
-                # via Admin UI → Security → Profiles → Default profile. To automate, query
-                # GET /rest/security/credentials to get valid URIs and add them here.
-
-                if echo "$RESPONSE" | grep -q '"result"'; then
-                  echo "'Default profile' created successfully."
+                  -d "$body") || true
+                if echo "$resp" | grep -q '"result"'; then
+                  echo "'$name' created."
                 else
-                  echo "WARNING: Unexpected response creating 'Default profile': $RESPONSE"
+                  echo "WARNING: Unexpected response for '$name': $resp"
                 fi
-              fi
+              }
 
-              echo "Checking for 'Users' group..."
-              GROUPS=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Users" \
-                -H "Host: phis.pheno.no" \
-                -H "Authorization: Bearer $TOKEN") || true
-
-              if echo "$GROUPS" | grep -q '"name":"Users"'; then
-                echo "'Users' group already exists."
-              else
-                echo "Creating 'Users' group..."
-                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
-                  -H "Host: phis.pheno.no" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d '{"name":"Users","description":"Default group for Feide/OpenID users","user_profiles":[]}') || true
-
-                if echo "$RESPONSE" | grep -q '"result"'; then
-                  echo "'Users' group created successfully."
-                else
-                  echo "WARNING: Unexpected response creating 'Users' group: $RESPONSE"
-                fi
-              fi
-
-              echo "Checking for 'Researcher profile'..."
-              RESEARCHER_PROFILES=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/profiles?name=Researcher+profile" \
-                -H "Host: phis.pheno.no" \
-                -H "Authorization: Bearer $TOKEN") || true
-
-              if echo "$RESEARCHER_PROFILES" | grep -q '"name":"Researcher profile"'; then
-                echo "'Researcher profile' already exists."
-              else
-                echo "Creating 'Researcher profile'..."
-                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/profiles" \
-                  -H "Host: phis.pheno.no" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d '{"name":"Researcher profile","description":"Full access profile for invited researchers","credentials":[]}') || true
-                if echo "$RESPONSE" | grep -q '"result"'; then
-                  echo "'Researcher profile' created. Grant credentials via Admin UI → Security → Profiles → Researcher profile."
-                else
-                  echo "WARNING: Unexpected response creating 'Researcher profile': $RESPONSE"
-                fi
-              fi
-
-              echo "Checking for 'Researchers' group..."
-              RESEARCHER_GROUPS=$(curl -sf -X GET "$OPENSILEX_URL/rest/security/groups?name=Researchers" \
-                -H "Host: phis.pheno.no" \
-                -H "Authorization: Bearer $TOKEN") || true
-
-              if echo "$RESEARCHER_GROUPS" | grep -q '"name":"Researchers"'; then
-                echo "'Researchers' group already exists."
-              else
-                echo "Creating 'Researchers' group..."
-                RESPONSE=$(curl -sf -X POST "$OPENSILEX_URL/rest/security/groups" \
-                  -H "Host: phis.pheno.no" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d '{"name":"Researchers","description":"Invited researchers with full access","user_profiles":[]}') || true
-                if echo "$RESPONSE" | grep -q '"result"'; then
-                  echo "'Researchers' group created."
-                else
-                  echo "WARNING: Unexpected response creating 'Researchers' group: $RESPONSE"
-                fi
-              fi
+              # credentials:[]/user_profiles:[] — grant permissions via Admin UI after deploy
+              create_if_missing /rest/security/profiles "Default profile" \
+                '{"name":"Default profile","description":"Default permissions for Feide/OpenID users","credentials":[]}'
+              create_if_missing /rest/security/groups "Users" \
+                '{"name":"Users","description":"Default group for Feide/OpenID users","user_profiles":[]}'
+              create_if_missing /rest/security/profiles "Researcher profile" \
+                '{"name":"Researcher profile","description":"Full access profile for invited researchers","credentials":[]}'
+              create_if_missing /rest/security/groups "Researchers" \
+                '{"name":"Researchers","description":"Invited researchers with full access","user_profiles":[]}'
 
               echo "Init complete."
           env:
