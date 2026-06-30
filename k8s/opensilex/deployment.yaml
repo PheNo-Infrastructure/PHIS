@@ -139,7 +139,10 @@ spec:
               else
                 echo "Already installed, skipping system install."
               fi
-              echo "Ensuring admin@opensilex.org exists..."
+              # Creates admin on fresh install only. If admin already exists, user add
+              # fails silently (|| true). ESO keeps the K8s secret in sync with Key Vault,
+              # but OpenSILEX's own user DB is NOT updated automatically — rotate the
+              # password via the UI, then update Key Vault manually to match.
               ./bin/opensilex.sh user add \
                 --admin \
                 --email=admin@opensilex.org \
