@@ -40,6 +40,24 @@ A public IP in West Europe **cannot** be attached to a Load Balancer in Norway E
 
 `cloud-provider-azure` uppercases resource names when constructing ARM references internally. The `azure-pip-name` and `azure-pip-resource-group` annotations on the ingress-nginx Service are case-sensitive — use the exact casing as returned by `az network public-ip show`.
 
+## Terraform — subscription_id variable required
+
+Every `terraform plan/apply/import` in this repo requires `-var="subscription_id=64d45747-e6a6-4ba0-b46c-3247997c6f92"`. There is no `terraform.tfvars` file (it is gitignored to avoid committing the subscription ID). Forgetting this causes an interactive prompt that blocks `--auto-approve`.
+
+`terraform` is installed via Scoop (`C:\Users\siv017\scoop\shims\terraform.exe`). In Git Bash, use the full path. In PowerShell, the shims directory is already in the user PATH registry — open a new terminal if `terraform` isn't found.
+
+## MongoDB Compass external access
+
+To connect MongoDB Compass to the cluster, port-forward and add `directConnection=true` to the connection string:
+
+```
+kubectl port-forward -n phis svc/mongodb 27017:27017
+# Connection string:
+mongodb://root:<password>@localhost:27017/?authSource=admin&directConnection=true
+```
+
+`directConnection=true` is required because without it, Compass uses the replica set discovery protocol, which returns internal K8s DNS names (`mongodb-0.mongodb.phis.svc.cluster.local`) that are unreachable from outside the cluster.
+
 ## Git Bash path mangling
 
 When passing ARM resource IDs (starting with `/subscriptions/`) to Bash commands in Git Bash, prefix with `MSYS_NO_PATHCONV=1` or Git Bash converts the path to `C:/Program Files/Git/subscriptions/...`.

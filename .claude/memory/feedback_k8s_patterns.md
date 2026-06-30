@@ -39,21 +39,21 @@ Any pod that calls `http://opensilex:8666` internally (e.g., init jobs, health s
 
 **How to apply:** All new Jobs or scripts that hit the OpenSILEX internal service must use `curl ... -H "Host: phis.pheno.no"`.
 
-## bitnami/kubectl tag must match cluster K8s version
+## kubectl image: use registry.k8s.io, not bitnami
 
-Always use `bitnami/kubectl:<cluster-version>` (currently `1.33`) in CronJobs and Jobs that need kubectl.
+For any job/cronjob needing `kubectl`, use `registry.k8s.io/kubectl:v1.33.0` — NOT `bitnami/kubectl:1.33`.
 
-**Why:** Bitnami removes old minor-version tags from Docker Hub. `1.30` was silently `ImagePullBackOff` for 8 hours before being caught. The tag is not automatically kept in sync with cluster upgrades.
+**Why:** Bitnami dropped versioned kubectl tags (only `latest` exists now). The snapshot cronjob was in `ImagePullBackOff` for 6 days because of this. `registry.k8s.io/kubectl` is the official Kubernetes project image with proper `v<major>.<minor>.<patch>` tags.
 
-**How to apply:** When the cluster K8s version is upgraded (see [[feedback-aks-k8s-version]]), also update the `bitnami/kubectl` tag in `k8s/backup/snapshot-cronjob.yaml`.
+**How to apply:** Any new Job or CronJob that shells out to `kubectl` must use the `registry.k8s.io/kubectl:v<version>` image format.
 
-## Browser cache masks frontend deploys
+## Patch files must be committed before triggering build
 
-After a new image rolls out, if the UI looks unchanged, do a hard-refresh (Ctrl+Shift+R) before assuming the patch failed.
+When adding or editing files in `tools/patches/`, always `git commit` + `git push` BEFORE triggering the GitHub Actions build workflow.
 
-**Why:** The SPA JS/CSS bundle is cached by the browser. The old bundle keeps rendering the old UI even after the pod is running the new image.
+**Why:** GitHub Actions does `actions/checkout@v4` — it clones from GitHub. Untracked or uncommitted local files are invisible to the build. This caused patch 007 to be missing from the `1.5.0.6.9` image even though it was written locally. A new image version (`1.5.0.6.10`) had to be built after the patch was committed.
 
-**How to apply:** Always verify a frontend change with a hard-refresh or incognito window before concluding the patch didn't apply.
+**How to apply:** Before clicking "Run workflow", verify `git status` is clean (or at minimum that patch files are staged + pushed).
 
 ## configMapGenerator for auto-rollout
 

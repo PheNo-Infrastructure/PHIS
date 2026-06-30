@@ -1,22 +1,18 @@
 # PHIS Project Memory — k8s branch
 
 ## Feedback (behavioral rules)
-- [Data persistence priority](feedback_data_persistence.md) — Research data is irreplaceable; never delete PVCs/pods without explicit confirmation, always read-only diagnose first
 - [Direct az/kubectl/terraform access](feedback_az_access.md) — Run Azure CLI, kubectl, terraform, flux directly; don't just instruct the user
 - [Destructive action confirmation](feedback_destructive_actions.md) — Never delete VMs/RGs based on "proceed" alone; require explicit confirmation
 - [AKS K8s version selection](feedback_aks_k8s_version.md) — Use K8s 1.33; 1.30-1.32 LTS-only (Premium required), 1.34+ invisible to azurerm 4.76
-- [Test env patterns](feedback_test_env_patterns.md) — email must be disabled (not simulateSending), CPU requests 100m, max 1 test env (disk limit), secret recovery steps
-
-## User context
-- [Learning goals & career](learning_goals.md) — Background in ML/stats, learning Terraform/K8s/Flux, MLOps portfolio plan
+- [PowerShell for manual commands](feedback_powershell_commands.md) — User's terminal is PowerShell; bash syntax (`$(...)`, `VAR=cmd`, `\` continuation) fails
 
 ## Project state
-- [k8s deployment (PRODUCTION)](project_k8s_deployment.md) — West Europe cluster, HTTPS on phis.pheno.no, Flux GitOps, ESO secrets, all pods running
-- [Azure infrastructure](project_azure_infra.md) — Terraform state blob backend, azurerm 4.x, IP/region constraints, LTS K8s restriction, Git Bash MSYS_NO_PATHCONV
+- [k8s deployment (PRODUCTION)](project_k8s_deployment.md) — West Europe cluster, HTTPS on phis.pheno.no, Flux GitOps, ESO secrets, PVs on Retain, disk snapshots, ~$150/mo
+- [opensilex-init job](project_opensilex_init.md) — Creates Default profile (no credentials!) + Users group; Feide users auto-assigned on login; credentials must be set manually after deploy
+- [Azure infrastructure](project_azure_infra.md) — Terraform state blob backend, subscription_id var required, Scoop terraform path, MongoDB Compass directConnection, MSYS_NO_PATHCONV
 - [k8s architecture & design](project_k8s_architecture.md) — MongoDB StatefulSet, GraphDB nginx sidecar, initContainers, config injection, resource limits
-- [Build process](project_build_process.md) — workflow_dispatch, patch versioning (1.5.0.N), Maven ~15-20 min, full release loop
-- [Image tag versioning](project_versioning.md) — 1.5.0.N = new patch, 1.5.0.N.M = fix iteration on same patch
-- [k8s patterns & feedback](feedback_k8s_patterns.md) — imagePullPolicy Always, ttlSecondsAfterFinished, configMapGenerator, curl Host header
-- [OpenSILEX patch patterns](feedback_opensilex_patch_patterns.md) — @ApiModel on DTOs, no @Required, enable=true on create, getUser() unreliable, GHA cache invalidation
+- [k8s patterns & feedback](feedback_k8s_patterns.md) — imagePullPolicy Always, ttlSecondsAfterFinished, configMapGenerator, registry.k8s.io/kubectl (not bitnami), commit patches before build
 - [Old Docker VMs](project_active_vms.md) — All empty, pending RG deletion (PHIS-SANDBOX, PHIS-TEST-DOCKER, RG-OPENSILEX-DEBIAN12-TEST, PHIS-IP)
-- [Test environment system](project_test_environment.md) — k8s/test/ + scripts/test-env.ps1, phis-<name> namespaces, max 1 env at a time, syncs deployments from production at spin-up
+
+## Related repos
+- **PhisWebPortal**: `C:\Users\siv017\Documents\GitHub\prompt-improver\PhisWebPortal` — Streamlit (Python 3.11) front-end for PHIS. 9 pages (Projects→Observations), all functional. Connects to OpenSILEX REST API at `https://phis.pheno.no`. Auth: per-user or service account via `PHIS_HOST`/`PHIS_USER`/`PHIS_PASS` env vars. Deploys via GitHub Actions → Azure Container Apps.

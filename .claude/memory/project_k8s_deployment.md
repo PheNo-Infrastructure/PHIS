@@ -43,15 +43,18 @@ metadata:
 
 Secrets live in Azure Key Vault `phis-kv` (West Europe). ESO pulls them into the cluster via workload identity. **No SealedSecrets** — those were replaced by ESO.
 
-| Secret name in KV | K8s secret key | Used by |
-|---|---|---|
-| `mongodb-root-password` | `root-password` | MongoDB auth |
-| `mongodb-opensilex-password` | `opensilex-password` | OpenSILEX→MongoDB |
-| `mongodb-keyfile` | `keyfile` | MongoDB replica set auth |
-| `graphdb-admin-password` | `admin-password` | GraphDB |
-| `feide-client-id` | `client-id` | Feide OIDC |
-| `feide-client-secret` | `client-secret` | Feide OIDC |
-| `ghcr-pull-secret-json` | (full JSON) | ghcr.io image pull |
+| Secret name in KV | K8s secret name | K8s secret key | Used by |
+|---|---|---|---|
+| `mongodb-root-password` | `mongodb-credentials` | `root-password` | MongoDB auth |
+| `mongodb-opensilex-password` | `mongodb-credentials` | `opensilex-password` | OpenSILEX→MongoDB |
+| `mongodb-keyfile` | `mongodb-credentials` | `keyfile` | MongoDB replica set auth |
+| `graphdb-admin-password` | `graphdb-credentials` | `admin-password` | GraphDB |
+| `feide-client-id` | `feide-credentials` | `client-id` | Feide OIDC |
+| `feide-client-secret` | `feide-credentials` | `client-secret` | Feide OIDC |
+| `opensilex-admin-password` | `opensilex-credentials` | `admin-password` | OpenSILEX startup + init job |
+| `smtp-username` | `opensilex-credentials` | `smtp-username` | OpenSILEX email service |
+| `smtp-password` | `opensilex-credentials` | `smtp-password` | OpenSILEX email service |
+| `ghcr-pull-secret-json` | `ghcr-pull-secret` | (full JSON) | ghcr.io image pull |
 
 To force ESO re-sync: `kubectl annotate externalsecret -n phis --all force-sync=$(date +%s) --overwrite`
 
@@ -61,6 +64,11 @@ To force ESO re-sync: `kubectl annotate externalsecret -n phis --all force-sync=
 - Provider: `azurerm ~> 4.0` (4.76.0 installed)
 - K8s version pinned to **1.33** in `variables.tf` — see [[feedback-aks-k8s-version]]
 - Backend block is active in `terraform/main.tf` (not commented out)
+- `terraform/secrets.tf` creates all Key Vault secrets with `REPLACE_ME` placeholder + `lifecycle { ignore_changes = [value] }`. The lifecycle guard is critical — without it, any `terraform apply` silently resets live secrets back to `REPLACE_ME`. 04-bootstrap.ps1 sets real values after first apply.
+
+## AKS Node Upgrades
+
+- **Automatic node image upgrade is active** with no maintenance window configured. AKS drains and reboots the node on its own schedule (observed ~midnight UTC). Any pod with volume-mounted secrets that changed since startup will pick up the new secret values on restart — this is what triggered the 2026-06-23 outage (REPLACE_ME keyfile went live only after MongoDB was evicted).
 
 ## Storage
 
@@ -73,38 +81,75 @@ To force ESO re-sync: `kubectl annotate externalsecret -n phis --all force-sync=
 | `mongodb-backup-pvc` | 100Gi | azureblob-fuse2-backup | Azure Blob |
 | `graphdb-backup-pvc` | 100Gi | azureblob-fuse2-backup | Azure Blob |
 
-All PVs use `persistentVolumeReclaimPolicy: Retain`.
-
-## Data Protection (added 2026-06-16)
-
-Three-layer protection — all live in production:
-
-**Layer 1 — Azure Resource Locks (`CanNotDelete`)** via `terraform/locks.tf`:
-- 3 managed disks in `MC_phis-rg_phis-cluster_westeurope` (graphdb-data, mongodb-data, mongodb-config)
-- `phistfstate` storage account
-- Blob/container soft-delete enabled: 30-day recovery window
-
-**Layer 2 — Terraform `prevent_destroy`** on: `azurerm_resource_group.phis`, `azurerm_storage_account.main`, all 3 storage containers, `azurerm_kubernetes_cluster.phis`
-
-**Layer 3 — Kyverno 3.8.1** (Flux-managed, `kyverno` namespace, `failurePolicy: Fail`):
-- `ClusterPolicy/block-pvc-delete-phis` — blocks `kubectl delete pvc` in `phis` unless annotation `phis.pheno.no/confirm-delete=true` is present
-- Flux Kustomizations: `kyverno-stack` (install) + `kyverno-policy` (ClusterPolicy), in `clusters/phis-cluster/`
-
-**To intentionally delete a PVC:**
-```bash
-kubectl annotate pvc <name> -n phis phis.pheno.no/confirm-delete=true
-kubectl delete pvc <name> -n phis
-```
-
-**Known gap:** New managed disks (future PVCs) are NOT auto-locked — must add entries to `terraform/locks.tf` manually.
-
 ## Current image
 
-`ghcr.io/lversen/opensilex-phis:1.5.0.5.3` — patches: Feide auto-group assignment, password-reset fix, SSO login buttons UX, self-service registration (patch 005).
-Deployed 2026-06-16. Patch 005 (self-registration) adds `/app/register` + `/app/confirm-registration/:token`, creates accounts with `enable=true`, auto-assigns to "Users" group.
+`ghcr.io/lversen/opensilex-phis:1.5.0.6.10` — active patches:
+- `002-openid-auto-group-assignment` (SecurityAutoAssignmentService — auto-adds Feide/SAML logins to Users group)
+- `006-invite-system` (email invite flow — invited users go to Researchers group)
+- `007-fix-group-user-profile-cleanup` (fixes orphaned GUP RDF nodes on group update and account delete — resolves "URI is linked with other resources" error)
+
+Built from upstream OpenSILEX `1.5.0` tag. Patch numbering (`006`, `007`, etc.) is PHIS-custom, not upstream. Build via GitHub Actions `workflow_dispatch` — all `.patch` files in `tools/patches/` must be **committed and pushed** before triggering the workflow (GitHub Actions checks out from GitHub, not local disk).
+
+## Key Vault access
+
+`admin_kv_officer` role assignment now in Terraform state (imported 2026-06-30). `siv017-cloud@uit.no` has permanent `Key Vault Secrets Officer` on `phis-kv` — no longer dependent on whoever last ran terraform.
+
+## OpenSILEX Admin Password
+
+Admin password managed via ESO secret `opensilex-credentials` (Key Vault: `opensilex-admin-password`). Both the deployment startup script and the `opensilex-init` Job now read `OPENSILEX_ADMIN_PASSWORD` from the secret. Init job exits non-zero on auth failure (was silently skipping group creation before). To rotate: update Key Vault secret → force ESO sync → change password in UI → restart deployment.
+
+## Email / SMTP (as of 2026-06-11)
+
+Password-reset emails work via **Azure Communication Services Email** (free tier, 100 emails/day).
+
+- **ACS resources**: `phis-email` (Email Service), `phis-acs` (Communication Service), domain `321e53e1-dadf-4465-b273-7e986540596c.azurecomm.net` (managed, all DNS auto-verified)
+- **SMTP**: `smtp.azurecomm.net:587`, STARTTLS, username `phis-smtp-user`, password = Entra app secret
+- **Entra SP**: `phis-smtp` (app ID `82612100-bbfd-44ec-8efa-c4429c7e548d`), role `Communication and Email Service Owner` on `phis-acs`
+- **OpenSILEX config key**: `security.email.config` in `opensilex.yml`; `sender` = `DoNotReply@321e53e1-dadf-4465-b273-7e986540596c.azurecomm.net`
+- **Verification**: `POST /rest/security/forgot-password?identifier=<email>` returns 403 for admin (correct — admin excluded by design), 200+email for regular users
+- **Custom sender domain** (`noreply@phis.pheno.no`) can be added later via ACS domain verification
+
+## opensilex-init Job — Known Quirks
+
+Two bugs fixed 2026-06-11:
+1. **Host header**: All internal `curl` calls must include `-H "Host: phis.pheno.no"` — OpenSILEX validates Host against its configured `publicURI`. Without it, auth returns 400.
+2. **sed token extraction**: OpenSILEX returns `"token" : "..."` (spaces around colon). The pattern must be `'s/.*"token" *: *"\([^"]*\)".*/\1/p'`, not `"token":"..."`.
+3. **Group creation warning**: On re-runs the Users group already exists, so the create returns 409 → curl -sf exits non-zero → RESPONSE is empty → warning fires. Benign; job exits 0.
 
 ## Pending
 
-- Delete old VM resource groups: `PHIS-SANDBOX`, `PHIS-TEST-DOCKER`, `RG-OPENSILEX-DEBIAN12-TEST`
-- Delete `PHIS-IP` resource group (IP already moved to MC_ group)
-- Rename git default branch from `docker-compose-official` to `k8s`
+- Confirm old VM RG deletion completed: `PHIS-SANDBOX`, `PHIS-TEST-DOCKER`, `RG-OPENSILEX-DEBIAN12-TEST`, `PHIS-IP` (async delete queued 2026-06-11)
+- `phis-portal-rg` resource group exists — not yet investigated
+- `Standard_B4ms` node switch not yet implemented (~$45/month saving)
+
+## Data Persistence (as of 2026-06-11)
+
+All three data PVs were **live-patched** to `reclaimPolicy: Retain` via `kubectl patch pv` — disks now survive accidental PVC deletion. Cannot be done via Flux (StatefulSet volumeClaimTemplates and PVC spec are immutable after creation).
+
+StorageClass `managed-csi-retain` added to `k8s/storage-classes.yaml` for fresh cluster rebuilds. StatefulSet/PVC yamls still reference `managed-csi` (immutable in-place) — on a fresh rebuild, update those to `managed-csi-retain`.
+
+**Disk snapshots**: CronJob `disk-snapshot` runs daily at **01:00 UTC**, retains 7 snapshots per PVC, uses `VolumeSnapshotClass` `csi-disk-snapshots` (driver: `disk.csi.azure.com`). RBAC: `snapshot-manager` ServiceAccount in `phis` namespace.
+
+## Monthly Cost Baseline (~$150/month)
+
+| Item | Monthly |
+|---|---|
+| VM `Standard_D4s_v3` | ~$140 |
+| GraphDB disk (50Gi → 64Gi E6) | ~$5.12 |
+| MongoDB data disk (10Gi → 16Gi E3) | ~$1.28 |
+| MongoDB config disk (1Gi → 4Gi E1) | ~$0.32 |
+| Static IP | ~$3 |
+| Blob storage + snapshots | ~$0 (grows with data) |
+
+**Stopping the cluster** (deallocates VM, keeps disks/IP): floor ~$10/month.
+**Switching to `Standard_B4ms`**: running cost ~$95/month (not yet implemented).
+
+## Backups (as of 2026-06-11)
+
+- **MongoDB**: CronJob `mongodb-backup` runs daily 02:00 UTC → Azure Blob (`mongodb-backup-pvc`). Uses root credentials + `directConnection=true`. Fixed 2026-06-11 (was using `opensilex` user + replicaSet URI — both wrong).
+- **GraphDB**: CronJob `graphdb-backup` runs daily 03:00 UTC → Azure Blob (`graphdb-backup-pvc`). Working.
+- **Root cause of original failure**: MongoDB PVC had `.auth_initialized` marker from a previous cluster run. When rebuilt, init was skipped. Azure Key Vault had 2 secret versions (v1: 14:14 UTC, v2: 14:45 UTC). MongoDB had v1 passwords; ESO served v2. Fix: deleted `mongodb-data-mongodb-0` and `mongodb-config-mongodb-0` PVCs → fresh init with v2 credentials.
+- **Warning**: If cluster is rebuilt and PVC data persists, this mismatch will recur. Solution: always delete MongoDB PVCs on cluster rebuild, OR ensure Key Vault secret versions match PVC-stored passwords.
+
+## Git
+- Default branch is **`k8s`** (changed 2026-06-11, was `docker-compose-official`)
