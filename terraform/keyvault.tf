@@ -29,3 +29,10 @@ resource "azurerm_role_assignment" "tf_kv_officer" {
   role_definition_name = "Key Vault Secrets Officer"
   principal_id         = data.azurerm_client_config.current.object_id
 }
+
+# Admin user: permanent Secrets Officer so secrets are always visible in the portal.
+resource "azurerm_role_assignment" "admin_kv_officer" {
+  scope                = azurerm_key_vault.phis.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = "9660485f-2f7b-49d4-b682-19aa9e0e2447"
+}
