@@ -35,8 +35,8 @@ diff --git a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/ap
 +            @ApiResponse(code = 404, message = "Experiment not found", response = ErrorResponse.class)
 +    })
 +    public Response importScientificObjects(
-+            @ApiParam(value = "List of scientific object descriptions", required = true) @NotNull List<ScientificObjectCreationDTO> dtos,
-+            @ApiParam(value = "Experiment URI", required = true) @NotNull @ValidURI @QueryParam("experiment") URI experimentURI
++            @ApiParam(value = "Experiment URI", required = true) @NotNull @ValidURI @QueryParam("experiment") URI experimentURI,
++            @ApiParam(value = "List of scientific object descriptions", required = true) @NotNull List<ScientificObjectCreationDTO> dtos
 +    ) throws Exception {
 +        if (dtos == null || dtos.isEmpty()) {
 +            return new CreatedUriResponse(Collections.emptyList()).getResponse();
