@@ -16,7 +16,7 @@ diff --git a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/ap
 +import java.time.OffsetDateTime;
  import java.util.*;
  import java.util.stream.Collectors;
-@@ -507,6 +509,53 @@ public class ScientificObjectAPI {
+@@ -507,6 +509,52 @@ public class ScientificObjectAPI {
          return new SingleObjectResponse<>(new CSVValidationDTO(validationModel)).getResponse();
      }
  
@@ -35,12 +35,12 @@ diff --git a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/ap
 +            @ApiResponse(code = 404, message = "Experiment not found", response = ErrorResponse.class)
 +    })
 +    public Response importScientificObjects(
-+            @ApiParam(value = "Experiment URI", required = true) @NotNull @ValidURI @QueryParam("experiment") URI experimentURI,
 +            @ApiParam(value = "List of scientific object descriptions", required = true) @NotNull List<ScientificObjectCreationDTO> dtos
 +    ) throws Exception {
 +        if (dtos == null || dtos.isEmpty()) {
 +            return new CreatedUriResponse(Collections.emptyList()).getResponse();
 +        }
++        URI experimentURI = dtos.get(0).getExperiment();
 +        ScientificObjectLogic soLogic = new ScientificObjectLogic(sparql, nosql, fs);
 +        ExperimentDAO experimentDAO = new ExperimentDAO(sparql, nosql);
 +
@@ -51,7 +51,6 @@ diff --git a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/ap
 +
 +        List<ScientificObjectModel> models = new ArrayList<>();
 +        for (ScientificObjectCreationDTO dto : dtos) {
-+            dto.setExperiment(experimentURI);
 +            ScientificObjectModel model = dto.newModel();
 +            model.setPublisher(currentUser.getUri());
 +            model.setPublicationDate(OffsetDateTime.now());
