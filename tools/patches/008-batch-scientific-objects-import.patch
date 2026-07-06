@@ -1,0 +1,72 @@
+diff --git a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/api/ScientificObjectAPI.java b/opensilex-core/src/main/java/org/opensilex/core/scientificObject/api/ScientificObjectAPI.java
+--- a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/api/ScientificObjectAPI.java
++++ b/opensilex-core/src/main/java/org/opensilex/core/scientificObject/api/ScientificObjectAPI.java
+@@ -19,6 +19,7 @@ import org.opensilex.core.event.dal.move.MoveModel;
+ import org.opensilex.core.exception.DuplicateNameException;
+ import org.opensilex.core.experiment.api.ExperimentAPI;
+ import org.opensilex.core.experiment.dal.ExperimentModel;
++import org.opensilex.core.experiment.dal.ExperimentDAO;
+ import org.opensilex.core.geospatial.api.GeometryDTO;
+ import org.opensilex.core.location.dal.LocationObservationModel;
+ import org.opensilex.core.provenance.api.ProvenanceGetDTO;
+@@ -65,5 +66,6 @@ import javax.ws.rs.core.Response;
+ import java.io.File;
+ import java.net.URI;
+ import java.time.LocalDate;
++import java.time.OffsetDateTime;
+ import java.util.*;
+ import java.util.stream.Collectors;
+@@ -507,6 +509,53 @@ public class ScientificObjectAPI {
+         return new SingleObjectResponse<>(new CSVValidationDTO(validationModel)).getResponse();
+     }
+ 
++    @POST
++    @Path("json_import")
++    @ApiOperation("Create many scientific objects from a JSON list")
++    @ApiProtected
++    @ApiCredential(
++            credentialId = CREDENTIAL_SCIENTIFIC_OBJECT_MODIFICATION_ID,
++            credentialLabelKey = CREDENTIAL_SCIENTIFIC_OBJECT_MODIFICATION_LABEL_KEY
++    )
++    @Consumes(MediaType.APPLICATION_JSON)
++    @Produces(MediaType.APPLICATION_JSON)
++    @ApiResponses(value = {
++            @ApiResponse(code = 201, message = "Scientific objects created", response = URI.class, responseContainer = "List"),
++            @ApiResponse(code = 404, message = "Experiment not found", response = ErrorResponse.class)
++    })
++    public Response importScientificObjects(
++            @ApiParam(value = "List of scientific object descriptions", required = true) @NotNull List<ScientificObjectCreationDTO> dtos,
++            @ApiParam(value = "Experiment URI", required = true) @NotNull @ValidURI @QueryParam("experiment") URI experimentURI
++    ) throws Exception {
++        if (dtos == null || dtos.isEmpty()) {
++            return new CreatedUriResponse(Collections.emptyList()).getResponse();
++        }
++        ScientificObjectLogic soLogic = new ScientificObjectLogic(sparql, nosql, fs);
++        ExperimentDAO experimentDAO = new ExperimentDAO(sparql, nosql);
++
++        ExperimentModel experiment = experimentDAO.get(experimentURI, currentUser);
++        if (Objects.isNull(experiment)) {
++            throw new NotFoundURIException("Unknown experiment", experimentURI);
++        }
++
++        List<ScientificObjectModel> models = new ArrayList<>();
++        for (ScientificObjectCreationDTO dto : dtos) {
++            dto.setExperiment(experimentURI);
++            ScientificObjectModel model = dto.newModel();
++            model.setPublisher(currentUser.getUri());
++            model.setPublicationDate(OffsetDateTime.now());
++            sparql.generateUniqueURI(soLogic.getDefaultGraphNode(), model, model, true);
++            models.add(model);
++        }
++
++        soLogic.createWithNoValidations(models, experimentURI);
++        soLogic.copyIntoGlobalGraph(models.stream());
++        experimentDAO.updateExperimentSpeciesFromScientificObjects(experimentURI);
++
++        List<URI> uris = models.stream().map(ScientificObjectModel::getUri).toList();
++        return new CreatedUriResponse(uris).getResponse();
++    }
++
+     @POST
+     @Path("export_geospatial")
+     @ApiOperation("Export a given list of scientific object URIs to shapefile or geojson")

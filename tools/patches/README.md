@@ -4,6 +4,14 @@ Patches applied to OpenSILEX source during the GitHub Actions image build (`buil
 
 ## Active Patches
 
+### 008-batch-scientific-objects-import.patch
+
+Adds `POST /core/scientific_objects/json_import` — a JSON batch endpoint for creating many scientific objects in one request.
+
+**Motivation**: the existing `POST /core/scientific_objects` endpoint is called once per object. At 8000+ SOs per import, each round-trip takes ~15-17s under concurrent load, making large imports impractically slow. This endpoint accepts a list of `ScientificObjectCreationDTO`, generates URIs for all models upfront, batch-inserts via `createWithNoValidations`, copies to global graph once, and updates experiment species once — turning N HTTP calls into 1.
+
+**Files**: `ScientificObjectAPI.java` (+2 imports, +1 endpoint)
+
 ### 003-fix-reset-password-token.patch
 
 Fixes two bugs in the password-reset flow (shipped in image `1.5.0.3`):
