@@ -1,0 +1,37 @@
+name: Sync test environments to production image
+
+on:
+  push:
+    branches: [k8s]
+    paths: ['k8s/opensilex/deployment.yaml']
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract image
+        id: img
+        run: |
+          IMAGE=$(grep 'image: ghcr.io' k8s/opensilex/deployment.yaml | awk '{print $2}')
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Set up kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Sync all test namespaces
+        run: |
+          IMAGE=${{ steps.img.outputs.image }}
+          NAMESPACES=$(kubectl get ns -o name | grep '^namespace/phis-' | sed 's|namespace/||')
+          if [ -z "$NAMESPACES" ]; then
+            echo "No test namespaces found, nothing to sync."
+            exit 0
+          fi
+          for NS in $NAMESPACES; do
+            echo "Syncing $NS → $IMAGE"
+            kubectl set image deployment/opensilex opensilex=$IMAGE -n $NS || echo "  Skipped $NS (no opensilex deployment)"
+          done
