@@ -258,6 +258,25 @@ function Invoke-Down {
     Write-Host "Namespace phis-$name deleted."
 }
 
+function Invoke-Sync {
+    Write-Host ""
+    Invoke-List
+    Write-Host ""
+    $name = Read-Host "Environment name to sync"
+    if (-not $name) { Die "Name is required." }
+    $ns = "phis-$name"
+
+    $prodYaml = [IO.Path]::GetFullPath((Join-Path $BaseDir '..\opensilex\deployment.yaml'))
+    $image = (Get-Content $prodYaml -Raw) |
+             Select-String 'image:\s*(ghcr\.io/\S+)' |
+             ForEach-Object { $_.Matches[0].Groups[1].Value }
+    if (-not $image) { Die "Could not read image tag from $prodYaml" }
+
+    Write-Host "Syncing $ns → $image"
+    kubectl set image deployment/opensilex opensilex=$image -n $ns
+    kubectl rollout status deployment/opensilex -n $ns
+}
+
 function Invoke-List {
     $lines = kubectl get ns -o name 2>$null | Where-Object { $_ -match '^namespace/phis-' }
     if (-not $lines) { Write-Host "No test environments running."; return }
@@ -283,6 +302,7 @@ while ($true) {
     Write-Host "  2. Tear down environment"
     Write-Host "  3. List environments"
     Write-Host "  4. Configure GHCR credentials"
+    Write-Host "  5. Sync image to production"
     Write-Host "  q. Quit"
     Write-Host ""
     $choice = Read-Host "  Select"
@@ -292,6 +312,7 @@ while ($true) {
         '2' { Invoke-Down }
         '3' { Invoke-List }
         '4' { Invoke-Creds }
+        '5' { Invoke-Sync }
         'q' { exit 0 }
         default { Write-Host "  Invalid choice." }
     }
