@@ -4,6 +4,7 @@ on:
   push:
     branches: [k8s]
     paths: ['k8s/opensilex/deployment.yaml']
+  workflow_dispatch:
 
 jobs:
   sync:
