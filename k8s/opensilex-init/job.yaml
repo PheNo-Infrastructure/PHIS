@@ -8,6 +8,9 @@ spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 20
   template:
+    metadata:
+      labels:
+        app: opensilex-init
     spec:
       restartPolicy: OnFailure
       containers:
