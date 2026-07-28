@@ -27,13 +27,12 @@ spec:
                 secretKeyRef:
                   name: graphdb-credentials
                   key: admin-password
-            - name: GDB_ENABLE_SECURITY
-              value: "true"
             - name: GDB_JAVA_OPTS
               value: >-
                 -Xmx5g -Xms512m
                 -Dgraphdb.home=/opt/graphdb/home
                 -Dgraphdb.workbench.cors.enable=false
+                -Dgraphdb.security.enable=true
           ports:
             - containerPort: 7200
           readinessProbe:
