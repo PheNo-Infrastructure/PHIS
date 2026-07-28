@@ -25,8 +25,9 @@ jobs:
           chmod 600 ~/.kube/config
 
       - name: Sync all test namespaces
+        env:
+          IMAGE: ${{ steps.img.outputs.image }}
         run: |
-          IMAGE=${{ steps.img.outputs.image }}
           NAMESPACES=$(kubectl get ns -o name | grep '^namespace/phis-' | sed 's|namespace/||')
           if [ -z "$NAMESPACES" ]; then
             echo "No test namespaces found, nothing to sync."
@@ -34,5 +35,5 @@ jobs:
           fi
           for NS in $NAMESPACES; do
             echo "Syncing $NS → $IMAGE"
-            kubectl set image deployment/opensilex opensilex=$IMAGE -n $NS || echo "  Skipped $NS (no opensilex deployment)"
+            kubectl set image deployment/opensilex "opensilex=$IMAGE" -n "$NS" || echo "  Skipped $NS (no opensilex deployment)"
           done

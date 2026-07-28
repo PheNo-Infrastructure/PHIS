@@ -7,6 +7,9 @@ spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 10
   template:
+    metadata:
+      labels:
+        app: graphdb-init
     spec:
       restartPolicy: OnFailure
       containers:
@@ -19,24 +22,30 @@ spec:
               set -e
 
               echo "Waiting for GraphDB to be ready..."
-              until curl -sf http://graphdb:7200/rest/repositories; do
+              until curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories; do
                 echo "  GraphDB not ready yet, retrying in 10s..."
                 sleep 10
               done
 
               echo "Checking if repository 'opensilex' already exists..."
-              if curl -sf http://graphdb:7200/rest/repositories/opensilex > /dev/null 2>&1; then
+              if curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories/opensilex > /dev/null 2>&1; then
                 echo "Repository 'opensilex' already exists. Nothing to do."
                 exit 0
               fi
 
               echo "Creating GraphDB repository 'opensilex'..."
-              curl -sf -X POST http://graphdb:7200/rest/repositories \
+              curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" -X POST http://graphdb:7200/rest/repositories \
                 -H "Content-Type: multipart/form-data" \
                 -F "config=@/tmp/repo-config.ttl" \
                 -w "\nHTTP status: %{http_code}\n"
 
               echo "Repository created successfully."
+          env:
+            - name: GDB_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: graphdb-credentials
+                  key: admin-password
           volumeMounts:
             - name: repo-config
               mountPath: /tmp/repo-config.ttl

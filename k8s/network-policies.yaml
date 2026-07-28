@@ -1,0 +1,92 @@
+# Deny all ingress to every pod in the phis namespace by default.
+# Explicit allow rules below open only the ports each workload legitimately needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: phis
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# OpenSILEX: accept traffic only from the ingress-nginx load-balancer and from
+# the opensilex-init job (which calls the REST API directly over ClusterIP).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-opensilex-ingress
+  namespace: phis
+spec:
+  podSelector:
+    matchLabels:
+      app: opensilex
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8666
+    - from:
+        - podSelector:
+            matchLabels:
+              app: opensilex-init
+      ports:
+        - port: 8666
+---
+# MongoDB: accept traffic from OpenSILEX, the daily backup job, and peer
+# replica-set members (which also carry the app: mongodb label).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mongodb-ingress
+  namespace: phis
+spec:
+  podSelector:
+    matchLabels:
+      app: mongodb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: opensilex
+        - podSelector:
+            matchLabels:
+              app: mongodb-backup
+        - podSelector:
+            matchLabels:
+              app: mongodb
+      ports:
+        - port: 27017
+---
+# GraphDB: accept traffic from OpenSILEX, the graphdb-init job, and the
+# daily backup job. Port 7201 is the nginx sidecar that the Service routes to.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-graphdb-ingress
+  namespace: phis
+spec:
+  podSelector:
+    matchLabels:
+      app: graphdb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: opensilex
+        - podSelector:
+            matchLabels:
+              app: graphdb-init
+        - podSelector:
+            matchLabels:
+              app: graphdb-backup
+      ports:
+        - port: 7201

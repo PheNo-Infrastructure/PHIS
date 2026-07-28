@@ -10,6 +10,7 @@ namespace: phis
 resources:
   - namespace.yaml
   - storage-classes.yaml
+  - network-policies.yaml
   - mongodb/service.yaml
   - mongodb/externalsecret.yaml
   - mongodb/statefulset.yaml
