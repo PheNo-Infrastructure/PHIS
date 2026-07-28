@@ -273,7 +273,7 @@ function Invoke-Sync {
     if (-not $image) { Die "Could not read image tag from $prodYaml" }
 
     Write-Host "Syncing $ns → $image"
-    kubectl set image deployment/opensilex opensilex=$image -n $ns
+    kubectl set image deployment/opensilex "opensilex=$image" -n $ns
     kubectl rollout status deployment/opensilex -n $ns
 }
 
