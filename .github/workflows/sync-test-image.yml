@@ -6,6 +6,10 @@ on:
     paths: ['k8s/opensilex/deployment.yaml']
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -18,11 +22,19 @@ jobs:
           IMAGE=$(grep 'image: ghcr.io' k8s/opensilex/deployment.yaml | awk '{print $2}')
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Set up kubectl
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-          chmod 600 ~/.kube/config
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: phis-rg
+          cluster-name: phis-cluster
+          admin: 'true'
 
       - name: Sync all test namespaces
         env:
