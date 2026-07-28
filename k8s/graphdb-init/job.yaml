@@ -22,10 +22,22 @@ spec:
               set -e
 
               echo "Waiting for GraphDB to be ready..."
-              until curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories; do
+              until curl -sf http://graphdb:7200/rest/repositories > /dev/null 2>&1; do
                 echo "  GraphDB not ready yet, retrying in 10s..."
                 sleep 10
               done
+
+              echo "Enabling GraphDB security..."
+              SECURITY_STATUS=$(curl -sf http://graphdb:7200/rest/security 2>/dev/null || echo "unknown")
+              if echo "$SECURITY_STATUS" | grep -q '"enabled":true'; then
+                echo "Security already enabled."
+              else
+                curl -sf -X POST http://graphdb:7200/rest/security \
+                  -H "Content-Type: application/json" \
+                  -d '{"enabled":true}' \
+                  -w "\nHTTP status: %{http_code}\n"
+                echo "Security enabled."
+              fi
 
               echo "Checking if repository 'opensilex' already exists..."
               if curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories/opensilex > /dev/null 2>&1; then
