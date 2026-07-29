@@ -66,9 +66,11 @@ spec:
     # Access it via port-forward (see README below) — no public ingress needed.
     grafana:
       persistence:
-        enabled: true
-        storageClassName: azurefile-csi
-        size: 2Gi
+        # ponytail: SQLite (Grafana's internal DB) requires POSIX file locking
+        # which Azure Files (SMB) does not support — database locked crash loop.
+        # Built-in dashboards survive via ConfigMaps. Add persistence only if
+        # you need to persist manually-created dashboards, using managed-csi.
+        enabled: false
       resources:
         requests:
           cpu: 50m
