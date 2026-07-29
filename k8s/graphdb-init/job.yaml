@@ -21,30 +21,57 @@ spec:
             - |
               set -e
 
+              # Determine which password works — KV value or GraphDB default 'root'.
+              # On fresh installs security may be disabled; on existing installs the
+              # password is already set from a previous run.
               echo "Waiting for GraphDB to be ready..."
-              until curl -sf http://graphdb:7200/rest/repositories > /dev/null 2>&1; do
+              AUTH=""
+              until true; do
+                if curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories > /dev/null 2>&1; then
+                  AUTH="admin:${GDB_ADMIN_PASSWORD}"
+                  echo "Authenticated with configured password."
+                  break
+                elif curl -sf -u "admin:root" http://graphdb:7200/rest/repositories > /dev/null 2>&1; then
+                  AUTH="admin:root"
+                  echo "Authenticated with default password — will rotate."
+                  break
+                elif curl -sf http://graphdb:7200/rest/repositories > /dev/null 2>&1; then
+                  AUTH=""
+                  echo "GraphDB ready (security not yet enabled)."
+                  break
+                fi
                 echo "  GraphDB not ready yet, retrying in 10s..."
                 sleep 10
               done
 
               echo "Enabling GraphDB security..."
-              if curl -sf http://graphdb:7200/rest/security | grep -q "^true$"; then
+              if curl -sf ${AUTH:+-u "$AUTH"} http://graphdb:7200/rest/security | grep -q "^true$"; then
                 echo "Security already enabled."
               else
                 curl -sf -X POST http://graphdb:7200/rest/security \
                   -H "Content-Type: application/json" \
                   -d "true"
                 echo "Security enabled."
+                AUTH="admin:root"
+              fi
+
+              if [ "$AUTH" = "admin:root" ]; then
+                echo "Rotating admin password to configured value..."
+                curl -sf -u "admin:root" -X PATCH http://graphdb:7200/rest/security/users/admin \
+                  -H "Content-Type: application/json" \
+                  -d "{\"password\":\"${GDB_ADMIN_PASSWORD}\"}"
+                AUTH="admin:${GDB_ADMIN_PASSWORD}"
+                echo "Password rotated."
               fi
 
               echo "Checking if repository 'opensilex' already exists..."
-              if curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories/opensilex > /dev/null 2>&1; then
+              if curl -sf -u "$AUTH" http://graphdb:7200/rest/repositories/opensilex > /dev/null 2>&1; then
                 echo "Repository 'opensilex' already exists. Nothing to do."
                 exit 0
               fi
 
               echo "Creating GraphDB repository 'opensilex'..."
-              curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" -X POST http://graphdb:7200/rest/repositories \
+              curl -sf -u "$AUTH" -X POST http://graphdb:7200/rest/repositories \
                 -H "Content-Type: multipart/form-data" \
                 -F "config=@/tmp/repo-config.ttl" \
                 -w "\nHTTP status: %{http_code}\n"
