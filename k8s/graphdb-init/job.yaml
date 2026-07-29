@@ -26,7 +26,7 @@ spec:
               # password is already set from a previous run.
               echo "Waiting for GraphDB to be ready..."
               AUTH=""
-              until true; do
+              while true; do
                 if curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" http://graphdb:7200/rest/repositories > /dev/null 2>&1; then
                   AUTH="admin:${GDB_ADMIN_PASSWORD}"
                   echo "Authenticated with configured password."
