@@ -28,14 +28,12 @@ spec:
               done
 
               echo "Enabling GraphDB security..."
-              SECURITY_STATUS=$(curl -sf http://graphdb:7200/rest/security 2>/dev/null || echo "unknown")
-              if echo "$SECURITY_STATUS" | grep -q '"enabled":true'; then
+              if curl -sf http://graphdb:7200/rest/security | grep -q "^true$"; then
                 echo "Security already enabled."
               else
                 curl -sf -X POST http://graphdb:7200/rest/security \
                   -H "Content-Type: application/json" \
-                  -d '{"enabled":true}' \
-                  -w "\nHTTP status: %{http_code}\n"
+                  -d "true"
                 echo "Security enabled."
               fi
 
