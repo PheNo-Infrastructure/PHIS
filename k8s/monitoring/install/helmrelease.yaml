@@ -1,0 +1,113 @@
+# kube-prometheus-stack installs three things in one chart:
+#   - Prometheus: scrapes and stores metrics from your cluster
+#   - Grafana:    the dashboard UI where you visualize those metrics
+#   - Alertmanager: routes alert notifications (email, Slack, etc.)
+#
+# It also installs small "exporters" — tiny sidecars/daemons that translate
+# Kubernetes internals (node stats, pod stats) into metrics Prometheus can read.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: flux-system
+spec:
+  interval: 1h
+  targetNamespace: monitoring
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      # Pinned to 70.x — bump deliberately, not automatically, to avoid
+      # surprise breakage of dashboards or CRD migrations.
+      version: "70.*"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  install:
+    createNamespace: true
+    # CRDs (Custom Resource Definitions) extend the Kubernetes API with new
+    # object types like PrometheusRule and ServiceMonitor. The chart manages
+    # them automatically on install.
+    crds: CreateReplace
+  upgrade:
+    crds: CreateReplace
+  values:
+    # ── Prometheus ────────────────────────────────────────────────────────────
+    # Prometheus scrapes metrics on a schedule and stores them locally.
+    # "Scraping" = Prometheus calls /metrics HTTP endpoints on your pods.
+    prometheus:
+      prometheusSpec:
+        # How long to keep metrics. 5 days is enough to spot weekly patterns
+        # without needing much storage.
+        retention: 5d
+
+        # azurefile-csi = Azure Files (SMB share), not an Azure Disk.
+        # This avoids consuming another disk slot on the D4s_v3 node
+        # (already at 7/8 — managed-csi disks would exceed the limit).
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: azurefile-csi
+              resources:
+                requests:
+                  storage: 8Gi
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 400Mi
+          limits:
+            memory: 800Mi
+
+    # ── Grafana ───────────────────────────────────────────────────────────────
+    # Grafana reads from Prometheus and renders dashboards.
+    # The chart ships ~30 pre-built dashboards for cluster health out of the box.
+    # Access it via port-forward (see README below) — no public ingress needed.
+    grafana:
+      persistence:
+        enabled: true
+        storageClassName: azurefile-csi
+        size: 2Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+
+    # ── Alertmanager ──────────────────────────────────────────────────────────
+    # Alertmanager receives firing alerts from Prometheus and routes them
+    # (email, Slack, PagerDuty, etc.). No persistence — if it restarts,
+    # in-flight alerts re-fire within a minute. Add storage when you configure
+    # real notification routes and need deduplication across restarts.
+    alertmanager:
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+    # ── Node exporter ─────────────────────────────────────────────────────────
+    # Runs on every node (DaemonSet) and exposes CPU, memory, disk I/O, and
+    # network stats for the underlying VM — not the pods, the actual machine.
+    prometheus-node-exporter:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi
+
+    # ── kube-state-metrics ────────────────────────────────────────────────────
+    # Watches the Kubernetes API and exports metrics about object state:
+    # pod restarts, deployment replicas, PVC usage, etc.
+    kube-state-metrics:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
