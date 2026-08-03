@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: portal-graphdb-init
+  namespace: __NS__
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: curlimages/curl:8.7.1
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for GraphDB..."
+              until curl -sf -u "admin:${GDB_ADMIN_PASSWORD}" \
+                http://graphdb:7200/rest/repositories > /dev/null; do
+                sleep 5
+              done
+              echo "GraphDB ready. Creating portal user..."
+              curl -sf -X PUT \
+                -u "admin:${GDB_ADMIN_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"username\": \"portal\",
+                  \"password\": \"${GDB_PORTAL_PASSWORD}\",
+                  \"grantedAuthorities\": [\"ROLE_USER\", \"READ_REPO_opensilex\"]
+                }" \
+                http://graphdb:7200/rest/security/users/portal
+              echo "Portal user created."
+          env:
+            - name: GDB_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: graphdb-credentials
+                  key: admin-password
+            - name: GDB_PORTAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: portal-credentials
+                  key: graphdb-portal-password

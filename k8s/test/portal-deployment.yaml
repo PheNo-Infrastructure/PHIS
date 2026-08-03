@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+  namespace: __NS__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portal
+  template:
+    metadata:
+      labels:
+        app: portal
+    spec:
+      containers:
+        - name: portal
+          image: phisportalacr.azurecr.io/phis-portal:latest
+          ports:
+            - containerPort: 8501
+          env:
+            - name: GRAPHDB_URL
+              value: http://graphdb:7200
+            - name: GRAPHDB_REPO
+              value: opensilex
+            - name: GRAPHDB_USER
+              value: portal
+            - name: PHIS_USER
+              value: admin@opensilex.org
+            - name: PHIS_HOST
+              value: http://__LB_IP__/rest
+            - name: PHIS_DEFAULT_HOST
+              value: http://__LB_IP__/rest
+            - name: PHIS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: portal-credentials
+                  key: phis-pass
+            - name: GRAPHDB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: portal-credentials
+                  key: graphdb-portal-password
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
