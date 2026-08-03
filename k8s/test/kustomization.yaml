@@ -27,6 +27,10 @@ resources:
   - opensilex-service.yaml
   - opensilex-deployment.yaml
   - opensilex-init-job.yaml
+  - portal-credentials.yaml
+  - portal-service.yaml
+  - portal-deployment.yaml
+  - portal-graphdb-init-job.yaml
 
 patches:
   - path: resource-patches.yaml
