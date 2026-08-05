@@ -10,6 +10,9 @@ spec:
           resources:
             requests:
               cpu: "100m"
+              memory: "512Mi"
+            limits:
+              memory: "2Gi"
           env:
             - name: GDB_JAVA_OPTS
               value: >-
@@ -33,6 +36,12 @@ spec:
           resources:
             requests:
               cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "1Gi"
+          env:
+            - name: JAVA_OPTS
+              value: "-Xmx512m -Xms256m"
 ---
 apiVersion: apps/v1
 kind: StatefulSet
