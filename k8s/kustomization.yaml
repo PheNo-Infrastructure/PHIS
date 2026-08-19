@@ -20,6 +20,7 @@ resources:
   - graphdb/nginx-config.yaml
   - graphdb/deployment.yaml
   - graphdb-init/job.yaml
+  - portal/graphdb-init-job.yaml
   - opensilex/pvc.yaml
   - opensilex/externalsecret.yaml
   - opensilex/service.yaml
