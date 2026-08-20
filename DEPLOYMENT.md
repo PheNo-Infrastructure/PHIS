@@ -30,6 +30,7 @@ kubectl get kustomization -n flux-system
 | Admin port | `kubectl port-forward -n phis svc/opensilex-admin 8667:8667` |
 | GraphDB | ClusterIP only — port 7200 |
 | MongoDB | ClusterIP only — port 27017 |
+| Grafana | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80` — see [Monitoring](#monitoring) |
 
 ## Building the Image
 
@@ -95,6 +96,55 @@ kubectl exec -n phis <pod-name> -- rm /home/opensilex/data/.installed
 kubectl rollout restart deployment/opensilex -n phis
 ```
 
+## Monitoring
+
+`kube-prometheus-stack` (Prometheus + Grafana + Alertmanager) runs in the `monitoring` namespace, installed by Flux (`clusters/phis-cluster/monitoring-stack.yaml` → `k8s/monitoring/install/`).
+
+**Viewing dashboards:**
+```bash
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+```
+Open `http://localhost:3000`. Username is `admin`; get the password with:
+```bash
+kubectl get secret -n monitoring kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" | base64 -d
+```
+The chart ships with a set of default Kubernetes dashboards out of the box (node/pod resource usage, etc.) — nothing PHIS-specific has been built yet.
+
+**No persistence by design**: Grafana normally stores its own settings (dashboards you create, alert rules) in a local SQLite file, but this cluster's default storage (Azure Files/SMB) doesn't support the file locking SQLite needs — it crash-loops. Persistence is disabled (`k8s/monitoring/install/helmrelease.yaml`), so **anything you configure by hand in the Grafana UI is lost on pod restart.** Built-in dashboards survive because they're loaded from ConfigMaps, not the UI. If you need to keep custom dashboards, provision them as ConfigMaps (like the built-in ones) rather than clicking "Save" in the UI, or add an `managed-csi` (Azure Disk) volume instead of the default.
+
+## Backups & Disaster Recovery
+
+Three independent layers protect the data. None of them require you to do anything day-to-day — this section is for when something actually breaks.
+
+| Layer | What | Schedule | Where it lands | Retention |
+|---|---|---|---|---|
+| Logical dump | `mongodump` of the whole MongoDB database | Nightly 02:00 UTC (`k8s/backup/mongodb-cronjob.yaml`) | `mongodb-backup-pvc` (Azure Blob) | 30 days |
+| Logical export | GraphDB repo exported as RDF (`.trig`) over its HTTP API | Nightly 03:00 UTC (`k8s/backup/graphdb-cronjob.yaml`) | `graphdb-backup-pvc` (Azure Blob) | 30 days |
+| Disk snapshot | Azure Disk snapshot of the live MongoDB + GraphDB volumes | Nightly 01:00 UTC (`k8s/backup/snapshot-cronjob.yaml`) | Azure snapshot resources (not in the PVC) | last 7 kept |
+
+Plus: all PVs are `Retain` (survive even if the PVC/pod is deleted), 3 of the underlying Azure managed disks + the Terraform state storage account have `CanNotDelete` resource locks, and Kyverno blocks `kubectl delete pvc` in the `phis` namespace unless it's explicitly annotated first (see `k8s/kyverno/policy/block-pvc-delete.yaml`). See [docs/RUNBOOK.md](docs/RUNBOOK.md) for the actual disaster-recovery restore steps.
+
+**Checking backups are healthy:**
+```bash
+kubectl get cronjob -n phis
+kubectl get jobs -n phis -l app=mongodb-backup    # or app=graphdb-backup
+kubectl logs -n phis job/<latest-job-name>
+```
+
+## Portal (PhisWebPortal)
+
+PhisWebPortal is a separate public-facing web app that displays PHIS research data. It is **not deployed by this repo** — it runs as its own Azure Container App, with its own codebase/deployment pipeline.
+
+What *is* here: `k8s/portal/graphdb-init-job.yaml`, a one-off Job that creates (or resyncs the password for) a **read-only** GraphDB user for the portal to query against, using credentials from the `graphdb-portal-credentials` secret. It runs once via Flux like any other manifest; re-running it (e.g. after rotating the portal's GraphDB password in Key Vault) is safe — it detects whether the user already exists and updates the password instead of failing.
+
+## Test Environments
+
+For trying out changes (a new patch, a config tweak, a new image tag) without touching production. Namespace `phis-test` (or `phis-<name>`), spun up/torn down interactively:
+```powershell
+scripts/test-env.ps1
+```
+Full details, constraints (max 1 environment at a time — Azure Disk slot limit), and gotchas are in [CLAUDE.md](CLAUDE.md#test-environments). Test environments intentionally use `Delete`-reclaim PVCs — unlike production, deleting the test namespace destroys its data. That's by design; don't treat a test environment as a place to keep anything.
+
 ## Cluster Lifecycle
 
 ```powershell
@@ -103,10 +153,12 @@ tools/k8s-cluster/02-start-cluster.ps1   # Start a stopped cluster
 tools/k8s-cluster/03-stop-cluster.ps1    # Stop cluster (reduce costs)
 ```
 
-## Before Promoting to Production
+## Known Gaps
 
-- [x] Add TLS/HTTPS ingress
-- [x] Point DNS to cluster IP (`phis.pheno.no`)
-- [ ] Upgrade AKS from Free tier to Standard for SLA
-- [ ] Add autoscaler / multiple nodes for HA
-- [ ] Change default admin password — see [Changing the OpenSILEX admin password](#changing-the-opensilex-admin-password)
+This cluster **is production** (has been since 2026-06-11) — the items below are follow-up hardening, not blockers.
+
+- [ ] Upgrade AKS from Free tier to Standard for an SLA
+- [ ] Add autoscaler / multiple nodes for high availability (currently a single `Standard_D4s_v3` node — a node failure is an outage)
+- [ ] Invite-token store is in-memory only (patch 006) — a pod restart silently drops pending researcher invites; would need a DB-backed store to survive restarts
+- [ ] New PVCs aren't auto-locked in Azure — `terraform/locks.tf` must be updated by hand whenever a new managed disk is added (see [Backups & Disaster Recovery](#backups--disaster-recovery) above)
+- [ ] No PHIS-specific Grafana dashboards yet — only the chart's generic Kubernetes ones

@@ -4,6 +4,15 @@ Patches applied to OpenSILEX source during the GitHub Actions image build (`buil
 
 ## Active Patches
 
+The build applies patches in filename order — `002` → `008` — via a shell glob
+in `opensilex-build-step.docker` (`for patch in /patches/*.patch`). Several
+patches edit the same file (`AuthenticationAPI.java` especially), and later
+patches assume earlier ones already applied, so **don't rename or renumber
+existing patches** — a gap or reorder will make a later diff fail to apply.
+
+Listed below newest-first (008 → 002) for readability; that is *not* the
+apply order.
+
 ### 008-batch-scientific-objects-import.patch
 
 Adds `POST /core/scientific_objects/json_import` — a JSON batch endpoint for creating many scientific objects in one request.
@@ -11,6 +20,50 @@ Adds `POST /core/scientific_objects/json_import` — a JSON batch endpoint for c
 **Motivation**: the existing `POST /core/scientific_objects` endpoint is called once per object. At 8000+ SOs per import, each round-trip takes ~15-17s under concurrent load, making large imports impractically slow. This endpoint accepts a list of `ScientificObjectCreationDTO`, generates URIs for all models upfront, batch-inserts via `createWithNoValidations`, copies to global graph once, and updates experiment species once — turning N HTTP calls into 1.
 
 **Files**: `ScientificObjectAPI.java` (+2 imports, +1 endpoint)
+
+### 007-fix-group-user-profile-cleanup.patch
+
+Fixes an orphaned-record bug in group/user management.
+
+**Root cause**: `GroupDAO.update()` overwrote a group's member list in SPARQL but never deleted the old `GroupUserProfile` records for members who were removed — they became invisible orphans that still existed in the triplestore. Similarly, `AccountDAO.delete()` didn't clean up an account's `GroupUserProfile` records before deleting the account, which could leave the delete blocked (`URI is linked with other resources`) or leave orphans behind.
+
+**Fix**: `GroupDAO.update()` now diffs the old vs. new `GroupUserProfile` URIs and deletes the ones removed. `AccountDAO.delete()` now calls a new `cleanOrphanedGroupUserProfiles()` step first, which removes any `GroupUserProfile` no longer referenced by a parent group.
+
+**Files**: `GroupDAO.java`, `AccountDAO.java`
+
+**Symptom if missing**: deleting a user account from the OpenSILEX UI can fail with a "linked with other resources" error, or removing someone from a group doesn't fully take effect.
+
+### 006-invite-system.patch
+
+Adds an admin-only "invite a researcher by email" flow, separate from open self-registration (005).
+
+**How it works**:
+1. Admin calls `POST /security/invite` with an email — generates a one-time token (kept **in-memory only**, cleared on pod restart) and emails an accept link.
+2. Invitee visits `/app/accept-invite/:token` → `GET /security/accept-invite` marks that email as a "pending researcher".
+3. When that person actually logs in via Feide, `SecurityAutoAssignmentService` sees they're a pending researcher and assigns them to the **Researchers** group / **Researcher profile** instead of the default **Users** group.
+
+**Files**: `InviteService.java` (new), `InviteDTO.java` (new), `SecurityAutoAssignmentService.java` (new — also used by patch 002/005 for default-group assignment), `AuthenticationAPI.java`, `invite.mustache` (new email template), `AcceptInvite.vue` (new frontend page)
+
+**Known limitation**: invite tokens live in a Java in-memory map (`ConcurrentHashMap`), not the database. A pod restart (rollout restart, crash, redeploy) silently invalidates all pending invites — the admin has to resend them. Fine for low volume; would need a DB-backed store to survive restarts.
+
+### 005-self-registration.patch
+
+Adds public self-service account registration (as opposed to admin-issued invites in 006).
+
+**How it works**:
+1. `POST /security/register` (public) creates a disabled account and emails a confirmation link.
+2. User clicks the link → `GET /security/confirm-registration?token=...` enables the account and auto-assigns it to the default **Users** group via `SecurityAutoAssignmentService`.
+3. Frontend adds `/app/register` and `/app/confirm-registration/:token` pages, plus a "Don't have an account? Register here" link on the login screen.
+
+**Files**: `AccountRegisterDTO.java` (new), `AuthenticationAPI.java`, `register-confirmation.mustache` (new email template), `Register.vue` (new), `ConfirmRegistration.vue` (new), `opensilex.front.yml` (new routes), `DefaultLoginComponent.vue`
+
+**Requires**: `email.enable: true` in `opensilex.yml` — registration and invites both return HTTP 503 if the email service isn't configured. (Test environments deliberately run with email disabled — see [CLAUDE.md](../../CLAUDE.md) — so registration/invite links won't work there.)
+
+### 004-default-feide-login.patch
+
+UI-only change: when Feide (OpenID SSO) is configured, show the SSO button(s) directly on the login screen instead of behind a "select login method" dropdown. Password login stays available underneath.
+
+**Files**: `DefaultLoginComponent.vue`
 
 ### 003-fix-reset-password-token.patch
 
@@ -22,9 +75,11 @@ Fixes two bugs in the password-reset flow (shipped in image `1.5.0.3`):
 
 ### 002-openid-auto-group-assignment.patch
 
-Automatically assigns new Feide/OpenID users to the "Users" group on first login.
+Automatically assigns new password/OpenID/SAML users to a default group on first login, instead of leaving them with zero permissions.
 
-**Root cause**: `AccountDAO` did not assign users to any group after OpenID authentication, leaving new users with zero permissions and an `UnsupportedOperationException` on the immutable list returned by the OpenID provider.
+**Root cause**: OpenSILEX didn't assign any group to a newly-created account after authentication.
+
+**Fix**: calls `SecurityAutoAssignmentService.assignToDefaultGroupIfNew()` from all three login paths in `AuthenticationAPI.java` (password, OpenID, SAML). Note: `SecurityAutoAssignmentService` itself is defined later in patch **006** — that's fine, all patches apply before the Maven build compiles anything — but it means 002 and 006 are logically a pair even though they're numbered apart.
 
 ## Build Files
 
