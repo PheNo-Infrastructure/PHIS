@@ -13,6 +13,7 @@
 - [k8s architecture & design](project_k8s_architecture.md) — MongoDB StatefulSet, GraphDB nginx sidecar, initContainers, config injection, resource limits
 - [k8s patterns & feedback](feedback_k8s_patterns.md) — imagePullPolicy Always, ttlSecondsAfterFinished, configMapGenerator, registry.k8s.io/kubectl (not bitnami), commit patches before build
 - [Old Docker VMs](project_active_vms.md) — All empty, pending RG deletion (PHIS-SANDBOX, PHIS-TEST-DOCKER, RG-OPENSILEX-DEBIAN12-TEST, PHIS-IP)
+- [Handover prep](project_handover.md) — docs/ONBOARDING.md + RUNBOOK.md added 2026-08-20; stale prod/checklist claims fixed; KV access grant still needs manual terraform edit for successor
 
 ## Related repos
 - **PhisWebPortal**: `C:\Users\siv017\Documents\GitHub\prompt-improver\PhisWebPortal` — Streamlit (Python 3.11) front-end for PHIS. 9 pages (Projects→Observations), all functional. Connects to OpenSILEX REST API at `https://phis.pheno.no`. Auth: per-user or service account via `PHIS_HOST`/`PHIS_USER`/`PHIS_PASS` env vars. Deploys via GitHub Actions → Azure Container Apps.
