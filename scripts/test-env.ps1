@@ -61,7 +61,7 @@ function Build-Files([string]$TmpDir, [string]$Ns, [string]$LbIp, [bool]$Include
     $shared = [ordered]@{
         'mongodb-service.yaml'      = 'mongodb\service.yaml'
         'graphdb-service.yaml'      = 'graphdb\service.yaml'
-        'graphdb-nginx-config.yaml' = 'graphdb\nginx-config.yaml'
+        'graphdb-nginx.conf'        = 'graphdb\nginx.conf'
         'graphdb-deployment.yaml'   = 'graphdb\deployment.yaml'
         'graphdb-init-job.yaml'     = 'graphdb-init\job.yaml'
         'opensilex-deployment.yaml' = 'opensilex\deployment.yaml'
