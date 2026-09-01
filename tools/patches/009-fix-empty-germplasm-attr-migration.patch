@@ -1,0 +1,25 @@
+Guard GermplasmAttributeUpdateRightsMigration against an empty bulkWrite.
+
+The 1.5.1 migration builds a list of Mongo UpdateOneModel ops from the
+germplasm attribute collection and calls attributeCollection.bulkWrite(ops)
+unconditionally. When the collection is empty (no germplasm has custom
+attributes) the ops list is empty and the Mongo driver throws
+"IllegalArgumentException: state should be: writes is not an empty list",
+aborting the migration instead of completing as a no-op.
+
+Present in 1.5.4 and still unfixed on upstream develop as of 2026-09-01.
+Reported upstream: TODO(link).
+
+--- a/opensilex-migration/src/main/java/org/opensilex/migration/one_point_five_ALL/GermplasmAttributeUpdateRightsMigration.java
++++ b/opensilex-migration/src/main/java/org/opensilex/migration/one_point_five_ALL/GermplasmAttributeUpdateRightsMigration.java
+@@ -101,6 +101,10 @@
+             ));
+         }
+
++        if (ops.isEmpty()) {
++            logger.info("No germplasm attribute documents to update, skipping bulk write");
++            return;
++        }
+         attributeCollection.bulkWrite(session, ops);
+     }
+
