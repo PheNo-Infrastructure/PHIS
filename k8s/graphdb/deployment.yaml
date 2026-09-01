@@ -32,6 +32,7 @@ spec:
                 -Xmx5g -Xms512m
                 -Dgraphdb.home=/opt/graphdb/home
                 -Dgraphdb.workbench.cors.enable=false
+                -Dgraphdb.engine.query-timeout=60
           ports:
             - containerPort: 7200
           readinessProbe:
