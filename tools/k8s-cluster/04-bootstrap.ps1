@@ -40,7 +40,7 @@
 param(
     [switch]$SkipTerraform,
     [switch]$SkipFluxBootstrap,
-    [string]$GitHubOwner  = "lversen",
+    [string]$GitHubOwner  = "PheNo-Infrastructure",
     [string]$GitHubRepo   = "PHIS",
     [string]$GitBranch    = "k8s"
 )

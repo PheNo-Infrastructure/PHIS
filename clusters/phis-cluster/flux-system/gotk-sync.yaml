@@ -11,7 +11,7 @@ spec:
     branch: k8s
   secretRef:
     name: flux-system
-  url: ssh://git@github.com/lversen/PHIS
+  url: ssh://git@github.com/PheNo-Infrastructure/PHIS
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

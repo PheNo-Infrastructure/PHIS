@@ -17,7 +17,10 @@ resource "azurerm_federated_identity_credential" "gha" {
   audience = ["api://AzureADTokenExchange"]
   issuer   = "https://token.actions.githubusercontent.com"
   # Covers push to k8s branch and workflow_dispatch triggered on k8s branch.
-  subject = "repo:lversen/PHIS:ref:refs/heads/k8s"
+  # Uses the immutable org/repo ID form that GitHub now emits for this org
+  # (org PheNo-Infrastructure = 318586985, repo PHIS = 1009483669). IDs are
+  # stable across future renames.
+  subject = "repo:PheNo-Infrastructure@318586985/PHIS@1009483669:ref:refs/heads/k8s"
 }
 
 # Grants the GHA identity access to retrieve admin kubeconfig for the cluster.
