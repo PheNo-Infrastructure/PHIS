@@ -42,7 +42,7 @@ diff --git a/opensilex-core/src/main/java/org/opensilex/core/scientificObject/ap
 +        }
 +        URI experimentURI = dtos.get(0).getExperiment();
 +        ScientificObjectLogic soLogic = new ScientificObjectLogic(sparql, nosql, fs);
-+        ExperimentDAO experimentDAO = new ExperimentDAO(sparql, nosql);
++        ExperimentDAO experimentDAO = new ExperimentDAO(sparql, nosql, fs);
 +
 +        ExperimentModel experiment = experimentDAO.get(experimentURI, currentUser);
 +        if (Objects.isNull(experiment)) {
