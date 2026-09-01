@@ -163,6 +163,7 @@ spec:
           # startupProbe runs until it succeeds (or exhausts failureThreshold).
           # During this window the liveness probe is suspended — safe for slow starters.
           # 60 attempts × 10s = 10 minutes max before Kubernetes gives up.
+          # Stays on system/info: it responds before SPARQL is wired up.
           startupProbe:
             httpGet:
               path: /rest/core/system/info
@@ -170,20 +171,25 @@ spec:
             failureThreshold: 60
             periodSeconds: 10
             timeoutSeconds: 10
+          # readiness/liveness use /rest/vuejs/config (unauthenticated, acquires a
+          # SPARQL connection). system/info does NOT touch SPARQL, so it kept passing
+          # during a GraphDB connection-pool wedge while every real request hung.
+          # Readiness pulls the pod from the Service after ~45s; liveness restarts
+          # after ~4min sustained wedge (generous enough to ride out a GraphDB restart).
           readinessProbe:
             httpGet:
-              path: /rest/core/system/info
+              path: /rest/vuejs/config
               port: 8666
             periodSeconds: 15
             timeoutSeconds: 10
-            failureThreshold: 4
+            failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /rest/core/system/info
+              path: /rest/vuejs/config
               port: 8666
             periodSeconds: 30
             timeoutSeconds: 10
-            failureThreshold: 3
+            failureThreshold: 8
           resources:
             requests:
               cpu: "200m"
