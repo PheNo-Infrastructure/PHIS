@@ -16,7 +16,6 @@ resources:
   - mongodb-statefulset.yaml
   - graphdb-pvc.yaml
   - graphdb-service.yaml
-  - graphdb-nginx-config.yaml
   - graphdb-deployment.yaml
   - graphdb-credentials.yaml
   - graphdb-init-job.yaml
@@ -39,3 +38,6 @@ configMapGenerator:
   - name: opensilex-config
     files:
       - opensilex.yml
+  - name: graphdb-nginx-config
+    files:
+      - nginx.conf=graphdb-nginx.conf

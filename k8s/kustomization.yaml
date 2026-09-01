@@ -17,7 +17,6 @@ resources:
   - graphdb/pvc.yaml
   - graphdb/service.yaml
   - graphdb/externalsecret.yaml
-  - graphdb/nginx-config.yaml
   - graphdb/deployment.yaml
   - graphdb-init/job.yaml
   - portal/graphdb-init-job.yaml
@@ -36,3 +35,8 @@ configMapGenerator:
   - name: opensilex-config
     files:
       - opensilex/opensilex.yml
+  # Hashed name -> any nginx.conf change rolls the graphdb pod automatically.
+  # (The pod mounts this via subPath, which never receives live ConfigMap updates.)
+  - name: graphdb-nginx-config
+    files:
+      - nginx.conf=graphdb/nginx.conf
