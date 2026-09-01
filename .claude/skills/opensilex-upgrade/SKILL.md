@@ -135,9 +135,12 @@ For each `NNN-*.patch`:
    - **needs-rebase** — hunks reject, OR they apply but the result won't
      compile against changed upstream APIs (e.g. 1.5.4 added a 3rd
      `FileStorageService` arg to `ExperimentDAO` → patch 008 applied fine
-     but failed `mvn compile`). Re-diff against the new source, regenerate
-     the `.patch`, re-run the full stack apply. For an added line, editing
-     the `+` line in the `.patch` directly is safe (hunk counts unchanged).
+     but failed `mvn compile`). For a one-token change to an existing
+     added (`+`) line, edit the `.patch` directly (hunk counts unchanged).
+     For anything structural, regenerate with the **`patch-creator`**
+     skill (`/patch-creator <files> <change>`) — it computes hunk offsets
+     against the already-applied earlier patches. Then re-run the full
+     stack apply.
    - **now-redundant** — upstream already fixed this (identify the
      upstream commit / release). Propose removing the patch. Removing a
      mid-sequence patch is fine for `patch -p1` (glob, not numbered
@@ -159,8 +162,11 @@ checks out `--ref k8s`).
 ### Phase 3 — Rebase confirmation
 
 - All clean/redundant -> state so, continue.
-- Any rebased -> show the regenerated diffs, get a yes, then commit them
-  (`fix(patches): rebase NNN onto <target>`, `Co-Authored-By:` trailer).
+- Any rebased or new patch -> generate it with **`patch-creator`**, show
+  the diff, get a yes, then commit (`fix(patches): rebase NNN onto <target>`
+  or `fix(patches): add NNN-<slug>`, `Co-Authored-By:` trailer). A new
+  patch for an upstream bug found during validation (like 009) is numbered
+  after the current highest and picked up automatically by the build glob.
 
 ### Phase 4 — Build image
 

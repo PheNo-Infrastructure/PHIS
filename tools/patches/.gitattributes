@@ -1,0 +1,4 @@
+# Patch files must stay LF — the Docker build applies them with `patch`
+# inside a Linux container. CRLF from Windows autocrlf corrupts context.
+*.patch text eol=lf
+*.docker text eol=lf
