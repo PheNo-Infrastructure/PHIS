@@ -4,14 +4,61 @@ Patches applied to OpenSILEX source during the GitHub Actions image build (`buil
 
 ## Active Patches
 
-The build applies patches in filename order — `002` → `008` — via a shell glob
+The build applies patches in filename order — `002` → `011` — via a shell glob
 in `opensilex-build-step.docker` (`for patch in /patches/*.patch`). Several
 patches edit the same file (`AuthenticationAPI.java` especially), and later
 patches assume earlier ones already applied, so **don't rename or renumber
 existing patches** — a gap or reorder will make a later diff fail to apply.
 
-Listed below newest-first (008 → 002) for readability; that is *not* the
+Listed below newest-first (011 → 002) for readability; that is *not* the
 apply order.
+
+### 011-fix-organization-search-duplicate-models.patch
+
+`GET /rest/core/organisations` returned HTTP 400/500 for every **non-admin**
+as soon as any organisation had a group attached (`os-sec:hasGroup`).
+
+**Cause**: `OrganizationDAO.searchWithoutFilters` adds `addOrganizationAccessClause`
+for non-admins — a `{ group-hierarchy branch } UNION { no-group branch }`. An
+organisation reachable through a group in its `hasPart` hierarchy can be emitted
+on multiple non-contiguous rows, yielding duplicate `OrganizationModel`s for one
+URI. `SPARQLListFetcher.updateModels()` throws *"Multiple results with the same
+URI ... at index N"*, and the `userOrganizationCache.put(... toMap ...)` right
+after would throw on the duplicate key. Admins skip the access clause entirely.
+
+**Fix**: dedupe `models` by URI (first wins) before the list fetcher. Upstream
+bug, unfixed on `develop` 2026-09-02.
+
+**Files**: `OrganizationDAO.java` (+12 lines in `searchWithoutFilters`)
+
+### 010-fix-profile-getbyuseruri-null-guard.patch
+
+Guards `ProfileDAO.getByUserURI` against a null URI.
+
+**Cause**: `/rest/vuejs/user_config` is not `@ApiProtected`; a request without a
+valid token resolves to `AccountModel.getAnonymous()` (URI = null). For a
+non-admin the menu build calls `AccountDAO.getCredentialList(user.getUri())` →
+`ProfileDAO.getByUserURI(null)` → `SPARQLDeserializers.nodeURI(null)` returns
+null → Jena renders the triple object as the bare token `ANY` → GraphDB
+`MALFORMED QUERY ... after prefix "ANY"`. The exception is swallowed so the menu
+silently comes back empty. Every opensilex restart invalidates all JWTs (fresh
+RSA keypair, in-memory session registry), so stale-token non-admins hit this on
+any page.
+
+**Fix**: `if (uri == null) return Collections.emptyList();`. Upstream bug,
+unfixed on `develop` 2026-09-02.
+
+**Files**: `ProfileDAO.java` (+3 lines in `getByUserURI`)
+
+### 009-fix-empty-germplasm-attr-migration.patch
+
+Guards the 1.5.1 `GermplasmAttributeUpdateRightsMigration` against an empty Mongo
+`bulkWrite`. When no germplasm has custom attributes the ops list is empty and
+the Mongo driver throws *"state should be: writes is not an empty list"*,
+aborting the migration instead of completing as a no-op. Upstream bug, present in
+1.5.4, unfixed on `develop`.
+
+**Files**: `GermplasmAttributeUpdateRightsMigration.java` (+4 lines)
 
 ### 008-batch-scientific-objects-import.patch
 
