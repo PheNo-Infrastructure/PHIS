@@ -25,6 +25,7 @@ resources:
   - opensilex/service.yaml
   - opensilex/ingress.yaml
   - opensilex/deployment.yaml
+  - opensilex/admin-password-sync-cronjob.yaml
   - opensilex-init/job.yaml
   - backup/
 
