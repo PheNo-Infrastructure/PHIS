@@ -26,3 +26,6 @@ terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
 terraform/.terraform.tfstate.lock.info
 # terraform/.terraform.lock.hcl is intentionally NOT ignored — commit it to pin provider versions
+
+# Scratch artifacts from opensilex debug sessions
+dbg-patch*.json

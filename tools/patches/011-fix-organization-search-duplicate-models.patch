@@ -1,0 +1,49 @@
+Deduplicate organization models in OrganizationDAO.searchWithoutFilters.
+
+For a non-admin, searchWithoutFilters adds OrganizationSPARQLHelper
+.addOrganizationAccessClause, which is a `{ group-hierarchy branch } UNION
+{ no-group branch }`. When an organisation qualifies through the group
+branch (a group is attached somewhere in its hasPart hierarchy and the
+user is a member) the query can emit that organisation's URI on more than
+one, non-contiguous row (different ?_userURI / ?publisher bindings). The
+row->model mapper then produces two OrganizationModel instances with the
+same URI.
+
+Both the next statements reject that:
+  - `new SPARQLListFetcher<>(... models)` + updateModels() throws
+    "Multiple results with the same URI (...) at index N"
+  - `userOrganizationCache.put(user.getUri(), models.stream()
+     .collect(Collectors.toMap(OrganizationModel::getUri, identity())))`
+    throws IllegalStateException on the duplicate key
+
+so the whole GET /rest/core/organisations 400s / 500s for every non-admin
+as soon as any organisation has a group. Admins are unaffected because
+their branch skips the access clause.
+
+Fix: collapse models to one per URI (first wins) before the list fetcher.
+This matches what the cache toMap already assumes.
+
+Present in 1.5.4 and unfixed on upstream develop as of 2026-09-02.
+Reported upstream: TODO(link).
+
+--- a/opensilex-core/src/main/java/org/opensilex/core/organisation/dal/OrganizationDAO.java
++++ b/opensilex-core/src/main/java/org/opensilex/core/organisation/dal/OrganizationDAO.java
+@@ -183,6 +183,18 @@
+             });
+         }
+
++        // The non-admin access clause (addOrganizationAccessClause) can return the
++        // same organisation on more than one non-contiguous row (reachable both
++        // through a group in its hierarchy and through the "no group" branch),
++        // which survives as duplicate models. Both SPARQLListFetcher below and the
++        // userOrganizationCache.put(... toMap ...) reject duplicate URIs, so
++        // deduplicate here, keeping the first occurrence.
++        Map<URI, OrganizationModel> distinctModels = new LinkedHashMap<>();
++        for (OrganizationModel model : models) {
++            distinctModels.putIfAbsent(model.getUri(), model);
++        }
++        models = new ArrayList<>(distinctModels.values());
++
+         SPARQLListFetcher<OrganizationModel> listFetcher = new SPARQLListFetcher<>(
+                 sparql,
+                 OrganizationModel.class,

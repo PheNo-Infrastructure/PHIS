@@ -1,0 +1,31 @@
+Guard ProfileDAO.getByUserURI against a null user URI.
+
+/rest/vuejs/user_config is not @ApiProtected. A request without a valid
+token resolves to AccountModel.getAnonymous(), whose URI is null. For a
+non-admin, the front menu build calls
+AccountDAO.getCredentialList(user.getUri()) -> ProfileDAO.getByUserURI(null).
+SPARQLDeserializers.nodeURI(null) returns null, and the Jena query builder
+renders the null triple object as the bare token "ANY", so GraphDB rejects
+the query:
+  MALFORMED QUERY: Lexical error ... Encountered: '125' ... after prefix "ANY"
+The exception is swallowed by UserConfigService, so the menu silently
+comes back empty and the SPA half-loads.
+
+A principal with no URI is in no group user-profile, so return an empty
+list instead of building a query.
+
+Present in 1.5.4 and unfixed on upstream develop as of 2026-09-01.
+Reported upstream: TODO(link).
+
+--- a/opensilex-security/src/main/java/org/opensilex/security/profile/dal/ProfileDAO.java
++++ b/opensilex-security/src/main/java/org/opensilex/security/profile/dal/ProfileDAO.java
+@@ -110,6 +110,9 @@
+     }
+
+     public List<ProfileModel> getByUserURI(URI uri) throws Exception {
++        if (uri == null) {
++            return Collections.emptyList();
++        }
+         return sparql.search(
+                 ProfileModel.class,
+                 null,
