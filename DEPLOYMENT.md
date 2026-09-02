@@ -66,22 +66,35 @@ If the cluster is recreated, ESO re-syncs all secrets automatically from Key Vau
 
 ### Changing the OpenSILEX admin password
 
-The admin password must be kept in sync between Key Vault and OpenSILEX's internal database (GraphDB).
-**Always update Key Vault first**, then OpenSILEX.
+**Key Vault is the source of truth.** Just set it there — nothing else:
 
-1. Update the secret in Key Vault:
-   ```bash
-   az keyvault secret set --vault-name phis-kv --name opensilex-admin-password --value "<new-password>"
-   ```
-2. ESO syncs the Kubernetes secret within 1 hour (or force it: `kubectl annotate externalsecret opensilex-credentials -n phis force-sync=$(date +%s) --overwrite`).
-3. Change the password in the OpenSILEX UI: **Security → My account** (logged in as `admin@opensilex.org`).
-4. Restart the pod so the new password is picked up by the startup script:
-   ```bash
-   kubectl rollout restart deployment/opensilex -n phis
-   ```
+```bash
+az keyvault secret set --vault-name phis-kv --name opensilex-admin-password --value 'new-password'
+```
 
-If Key Vault and OpenSILEX get out of sync, the `opensilex-init` Job will fail to authenticate on next run and log:
-`ERROR: Could not authenticate. Check opensilex-admin-password in Key Vault.`
+The `opensilex-admin-password-sync` CronJob (hourly, `k8s/opensilex/admin-password-sync-cronjob.yaml`)
+bcrypts the Key Vault value and writes it into GraphDB as the admin account's
+`os-sec:hasPasswordHash`. The change takes effect within ~1–2h (ESO's 1h
+refresh + the next CronJob run).
+
+To apply it immediately instead of waiting:
+
+```bash
+kubectl annotate externalsecret opensilex-credentials -n phis force-sync=$(date +%s) --overwrite
+kubectl create job -n phis --from=cronjob/opensilex-admin-password-sync pwsync-now
+kubectl logs -n phis job/pwsync-now      # expect: "admin password synced from Key Vault."
+```
+
+Notes:
+- A password changed in the OpenSILEX UI is **reverted to the Key Vault value**
+  on the next CronJob run. Key Vault is the only knob, by design.
+- The CronJob gates nothing — if it fails, OpenSILEX keeps running on the
+  current password and it retries next hour.
+- `flow`: Key Vault → ESO (`opensilex-credentials` secret) → CronJob → GraphDB.
+
+If the CronJob is ever removed / disabled, fall back to the manual path:
+`az keyvault secret set`, then change the password in the OpenSILEX UI
+(**Security → My account** as `admin@opensilex.org`) to match.
 
 ## Updating OpenSILEX Config
 
