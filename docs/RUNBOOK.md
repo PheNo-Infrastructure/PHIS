@@ -97,12 +97,27 @@ validation is the most common failure. Note: DNS for `phis.pheno.no` is
 managed by an external organization — you cannot fix a DNS-side problem
 yourself; you'd need to contact them.
 
-## Admin password out of sync ("Could not authenticate" in opensilex-init logs)
+## Admin password: change it, or it's "out of sync"
 
-This happens if the password was changed in Azure Key Vault but not (yet) in
-OpenSILEX's own database, or vice versa. Full procedure is in
-[DEPLOYMENT.md](../DEPLOYMENT.md#changing-the-opensilex-admin-password) —
-**always update Key Vault first, then the OpenSILEX UI, then restart the pod.**
+**Key Vault is the source of truth.** To change the admin password, set it in
+Key Vault and nothing else — the `opensilex-admin-password-sync` CronJob
+(hourly) writes it into GraphDB:
+
+```bash
+az keyvault secret set --vault-name phis-kv --name opensilex-admin-password --value 'new-password'
+```
+
+Takes effect within ~1–2h. To apply now, or if the password seems out of sync:
+
+```bash
+kubectl annotate externalsecret opensilex-credentials -n phis force-sync=$(date +%s) --overwrite
+kubectl create job -n phis --from=cronjob/opensilex-admin-password-sync pwsync-now
+kubectl logs -n phis job/pwsync-now
+```
+
+A password changed in the OpenSILEX UI reverts to the Key Vault value on the
+next CronJob run — that's intentional. Full details:
+[DEPLOYMENT.md](../DEPLOYMENT.md#changing-the-opensilex-admin-password).
 
 ## Secrets not syncing (ExternalSecret stuck / stale value in the cluster)
 
