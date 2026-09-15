@@ -1,10 +1,37 @@
-diff --git a/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java b/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
+Clean up orphaned GroupUserProfile nodes, without double-deleting them.
+
+Two places left orphaned GroupUserProfile nodes (a group-membership join
+node with no group pointing back at it) around, breaking the group-edit
+UI's profile display:
+
+1. Deleting an account didn't clean up that account's GroupUserProfile
+   nodes in other groups.
+2. (Originally) removing a user from a group via GroupDAO.update also
+   didn't clean up the now-detached GroupUserProfile node.
+
+For (2): GroupModel.userProfiles is declared cascadeDelete=true,
+autoUpdate=true upstream (both 1.5.0 and 1.5.4), so sparql.update(group)
+already deletes a removed user's GroupUserProfileModel as part of the same
+call -- a separate manual delete of the same URI right after throws
+NotFoundURIException ("URI not found : ..."), even though the removal
+itself already succeeded. Guard the manual cleanup with a
+try/catch(NotFoundURIException) so it's a no-op when cascadeDelete beat it
+to it, instead of surfacing an error to the group-edit screen.
+
 --- a/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
 +++ b/opensilex-security/src/main/java/org/opensilex/security/group/dal/GroupDAO.java
-@@ -71,10 +71,25 @@
+@@ -26,6 +26,7 @@
+ import org.opensilex.security.account.dal.AccountModel;
+ import org.opensilex.security.group.api.GroupDTO;
+ import org.opensilex.security.person.dal.PersonModel;
++import org.opensilex.server.exceptions.NotFoundURIException;
+ import org.opensilex.security.profile.dal.ProfileDAO;
+ import org.opensilex.security.profile.dal.ProfileModel;
+ import org.opensilex.sparql.deserializer.SPARQLDeserializer;
+@@ -71,10 +71,30 @@
          sparql.delete(GroupModel.class, groupURI);
      }
- 
+
 -    public GroupModel update(GroupModel group) throws Exception {
 -        sparql.update(group);
 -        return group;
@@ -22,15 +49,20 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/group/dal/G
 +            }));
 +            for (URI oldGupUri : oldGupUris) {
 +                if (!currentGupUris.contains(oldGupUri)) {
-+                    sparql.delete(GroupUserProfileModel.class, oldGupUri);
++                    try {
++                        sparql.delete(GroupUserProfileModel.class, oldGupUri);
++                    } catch (NotFoundURIException e) {
++                        // Already removed by the cascadeDelete on GroupModel.userProfiles
++                        // (hasUserProfile is cascadeDelete=true, autoUpdate=true) -- nothing to do.
++                    }
 +                }
 +            }
 +        }
 +        return group;
 +    }
- 
+
      public List<URI> getGroupUriList(AccountModel user) throws Exception {
- 
+
 diff --git a/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java b/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
 --- a/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
 +++ b/opensilex-security/src/main/java/org/opensilex/security/account/dal/AccountDAO.java
@@ -76,6 +108,6 @@ diff --git a/opensilex-security/src/main/java/org/opensilex/security/account/dal
 +            }
 +        }
 +    }
- 
+
      /**
       * update the Account with the given information

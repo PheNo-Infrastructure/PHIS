@@ -70,15 +70,33 @@ Adds `POST /core/scientific_objects/json_import` — a JSON batch endpoint for c
 
 ### 007-fix-group-user-profile-cleanup.patch
 
-Fixes an orphaned-record bug in group/user management.
+Fixes an orphaned-record bug in group/user management, without racing
+upstream's own cleanup.
 
-**Root cause**: `GroupDAO.update()` overwrote a group's member list in SPARQL but never deleted the old `GroupUserProfile` records for members who were removed — they became invisible orphans that still existed in the triplestore. Similarly, `AccountDAO.delete()` didn't clean up an account's `GroupUserProfile` records before deleting the account, which could leave the delete blocked (`URI is linked with other resources`) or leave orphans behind.
+**Root cause**: `AccountDAO.delete()` didn't clean up an account's
+`GroupUserProfile` records before deleting the account, which could leave
+the delete blocked (`URI is linked with other resources`) or leave orphans
+behind. Separately, `GroupDAO.update()` diffs a group's `GroupUserProfile`
+URIs before/after the update and deletes any that disappeared — but
+`GroupModel.userProfiles` is upstream `cascadeDelete=true, autoUpdate=true`,
+so `sparql.update(group)` already deletes a removed member's
+`GroupUserProfile` as part of the same call. Deleting the same
+already-gone URI a second time threw `NotFoundURIException` ("URI not
+found : ..."), even though the removal itself had already succeeded —
+surfacing a spurious error on the group-edit screen (2026-09-02).
 
-**Fix**: `GroupDAO.update()` now diffs the old vs. new `GroupUserProfile` URIs and deletes the ones removed. `AccountDAO.delete()` now calls a new `cleanOrphanedGroupUserProfiles()` step first, which removes any `GroupUserProfile` no longer referenced by a parent group.
+**Fix**: `AccountDAO.delete()` calls a new `cleanOrphanedGroupUserProfiles()`
+step first, which removes any `GroupUserProfile` no longer referenced by a
+parent group. `GroupDAO.update()`'s manual cleanup now wraps its delete in
+`try/catch(NotFoundURIException)` — a no-op when upstream's own
+cascadeDelete already got there first.
 
 **Files**: `GroupDAO.java`, `AccountDAO.java`
 
-**Symptom if missing**: deleting a user account from the OpenSILEX UI can fail with a "linked with other resources" error, or removing someone from a group doesn't fully take effect.
+**Symptom if missing**: deleting a user account from the OpenSILEX UI can
+fail with a "linked with other resources" error; removing a member from a
+group succeeds but the group-edit screen shows `Error: URI not found :
+phis:id/group/<n>` and the member count doesn't update until a refresh.
 
 ### 006-invite-system.patch
 
