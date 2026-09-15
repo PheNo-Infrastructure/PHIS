@@ -1,0 +1,23 @@
+# Read-only access for an external collaborator, scoped to the phis
+# namespace only. Binds to the built-in "view" ClusterRole (get/list/watch
+# on most resources, no secrets) via a namespaced RoleBinding so it can't
+# see or touch anything outside this namespace, RBAC, or nodes.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-collaborator-readonly
+  namespace: phis
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: external-collaborator-readonly
+  namespace: phis
+subjects:
+  - kind: ServiceAccount
+    name: external-collaborator-readonly
+    namespace: phis
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io

@@ -11,6 +11,7 @@ resources:
   - namespace.yaml
   - storage-classes.yaml
   - network-policies.yaml
+  - access/external-readonly.yaml
   - mongodb/service.yaml
   - mongodb/externalsecret.yaml
   - mongodb/statefulset.yaml
