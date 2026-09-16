@@ -1,0 +1,25 @@
+Allow non-French phone numbers when registering a Person.
+
+PersonForm.vue's vue-tel-input binds :onlyCountries="['FR']", which
+hardcodes the country-code dropdown to France only. validCharactersOnly
+plus the library's own validation then reject any number typed for a
+different country (e.g. +47 / 0047 for Norway), regardless of what the
+user types in the text box.
+
+Confirmed on the rendered form (GitHub issue #6): the dropdown shows only
+France (+33) and manually entering another country code does not work.
+
+Fix: drop the onlyCountries restriction so the dropdown offers every
+country vue-tel-input knows about. defaultCountry="FR" is left in place
+so the field still defaults sensibly for the common case.
+
+--- a/opensilex-front/front/src/components/persons/PersonForm.vue
++++ b/opensilex-front/front/src/components/persons/PersonForm.vue
+@@ -87,7 +87,6 @@
+         <vue-tel-input
+             v-model="phone_number"
+             defaultCountry="FR"
+-            :onlyCountries="['FR']"
+             validCharactersOnly
+             @validate="validatePhone"
+             @input="updatePhoneNumber"
