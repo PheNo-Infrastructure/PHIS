@@ -7,3 +7,4 @@ resources:
   - blackbox-helmrelease.yaml
   - phis-availability-probe.yaml
   - phis-availability-alertrule.yaml
+  - smtp-externalsecret.yaml
