@@ -4,14 +4,35 @@ Patches applied to OpenSILEX source during the GitHub Actions image build (`buil
 
 ## Active Patches
 
-The build applies patches in filename order — `002` → `011` — via a shell glob
+The build applies patches in filename order — `002` → `012` — via a shell glob
 in `opensilex-build-step.docker` (`for patch in /patches/*.patch`). Several
 patches edit the same file (`AuthenticationAPI.java` especially), and later
 patches assume earlier ones already applied, so **don't rename or renumber
 existing patches** — a gap or reorder will make a later diff fail to apply.
 
-Listed below newest-first (011 → 002) for readability; that is *not* the
+Listed below newest-first (012 → 002) for readability; that is *not* the
 apply order.
+
+### 012-fix-group-profile-dropdown-duplicates.patch
+
+The group-edit "Users and profiles" screen shows the same profile (e.g.
+"Researcher profile") once per user sharing it, instead of once.
+
+**Cause**: `GroupUserProfileForm.vue`'s `profileOptionsWithFallback` getter
+adds a "fallback" dropdown option for any `profile_uri` used by a group
+member but not present in the master `profilesList` (`getAllProfiles()`).
+It maps over every row of `userProfiles` — one row per user in the group —
+and filters against the known profile URIs, but never dedupes *within* the
+fallback set itself. Confirmed on prod (2026-09-16): a group with 4 users
+all on the same valid, non-orphaned `researcher_profile` URI produced 4
+identical dropdown rows for that profile. Upstream bug, unfixed on
+`develop` 2026-09-16.
+
+**Fix**: key the fallback options by `profile_uri` through a `Map` before
+spreading, collapsing repeats.
+
+**Files**: `GroupUserProfileForm.vue` (rewrites the `missingOptions` build
+inside `profileOptionsWithFallback`)
 
 ### 011-fix-organization-search-duplicate-models.patch
 

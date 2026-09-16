@@ -1,0 +1,43 @@
+Dedupe the group-edit profile dropdown's fallback options.
+
+GroupUserProfileForm.vue's profileOptionsWithFallback getter builds
+"fallback" dropdown options for any profile_uri used in the group's user
+table but not present in the master profilesList (getAllProfiles()). It
+maps over every row of userProfiles -- one row per user in the group -- and
+filters against the known profile URIs, but never dedupes within the
+fallback set itself. When a profile_uri shared by multiple users in the
+group falls into this fallback branch, every user row referencing it
+produces its own identical {value, text} option, so the dropdown renders
+that profile's label once per user sharing it instead of once total
+(confirmed on prod: 4 duplicate "Researcher profile" entries == 4 users in
+the researchers group, all pointing at a valid, non-orphaned profile URI).
+Upstream bug, present in 1.5.4, unfixed on develop 2026-09-16.
+
+--- a/opensilex-front/front/src/components/groups/GroupUserProfileForm.vue
++++ b/opensilex-front/front/src/components/groups/GroupUserProfileForm.vue
+@@ -136,14 +136,16 @@
+     const knownProfileUris = new Set(
+       existingOptions.map(option => option.value)
+     );
+
+-    const missingOptions = (this.userProfiles || [])
+-      .map(userProfile => ({
+-        value: userProfile.profile_uri,
+-        text: userProfile.profile_name || userProfile.profile_uri
+-      }))
+-      .filter(option =>
+-        option.value && !knownProfileUris.has(option.value)
+-      );
++    const missingOptions = [...new Map(
++      (this.userProfiles || [])
++        .filter(userProfile =>
++          userProfile.profile_uri && !knownProfileUris.has(userProfile.profile_uri)
++        )
++        .map(userProfile => [userProfile.profile_uri, {
++          value: userProfile.profile_uri,
++          text: userProfile.profile_name || userProfile.profile_uri
++        }])
++    ).values()];
+
+     return [...missingOptions, ...existingOptions];
+   }
