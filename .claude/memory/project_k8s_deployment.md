@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 4ae002f9-23e1-439e-b698-cd78bf928e71
+  modified: 2026-09-01T07:45:44.329Z
 ---
 
 ## Status
@@ -34,7 +35,7 @@ metadata:
 
 ## Flux GitOps
 
-- Watches **`k8s` branch** of `https://github.com/lversen/PHIS`
+- Watches **`k8s` branch** of `ssh://git@github.com/PheNo-Infrastructure/PHIS` (repo moved from lversen/ 2026-09; rotated Flux deploy key)
 - Kustomizations: `flux-system`, `cert-manager-stack`, `cert-manager-config`, `external-secrets-stack`, `external-secrets-config`, `ingress-nginx-stack`, `phis-stack`
 - Push to `k8s` branch → cluster reconciles in ~1 min
 - **`phis-tf-outputs` ConfigMap** (in `flux-system` ns) must be created manually after cluster rebuild — Flux substitutes `${KEY_VAULT_URI}` and `${ESO_IDENTITY_CLIENT_ID}` from it
@@ -118,9 +119,12 @@ Two bugs fixed 2026-06-11:
 
 ## Pending
 
-- Confirm old VM RG deletion completed: `PHIS-SANDBOX`, `PHIS-TEST-DOCKER`, `RG-OPENSILEX-DEBIAN12-TEST`, `PHIS-IP` (async delete queued 2026-06-11)
 - `phis-portal-rg` resource group exists — not yet investigated
 - `Standard_B4ms` node switch not yet implemented (~$45/month saving)
+
+## Operational Scripts
+
+- `scripts/send-invite.ps1` — sends researcher invites via the OpenSILEX API. Fetches admin password from Key Vault, authenticates, then loops prompting for email addresses (blank to quit).
 
 ## Data Persistence (as of 2026-06-11)
 

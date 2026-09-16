@@ -39,13 +39,13 @@ Any pod that calls `http://opensilex:8666` internally (e.g., init jobs, health s
 
 **How to apply:** All new Jobs or scripts that hit the OpenSILEX internal service must use `curl ... -H "Host: phis.pheno.no"`.
 
-## kubectl image: use registry.k8s.io, not bitnami
+## kubectl image: use alpine/k8s, not bitnami or registry.k8s.io/kubectl
 
-For any job/cronjob needing `kubectl`, use `registry.k8s.io/kubectl:v1.33.0` — NOT `bitnami/kubectl:1.33`.
+For any job/cronjob needing `kubectl` inside a shell script, use `alpine/k8s:1.33.0` — NOT `bitnami/kubectl:1.33` or `registry.k8s.io/kubectl:v1.33.0`.
 
-**Why:** Bitnami dropped versioned kubectl tags (only `latest` exists now). The snapshot cronjob was in `ImagePullBackOff` for 6 days because of this. `registry.k8s.io/kubectl` is the official Kubernetes project image with proper `v<major>.<minor>.<patch>` tags.
+**Why:** Bitnami dropped versioned kubectl tags. `registry.k8s.io/kubectl` is a scratch/distroless image with no shell — `sh -c` fails with "executable file not found in $PATH". `alpine/k8s` has both kubectl and a full Alpine shell.
 
-**How to apply:** Any new Job or CronJob that shells out to `kubectl` must use the `registry.k8s.io/kubectl:v<version>` image format.
+**How to apply:** Any new Job or CronJob that runs a shell script with `kubectl` must use `alpine/k8s:<k8s-version>` (e.g. `alpine/k8s:1.33.0`).
 
 ## Patch files must be committed before triggering build
 
