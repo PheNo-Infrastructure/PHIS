@@ -1,0 +1,79 @@
+Fix silent loss of non-ASCII letters (AE, OE, AA, accented Latin) in
+generated URIs.
+
+URIGenerator.normalize(String) strips characters with
+Pattern.compile("[^\w -]+") BEFORE calling
+Normalizer.normalize(formattedSrc, Normalizer.Form.NFD) at the end of the
+method. Java's \w only matches ASCII word characters, so every non-ASCII
+letter -- not just symbols -- is deleted by the strip regex before the
+trailing NFD call ever runs. That trailing call is dead code: it
+decomposes a string that has already lost the characters NFD decomposition
+would have helped with.
+
+Confirmed repro (GitHub issue #7): normalize("test_ÆØÅ_[-1:2]") currently
+returns "test__-12" -- Æ, Ø and Å vanish silently along with the bracket/
+colon symbols, producing an unpredictable, information-lossy URI.
+
+Fix: perform NFD normalization and combining-mark stripping (\p{Mn}) up
+front, on the raw input, so accented Latin letters (é, ü, ö, ...) degrade
+to their ASCII base letter instead of being deleted by the later strip.
+Æ/Ø/Å don't decompose under NFD (they're atomic letters, not a base plus
+a combining mark), so they get an explicit transliteration per the issue's
+own suggestion: Æ/æ -> ae, Ø/ø -> oe, Å/å -> aa (normalize() lowercases
+everything anyway, so mapping straight to the lowercase form is enough).
+
+This does not change the existing, intentionally-tested symbol-stripping
+behavior (URIGeneratorTest.testNormalization asserts symbols like $ & ~
+" ' { } ( ) [ ] | ` \ ^ @ = + % * ! : / ; . , ? are removed entirely) --
+that part of the method and its test both keep passing unchanged. Only
+letters that were being silently destroyed are now preserved.
+
+--- a/opensilex-main/src/main/java/org/opensilex/uri/generation/URIGenerator.java
++++ b/opensilex-main/src/main/java/org/opensilex/uri/generation/URIGenerator.java
+@@ -56,28 +56,41 @@
+      * Compiled pattern for efficient search/replace.
+      * This regex match any non-alphanumeric character (including escape characters) except space and -
+      */
+     Pattern pattern = Pattern.compile("[^\\w -]+");
++
++    /**
++     * Pattern matching Unicode combining marks left behind by NFD decomposition of accented Latin letters.
++     */
++    Pattern combiningMarkPattern = Pattern.compile("\\p{Mn}+");
+ 
+     /**
+      * @param src the String to replace and normalize
+      * @return a normalized, lower-case and trimmed String with special-characters and non-ASCII character removed.
+      */
+     default String normalize(String src) {
+ 
+         Objects.requireNonNull(src);
+         if (src.isEmpty()) {
+             return src;
+         }
+ 
+-        // search and replace pattern from src
+-        Matcher matcher = pattern.matcher(src);
+-        String formattedSrc = matcher.replaceAll("")
++        // decompose accented Latin letters (é, ü, ö, ...) and strip the resulting combining marks so they
++        // degrade to their ASCII base letter instead of being deleted whole by the strip pattern below
++        String decomposed = combiningMarkPattern.matcher(Normalizer.normalize(src, Normalizer.Form.NFD)).replaceAll("");
++
++        // Æ/Ø/Å don't decompose under NFD (atomic letters, not base+combining-mark) -- transliterate explicitly
++        String transliterated = decomposed
++                .replace("Æ", "ae").replace("æ", "ae")
++                .replace("Ø", "oe").replace("ø", "oe")
++                .replace("Å", "aa").replace("å", "aa");
++
++        // search and replace pattern from src
++        Matcher matcher = pattern.matcher(transliterated);
++        return matcher.replaceAll("")
+                 .toLowerCase()
+                 .trim() // call trim before intermediate replace in order to remove leading and trailing space
+                 .replace(' ', '_'); // then replace intermediate space by _
+-
+-        return Normalizer.normalize(formattedSrc, Normalizer.Form.NFD);
+     }
+ 
+     /**
+      * The default separator to use when joining multiple normalized string for URI path building
