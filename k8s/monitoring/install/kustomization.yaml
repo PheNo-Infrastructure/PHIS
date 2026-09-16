@@ -4,3 +4,6 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
+  - blackbox-helmrelease.yaml
+  - phis-availability-probe.yaml
+  - phis-availability-alertrule.yaml

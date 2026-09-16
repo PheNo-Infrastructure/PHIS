@@ -1,0 +1,22 @@
+# Fires when the phis-availability Probe (phis-availability-probe.yaml) has
+# been failing for 2 straight minutes. Routed to email via the alertmanager
+# config in helmrelease.yaml (matches on this alertname).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: phis-availability
+  namespace: monitoring
+  labels:
+    release: monitoring-kube-prometheus-stack
+spec:
+  groups:
+    - name: phis-availability
+      rules:
+        - alert: PhisAvailabilityDown
+          expr: probe_success{job="phis-availability"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "phis.pheno.no is not responding"
+            description: "Blackbox probe of https://phis.pheno.no/rest/vuejs/config has failed for 2+ minutes."
