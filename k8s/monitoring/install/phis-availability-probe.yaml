@@ -1,0 +1,27 @@
+# Tells Prometheus to have the blackbox exporter poll phis.pheno.no every
+# minute and check for a 200 response. /rest/vuejs/config is unauthenticated
+# but still acquires a SPARQL connection, so it catches the GraphDB-wedge
+# class of outage (2026-09-01 incident) that a plain TCP/ping check would miss.
+#
+# The "release: monitoring-kube-prometheus-stack" label is required — that's
+# the exact label the chart's Prometheus resource's probeSelector matches on
+# (kubectl get prometheus -n monitoring -o jsonpath='{.items[0].spec.probeSelector}').
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: phis-availability
+  namespace: monitoring
+  labels:
+    release: monitoring-kube-prometheus-stack
+spec:
+  jobName: phis-availability
+  interval: 1m
+  module: http_2xx
+  prober:
+    url: monitoring-prometheus-blackbox-exporter:9115
+  targets:
+    staticConfig:
+      static:
+        - https://phis.pheno.no/rest/vuejs/config
+      labels:
+        service: phis

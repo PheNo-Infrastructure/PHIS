@@ -91,6 +91,43 @@ spec:
             memory: 64Mi
           limits:
             memory: 128Mi
+        # Mounts the existing opensilex-credentials secret (already used for
+        # OpenSILEX's own outgoing email) at
+        # /etc/alertmanager/secrets/opensilex-credentials/<key>, so the SMTP
+        # password below can be referenced by file instead of committed in
+        # plaintext.
+        secrets:
+          - opensilex-credentials
+      # Everything defaults to the "null" receiver (no notification) except
+      # our own PhisAvailabilityDown alert (phis-availability-alertrule.yaml),
+      # which routes to email. Reuses the same Azure Communication Services
+      # SMTP relay OpenSILEX itself sends email through (see opensilex.yml).
+      config:
+        global:
+          smtp_smarthost: "smtp.azurecomm.net:587"
+          smtp_from: "DoNotReply@321e53e1-dadf-4465-b273-7e986540596c.azurecomm.net"
+          smtp_auth_username: "phis-smtp-user"
+          smtp_auth_password_file: /etc/alertmanager/secrets/opensilex-credentials/smtp-password
+          smtp_require_tls: true
+        route:
+          receiver: "null"
+          group_by: ["namespace"]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+          routes:
+            - matchers:
+                - alertname = "Watchdog"
+              receiver: "null"
+            - matchers:
+                - alertname = "PhisAvailabilityDown"
+              receiver: "email-sebastian"
+              repeat_interval: 1h
+        receivers:
+          - name: "null"
+          - name: "email-sebastian"
+            email_configs:
+              - to: "sebastian.t.iversen@uit.no"
 
     # ── Node exporter ─────────────────────────────────────────────────────────
     # Runs on every node (DaemonSet) and exposes CPU, memory, disk I/O, and
