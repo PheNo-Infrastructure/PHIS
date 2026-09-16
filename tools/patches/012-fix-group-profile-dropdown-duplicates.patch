@@ -15,7 +15,7 @@ Upstream bug, present in 1.5.4, unfixed on develop 2026-09-16.
 
 --- a/opensilex-front/front/src/components/groups/GroupUserProfileForm.vue
 +++ b/opensilex-front/front/src/components/groups/GroupUserProfileForm.vue
-@@ -136,14 +136,16 @@
+@@ -136,15 +136,17 @@
      const knownProfileUris = new Set(
        existingOptions.map(option => option.value)
      );
@@ -28,16 +28,16 @@ Upstream bug, present in 1.5.4, unfixed on develop 2026-09-16.
 -      .filter(option =>
 -        option.value && !knownProfileUris.has(option.value)
 -      );
-+    const missingOptions = [...new Map(
-+      (this.userProfiles || [])
-+        .filter(userProfile =>
-+          userProfile.profile_uri && !knownProfileUris.has(userProfile.profile_uri)
-+        )
-+        .map(userProfile => [userProfile.profile_uri, {
++    const missingOptionsMap = new Map<string, { value: string; text: string }>();
++    (this.userProfiles || []).forEach(userProfile => {
++      if (userProfile.profile_uri && !knownProfileUris.has(userProfile.profile_uri)) {
++        missingOptionsMap.set(userProfile.profile_uri, {
 +          value: userProfile.profile_uri,
 +          text: userProfile.profile_name || userProfile.profile_uri
-+        }])
-+    ).values()];
++        });
++      }
++    });
++    const missingOptions = [...missingOptionsMap.values()];
 
      return [...missingOptions, ...existingOptions];
    }
