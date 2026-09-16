@@ -16,23 +16,33 @@ apply order.
 ### 012-fix-group-profile-dropdown-duplicates.patch
 
 The group-edit "Users and profiles" screen shows the same profile (e.g.
-"Researcher profile") once per user sharing it, instead of once.
+"Researcher profile") once per user sharing it, instead of once, and the
+dropdown doesn't reliably show the right profile as selected.
 
-**Cause**: `GroupUserProfileForm.vue`'s `profileOptionsWithFallback` getter
-adds a "fallback" dropdown option for any `profile_uri` used by a group
-member but not present in the master `profilesList` (`getAllProfiles()`).
-It maps over every row of `userProfiles` — one row per user in the group —
-and filters against the known profile URIs, but never dedupes *within* the
-fallback set itself. Confirmed on prod (2026-09-16): a group with 4 users
-all on the same valid, non-orphaned `researcher_profile` URI produced 4
-identical dropdown rows for that profile. Upstream bug, unfixed on
-`develop` 2026-09-16.
+**Cause**: two bugs stacked. (1) `GroupUserProfileForm.vue`'s
+`profileOptionsWithFallback` getter adds a "fallback" dropdown option for
+any `profile_uri` used by a group member but not present in the master
+`profilesList` (`getAllProfiles()`), comparing URIs by exact string
+equality. But `GroupDAO.search()` (the endpoint that actually feeds this
+modal) returns `profile_uri` as an expanded IRI
+(`https://.../id/profile/x`), while `getAllProfiles()` returns the same
+profile compact/prefixed (`phis:id/profile/x`) — same profile, different
+string, so every row was treated as "unknown". (2) The select's bound
+`:value` only trimmed trailing slashes, so it couldn't resolve that same
+mismatch either, meaning even a correctly deduped list wouldn't display
+the right item as selected. Confirmed on prod (2026-09-16): a group with 4
+users all on the same valid, non-orphaned `researcher_profile` URI
+produced 4 identical dropdown rows for that profile (later 1, after a
+first-pass fix that deduped by exact string but hadn't yet found the
+format mismatch). Upstream bug, unfixed on `develop` 2026-09-16.
 
-**Fix**: key the fallback options by `profile_uri` through a `Map` before
-spreading, collapsing repeats.
+**Fix**: compare and dedupe `profile_uri` by a new `canonicalUri()` helper
+(the URI's path local to its scheme+host or prefix) instead of exact
+string equality, and resolve the select's bound value through the same
+canonicalization (`resolveSelectValue()`).
 
-**Files**: `GroupUserProfileForm.vue` (rewrites the `missingOptions` build
-inside `profileOptionsWithFallback`)
+**Files**: `GroupUserProfileForm.vue` (rewrites `profileOptionsWithFallback`,
+adds `canonicalUri()` and `resolveSelectValue()`)
 
 ### 011-fix-organization-search-duplicate-models.patch
 
