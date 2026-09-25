@@ -2,6 +2,7 @@ import { creatableTypesFor } from "../adjacency.js";
 import { CREATABLE } from "../creation.js";
 import { authedPost, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
+import { applyLink, resolveLink, type ResolvedLink } from "../node-types.ts";
 
 export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
   if (pathname !== "/api/create" || req.method !== "POST") return false;
@@ -39,7 +40,10 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
     return true;
   }
   const payload: Record<string, unknown> = { name };
-  const extraCopies: { field: string; id: string; label: string }[] = [];
+  // Links the new node's own DTO can't carry in the POST — no field for that type (a project's
+  // experiments live on each experiment), or a scalar field already used (a scientific object's
+  // second experiment) — are linked right after it, the same way /api/link links existing nodes.
+  const later: { id: string; r: ResolvedLink }[] = [];
   // Only the keys the type declares — never an arbitrary client-supplied DTO field.
   for (const f of config.fields ?? []) {
     const value = body.fields?.[f.key];
@@ -53,38 +57,45 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
   }
   for (const link of links) {
     const field = config.linkFields[link.type];
-    // Adjacent but not wired (e.g. experiment <- project): refuse rather than silently create
-    // the node without that link — a quiet orphan is exactly what this app exists to prevent.
-    if (!field) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: `linking a new ${type} to a ${link.type} isn't supported yet` }));
-      return true;
+    const scalarTaken = field && config.scalarLinkFields?.includes(field) && payload[field] !== undefined;
+    if (!field || scalarTaken) {
+      const r = resolveLink(type, link.type);
+      // Adjacent but not linkable either way (e.g. experiment <- factor): refuse rather than
+      // silently create the node without that link — a quiet orphan is exactly what this app
+      // exists to prevent.
+      if (!r) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `linking a new ${type} to a ${link.type} isn't supported yet` }));
+        return true;
+      }
+      later.push({ id: link.id, r });
+      continue;
     }
     if (config.scalarLinkFields?.includes(field)) {
-      if (payload[field] === undefined) payload[field] = link.id;
-      else extraCopies.push({ field, id: link.id, label: link.type });
+      payload[field] = link.id;
       continue;
     }
     (payload[field] as string[] | undefined) ??= [];
     (payload[field] as string[]).push(link.id);
   }
   await respondOpenSilexErrors(res, async () => {
-    const created = await authedPost(config.url, payload);
-    // One more POST per extra scalar link (see scalarLinkFields). The node already exists at this
-    // point, so a failure here is reported alongside the 201, never as a failed create — e.g. a
-    // name clash in one experiment shouldn't hide that the object was made in the others.
+    const created = String((await authedPost(config.url, payload)).result);
+    // The node exists now, so a failed follow-up link is reported alongside the 201, never as a
+    // failed create — e.g. a name clash in one experiment shouldn't hide that the object was
+    // made in the others.
     const missed: string[] = [];
-    for (const extra of extraCopies) {
+    for (const { id, r } of later) {
+      const [owner, other] = r.ownerType === type ? [created, id] : [id, created];
       try {
-        await authedPost(config.url, { ...payload, uri: created.result, [extra.field]: extra.id });
+        await applyLink(r, [owner], [other]);
       } catch (err) {
-        missed.push(`${extra.id}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+        missed.push(`${id}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
       }
     }
     res.writeHead(201, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
-      id: await compactUri(String(created.result)), type, label: name,
-      ...(missed.length ? { warning: `not added to ${missed.length} of ${extraCopies.length + 1} — ${missed.join("; ")}` } : {}),
+      id: await compactUri(created), type, label: name,
+      ...(missed.length ? { warning: `not linked to ${missed.length} of ${links.length} — ${missed.join("; ")}` } : {}),
     }));
   });
   return true;

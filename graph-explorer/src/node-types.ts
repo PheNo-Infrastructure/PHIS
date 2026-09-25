@@ -1,4 +1,4 @@
-import { OpenSilexError, authedGet, authedGetOne, authedPost, authedDelete } from "./opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete } from "./opensilex.ts";
 
 // View/edit/delete config, one entry per type — same reasoning as CREATABLE in creation.js:
 // adding a type is "add one entry here," not a new code path. Unlike CREATABLE this doesn't
@@ -179,6 +179,26 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       ),
     queryRelations: [SO_EXPERIMENTS],
   },
+  // A project holds no link to its experiments — each experiment's `projects` field does — so
+  // they come from a query, and link/unlink goes through the experiment's side (linkFieldFor).
+  // Deleting a project drops it from those experiments' `projects` (probed live), so no unlink
+  // step first. Persons are bare uri strings, like an experiment's supervisors.
+  project: {
+    getUrl: (id) => `/core/projects/${encodeURIComponent(id)}`,
+    putUrl: "/core/projects",
+    deleteUrl: (id) => `/core/projects/${encodeURIComponent(id)}`,
+    relationGroups: [
+      { label: "Related projects", field: "related_projects", type: "project" },
+      { label: "Coordinators", field: "coordinators", type: "person" },
+      { label: "Scientific contacts", field: "scientific_contacts", type: "person" },
+      { label: "Administrative contacts", field: "administrative_contacts", type: "person" },
+    ],
+    updateLinkFields: ["related_projects", "coordinators", "scientific_contacts", "administrative_contacts"],
+    deleteRemovesLinks: true,
+    queryRelations: [
+      { label: "Experiments", type: "experiment", url: (id) => `/core/experiments?projects=${encodeURIComponent(id)}&page_size=500` },
+    ],
+  },
   site: {
     getUrl: (id) => `/core/sites/${encodeURIComponent(id)}`,
     putUrl: "/core/sites",
@@ -284,6 +304,46 @@ export function updatePayloadFromDto(
     payload[field] = uris;
   }
   return payload;
+}
+
+// Every DTO edit (rename, link, unlink) is this read-then-full-replace-PUT — see
+// updatePayloadFromDto. Read fresh on every call so two changes to one node never clobber each
+// other. Returns the DTO as it was before the PUT.
+export async function updateNode(
+  config: NodeConfig,
+  id: string,
+  mod: { name?: string; unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] } }
+) {
+  const current = (await authedGetOne(config.getUrl(id))).result;
+  await authedPut(config.putUrl, updatePayloadFromDto(id, mod.name ?? String(current.name ?? ""), current, config, mod));
+  return current;
+}
+
+// How typeA<->typeB is linked, if at all: an operation (contextLinks) first, else a DTO field.
+export type ResolvedLink = { ownerType: string; field: string; ctx?: ContextLink };
+export function resolveLink(typeA: string, typeB: string): ResolvedLink | null {
+  return contextLinkFor(typeA, typeB) ?? linkFieldFor(typeA, typeB);
+}
+
+// Links every owner to every other id through a resolved link — one PUT per owner for a DTO
+// field (all otherIds batched), one operation per pair for a contextLink. Counts pairs that
+// were genuinely new vs already there, so callers can tell a no-op apart from a link.
+export async function applyLink(r: ResolvedLink, ownerIds: string[], otherIds: string[]) {
+  let linked = 0;
+  let already = 0;
+  for (const ownerId of ownerIds) {
+    const existing = new Set(r.ctx ? await r.ctx.current(ownerId) : []);
+    if (!r.ctx) {
+      const before = await updateNode(NODE_TYPES[r.ownerType], ownerId, { link: { field: r.field, uris: otherIds } });
+      (Array.isArray(before[r.field]) ? (before[r.field] as (NamedRef | string)[]) : []).forEach((u) => existing.add(refUri(u)));
+    }
+    for (const otherId of otherIds) {
+      if (existing.has(otherId)) { already++; continue; }
+      if (r.ctx) await r.ctx.link(ownerId, otherId);
+      linked++;
+    }
+  }
+  return { linked, already };
 }
 
 // Given two node types, finds which one (if either) can hold a real link to the other via its

@@ -2232,8 +2232,11 @@ function renderActionbar() {
       // so far — everything else still shows the placeholder toast, honestly, rather than
       // pretending to create something.
       // Also a placeholder when the type is wired but can't take a link to every selected type
-      // yet (e.g. experiment from a project) — /api/create would refuse it anyway.
-      if (!(t in CREATABLE) || [...selection.values()].some(v => !CREATABLE[t].linkFields[v.type])) {
+      // yet (e.g. a scientific object from another one) — /api/create would refuse it anyway.
+      // A link the new node's own DTO can't hold is linked right after, like "Link selection";
+      // that works for any distinct pair of LINKABLE_TYPES (checked against the backend by a test).
+      const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type));
+      if (!(t in CREATABLE) || ![...selection.values()].every(canLink)) {
         showToast(`Would create a ${t.replace("_"," ")}, linked to ${names}`);
         return;
       }
@@ -2487,7 +2490,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project"]);
 
 // Reverse of BACKED_CATEGORIES, keyed by node type instead of category id — lets a freshly
 // created node (see the "+ New" handler above) get pushed into the same CATEGORY_ITEMS array

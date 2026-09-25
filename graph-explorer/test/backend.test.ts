@@ -267,9 +267,9 @@ test("POST /api/create experiment: requires objective/start_date, sends only dec
     assert.equal(missing.status, 400);
     assert.match((await missing.json()).error, /Start date is required/);
 
-    const viaProject = await create({ type: "experiment", name: "E", links: [{ type: "project", id: "p1" }], fields: { objective: "o", start_date: "2026-10-01" } });
-    assert.equal(viaProject.status, 400);
-    assert.match((await viaProject.json()).error, /project isn't supported yet/);
+    const viaGermplasm = await create({ type: "scientific_object", name: "P", links: [{ type: "germplasm", id: "g1" }], fields: { rdf_type: "vocabulary:Plant" } });
+    assert.equal(viaGermplasm.status, 400);
+    assert.match((await viaGermplasm.json()).error, /germplasm isn't supported yet/);
     assert.equal(posted, null, "neither refusal may reach OpenSILEX");
 
     const ok = await create({
@@ -278,6 +278,41 @@ test("POST /api/create experiment: requires objective/start_date, sends only dec
     });
     assert.equal(ok.status, 201);
     assert.deepEqual(posted, { name: "E", objective: "o", start_date: "2026-10-01", organisations: ["org-1"], facilities: ["fac-1"] });
+  });
+});
+
+test("POST /api/create project from experiments: POSTs the project, then PUTs each experiment with it added (linkedFrom); a failed PUT is a warning on the 201", async () => {
+  await withServer(async (base) => {
+    let posted: any = null;
+    const puts: any[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.endsWith("/core/projects") && init?.method === "POST") {
+        posted = JSON.parse(String(init.body));
+        return jsonResponse(201, { result: "phis:id/project/new" });
+      }
+      if (url.includes("/core/experiments/")) {
+        const id = decodeURIComponent(url.split("/core/experiments/")[1]);
+        if (id === "exp-gone") return jsonResponse(404, { result: { message: "URI not found" } });
+        return jsonResponse(200, { result: { uri: id, name: "E", objective: "o", projects: [{ uri: "p-old", name: "Old" }] } });
+      }
+      if (url.endsWith("/core/experiments") && init?.method === "PUT") {
+        puts.push(JSON.parse(String(init.body)));
+        return jsonResponse(200, { result: "ok" });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await realFetch(`${base}/api/create`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "project", name: "P", links: [{ type: "experiment", id: "exp-1" }, { type: "experiment", id: "exp-gone" }], fields: { start_date: "2026-01-01" } }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(posted, { name: "P", start_date: "2026-01-01" }, "a project's DTO has no experiment field");
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].uri, "exp-1");
+    assert.equal(puts[0].objective, "o", "full-replace PUT keeps the experiment's other fields");
+    assert.deepEqual(puts[0].projects, ["p-old", "phis:id/project/new"]);
+    assert.match((await res.json()).warning, /not linked to 1 of 2 — exp-gone/);
   });
 });
 
@@ -400,6 +435,10 @@ test("POST /api/create scientific_object: one POST per experiment (same uri for 
         if (body.experiment === "exp-clash") return jsonResponse(400, { result: { message: "Object name <P1> must be unique onto the graph" } });
         return jsonResponse(201, { result: "phis:id/so/new" });
       }
+      // The extra copy goes through the shared SO<->experiment link: its current experiments,
+      // then the global copy's name/type.
+      if (url.endsWith("/experiments")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/scientific_objects/")) return jsonResponse(200, { result: { uri: "phis:id/so/new", name: "P1", rdf_type: "vocabulary:Plant" } });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
     const create = (body: unknown) =>
@@ -420,8 +459,24 @@ test("POST /api/create scientific_object: one POST per experiment (same uri for 
     posts.length = 0;
     const clash = await create({ type: "scientific_object", name: "P1", links: [{ type: "experiment", id: "exp-1" }, { type: "experiment", id: "exp-clash" }], fields: { rdf_type: "vocabulary:Plant" } });
     assert.equal(clash.status, 201, "the object exists in exp-1 — not a failed create");
-    assert.match((await clash.json()).warning, /not added to 1 of 2 — exp-clash: .*unique/);
+    assert.match((await clash.json()).warning, /not linked to 1 of 2 — exp-clash: .*unique/);
   });
+});
+
+test("the page's '+ New' rule never offers a link /api/create would refuse", async () => {
+  // Mirrors the check in the page's "+ New" menu: a link is offered if the new type's DTO holds
+  // it, or both types are linkable and distinct (then /api/create links it after the POST).
+  const { ADJACENT, creatableTypesFor } = await import("../src/adjacency.js");
+  const { CREATABLE } = await import("../src/creation.js");
+  const { NODE_TYPES, allows, resolveLink } = await import("../src/node-types.ts");
+  const linkable = new Set(Object.keys(NODE_TYPES).filter((t) => allows(NODE_TYPES[t], "link")));
+  for (const v of Object.keys(ADJACENT)) {
+    for (const t of creatableTypesFor([v])) {
+      if (!(t in CREATABLE)) continue;
+      const offered = CREATABLE[t].linkFields[v] || (v !== t && linkable.has(t) && linkable.has(v));
+      if (offered) assert.ok(CREATABLE[t].linkFields[v] || resolveLink(t, v), `${v} -> new ${t} is offered but can't be linked`);
+    }
+  }
 });
 
 test("scientific object: detail lists its REAL experiments (unlinkable) + class name; no rename; DELETE removes each experiment copy, then the global copy", async () => {

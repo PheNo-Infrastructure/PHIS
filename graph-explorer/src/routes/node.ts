@@ -1,6 +1,6 @@
-import { authedGetOne, authedPut, authedDelete, respondOpenSilexErrors } from "../opensilex.ts";
+import { authedGetOne, authedDelete, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, allows, queryItems, refUri, relationsFor, updatePayloadFromDto } from "../node-types.ts";
+import { NODE_TYPES, allows, queryItems, refUri, relationsFor, updateNode } from "../node-types.ts";
 
 export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searchParams }) => {
   if (pathname !== "/api/node-detail" || req.method !== "GET") return false;
@@ -61,14 +61,8 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     await respondOpenSilexErrors(res, async () => {
-      // Every type's update endpoint is a full-DTO PUT, not a patch, and several of these
-      // DTOs have required/relation fields — read the current DTO first and carry its
-      // settable links forward (adding or dropping one, for a link/unlink) rather than
-      // risking an unintended change to every other field a partial body didn't mention.
-      const current = (await authedGetOne(config.getUrl(id))).result;
+      const current = await updateNode(config, id, { name, unlink, link });
       const finalName = name ?? String(current.name ?? "");
-      const payload = updatePayloadFromDto(id, finalName, current, config, { unlink, link });
-      await authedPut(config.putUrl, payload);
       // Unlink responses include the refreshed relations so the frontend can update its
       // detail-pane cache directly, instead of firing a second GET right after this PUT.
       // Filters the original {uri, name} refs (not payload's bare uri list) so the remaining

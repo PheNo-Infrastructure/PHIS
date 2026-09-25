@@ -729,7 +729,37 @@ demands it.
   renames/links/unlinks fine. Lesson for live testing: never chain experimental PUTs against
   real OpenSILEX on the same node — use a throwaway per attempt, and keep the GraphDB cleanup
   path in mind before trying anything new.
-- `graph-explorer/test/` — 106 tests: `backend.test.ts` (unit, mocked
+- **Project** is the sixth wired type (view/rename/delete/create/link). A project's DTO has no
+  experiments field — each experiment's `projects` does — so its detail pane gets an
+  "Experiments" group from `/core/experiments?projects=<uri>` (`queryRelations`, read-only), and
+  project↔experiment links go through the experiment's side (`linkFieldFor` already resolved
+  this once `NODE_TYPES.project` existed). `CREATABLE.experiment` gained `project:
+  "projects"`, so "+ New" → experiment from a project works too. Probed live first (throwaways): deleting a project
+  succeeds and OpenSILEX drops it from its experiments' `projects`, so project is
+  `deleteRemovesLinks` (confirm names the experiments). Coordinators/contacts show as bare
+  person URIs, like supervisors. Not yet: unlinking an experiment from the *project's* page
+  (the query group has no `field`; unlink from the experiment instead), linking related
+  projects (same-type pair, ambiguous like two orgs). Verified live on throwaways through the
+  real page: "+ New" project from experiment A → PHIS lists it on A; rename kept start date;
+  "Link selection" (project + experiment B) → PHIS lists it on B; Delete confirm named A and
+  B → project gone, both experiments' `projects` empty; zero ZZ leftovers.
+- **One link path for create and link.** node-types.ts now holds the three shared pieces:
+  `updateNode` (the read-then-full-replace PUT; used by rename/link/unlink in `PUT /api/node`
+  and by DTO-field links), `resolveLink` (contextLink first, else `linkFieldFor`) and
+  `applyLink` (one PUT per owner, or one operation per pair; counts new vs already linked).
+  `/api/link` is now just "resolve each type pair, applyLink". `/api/create` puts what the new
+  node's own DTO can hold into the POST; every other link (no field for that type, or a scalar
+  field already used) is resolved up front (400 if unresolvable, nothing written) and applied
+  with `applyLink` after the POST, a failure being a `warning` on the 201. This replaced both
+  the scientific object's special "extra copy" POST loop (the extra experiments now go through
+  the SO↔experiment contextLink) and a short-lived `linkedFrom` config. As a result "+ New"
+  also offers organization from a site, organization/facility/project from an experiment and
+  experiment from a scientific object. The page's rule (a DTO field, or two distinct
+  `LINKABLE_TYPES`) is checked against `resolveLink` by a backend test so it never offers a
+  link the server refuses. Verified live on throwaways through the real page: project from
+  experiment, one plant in two experiments, experiment from that plant, project
+  rename/link/delete; zero ZZ leftovers.
+- `graph-explorer/test/` — 108 tests: `backend.test.ts` (unit, mocked
   OpenSILEX responses — covers auth retry, malformed responses, network
   failure, `/api/create` and `/api/node[-detail]`'s validation/payload
   building, and the 409-passthrough behavior), `live-smoke.test.ts`
@@ -743,14 +773,20 @@ demands it.
   `http://localhost:4000` — this serves the mockup *and* the API from
   one process/origin (no CORS, no separate "open the HTML file"
   step — that was an early mistake, corrected once).
-- **What's NOT built yet (as of 2026-09-24).** Wired types: facility, organization, site,
-  experiment, scientific object. Candidate next steps, none started — pick ONE with the user:
-  - Several scientific objects at once ("Plant 1–24" in one form) — closest to an import.
+- **What's NOT built yet (as of 2026-09-25).** Wired types: facility, organization, site,
+  experiment, scientific object, project. Direction set 2026-09-25: finish the foundation
+  (wire the remaining types) before imports. Live record counts then: germplasm 183,
+  devices 7, events 7, persons 4, factors/variables/provenances/data files/documents 0.
+  Candidate next steps, none started — pick ONE with the user:
+  - Germplasm (most real data; SO↔germplasm is what makes measurements meaningful),
+    likely view-only first.
+  - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links; project, person, device, germplasm and the
-    other `ADJACENT` types (device needs `rdf_type` + move events for facility hosting —
-    see "Device deferred" above).
+  - SO parent / germplasm / factor-level links.
+  - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
+    import would create objects from the file's own IDs, not a counter, so it doesn't build
+    toward imports; revisit only if someone really lays out experiments by hand.
   - Then the file-import path described in Creation model above.
   Known gaps: 2 real sites with an `address` can't be edited in the app (OpenSILEX PUT bug,
   guarded with a 409); supervisors/factors chips show bare URIs (no person label lookup).

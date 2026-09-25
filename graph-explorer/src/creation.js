@@ -33,7 +33,7 @@ export const CREATABLE = {
   // ORCIDs) — /api/create refuses such a link instead of dropping it.
   experiment: {
     url: "/core/experiments",
-    linkFields: { organization: "organisations", facility: "facilities" },
+    linkFields: { organization: "organisations", facility: "facilities", project: "projects" },
     fields: [
       { key: "objective", label: "Objective", required: true },
       { key: "start_date", label: "Start date", input: "date", required: true },
@@ -41,15 +41,25 @@ export const CREATABLE = {
     ],
   },
   // scalarLinkFields: link fields that hold ONE id per POST, not a list. Several selected (a
-  // scientific object in several experiments) = the first POST creates it, then one more POST
-  // per extra id with the SAME uri adds a copy there — OpenSILEX keeps one copy per experiment
-  // (probed live). No experiment at all = a "global" object. The type is a required ontology class,
+  // scientific object in several experiments) = the first POST creates it, then each extra one
+  // is linked like /api/link does (a copy with the SAME uri in that experiment) — OpenSILEX keeps
+  // one copy per experiment (probed live). No experiment at all = a "global" object. The type is a required ontology class,
   // picked from OpenSILEX's own list (options = a list endpoint returning {id, label}).
   scientific_object: {
     url: "/core/scientific_objects",
     linkFields: { experiment: "experiment" },
     scalarLinkFields: ["experiment"],
     fields: [{ key: "rdf_type", label: "Type", input: "select", options: "/api/scientific-object-types", required: true }],
+  },
+  // No linkFields: a project's links are all held by the other side (each experiment's
+  // `projects`), so /api/create links them right after the POST, like /api/link would.
+  project: {
+    url: "/core/projects",
+    linkFields: {},
+    fields: [
+      { key: "start_date", label: "Start date", input: "date", required: true },
+      { key: "end_date", label: "End date", input: "date" },
+    ],
   },
   // requiresLink: OpenSILEX refuses a site with no organization ("A site must be attached to at
   // least one organization"), so the standalone "+ New site" asks for orgs first instead of
