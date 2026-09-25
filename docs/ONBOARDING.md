@@ -8,7 +8,7 @@ Kubernetes, Azure, or Terraform before. Read this first, then
 ## What this repo is
 
 PHIS/PheNo is a research data platform (OpenSILEX) running for the university.
-This branch (`k8s`) is the **live production deployment** — a Kubernetes
+This branch (`main`) is the **live production deployment** — a Kubernetes
 cluster on Azure that a GitOps tool (Flux) keeps in sync with what's committed
 here. In short: **changes you push to this branch go live on their own,
 usually within a minute.** There is no separate "deploy" step to run.
@@ -22,7 +22,7 @@ subscription owner / the previous maintainer) has to grant it.
 |---|---|---|
 | Azure role on resource group `phis-rg` (Contributor or Owner) | To run `az`/`kubectl`/`terraform` commands against the cluster and its resources | Granted in the Azure Portal (IAM tab) — not managed by Terraform in this repo |
 | Key Vault (`phis-kv`) — "Key Vault Secrets Officer" role | To read/rotate secrets (passwords, API keys) | **Currently hardcoded to one person's Azure AD object ID** in [terraform/keyvault.tf](../terraform/keyvault.tf) (`admin_kv_officer` resource) — this needs to be updated (or extended to a list) to add a new person; ask whoever is doing the handover to do this explicitly, don't just self-grant |
-| GitHub repo access (write) | To push to the `k8s` branch and trigger the image-build workflow | Standard GitHub collaborator/team access |
+| GitHub repo access (write) | To push to the `main` branch and trigger the image-build workflow | Standard GitHub collaborator/team access |
 | GHCR (`ghcr.io/lversen/opensilex-phis`) pull/push access | Usually comes for free with GitHub repo access via `GITHUB_TOKEN` in Actions — only matters if you need to push images manually | |
 | DNS for `phis.pheno.no` | The domain is managed by an **external organization**, not by whoever runs this cluster | You cannot change DNS yourself; if the cluster's static IP ever needs to change, you'd have to go through them. In practice: never change the AKS load balancer's IP |
 
