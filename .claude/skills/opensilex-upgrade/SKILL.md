@@ -252,7 +252,7 @@ more than prod). It is NOT Flux-managed — change its image directly.
 1. Edit image tag in
    [k8s/opensilex/deployment.yaml](../../k8s/opensilex/deployment.yaml)
    to `ghcr.io/<owner>/opensilex-phis:<target>.1`.
-2. Commit on the `k8s` branch
+2. Commit on the `main` branch
    (`chore(opensilex): upgrade to <target>`, `Co-Authored-By:` trailer).
    **Let the user run `git push`** — that push is the prod trigger. Do
    not commit to any other branch. Note: pushing this file also fires
@@ -315,7 +315,7 @@ Each must exit 0. On failure -> stop, this is a rollback decision
 | Prod image ref | `k8s/opensilex/deployment.yaml` |
 | Test env | `scripts/test-env.ps1` (max 1, ephemeral) |
 | Run a migration | `./bin/opensilex.sh system run-update <Class>` in the pod |
-| Deploy | commit image tag on `k8s` branch -> Flux |
+| Deploy | commit image tag on `main` branch -> Flux |
 
 ## Common mistakes
 

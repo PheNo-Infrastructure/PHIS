@@ -25,12 +25,13 @@ Do the read-only version first (`kubectl get`, `kubectl describe`, `kubectl logs
 
 ## Working Style
 
-The user is learning Kubernetes and Azure infrastructure. When running `kubectl`, `az`, `terraform`, or `flux` commands:
+The user is learning Kubernetes and Azure infrastructure. For `kubectl`, `az`, `terraform`, and `flux`:
 
-- **Provide the command for the user to run manually** rather than executing it directly, unless they explicitly ask Claude to run it.
-- **Explain what the command does and why** in plain language before giving it — what it talks to, what it changes, what could go wrong.
-- Keep explanations short and concrete. Avoid jargon without a one-line definition. Assume no prior Kubernetes/Azure knowledge.
-- If a sequence of commands is needed, walk through them one at a time so the user can see the output of each before proceeding.
+- **Run the command yourself** (the user prefers this, 2026-09-25). Read-only commands (`get`, `describe`, `logs`, `show`, `terraform plan`) need no confirmation.
+- **High-risk commands: confirm first.** State exactly what will change and wait for a yes before anything that changes production: `kubectl apply/patch/annotate/rollout` in `phis`, `terraform apply`, `az ... set/delete`, pushes to `main`. The Data Persistence rules above always apply.
+- **Explain what the command does and why** in plain language — what it talks to, what it changes, what could go wrong. Short and concrete; define jargon in one line.
+- If the permission classifier blocks a command, give the user the PowerShell version instead.
+- Azure: always the "Lab - Sebastian Iversen (FOF)" subscription; pass `-var=subscription_id=...` to terraform. The `flux` CLI is not installed — use `kubectl get gitrepositories,kustomizations -A`.
 
 ## Test Environments
 
@@ -47,19 +48,31 @@ On-demand environments for testing changes without touching production. Managed 
 
 ## Project Memory
 
-Memory files live in `.claude/memory/` in this repo and travel with the code.
+Claude memory for this repo is **local only** (the repo is public): it lives in
+`~/.claude/projects/c--Users-siv017-Documents-GitHub-PHIS-PHIS/memory/` and is never
+committed (`.claude/memory/` is in `.gitignore`). It covers both the cluster/OpenSILEX
+work and the Graph Explorer. Read `MEMORY.md` there at session start.
 
-**Session start:** copy `.claude/memory/` → `~/.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/` then read `MEMORY.md` and linked files.
+## Graph Explorer (`graph-explorer/`)
 
-```bash
-cp .claude/memory/*.md ~/.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/
-```
+The new web portal: one page (`public/index.html`) plus a small Node/TypeScript server
+(`src/`), no framework, no build step. It was moved here from the PhisWebPortal repo
+(`PhisWebPortal@f740511`). The Streamlit portal still lives there and is out of scope.
 
-**Session end (after significant changes):** copy updated memory files back, commit, push.
+- Setup: copy `.env.example` to `.env` and fill in `PHIS_PASS`. Never commit `.env`.
+- Run: `cd graph-explorer && npm install && npm run dev`, then open http://localhost:4000.
+  Restart after any backend change. Stopping the npm task can leave `node` holding
+  :4000 — free the port explicitly (see the dev-loop memory).
+- Test: `npm test` (unit, adjacency, Playwright e2e, and a read-only live smoke test).
+- Design and status: `docs/superpowers/specs/2026-09-21-graph-explorer-unified-design.md`.
+  Its "What's NOT built yet" list is where the next step comes from — pick ONE with the user.
+- **Live runs hit production PHIS** (`PHIS_HOST` in `.env`). Use a throwaway node for each
+  experiment, and never PUT a node that has an `address` (OpenSILEX 1.5.4.7 duplicates the
+  location, and the whole list starts returning 500).
+- Not deployed to the cluster yet. The deploy project must first solve login, since the
+  server acts with the `.env` account.
 
-```bash
-cp ~/.claude/projects/c--Users-sebas-Documents-GitHub-PHIS/memory/*.md .claude/memory/
-git add .claude/memory/
-git commit -m "docs: update project memory"
-git push
-```
+## Branches
+
+`main` is production (Flux applies `./k8s` from it). Work on a feature branch and merge
+only when the user says so.

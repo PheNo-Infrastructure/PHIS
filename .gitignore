@@ -29,3 +29,11 @@ terraform/.terraform.tfstate.lock.info
 
 # Scratch artifacts from opensilex debug sessions
 dbg-patch*.json
+
+# Claude Code: memory and local settings are local-only (repo is public)
+.claude/memory/
+.claude/settings.local.json
+
+# Graph Explorer
+graph-explorer/.env
+graph-explorer/node_modules/

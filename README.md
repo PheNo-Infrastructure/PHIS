@@ -1,8 +1,8 @@
 # PHIS — Kubernetes Deployment
 
-This branch (`k8s`) contains the Kubernetes manifests and tooling for deploying the PHIS OpenSILEX stack on Azure Kubernetes Service (AKS).
+This branch (`main`) contains the Kubernetes manifests and tooling for deploying the PHIS OpenSILEX stack on Azure Kubernetes Service (AKS).
 
-> **This branch is production.** It runs live at `https://phis.pheno.no/`. The old Docker VMs (`docker-compose-official` branch) were replaced by this cluster and are no longer used — that branch is kept for historical reference only.
+> **This branch is production.** It runs live at `https://phis.pheno.no/`. The old Docker VMs were replaced by this cluster and are no longer used.
 
 ## What's Deployed
 
@@ -52,7 +52,6 @@ docs/                 # Onboarding, runbook, architecture
 reference/            # OpenSILEX API usage patterns (Python)
 ```
 
-## Other Branches
+## Branches
 
-- `docker-compose-official` — old Docker VM deployment, retired, kept for history
-- `ansible-deployment` — Ansible automation, WIP, not in use
+`main` is the only branch and is production. Work on a feature branch and merge into `main`.

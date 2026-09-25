@@ -25,7 +25,7 @@ out a second, broader credential to work around the limit.
 ## Part 1 — What the admin does (granting access)
 
 1. Push [k8s/access/external-readonly.yaml](../k8s/access/external-readonly.yaml)
-   to the `k8s` branch (Flux creates the ServiceAccount + RoleBinding within
+   to the `main` branch (Flux creates the ServiceAccount + RoleBinding within
    ~1 min).
 2. Mint a token (90 days here; re-run to reissue when it expires):
    ```powershell

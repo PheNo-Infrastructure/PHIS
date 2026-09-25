@@ -1,0 +1,13 @@
+{
+  "name": "graph-explorer-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-strip-types --env-file=.env src/index.ts",
+    "test": "node --experimental-strip-types --env-file=.env --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "playwright": "^1.63.0"
+  }
+}

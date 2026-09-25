@@ -11,7 +11,7 @@ Create an architecture diagram for the PHIS research platform running on Kuberne
 ---
 
 **Column 1 — External sources (outside cluster boundary)**
-- GitHub / k8s branch (dark/black node)
+- GitHub / main branch (dark/black node)
 - Azure Key Vault / credentials (blue node)
 - Internet / phis.pheno.no (blue node)
 - cert-manager / Let's Encrypt (blue node)

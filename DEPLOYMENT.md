@@ -8,7 +8,7 @@
 
 ## GitOps Workflow
 
-FluxCD watches the `k8s` branch and reconciles every ~1 minute.
+FluxCD watches the `main` branch and reconciles every ~1 minute.
 
 | Action | Result |
 |--------|--------|
