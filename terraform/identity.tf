@@ -2,7 +2,7 @@
 # This is scoped to Key Vault only — not the cluster control-plane identity.
 # Managed identity for GitHub Actions to authenticate to AKS without a
 # static KUBECONFIG secret. The federated credential trusts tokens issued
-# by GitHub's OIDC provider for the k8s branch of this repo.
+# by GitHub's OIDC provider for the main branch of this repo.
 resource "azurerm_user_assigned_identity" "gha" {
   name                = "phis-gha-identity"
   location            = azurerm_resource_group.phis.location
@@ -16,11 +16,11 @@ resource "azurerm_federated_identity_credential" "gha" {
 
   audience = ["api://AzureADTokenExchange"]
   issuer   = "https://token.actions.githubusercontent.com"
-  # Covers push to k8s branch and workflow_dispatch triggered on k8s branch.
+  # Covers push to main branch and workflow_dispatch triggered on main branch.
   # Uses the immutable org/repo ID form that GitHub now emits for this org
   # (org PheNo-Infrastructure = 318586985, repo PHIS = 1009483669). IDs are
   # stable across future renames.
-  subject = "repo:PheNo-Infrastructure@318586985/PHIS@1009483669:ref:refs/heads/k8s"
+  subject = "repo:PheNo-Infrastructure@318586985/PHIS@1009483669:ref:refs/heads/main"
 }
 
 # Grants the GHA identity access to retrieve admin kubeconfig for the cluster.
