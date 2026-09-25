@@ -1,0 +1,2544 @@
+<title>Graph Explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #ffffff;
+  --surface: #f7f9f1;
+  --surface-2: #eef2e0;
+  --ink: #1c2a1f;
+  --ink-muted: #5d6b5b;
+  --ink-faint: #8b9788;
+  --border: #dfe6d3;
+  --border-strong: #c7d1b8;
+  --accent: #3d8526;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6efdc;
+
+  --type-org: #386fa4;
+  --type-org-soft: #e4edf5;
+  --type-research: #b0701f;
+  --type-research-soft: #f6ecdb;
+  --type-data: #6c4fa1;
+  --type-data-soft: #ece6f5;
+  --type-bio: #23896b;
+  --type-bio-soft: #dfefe9;
+  --type-device: #a14646;
+  --type-device-soft: #f3e2e2;
+
+  --warn: #a1631a;
+  --warn-soft: #fbf0dc;
+  --warn-ink: #4a3410;
+
+  --shadow-1: 0 1px 2px rgba(28,42,31,0.06), 0 1px 1px rgba(28,42,31,0.04);
+  --shadow-2: 0 8px 24px rgba(28,42,31,0.12), 0 2px 6px rgba(28,42,31,0.06);
+  --radius: 6px;
+  --font-ui: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10160f;
+    --surface: #171e15;
+    --surface-2: #202a1c;
+    --ink: #e9efe1;
+    --ink-muted: #a0ac97;
+    --ink-faint: #707d68;
+    --border: #2b3527;
+    --border-strong: #3a4735;
+    --accent: #5fb33d;
+    --accent-ink: #0d1409;
+    --accent-soft: #223420;
+
+    --type-org: #7fb0e0;
+    --type-org-soft: #202b36;
+    --type-research: #dba05a;
+    --type-research-soft: #352a1b;
+    --type-data: #b09be0;
+    --type-data-soft: #2b2536;
+    --type-bio: #5fcda8;
+    --type-bio-soft: #1a2f27;
+    --type-device: #e08a8a;
+    --type-device-soft: #362121;
+
+    --warn: #dba05a;
+    --warn-soft: #3a2c14;
+    --warn-ink: #f4e2c4;
+
+    --shadow-1: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-2: 0 8px 28px rgba(0,0,0,0.45);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10160f;
+  --surface: #171e15;
+  --surface-2: #202a1c;
+  --ink: #e9efe1;
+  --ink-muted: #a0ac97;
+  --ink-faint: #707d68;
+  --border: #2b3527;
+  --border-strong: #3a4735;
+  --accent: #5fb33d;
+  --accent-ink: #0d1409;
+  --accent-soft: #223420;
+
+  --type-org: #7fb0e0;
+  --type-org-soft: #202b36;
+  --type-research: #dba05a;
+  --type-research-soft: #352a1b;
+  --type-data: #b09be0;
+  --type-data-soft: #2b2536;
+  --type-bio: #5fcda8;
+  --type-bio-soft: #1a2f27;
+  --type-device: #e08a8a;
+  --type-device-soft: #362121;
+
+  --warn: #dba05a;
+  --warn-soft: #3a2c14;
+  --warn-ink: #f4e2c4;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-2: 0 8px 28px rgba(0,0,0,0.45);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.masthead h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.masthead .subtitle {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+}
+
+/* ---------- top bar: search + breadcrumb ---------- */
+.topbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.searchrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.searchrow svg { flex: none; color: var(--ink-faint); }
+.searchrow input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  padding: 2px 0;
+}
+.searchrow input::placeholder { color: var(--ink-faint); }
+.searchrow input:focus { outline: none; }
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.crumb {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink-muted);
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.crumb:hover { background: var(--surface-2); color: var(--ink); }
+.crumb.current {
+  color: var(--ink);
+  font-weight: 700;
+  cursor: default;
+}
+.crumb.current:hover { background: none; }
+.crumb-sep { color: var(--ink-faint); font-size: 11px; }
+
+/* ---------- workspace ---------- */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 16px;
+  align-items: start;
+}
+.pane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.pane-head h2 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+.pane-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); }
+
+/* explorer rows */
+.rowlist {
+  -webkit-user-select: none; -moz-user-select: none; user-select: none;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  position: relative;
+}
+.row + .row { border-top: 1px solid var(--border); }
+.row:hover { background: var(--surface-2); }
+
+/* tree connector lines — depth is read from these, not from color alone */
+.tree-indent { display: flex; align-self: stretch; flex: none; }
+.tree-rail { width: 20px; flex: none; position: relative; }
+.rail-full, .rail-top, .rail-bottom {
+  position: absolute; left: 9px; width: 1px; background: var(--border-strong);
+}
+.rail-full { top: -1px; bottom: -1px; }
+.rail-top { top: -1px; height: calc(50% + 1px); }
+.rail-bottom { top: 50%; bottom: -1px; }
+.rail-stub { position: absolute; left: 9px; top: 50%; width: 11px; height: 1px; background: var(--border-strong); }
+.row.selected {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.row-dot {
+  flex: none;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--dot, var(--ink-faint));
+}
+.row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.row-type {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--type-color, var(--ink-faint));
+  text-transform: lowercase;
+}
+.row-nav {
+  flex: none;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 100ms ease, background 100ms ease, color 100ms ease;
+}
+.row:hover .row-nav, .row.selected .row-nav { opacity: 1; }
+.row-nav:hover { background: var(--border); color: var(--ink); }
+.row-nav:focus-visible { opacity: 1; }
+
+.empty-hint {
+  padding: 28px 16px;
+  color: var(--ink-faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---------- detail pane ---------- */
+.detail-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; min-height: 320px; }
+.detail-empty {
+  flex: 1;
+  display: flex;
+  /* Top-aligned, not vertically centered: the "+ New" menu is a dropup anchored to the
+     bottom-right of this pane, and a centered placeholder sits directly in its flight path
+     once there are several creatable types — it visibly truncates the text underneath. */
+  align-items: flex-start;
+  justify-content: center;
+  color: var(--ink-faint);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px 20px;
+}
+.local-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed var(--border);
+}
+.local-crumb {
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.local-crumb:hover { background: var(--surface-2); color: var(--ink); }
+.local-crumb.current { color: var(--ink); font-weight: 600; cursor: default; }
+.local-crumb.current:hover { background: none; }
+.node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.node-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--type-color, var(--ink-faint));
+  text-transform: lowercase;
+}
+.node-kicker .swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--dot, var(--ink-faint)); }
+.node-title-row { display: flex; align-items: baseline; gap: 8px; }
+.node-title { font-size: 19px; font-weight: 700; letter-spacing: -0.005em; }
+/* The open node's own title, as a selectable chip: reads as the heading, reveals the chip on hover. */
+.self-chip {
+  font-family: inherit; color: inherit; text-align: left; cursor: pointer;
+  background: none; border: 1px dashed transparent; border-radius: 999px;
+  padding: 2px 10px; margin-left: -11px;
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.self-chip:hover { border-color: var(--type-color, var(--accent)); background: var(--type-soft, var(--surface-2)); }
+.self-chip.selected { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+.btn.small { padding: 3px 8px; font-size: 11.5px; }
+.node-uri {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  word-break: break-all;
+}
+
+.rel-group { display: flex; flex-direction: column; gap: 8px; }
+.unlink-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--warn-ink);
+}
+.unlink-intro .unlink-intro-text { font-size: 12.5px; font-weight: 600; line-height: 1.45; }
+.unlink-intro .unlink-intro-actions { display: flex; gap: 6px; flex: none; }
+.rel-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 100ms ease, background 100ms ease;
+}
+.chip:hover { border-color: var(--type-color, var(--accent)); background: var(--type-soft, var(--surface-2)); }
+.chip.selected { background: var(--accent-soft); border-color: var(--accent); }
+.chip .swatch { width: 6px; height: 6px; border-radius: 50%; background: var(--dot, var(--ink-faint)); }
+.chip-unlink {
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+}
+.chip-unlink:hover { color: var(--type-color, var(--accent)); }
+
+/* selection / CTA bar */
+.actionbar {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-2);
+}
+.actionbar.idle { color: var(--ink-faint); font-size: 12.5px; }
+.selection-summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--ink-muted);
+}
+.selection-summary b { color: var(--ink); font-weight: 700; font-family: var(--font-mono); }
+.selection-names { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 5px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--ink-faint); }
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: none; border-color: transparent; color: var(--ink-faint); }
+.btn.ghost:hover { color: var(--ink); background: var(--surface); }
+.btn.warn { border-color: var(--warn); color: var(--warn-ink); }
+.btn.warn:hover { background: var(--warn); color: var(--warn-soft); }
+
+.newmenu { position: relative; }
+.newmenu-list {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  min-width: 190px;
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 5;
+}
+.newmenu.open .newmenu-list { display: flex; }
+.newmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  text-align: left;
+  color: var(--ink);
+}
+.newmenu-item:hover { background: var(--surface-2); }
+.newmenu-item.selected { background: var(--accent-soft); }
+.newmenu-item.selected:hover { background: var(--accent-soft); filter: brightness(1.05); }
+.newmenu-item .swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-faint)); flex: none; }
+.linkmenu-list { min-width: 260px; max-height: 340px; flex-direction: column; }
+#linkPickerBody { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 2px; }
+.linkmenu-search {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  padding: 6px 6px 8px;
+  font-size: 12.5px;
+  color: var(--ink);
+  outline: none;
+  margin-bottom: 4px;
+  font-family: inherit;
+  flex: none;
+}
+.linkmenu-items { overflow-y: auto; display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; }
+.linkmenu-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  flex: none;
+}
+.linkmenu-title { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); }
+.linkmenu-x { border: none; background: none; color: var(--ink-faint); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+.linkmenu-x:hover { color: var(--ink); }
+.linkmenu-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 6px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  flex: none;
+}
+.linkmenu-back { border: none; background: none; color: var(--ink-muted); cursor: pointer; font-size: 12px; padding: 2px 4px 2px 0; font-family: inherit; }
+.linkmenu-back:hover { color: var(--ink); }
+.linkmenu-footer:empty { display: none; }
+.linkmenu-confirm { width: 100%; margin-top: 4px; flex: none; }
+.newmenu-item .newmenu-item-type { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); }
+
+.hint-banner {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.hint-banner kbd {
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0px 5px;
+  font-size: 11px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 12.5px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- link-ranking modal: resolves ambiguous same-type relations (parent/child) by
+   drag-and-drop above/below a fixed anchor, instead of guessing a direction ---------- */
+.ranking-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  align-items: center;
+  justify-content: center;
+}
+.ranking-overlay.open { display: flex; }
+.ranking-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+.ranking-modal {
+  position: relative;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(600px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 8px;
+  overflow-y: auto;
+}
+.ranking-header { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; }
+.ranking-close { border: none; background: none; color: var(--ink-faint); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; }
+.ranking-close:hover { color: var(--ink); }
+.ranking-hint { font-size: 12px; color: var(--ink-faint); margin: 0 0 4px; }
+.ranking-zone {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 6px;
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ranking-zone.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+.ranking-zone-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); padding: 2px 4px; }
+.ranking-empty { font-size: 12px; color: var(--ink-faint); padding: 6px 4px; }
+.ranking-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: grab;
+  border: 1px solid transparent;
+}
+.ranking-row:hover { background: var(--surface-2); }
+.ranking-row.selected { background: var(--accent-soft); border-color: var(--accent); }
+.ranking-row .swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-faint)); flex: none; }
+.ranking-anchor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+.ranking-anchor .swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-faint)); flex: none; }
+.ranking-anchor-tag {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+/* Create form for types needing more than a name (CREATABLE[t].fields) — native <dialog>. */
+.type-info {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  font-size: 12.5px; color: var(--ink-muted); padding: 6px 10px;
+}
+.type-info summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.type-info ul { margin: 6px 0 2px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.create-dialog {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 16px;
+  width: min(400px, calc(100vw - 32px));
+  font-family: inherit;
+}
+.create-dialog::backdrop { background: rgba(0,0,0,0.35); }
+.create-dialog form { display: flex; flex-direction: column; gap: 10px; }
+.create-dialog label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); }
+.create-dialog input, .create-dialog select {
+  font: inherit; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px;
+}
+.create-dialog input:focus, .create-dialog select:focus { outline: none; border-color: var(--accent); }
+.ranking-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+@media (max-width: 760px) {
+  .workspace { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="app">
+  <div class="masthead">
+    <h1>Graph Explorer</h1>
+    <span class="subtitle">phis.pheno.no &middot; design prototype</span>
+  </div>
+
+  <div class="topbar">
+    <div class="searchrow">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/><path d="M11 11L14.2 14.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <input type="text" placeholder="Jump to any node by name or URI&hellip;" aria-label="Search the graph">
+    </div>
+    <div class="crumbs" id="crumbs"></div>
+  </div>
+
+  <div class="workspace">
+    <section class="pane" id="explorerPane" aria-label="Explorer list">
+      <div class="pane-head">
+        <h2 id="paneTitle">Graph</h2>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="pane-count" id="paneCount"></span>
+          <button class="btn ghost" id="treeToggleBtn" style="padding:4px 9px; font-size:11.5px;"></button>
+        </div>
+      </div>
+      <div class="rowlist" id="rowlist"></div>
+    </section>
+
+    <section class="pane" aria-label="Detail">
+      <div class="pane-head">
+        <h2>Detail</h2>
+      </div>
+      <div class="detail-body" id="detailBody"></div>
+      <div class="actionbar" id="actionbar"></div>
+    </section>
+  </div>
+
+  <div class="pane" style="padding:10px 14px;" aria-label="Graph panel (simulated)">
+    <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); margin-bottom:8px;">Graph panel &mdash; simulated for this prototype</div>
+    <div id="graphMock" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+  </div>
+
+  <div class="hint-banner">
+    <span><kbd>click</kbd> select</span>
+    <span><kbd>ctrl</kbd>+<kbd>click</kbd> toggle</span>
+    <span><kbd>shift</kbd>+<kbd>click</kbd> range</span>
+    <span><kbd>&rsaquo;</kbd> open</span>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="ranking-overlay" id="linkRankingOverlay"></div>
+
+<script>
+/* ---------------- mock graph data ---------------- */
+const TYPES = {
+  category:   { color: "var(--ink-faint)" },
+  organization:{ color: "var(--type-org)", soft: "var(--type-org-soft)" },
+  facility:   { color: "var(--type-org)", soft: "var(--type-org-soft)" },
+  experiment: { color: "var(--type-research)", soft: "var(--type-research-soft)" },
+  project:    { color: "var(--type-research)", soft: "var(--type-research-soft)" },
+  scientific_object: { color: "var(--type-bio)", soft: "var(--type-bio-soft)" },
+  germplasm:  { color: "var(--type-bio)", soft: "var(--type-bio-soft)" },
+  variable:   { color: "var(--type-data)", soft: "var(--type-data-soft)" },
+  factor:     { color: "var(--type-data)", soft: "var(--type-data-soft)" },
+  device:     { color: "var(--type-device)", soft: "var(--type-device-soft)" },
+  site:       { color: "var(--type-org)", soft: "var(--type-org-soft)" },
+  person:     { color: "var(--type-org)", soft: "var(--type-org-soft)" },
+  data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)" },
+  provenance: { color: "var(--type-data)", soft: "var(--type-data-soft)" },
+  event:      { color: "var(--type-data)", soft: "var(--type-data-soft)" },
+  document:   { color: "var(--type-data)", soft: "var(--type-data-soft)" },
+};
+
+/* Matches utils/graph_explorer/catalog.py's real PARENT_GROUPS exactly
+   (plus Infrastructure/Research, which the real page special-cases ahead
+   of the PARENT_GROUPS loop) — not placeholder names.
+
+   UPDATE: replaced with OpenSILEX's own native menu groupings (shown
+   directly by the user from the real app: Scientific Organization /
+   Scientific Information / Data / Vocabulary / Administration / About /
+   Tools / Web API). Only the three that are actual browsable RDF
+   instance data are included here — Vocabulary (ontology/type
+   definitions), Administration (accounts/groups/profiles), About, Tools
+   and Web API are system/config surfaces, not graph nodes, so they're
+   left out of Graph Explorer on the assumption this tool is for browsing
+   and linking data, not system administration. Flagging that assumption
+   explicitly — easy to add back if that's wrong. This also means real
+   OpenSILEX has a nesting level this mockup didn't have before: a top
+   group (e.g. "Scientific Organization") contains sub-types (e.g.
+   "Experiments"), which THEN contain instances — modeled below as
+   category-type rows nested two deep before hitting real nodes. */
+const ROOT = [
+  { id: "cat-sciorg", type: "category", label: "Scientific Organization" },
+  { id: "cat-sciinfo", type: "category", label: "Scientific Information" },
+  { id: "cat-data", type: "category", label: "Data" },
+];
+
+const CATEGORY_ITEMS = {
+  "cat-sciorg": [
+    { id: "cat-organizations", type: "category", label: "Organizations" },
+    { id: "cat-projects", type: "category", label: "Projects" },
+    { id: "cat-experiments", type: "category", label: "Experiments" },
+    { id: "cat-factors", type: "category", label: "Factors" },
+    { id: "cat-facilities", type: "category", label: "Facilities" },
+    { id: "cat-devices", type: "category", label: "Devices" },
+    { id: "cat-sites", type: "category", label: "Sites" },
+    { id: "cat-persons", type: "category", label: "Persons" },
+  ],
+  "cat-sciinfo": [
+    { id: "cat-scientificobjects", type: "category", label: "Scientific Objects" },
+    { id: "cat-variables", type: "category", label: "Variables" },
+    { id: "cat-germplasm", type: "category", label: "Germplasm" },
+  ],
+  "cat-data": [
+    { id: "cat-tabular", type: "category", label: "Tabular Data" },
+    { id: "cat-datafiles", type: "category", label: "Data files" },
+    { id: "cat-provenances", type: "category", label: "Provenances" },
+    { id: "cat-events", type: "category", label: "Events" },
+    { id: "cat-documents", type: "category", label: "Documents" },
+  ],
+
+  // Real data, fetched from the backend at load time — see the fetch calls below.
+  // Empty array = not wired to a real OpenSILEX endpoint yet (not "no data").
+  "cat-organizations": [],
+  "cat-experiments": [],
+  "cat-projects": [],
+  "cat-factors": [],
+  "cat-facilities": [],
+  "cat-devices": [],
+  "cat-sites": [],
+  "cat-persons": [],
+  "cat-scientificobjects": [],
+  "cat-variables": [],
+  "cat-germplasm": [],
+  // Tabular Data has no direct wiring here: OpenSILEX's /core/data endpoint returns
+  // individual measurement rows (value/variable/target/date), not named browsable
+  // nodes — it needs a different UI (a table scoped to one scientific object/variable),
+  // not the same "list of labeled things" pattern as everything else in this menu.
+  "cat-tabular": [],
+  "cat-datafiles": [],
+  "cat-provenances": [],
+  "cat-events": [],
+  "cat-documents": [],
+};
+
+const NODE_DETAIL = {};
+
+/* ADJACENT and creatableTypesFor live in server/src/adjacency.js, not here — it's the single
+   source of truth shared by this page and the Node backend/tests (see that file's own comment
+   for why and the DTO evidence behind each entry). The server inlines it verbatim at this
+   marker when serving this page, so editing the rule means editing exactly one file. */
+/* ADJACENCY_JS_INJECTED_HERE */
+
+/* ---------------- state ---------------- */
+let path = [{ id: "root", type: "category", label: "Graph" }];
+let selection = new Map();   // id -> node — who's selected; drives BOTH the action bar and the tree forest
+let anchorId = null;
+let rowOrder = [];
+
+/* Tree mode: an alternate rendering of the SAME `selection` — one root per
+   selected item, expandable to show its relations. Entering/leaving it
+   never touches `selection`, so anything picked in list mode is still
+   there when you come back, and anything picked while in tree mode is
+   still there once you leave. This is deliberate: selection is the single
+   source of truth for "what's gathered so far," list and tree are just two
+   views onto it. */
+let treeMode = false;
+let expandedIds = new Set();
+
+/* Local breadcrumb for the right-hand pane, only meaningful in tree mode.
+   Lets you follow a tree node's own relations further right without
+   touching the global `path` (which would exit tree mode) or the tree
+   itself (the fixed base on the left). Cleared whenever tree mode toggles
+   in either direction. */
+let detailPath = [];
+
+// id of the node currently showing the "unlink before delete" view, or null. Set by Delete
+// when the node still has relations (delete would just fail); cleared automatically once
+// every unlinkable relation is gone, or whenever a different node is opened.
+let unlinkTargetId = null;
+
+// "Link existing…" popover state — separate from `selection` since picking targets to link
+// TO the current selection is a distinct gathering step, not a change to what's selected in
+// the main pane. Reset whenever the popover opens or a link is confirmed.
+let linkPickerType = null;     // which candidate type is being browsed, or null = type list
+let linkPickerPicked = new Map();  // id -> item, gathered so far in this popover session
+let linkPickerShiftAnchor = null;  // last picked id, for shift-range within the current type's list
+// Non-null = the same picker locked to ONE type, with its own confirm action instead of linking
+// to the selection — {type, confirmLabel(n), onConfirm(items)}. Used by standalone "+ New site"
+// to pick the organization(s) a site can't exist without (CREATABLE[t].requiresLink).
+let linkPickerMode = null;
+
+/* Every item currently clickable ANYWHERE on screen (left rowlist, tree,
+   or the local member-list in the detail pane when it's showing a
+   category), rebuilt by whichever render function last touched that
+   area. The unified mousedown/mouseup pipeline resolves clicks through
+   this single map instead of guessing which pane a click landed in. */
+let addressableItems = new Map();
+
+const els = {
+  crumbs: document.getElementById("crumbs"),
+  paneTitle: document.getElementById("paneTitle"),
+  paneCount: document.getElementById("paneCount"),
+  rowlist: document.getElementById("rowlist"),
+  detailBody: document.getElementById("detailBody"),
+  actionbar: document.getElementById("actionbar"),
+  toast: document.getElementById("toast"),
+  treeToggleBtn: document.getElementById("treeToggleBtn"),
+};
+els.treeToggleBtn.addEventListener("click", toggleTreeMode);
+
+function currentPane() { return path[path.length - 1]; }
+
+function itemsForPane() {
+  const p = currentPane();
+  if (p.id === "root") return ROOT;
+  return CATEGORY_ITEMS[p.id] || [];
+}
+
+function typeStyle(type) {
+  const t = TYPES[type] || TYPES.category;
+  return `--dot:${t.color}; --type-color:${t.color}; --type-soft:${t.soft || "var(--surface-2)"};`;
+}
+
+/* Categories aren't real graph nodes, so "selecting" one really means
+   "select every real resource inside it" — recursively, since a group can
+   itself contain sub-groups (Scientific Organization -> Organizations ->
+   individual orgs) before hitting anything real. */
+function flattenCategoryToRealItems(id) {
+  const kids = CATEGORY_ITEMS[id] || [];
+  let out = [];
+  kids.forEach(k => {
+    out = k.type === "category" ? out.concat(flattenCategoryToRealItems(k.id)) : out.concat([k]);
+  });
+  return out;
+}
+function expandForSelection(item) {
+  return item.type === "category" ? flattenCategoryToRealItems(item.id) : [item];
+}
+function isCategoryFullySelected(id) {
+  const members = flattenCategoryToRealItems(id);
+  return members.length > 0 && members.every(m => selection.has(m.id));
+}
+
+function showToast(msg) {
+  els.toast.textContent = msg;
+  els.toast.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => els.toast.classList.remove("show"), 1600);
+}
+
+/* ---------------- rendering ---------------- */
+function renderCrumbs() {
+  els.crumbs.innerHTML = "";
+  path.forEach((seg, i) => {
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep";
+      sep.textContent = "›";
+      els.crumbs.appendChild(sep);
+    }
+    const btn = document.createElement("button");
+    const isLast = i === path.length - 1;
+    btn.className = "crumb" + (isLast ? " current" : "");
+    btn.textContent = seg.label;
+    if (!isLast) {
+      btn.addEventListener("click", () => { path = path.slice(0, i + 1); render(); });
+    }
+    els.crumbs.appendChild(btn);
+  });
+}
+
+function renderRows() {
+  const items = itemsForPane();
+  const p = currentPane();
+  els.paneTitle.textContent = p.label;
+  els.paneCount.textContent = items.length ? `${items.length} item${items.length === 1 ? "" : "s"}` : "";
+  els.rowlist.innerHTML = "";
+  rowOrder = items.map(it => it.id);
+  addressableItems = new Map(items.map(it => [it.id, it]));
+
+  if (!items.length) {
+    const div = document.createElement("div");
+    div.className = "empty-hint";
+    div.textContent = "Nothing here yet.";
+    els.rowlist.appendChild(div);
+    return;
+  }
+
+  items.forEach(item => {
+    const isSelected = item.type === "category" ? isCategoryFullySelected(item.id) : selection.has(item.id);
+    const row = document.createElement("div");
+    row.className = "row" + (isSelected ? " selected" : "");
+    row.setAttribute("style", typeStyle(item.type));
+    row.dataset.id = item.id;
+
+    row.innerHTML = `
+      <span class="row-dot"></span>
+      <span class="row-main">
+        <span class="row-label">${item.label}</span>
+        <span class="row-type">${item.type === "category" ? "group · all members" : item.type.replace("_", " ")}</span>
+      </span>
+      <button class="row-nav" title="Open" aria-label="Open ${item.label}">›</button>
+    `;
+
+    const navBtn = row.querySelector(".row-nav");
+    if (navBtn) navBtn.addEventListener("click", (e) => { e.stopPropagation(); openNode(item); });
+
+    els.rowlist.appendChild(row);
+  });
+}
+
+function applyClick(item, mod) {
+  if (mod === "shift" && anchorId && rowOrder.includes(anchorId) && rowOrder.includes(item.id)) {
+    const lo = Math.min(rowOrder.indexOf(anchorId), rowOrder.indexOf(item.id));
+    const hi = Math.max(rowOrder.indexOf(anchorId), rowOrder.indexOf(item.id));
+    selection = new Map();
+    const items = itemsForPane();
+    rowOrder.slice(lo, hi + 1).forEach(id => {
+      const found = items.find(i => i.id === id);
+      if (found) expandForSelection(found).forEach(m => selection.set(m.id, m));
+    });
+  } else if (mod === "ctrl") {
+    // A category toggles as a whole group: if every real member is
+    // already in, ctrl-click removes them all; otherwise it adds
+    // whichever are missing. This is what makes drilling into a group and
+    // ctrl-clicking one member back OUT actually work — that member is a
+    // normal selection entry, not a symbolic "all members" placeholder.
+    const members = expandForSelection(item);
+    const allIn = members.length > 0 && members.every(m => selection.has(m.id));
+    if (allIn) members.forEach(m => selection.delete(m.id));
+    else members.forEach(m => selection.set(m.id, m));
+    anchorId = item.id;
+  } else {
+    selection = new Map(expandForSelection(item).map(m => [m.id, m]));
+    anchorId = item.id;
+  }
+  refreshLeftPane();
+  renderDetail();
+  renderActionbar();
+}
+
+/* Adds (never replaces) — used by the simulated graph panel, since
+   clicking a node "out there" should never blow away what you've already
+   gathered. Also jumps into tree mode so you immediately see how the new
+   pick relates to everything else selected so far. */
+function addToSelectionFromGraph(item) {
+  selection.set(item.id, item);
+  anchorId = item.id;
+  expandedIds.add(item.id);
+  treeMode = true;
+  refreshLeftPane();
+  renderDetail();
+  renderActionbar();
+}
+
+function openNode(item) {
+  navigateTo([...path, item]);
+}
+
+// A relation chip in the detail pane can point at a resource that already has its own real
+// spot in the category tree — e.g. opening Org A, following its "Facilities" relation to
+// Facility X, then following X's "Organizations" relation back to Org A. Appending each hop
+// onto whatever ad-hoc trail got you there (like openNode does for real drill-down) would grow
+// the breadcrumb into a nonsensical, looping trail (A -> X -> A -> X...). Jump to the target's
+// canonical path instead — same destination as if you'd browsed there directly.
+function openRelatedNode(item) {
+  navigateTo(canonicalPathFor(item));
+}
+
+function navigateTo(newPath) {
+  path = newPath;
+  treeMode = false; // opening a node is a deliberate breadcrumb commit — back to plain browsing
+  unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink
+  render();
+  loadNodeDetail(newPath[newPath.length - 1]);
+}
+
+// The category tree is exactly two levels deep before real nodes (see ROOT/CATEGORY_ITEMS'
+// header comment) — walk it to find which two category crumbs a given type lives under.
+function canonicalPathFor(item) {
+  const categoryId = CATEGORY_FOR_TYPE[item.type];
+  for (const topCat of ROOT) {
+    if (categoryId && topCat.id === categoryId) return [path[0], topCat, item];
+    const leafCat = (CATEGORY_ITEMS[topCat.id] || []).find(c => c.id === categoryId);
+    if (leafCat) return [path[0], topCat, leafCat, item];
+  }
+  // Type not wired into the category tree at all (shouldn't happen for anything with its own
+  // relations) — fall back to appending, same as before this existed.
+  return [...path, item];
+}
+
+// NODE_DETAIL is a cache, not a placeholder: populated on demand as nodes are opened, not
+// preloaded. Types the backend doesn't support yet (see /api/node-detail) just 404/400 and
+// leave the existing "No connections found" fallback in place — honest, not fake.
+async function loadNodeDetail(item) {
+  if (item.type === "category" || item.id in NODE_DETAIL) return;
+  try {
+    const res = await fetch(`/api/node-detail?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`);
+    if (!res.ok) return;
+    NODE_DETAIL[item.id] = await res.json();
+    renderDetail();
+  } catch {
+    // stays unset — renderNodeDetail's existing null-branch already shows the honest fallback
+  }
+}
+
+// Drops a node's cached detail — same "cache is stale, don't guess, just drop it" reasoning as
+// everywhere NODE_DETAIL gets invalidated. render() alone never refetches an open node (only
+// openNode does, via loadNodeDetail), so a bare `delete` on the node currently shown in the
+// right-hand pane would leave it showing "No connections found" until the user navigated away
+// and back — refetch it immediately instead when that's the case.
+function invalidateNodeDetail(id) {
+  delete NODE_DETAIL[id];
+  const p = currentPane();
+  if (p && p.id === id) loadNodeDetail(p);
+}
+
+async function renameNode(item) {
+  const label = prompt(`New name for ${item.label}?`, item.label);
+  if (!label || label === item.label) return;
+  try {
+    const res = await fetch("/api/node", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: item.type, id: item.id, name: label }),
+    });
+    const body = await res.json();
+    if (!res.ok) { showToast(`Failed to rename: ${body.error || res.status}`); return; }
+    // item is the same object referenced from selection/CATEGORY_ITEMS/path (see how "+ New"
+    // auto-attach relies on the same sharing) — mutating it in place keeps everywhere in sync.
+    item.label = body.label;
+    render();
+    showToast(`Renamed to ${body.label}`);
+  } catch (err) {
+    showToast(`Failed to rename: ${err}`);
+  }
+}
+
+// The one remaining link a type can't exist without (CREATABLE[t].requiresLink — e.g. a site's
+// last organization), or null. Unlinking it can only be refused by OpenSILEX, so the unlink view
+// offers deleting the node instead of a dead-end ×.
+function lastRequiredLink(type, node) {
+  const required = CREATABLE[type]?.requiresLink;
+  if (!required) return null;
+  const items = (node?.relations ?? []).filter(rel => rel.field).flatMap(rel => rel.items).filter(it => it.type === required);
+  return items.length === 1 ? items[0] : null;
+}
+
+// `force` = delete even though relations remain — only offered from the unlink view when the
+// last remaining required link can't be removed (see lastRequiredLink). OpenSILEX drops the
+// node's links along with it (confirmed live for sites), and the confirm names them.
+// Drops a deleted node from every client-side list it could still appear in.
+function forgetNode(item) {
+  const categoryId = CATEGORY_FOR_TYPE[item.type];
+  if (categoryId && CATEGORY_ITEMS[categoryId]) {
+    CATEGORY_ITEMS[categoryId] = CATEGORY_ITEMS[categoryId].filter(i => i.id !== item.id);
+  }
+  selection.delete(item.id);
+  delete NODE_DETAIL[item.id];
+}
+
+async function deleteNode(item, force = false) {
+  // A node with real relations would just get refused by OpenSILEX (referential integrity —
+  // the whole point of this app is that nothing gets orphaned) — so route straight to the
+  // unlink view instead of letting the user hit that as a dead-end "Failed to delete" toast.
+  // Two exceptions: a type whose delete takes its links with it (node.deleteRemovesLinks —
+  // e.g. experiment) goes straight to a confirm naming them; and a group that BLOCKS delete
+  // (rel.blocksDelete — an experiment's scientific objects) always routes to unlink mode,
+  // where the banner explains why and offers to delete those first.
+  const node = NODE_DETAIL[item.id];
+  const blockers = (node?.relations ?? []).filter(rel => rel.blocksDelete);
+  const related = (node?.relations ?? []).filter(rel => !rel.blocksDelete).flatMap(rel => rel.items);
+  if (!force && (blockers.length || (related.length && !node?.deleteRemovesLinks))) {
+    unlinkTargetId = item.id;
+    render();
+    return;
+  }
+  const alsoUnlinks = related.length ? ` It will also be unlinked from: ${related.map(it => it.label).join(", ")}.` : "";
+  if (!confirm(`Delete ${item.label}?${alsoUnlinks} This cannot be undone.`)) return;
+  try {
+    const res = await fetch(`/api/node?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      showToast(`Failed to delete: ${body.error || res.status}`);
+      return;
+    }
+    forgetNode(item);
+    related.forEach(it => invalidateNodeDetail(it.id)); // their relations still list this node
+    unlinkTargetId = null;
+    if (path[path.length - 1]?.id === item.id) path = path.slice(0, -1);
+    treeMode = false;
+    render();
+    showToast(`Deleted ${item.label}`);
+  } catch (err) {
+    showToast(`Failed to delete: ${err}`);
+  }
+}
+
+// "Scientific objects" group label -> "1 scientific object" / "3 scientific objects".
+function countOf(n, groupLabels) {
+  const words = groupLabels.map(l => l.toLowerCase()).join(" and ");
+  return `${n} ${n === 1 ? words.replace(/s$/, "") : words}`;
+}
+
+// The blocked-delete path: clears the node's blocksDelete groups (e.g. an experiment's scientific
+// objects), then carries on with the delete the user started — the node's own confirm, which
+// names the links that go with it. Per item: one that lives ONLY here is deleted from PHIS
+// entirely; one that also lives elsewhere (a scientific object shared with another experiment)
+// is only removed from this node, via the group's unlink, so the other experiments keep it.
+// The confirm spells out which is which.
+async function deleteBlockers(item) {
+  const groups = (NODE_DETAIL[item.id]?.relations ?? []).filter(rel => rel.blocksDelete);
+  const entries = groups.flatMap(rel => rel.items.map(it => ({ it, field: rel.field })));
+  const niceType = item.type.replace("_", " ");
+  // Where else does each one live? Its own detail lists its links back (e.g. an SO's Experiments).
+  for (const e of entries) {
+    await loadNodeDetail(e.it);
+    e.elsewhere = (NODE_DETAIL[e.it.id]?.relations ?? []).flatMap(rel => rel.items).filter(o => o.type === item.type && o.id !== item.id);
+  }
+  const what = countOf(entries.length, groups.map(rel => rel.label));
+  const lines = entries.map(e => e.elsewhere.length
+    ? `• ${e.it.label} — also in ${e.elsewhere.map(o => o.label).join(", ")}: removed from ${item.label} only, kept there`
+    : `• ${e.it.label} — only here: deleted from PHIS entirely`);
+  if (!confirm(`${item.label} holds ${what}. To delete the ${niceType}:\n\n${lines.join("\n")}\n\nThis cannot be undone.`)) return;
+  for (const e of entries) {
+    try {
+      const res = e.elsewhere.length
+        ? await fetch("/api/node", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: item.type, id: item.id, unlink: { field: e.field, uri: e.it.id } }),
+          })
+        : await fetch(`/api/node?type=${encodeURIComponent(e.it.type)}&id=${encodeURIComponent(e.it.id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showToast(`Failed on ${e.it.label}: ${body.error || res.status}`);
+        invalidateNodeDetail(item.id); // show what's actually left
+        return;
+      }
+    } catch (err) {
+      showToast(`Failed on ${e.it.label}: ${err}`);
+      return;
+    }
+    if (e.elsewhere.length) delete NODE_DETAIL[e.it.id]; // its Experiments list just lost this one
+    else forgetNode(e.it);
+  }
+  delete NODE_DETAIL[item.id];
+  await loadNodeDetail(item);
+  showToast(`Cleared ${what} from ${item.label}`);
+  unlinkTargetId = null; // cancelling the next confirm lands on the normal view, Delete ready
+  if (!(NODE_DETAIL[item.id]?.relations ?? []).some(rel => rel.blocksDelete)) deleteNode(item);
+  else render();
+}
+
+async function unlinkOne(item, field, uri) {
+  try {
+    const res = await fetch("/api/node", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: item.type, id: item.id, unlink: { field, uri } }),
+    });
+    const body = await res.json();
+    if (!res.ok) { showToast(`Failed to unlink: ${body.error || res.status}`); return; }
+    NODE_DETAIL[item.id] = { ...NODE_DETAIL[item.id], relations: body.relations };
+    // The other side of the relation still has this node cached in ITS relations (unlinking
+    // is two-sided even though the request is one PUT) — drop it so it refetches fresh next
+    // time it's opened, instead of showing the removed link until a full page reload.
+    invalidateNodeDetail(uri);
+    if (!body.relations.length) unlinkTargetId = null; // nothing left — Delete will work now
+    renderDetail();
+  } catch (err) {
+    showToast(`Failed to unlink: ${err}`);
+  }
+}
+
+async function unlinkAll(item) {
+  const node = NODE_DETAIL[item.id];
+  const targets = (node?.relations ?? [])
+    .filter(rel => rel.field)
+    .flatMap(rel => rel.items.map(it => ({ field: rel.field, uri: it.id, type: it.type })));
+  // Keep one link of a required type (e.g. a site's last organization) — OpenSILEX refuses
+  // removing it, which would abort the loop halfway; the view then offers deleting instead.
+  const required = CREATABLE[item.type]?.requiresLink;
+  const keep = required ? targets.filter(t => t.type === required).pop() : null;
+  for (const { field, uri } of targets.filter(t => t !== keep)) {
+    const t = { field, uri };
+    try {
+      const res = await fetch("/api/node", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: item.type, id: item.id, unlink: t }),
+      });
+      const body = await res.json();
+      if (!res.ok) { showToast(`Failed to unlink: ${body.error || res.status}`); return; }
+      NODE_DETAIL[item.id] = { ...NODE_DETAIL[item.id], relations: body.relations };
+      invalidateNodeDetail(t.uri); // see unlinkOne — the other side's cache is now stale too
+    } catch (err) {
+      showToast(`Failed to unlink: ${err}`);
+      return;
+    }
+  }
+  if (!NODE_DETAIL[item.id].relations.length) unlinkTargetId = null;
+  renderDetail();
+}
+
+/* Selecting (plain/ctrl/shift click, or drag) NEVER changes the detail
+   pane — only real navigation does (the › arrow, a breadcrumb crumb, or
+   clicking a relation chip). In tree mode, the › arrow on a tree row opens
+   a SEPARATE, local breadcrumb (`detailPath`) scoped to the right-hand
+   pane only — the tree on the left (the base) never moves. This lets you
+   follow a chain of relations out from any tree node without losing the
+   selection overview you built. Outside tree mode, the › arrow still does
+   a real, global navigation (`path`), same as before. */
+function renderDetail() {
+  const p = currentPane();
+  const isOpenNode = p.id !== "root" && p.type !== "category";
+
+  if (isOpenNode) {
+    renderNodeDetail(p, { local: false });
+    return;
+  }
+
+  if (treeMode && detailPath.length > 0) {
+    renderNodeDetail(detailPath[detailPath.length - 1], { local: true });
+    return;
+  }
+
+  // A category page of a type with an explainer (TYPE_INFO) shows it above the usual message.
+  const info = p.type === "category" ? typeInfoHtml(TYPE_FOR_CATEGORY[p.id]) : "";
+  if (selection.size === 0) {
+    els.detailBody.innerHTML = info + `<div class="detail-empty">Select a row, or click the &rsaquo; arrow to open one, to see its connections here.</div>`;
+    wireTypeInfo(els.detailBody);
+    return;
+  }
+  const names = [...selection.values()].map(n => n.label).join(", ");
+  els.detailBody.innerHTML = info + `<div class="detail-empty"><span><b style="color:var(--ink); font-family:var(--font-mono);">${selection.size}</b>&nbsp;selected &mdash; ${names}<br><br>Use the action bar below to create something linked to ${selection.size > 1 ? "all of them" : "it"}, or click the &rsaquo; arrow on a row to open it.</span></div>`;
+  wireTypeInfo(els.detailBody);
+}
+
+function renderNodeDetail(focusNode, { local } = { local: false }) {
+  const node = NODE_DETAIL[focusNode.id] || null;
+  const label = focusNode.label;
+  const type = focusNode.type;
+
+  let html = "";
+
+  if (local) {
+    html += `<div class="local-crumbs">`;
+    detailPath.forEach((seg, i) => {
+      if (i > 0) html += `<span class="crumb-sep">›</span>`;
+      const isLast = i === detailPath.length - 1;
+      html += isLast
+        ? `<span class="local-crumb current">${seg.label}</span>`
+        : `<button class="local-crumb" data-crumb="${i}">${seg.label}</button>`;
+    });
+    html += `</div>`;
+  }
+
+  const isCategoryMembers = type === "category";
+  // Rename/Delete only appear once a real node-detail response has come back (`node` truthy —
+  // set by loadNodeDetail on a 200) — that's the one reliable signal the backend actually
+  // supports this type, same honesty rule the "+ New" menu follows for CREATABLE. Which buttons
+  // show comes from node.actions (e.g. a scientific object can be deleted but not renamed).
+  const canEdit = !isCategoryMembers && node;
+  const actions = node?.actions ?? ["rename", "delete", "link"]; // same default as the backend
+  const canRename = canEdit && actions.includes("rename");
+  const canDelete = canEdit && actions.includes("delete");
+  const blockers = canEdit ? (node.relations ?? []).filter(rel => rel.blocksDelete) : [];
+  const unlinking = canEdit && unlinkTargetId === focusNode.id;
+  // The button doesn't just delete when relations exist — it opens the unlink view instead —
+  // so it says so upfront rather than promising a delete that's actually going to redirect.
+  const hasRelations = canEdit && node.relations && node.relations.length > 0;
+  // ...unless the type's delete simply takes its links along (and nothing blocks it).
+  const deleteRedirects = hasRelations && (blockers.length > 0 || !node.deleteRemovesLinks);
+  const deleteLabel = deleteRedirects ? "Unlink/Delete" : "Delete";
+  // When Delete doesn't pass through unlink mode (deleteRemovesLinks), unlinking needs its own
+  // way in — otherwise e.g. a scientific object could never be taken out of one experiment.
+  const canUnlink = canEdit && !deleteRedirects && actions.includes("link") && (node.relations ?? []).some(rel => rel.field && rel.items.length);
+
+  html += `
+    <div class="node-card" style="${typeStyle(type)}">
+      <div class="node-kicker"><span class="swatch"></span>${type === "category" ? "group · all members" : type.replace("_", " ")}${node?.typeName ? ` · ${node.typeName}` : ""}</div>
+      <div class="node-title-row">
+        ${isCategoryMembers
+          ? `<div class="node-title">${label}</div>`
+          : `<button class="node-title self-chip${selection.has(focusNode.id) ? " selected" : ""}" id="selfChip" title="Click to select this ${type.replace("_", " ")} (ctrl/cmd-click adds it to the selection)">${label}</button>`}
+        ${canRename ? `<button class="btn ghost small" id="renameNodeBtn">Rename</button>` : ""}
+        ${canUnlink ? `<button class="btn ghost small" id="unlinkModeBtn">Unlink…</button>` : ""}
+        ${canDelete ? `<button class="btn ${deleteRedirects ? "warn" : "ghost"} small" id="deleteNodeBtn">${deleteLabel}</button>` : ""}
+      </div>
+      ${node ? `<div class="node-uri">${node.uri}</div>` : ""}
+    </div>
+  `;
+  if (!isCategoryMembers) html += typeInfoHtml(type);
+
+  if (isCategoryMembers) {
+    // A category isn't a resource with relations — it's a group. Show
+    // what's actually inside it as a REAL selectable list (not read-only
+    // chips), so ctrl+click here can pull one member back out of an
+    // "all members" selection, same as anywhere else.
+    html += `<div class="rel-group"><div class="rel-label">Members</div><div class="rowlist" id="detailMembers"></div></div>`;
+  } else if (node && node.relations && node.relations.length) {
+    if (unlinking) {
+      // Delete was blocked by real relations: instead of a dead-end "Failed to delete"
+      // toast, offer to remove them here — per item, or all at once — so Delete becomes
+      // actionable instead of just failing. Only relation groups the backend marked
+      // unlinkable (rel.field present — see node-types.ts) get an Unlink button; a
+      // read-only relation (e.g. a facility's Devices, which live on the device's own
+      // record) stays visible but not actionable, same honesty rule as everywhere else.
+      const lastReq = lastRequiredLink(type, node);
+      const anyUnlinkable = node.relations.some(rel => rel.field && rel.items.some(it => it.id !== lastReq?.id));
+      const niceType = type.replace("_", " ");
+      const blockerCount = blockers.flatMap(rel => rel.items).length;
+      const blockerWhat = countOf(blockerCount, blockers.map(rel => rel.label));
+      const them = blockerCount === 1 ? "it" : "them";
+      html += `<div class="unlink-intro">
+        <span class="unlink-intro-text">${blockers.length
+          ? `<b>CAN'T DELETE YET</b> — ${label} still holds ${blockerWhat}. Deleting the ${niceType} with ${them} inside would leave ${them} orphaned in PHIS, so ${blockerCount === 1 ? "it has" : "they have"} to go first — remove one with its ×, or clear them all (anything also used by another experiment is only removed from this one).`
+          : lastReq
+          ? `<b>UNLINK MODE</b> — a ${niceType} must belong to at least one ${lastReq.type.replace("_", " ")}, so <b>${lastReq.label}</b> can't be unlinked. Delete the ${niceType} instead — that also removes every link below.`
+          : node.deleteRemovesLinks
+          ? `<b>UNLINK MODE</b> — remove any link below with its ×.`
+          : `<b>UNLINK MODE</b> — delete is blocked while ${label} is still linked to the items below.`}</span>
+        <span class="unlink-intro-actions">
+          ${blockers.length ? `<button class="btn warn small" id="deleteBlockersBtn">Clear ${blockerWhat}…</button>` : ""}
+          ${lastReq && !blockers.length ? `<button class="btn warn small" id="forceDeleteBtn">Delete ${niceType}</button>` : ""}
+          ${anyUnlinkable ? `<button class="btn warn small" id="unlinkAllBtn">Unlink all</button>` : ""}
+          <button class="btn warn small" id="cancelUnlinkBtn">Cancel</button>
+        </span>
+      </div>`;
+      node.relations.forEach(rel => {
+        html += `<div class="rel-group"><div class="rel-label">${rel.label}</div><div class="chip-row">`;
+        rel.items.forEach(it => {
+          html += `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${it.id}" data-type="${it.type}"><span class="swatch"></span>${it.label}`;
+          if (rel.field && it.id !== lastReq?.id) html += `<button class="chip-unlink" data-field="${rel.field}" data-uri="${it.id}" title="Unlink">&times;</button>`;
+          html += `</span>`;
+        });
+        html += `</div></div>`;
+      });
+      if (!anyUnlinkable && !lastReq && !blockers.length) {
+        html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
+      }
+    } else {
+      node.relations.forEach(rel => {
+        html += `<div class="rel-group"><div class="rel-label">${rel.label}</div><div class="chip-row">`;
+        rel.items.forEach(it => {
+          html += `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${it.id}" data-type="${it.type}"><span class="swatch"></span>${it.label}${it.count ? ` <span style="opacity:.6">&middot; ${it.count}</span>` : ""}</span>`;
+        });
+        html += `</div></div>`;
+      });
+    }
+  } else {
+    // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely
+    // no relations" (node.relations is empty) — same honest message either way.
+    html += `<div class="rel-group"><div class="rel-label">Relations</div><span style="color:var(--ink-faint); font-size:12.5px;">No connections found.</span></div>`;
+  }
+
+  els.detailBody.innerHTML = html;
+  wireTypeInfo(els.detailBody);
+
+  if (isCategoryMembers) renderDetailMembers(focusNode.id);
+
+  if (local) {
+    els.detailBody.querySelectorAll(".local-crumb[data-crumb]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        detailPath = detailPath.slice(0, Number(btn.dataset.crumb) + 1);
+        renderDetail();
+      });
+    });
+  }
+
+  document.getElementById("renameNodeBtn")?.addEventListener("click", () => renameNode(focusNode));
+  document.getElementById("deleteNodeBtn")?.addEventListener("click", () => deleteNode(focusNode));
+  document.getElementById("unlinkModeBtn")?.addEventListener("click", () => { unlinkTargetId = focusNode.id; render(); });
+  // The open node's own title is a chip too: however you navigated here (breadcrumb, chip, tree),
+  // the node itself stays selectable. Same rules as rows — plain click replaces the selection
+  // with just this node, ctrl/cmd toggles it in/out. (No navigate: you are already here.) Unlike
+  // relation chips it does NOT jump into tree mode — the point is to pick up the node you are on
+  // and keep browsing for the next thing; the chip and the action bar show the pick.
+  document.getElementById("selfChip")?.addEventListener("click", (e) => {
+    const item = findItemById(focusNode.id) || focusNode;
+    if (e.ctrlKey || e.metaKey) {
+      if (selection.has(item.id)) selection.delete(item.id); else selection.set(item.id, item);
+    } else {
+      selection = new Map([[item.id, item]]);
+    }
+    anchorId = item.id;
+    refreshLeftPane();
+    renderDetail();
+    renderActionbar();
+  });
+
+  if (unlinking) {
+    els.detailBody.querySelectorAll(".chip-unlink").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        unlinkOne(focusNode, btn.dataset.field, btn.dataset.uri);
+      });
+    });
+    document.getElementById("unlinkAllBtn")?.addEventListener("click", () => unlinkAll(focusNode));
+    document.getElementById("forceDeleteBtn")?.addEventListener("click", () => deleteNode(focusNode, true));
+    document.getElementById("deleteBlockersBtn")?.addEventListener("click", () => deleteBlockers(focusNode));
+    document.getElementById("cancelUnlinkBtn").addEventListener("click", () => {
+      unlinkTargetId = null;
+      renderDetail();
+    });
+  }
+
+  els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      const id = chip.dataset.openid;
+      const found = findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim() };
+      if (e.ctrlKey || e.metaKey) {
+        toggleChipSelection(found);
+        return;
+      }
+      // Plain click still just navigates — but not while unlinking, where the point is to
+      // stay put and manage links, not wander off (the × button is the only action there).
+      if (unlinking) return;
+      if (local) {
+        detailPath = [...detailPath, found];
+        renderDetail();
+        loadNodeDetail(found);
+      } else {
+        openRelatedNode(found);
+      }
+    });
+  });
+}
+
+// Ctrl/meta-click on a relation chip adds (or removes) it from whatever's currently selected,
+// without navigating and without disturbing the rest of the selection — same "never replace,
+// just add" reasoning as picking a node from the simulated graph panel. Works from either the
+// normal relations view or the unlink view, so a selection built up across several nodes'
+// relations doesn't require leaving the detail pane at all.
+function toggleChipSelection(item) {
+  if (selection.has(item.id)) selection.delete(item.id);
+  else selection.set(item.id, item);
+  anchorId = item.id;
+  treeMode = true; // jump into the selection tree so the pick is immediately visible
+  refreshLeftPane();
+  renderDetail();
+  renderActionbar();
+}
+
+/* Real, selectable rows for a category's members — ctrl/shift-click
+   resolves through the same global mousedown/mouseup pipeline as every
+   other row (see addressableItems), so deselecting one out of an "all
+   members" pick is just a normal ctrl+click here. */
+function renderDetailMembers(categoryId) {
+  const el = document.getElementById("detailMembers");
+  if (!el) return;
+  const members = CATEGORY_ITEMS[categoryId] || [];
+  el.style.cssText = "max-height:none; overflow:visible; border:1px solid var(--border); border-radius:var(--radius);";
+
+  if (!members.length) {
+    el.innerHTML = `<div class="empty-hint">Nothing in this group yet.</div>`;
+    return;
+  }
+
+  members.forEach(m => addressableItems.set(m.id, m));
+
+  members.forEach(m => {
+    const isSelected = m.type === "category" ? isCategoryFullySelected(m.id) : selection.has(m.id);
+    const row = document.createElement("div");
+    row.className = "row" + (isSelected ? " selected" : "");
+    row.setAttribute("style", typeStyle(m.type));
+    row.dataset.id = m.id;
+    row.innerHTML = `
+      <span class="row-dot"></span>
+      <span class="row-main">
+        <span class="row-label">${m.label}</span>
+        <span class="row-type">${m.type === "category" ? "group · all members" : m.type.replace("_", " ")}</span>
+      </span>
+      <button class="row-nav" title="Open" aria-label="Open ${m.label}">›</button>
+    `;
+    row.querySelector(".row-nav").addEventListener("click", (e) => {
+      e.stopPropagation();
+      detailPath = [...detailPath, m];
+      renderDetail();
+      loadNodeDetail(m);
+    });
+    el.appendChild(row);
+  });
+}
+
+// Shared by both creation entry points — the selection-driven "+ New" menu (links = the
+// current selection) and the standalone "+ New <type>" button on a category page with nothing
+// selected (links = []). Handles the POST, auto-attaches the result into `selection` (so it's
+// immediately visible and linkable to something else) and the category browser's
+// CATEGORY_ITEMS, and reports success/failure via toast.
+// Short explainers for types whose OpenSILEX behaviour isn't obvious, shown as a collapsible
+// box on that type's category page and on each node of it. Open/closed is remembered per viewer.
+const TYPE_INFO = {
+  scientific_object: {
+    title: "How scientific objects work",
+    points: [
+      "An object can belong to several experiments. OpenSILEX keeps a separate copy of it in each experiment, plus one global copy.",
+      "Creating one with several experiments selected creates it in all of them.",
+      "Linking it to another experiment adds a copy there; unlinking (×) removes only that experiment's copy — its other experiments keep it.",
+      "Names are stored per copy, and an experiment can't hold two objects with the same name. Renaming isn't offered here yet for that reason.",
+      "Deleting an object removes every copy. Unlinking it from its last experiment keeps it as a global object instead.",
+      "An experiment can't be deleted while it holds objects (OpenSILEX would orphan them). Clearing them deletes objects that are only in that experiment and just removes shared ones.",
+    ],
+  },
+};
+let typeInfoOpen = {};
+try { typeInfoOpen = JSON.parse(localStorage.getItem("typeInfoOpen") || "{}"); } catch {}
+function typeInfoHtml(type) {
+  const info = TYPE_INFO[type];
+  if (!info) return "";
+  return `<details class="type-info" data-type="${type}"${typeInfoOpen[type] ? " open" : ""}>
+    <summary>${info.title}</summary>
+    <ul>${info.points.map(p => `<li>${p}</li>`).join("")}</ul>
+  </details>`;
+}
+function wireTypeInfo(root) {
+  root.querySelectorAll("details.type-info").forEach(d => d.addEventListener("toggle", () => {
+    typeInfoOpen[d.dataset.type] = d.open;
+    try { localStorage.setItem("typeInfoOpen", JSON.stringify(typeInfoOpen)); } catch {}
+  }));
+}
+
+// Every creation entry point asks for its values through here: a plain name prompt for most
+// types, or a small form when CREATABLE[type].fields lists more (e.g. an experiment's
+// objective/start date). A field with input "select" is a dropdown whose options come from its
+// `options` list endpoint ({id, label} rows — e.g. scientific-object classes), fetched on open.
+// Resolves {name, fields}, or null if cancelled.
+async function askCreateValues(type) {
+  const nice = type.replace("_", " ");
+  const extra = CREATABLE[type]?.fields;
+  if (!extra) {
+    const name = prompt(`Name for the new ${nice}?`);
+    return name ? { name, fields: {} } : null;
+  }
+  const options = {};
+  for (const fd of extra.filter(fd => fd.input === "select")) {
+    try {
+      const res = await fetch(fd.options);
+      options[fd.key] = res.ok ? await res.json() : [];
+    } catch { options[fd.key] = []; }
+    if (!options[fd.key].length) { showToast(`Couldn't load the ${fd.label.toLowerCase()} list`); return null; }
+  }
+  const input = (fd) => fd.input === "select"
+    ? `<select name="${fd.key}"${fd.required ? " required" : ""}><option value="">Choose…</option>${options[fd.key].map(o => `<option value="${o.id}">${o.label}</option>`).join("")}</select>`
+    : `<input name="${fd.key}" type="${fd.input || "text"}"${fd.required ? " required" : ""}>`;
+  return new Promise((resolve) => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "create-dialog";
+    dlg.innerHTML = `<form method="dialog">
+      <div class="ranking-header">New ${nice}</div>
+      <label>Name<input name="name" required autofocus></label>
+      ${extra.map(fd => `<label>${fd.label}${fd.required ? "" : " (optional)"}${input(fd)}</label>`).join("")}
+      <div class="ranking-footer">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="ok">Create</button>
+      </div>
+    </form>`;
+    // Clicks inside must not reach the document-level "close menus" listeners.
+    dlg.addEventListener("click", (e) => e.stopPropagation());
+    dlg.addEventListener("close", () => {
+      const ok = dlg.returnValue === "ok";
+      const { name, ...rest } = Object.fromEntries(new FormData(dlg.querySelector("form")));
+      dlg.remove();
+      resolve(ok ? { name, fields: Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== "")) } : null);
+    });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  });
+}
+
+async function createNode(type, name, links, toastSuffix, fields = {}) {
+  try {
+    const res = await fetch("/api/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, name, links, fields }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      showToast(`Failed to create ${type.replace("_", " ")}: ${body.error || res.status}`);
+      return;
+    }
+    selection.set(body.id, body);
+    const categoryId = CATEGORY_FOR_TYPE[type];
+    if (categoryId) (CATEGORY_ITEMS[categoryId] ||= []).push(body);
+    // Every linked-to node's cached relations are now stale too — same reasoning as linkItems,
+    // just for /api/create's own `links` instead of /api/link's `items`. Without this, creating
+    // e.g. a facility linked to an open organization left that organization's pane showing the
+    // pre-creation relations until a full page reload.
+    links.forEach((l) => invalidateNodeDetail(l.id));
+    render();
+    showToast(`Created ${body.label}${toastSuffix ? `, ${toastSuffix}` : ""}${body.warning ? ` — but ${body.warning}` : ""}`);
+  } catch (err) {
+    showToast(`Failed to create ${type.replace("_", " ")}: ${err}`);
+  }
+}
+
+// "Link" makes sense for the WHOLE current selection, any size, any mix of types — same
+// "everything selected gets linked" philosophy /api/create already uses when creating a new
+// node from a multi-type selection, just applied to nodes that already exist. It only requires
+// that at least one PAIR of distinct types present is actually resolvable: both in
+// LINKABLE_TYPES (the backend knows how to own a field for these types at all — NOT the same
+// as ADJACENT, which just says two types are conceptually related; e.g. organization can't own
+// a link to a site even though ADJACENT still lists them) and adjacent per ADJACENT. A 4-
+// facility + 1-organization selection has exactly one resolvable pair (facility, organization)
+// — that's enough to enable the button; /api/link itself does the real per-pair resolution and
+// batches same-type items into one PUT per owner (see routes/link.ts). Same-type-only
+// selections (e.g. three organizations, nothing else) never resolve — which one is whose
+// parent is ambiguous, matching linkFieldFor's server-side limitation.
+function selectionHasLinkablePair() {
+  const types = [...new Set([...selection.values()].map(v => v.type))];
+  for (let i = 0; i < types.length; i++) {
+    for (let j = i + 1; j < types.length; j++) {
+      if (!LINKABLE_TYPES.has(types[i]) || !LINKABLE_TYPES.has(types[j])) continue;
+      if ((ADJACENT[types[i]] || []).includes(types[j]) || (ADJACENT[types[j]] || []).includes(types[i])) return true;
+    }
+  }
+  return false;
+}
+
+// Shared by both link entry points: "Link selection" (items = the current selection as-is)
+// and "Link existing" (items = the current selection PLUS one item picked from a searchable
+// list of real candidates — see linkableExistingCandidates — so finding and linking a target
+// doesn't require first navigating away to select it manually).
+async function linkItems(items) {
+  try {
+    const res = await fetch("/api/link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const body = await res.json();
+    if (!res.ok) { showToast(`Failed to link: ${body.error || res.status}`); return; }
+    // Every involved node's cached relations are now potentially stale — drop them rather than
+    // guess how the response maps onto each one. If one of them is the node currently open in
+    // the detail pane, invalidateNodeDetail refetches it right away instead of leaving that
+    // pane showing the pre-link state until the user navigates away and back.
+    items.forEach(it => invalidateNodeDetail(it.id));
+    render();
+    const already = body.alreadyLinked ? `, ${body.alreadyLinked} already linked` : "";
+    showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
+  } catch (err) {
+    showToast(`Failed to link: ${err}`);
+  }
+}
+
+// Which types could be linked TO the current selection as a real existing resource — same
+// intersection rule creatableTypesFor already uses for "+ New" (a candidate type must be
+// adjacent to EVERY selected item), further restricted to LINKABLE_TYPES on both sides (the
+// candidate AND every already-selected type), and excluding any type already present in the
+// selection — same-type linking is normally the ambiguous case linkFieldFor refuses server-
+// side (e.g. don't offer "link an existing organization" when an organization is already
+// selected) — EXCEPT organization<->organization with exactly one organization selected, where
+// the ambiguity has a real resolution: pick organizations the SAME way as any other type (see
+// paintRows — same click/ctrl/shift rules everywhere), and route the ambiguous ones to the
+// ranking modal on confirm instead of guessing a direction (see ambiguousPickIds below).
+function linkableExistingTypes() {
+  const selectedTypes = [...selection.values()].map(v => v.type);
+  if (!selectedTypes.length || !selectedTypes.every(t => LINKABLE_TYPES.has(t))) return new Set();
+  const soloOrg = selectedTypes.length === 1 && selectedTypes[0] === "organization";
+  const candidates = creatableTypesFor(selectedTypes);
+  return new Set([...candidates].filter(t => LINKABLE_TYPES.has(t) && (soloOrg || !selectedTypes.includes(t))));
+}
+
+// Of whatever's currently picked, which ones have an ambiguous relation to the anchor and need
+// the ranking modal instead of a normal /api/link call. Today that's only organizations picked
+// against a single organization anchor (the one same-type case linkableExistingTypes allows at
+// all) — structurally can't happen for any other combination, since that function only permits
+// same-type candidates in exactly this situation.
+function ambiguousPickIds() {
+  const selectedValues = [...selection.values()];
+  if (selectedValues.length !== 1 || selectedValues[0].type !== "organization") return new Set();
+  return new Set([...linkPickerPicked.values()].filter(it => it.type === "organization").map(it => it.id));
+}
+
+// ---------------- link-ranking modal ----------------
+// Resolves organization<->organization direction by drag-and-drop instead of guessing: the
+// anchor sits fixed in the middle, candidates start in the Children zone, and can be dragged
+// above the anchor (Parents) or left below (Children). Selecting several rows first (same
+// click/ctrl/shift rules as every other list) and dragging one of them moves the whole group.
+let linkRanking = null; // { anchor, parents: Map(id->item), children: Map(id->item), selectedIds: Set, shiftAnchorId }
+
+function enterLinkRanking(anchor, items) {
+  linkRanking = { anchor, parents: new Map(), children: new Map(items.map(it => [it.id, it])), selectedIds: new Set(), shiftAnchorId: null };
+  renderLinkRankingModal();
+}
+
+function exitLinkRanking() {
+  linkRanking = null;
+  renderLinkRankingModal();
+}
+
+function renderLinkRankingModal() {
+  const overlay = document.getElementById("linkRankingOverlay");
+  if (!overlay) return;
+  if (!linkRanking) {
+    overlay.innerHTML = "";
+    overlay.classList.remove("open");
+    return;
+  }
+  overlay.classList.add("open");
+  const { anchor, parents, children, selectedIds } = linkRanking;
+  const allIds = [...parents.keys(), ...children.keys()];
+
+  const zoneHtml = (map, zoneKey, label) => {
+    const items = [...map.values()];
+    return `<div class="ranking-zone" data-zone="${zoneKey}">
+      <div class="ranking-zone-label">${label} (${items.length})</div>
+      ${items.map(it => `
+        <div class="ranking-row${selectedIds.has(it.id) ? " selected" : ""}" draggable="true" data-id="${it.id}" style="${typeStyle(it.type)}">
+          <span class="swatch"></span>${it.label}
+        </div>
+      `).join("") || `<div class="ranking-empty">Drop here</div>`}
+    </div>`;
+  };
+
+  overlay.innerHTML = `
+    <div class="ranking-backdrop" id="rankingBackdrop"></div>
+    <div class="ranking-modal">
+      <div class="ranking-header">
+        <span>Rank relative to ${anchor.label}</span>
+        <button class="ranking-close" id="rankingClose" title="Cancel">&times;</button>
+      </div>
+      <p class="ranking-hint">Drag an organization above the line to make it a <b>parent</b> of ${anchor.label}, or leave/drop it below to make it a <b>child</b>. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
+      ${zoneHtml(parents, "parents", "Parents")}
+      <div class="ranking-anchor"><span class="swatch"></span>${anchor.label}<span class="ranking-anchor-tag">anchor</span></div>
+      ${zoneHtml(children, "children", "Children")}
+      <div class="ranking-footer">
+        <button class="btn ghost" id="rankingCancel">Cancel</button>
+        <button class="btn primary" id="rankingConfirm">Confirm ${allIds.length} relation${allIds.length === 1 ? "" : "s"}</button>
+      </div>
+    </div>
+  `;
+
+  overlay.querySelectorAll(".ranking-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.addEventListener("click", (e) => {
+      // Same click/ctrl/shift rules as the main rowlist and the link picker: plain click
+      // replaces, ctrl toggles one in/out, shift range-selects (also replacing).
+      if (e.shiftKey && linkRanking.shiftAnchorId && allIds.includes(linkRanking.shiftAnchorId)) {
+        const lo = Math.min(allIds.indexOf(linkRanking.shiftAnchorId), allIds.indexOf(id));
+        const hi = Math.max(allIds.indexOf(linkRanking.shiftAnchorId), allIds.indexOf(id));
+        linkRanking.selectedIds = new Set(allIds.slice(lo, hi + 1));
+      } else if (e.ctrlKey || e.metaKey) {
+        if (linkRanking.selectedIds.has(id)) linkRanking.selectedIds.delete(id);
+        else linkRanking.selectedIds.add(id);
+      } else {
+        linkRanking.selectedIds = new Set([id]);
+      }
+      linkRanking.shiftAnchorId = id;
+      renderLinkRankingModal();
+    });
+    row.addEventListener("dragstart", (e) => {
+      // Dragging a row that's part of the current selection moves the whole group; dragging
+      // an unselected row moves just that one (and becomes the new selection).
+      const dragIds = linkRanking.selectedIds.has(id) ? [...linkRanking.selectedIds] : [id];
+      linkRanking.selectedIds = new Set(dragIds);
+      e.dataTransfer.setData("text/plain", JSON.stringify(dragIds));
+      e.dataTransfer.effectAllowed = "move";
+    });
+  });
+
+  overlay.querySelectorAll(".ranking-zone").forEach((zone) => {
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag-over"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      zone.classList.remove("drag-over");
+      const ids = JSON.parse(e.dataTransfer.getData("text/plain") || "[]");
+      const target = zone.dataset.zone === "parents" ? linkRanking.parents : linkRanking.children;
+      const other = zone.dataset.zone === "parents" ? linkRanking.children : linkRanking.parents;
+      ids.forEach((dragId) => {
+        const item = linkRanking.parents.get(dragId) || linkRanking.children.get(dragId);
+        if (!item) return;
+        other.delete(dragId);
+        target.set(dragId, item);
+      });
+      renderLinkRankingModal();
+    });
+  });
+
+  document.getElementById("rankingClose").addEventListener("click", exitLinkRanking);
+  document.getElementById("rankingCancel").addEventListener("click", exitLinkRanking);
+  document.getElementById("rankingBackdrop").addEventListener("click", exitLinkRanking);
+  document.getElementById("rankingConfirm").addEventListener("click", confirmLinkRanking);
+}
+
+async function confirmLinkRanking() {
+  const { anchor, parents, children } = linkRanking;
+  const parentIds = [...parents.keys()];
+  const childItems = [...children.values()];
+  const total = parentIds.length + childItems.length;
+  exitLinkRanking();
+  if (!total) return;
+  try {
+    if (parentIds.length) {
+      // Every dragged-to-Parents org goes into ONE PUT on the anchor (batched, same as
+      // /api/link already does for same-field items — not one call per parent).
+      const res = await fetch("/api/node", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "organization", id: anchor.id, link: { field: "parents", uris: parentIds } }),
+      });
+      if (!res.ok) { const b = await res.json().catch(() => ({})); showToast(`Failed to link: ${b.error || res.status}`); return; }
+      invalidateNodeDetail(anchor.id);
+      parentIds.forEach((id) => invalidateNodeDetail(id));
+    }
+    // Each dragged-to-Children org owns its OWN "parents" field — can't batch across
+    // different owners into one PUT, so this is one call per child.
+    for (const child of childItems) {
+      const res = await fetch("/api/node", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "organization", id: child.id, link: { field: "parents", uris: [anchor.id] } }),
+      });
+      if (!res.ok) { const b = await res.json().catch(() => ({})); showToast(`Failed to link: ${b.error || res.status}`); return; }
+      invalidateNodeDetail(child.id);
+    }
+    invalidateNodeDetail(anchor.id);
+    render();
+    showToast(`Ranked ${total} organization${total === 1 ? "" : "s"} relative to ${anchor.label}`);
+  } catch (err) {
+    showToast(`Failed to link: ${err}`);
+  }
+}
+
+// Real candidates for "Link existing…", grouped by type — every item in CATEGORY_ITEMS for
+// each linkable candidate type, minus whatever's already selected. Grouped (not flat) so the
+// popover can browse type-by-type instead of dumping everything into one long list.
+function linkPickerCandidatesByType() {
+  if (linkPickerMode) return new Map([[linkPickerMode.type, CATEGORY_ITEMS[CATEGORY_FOR_TYPE[linkPickerMode.type]] || []]]);
+  const selectedIds = new Set(selection.keys());
+  // When there's exactly one selected node and its detail is cached, also drop anything already
+  // related to it — otherwise "Link existing…" happily re-offers an org's own parent/child/
+  // facility, and confirming does nothing but claim success (the backend dedupes the relation
+  // silently). Skipped for multi-item selections: "already linked to item A" shouldn't hide a
+  // candidate that still needs linking to item B.
+  const anchorIds = selection.size === 1 ? [...selection.keys()] : [];
+  const alreadyRelated = new Set();
+  anchorIds.forEach(id => {
+    (NODE_DETAIL[id]?.relations ?? []).forEach(rel => rel.items.forEach(it => alreadyRelated.add(it.id)));
+  });
+  const byType = new Map();
+  linkableExistingTypes().forEach(type => {
+    const categoryId = CATEGORY_FOR_TYPE[type];
+    const items = (CATEGORY_ITEMS[categoryId] || []).filter(item => !selectedIds.has(item.id) && !alreadyRelated.has(item.id));
+    if (items.length) byType.set(type, items);
+  });
+  return byType;
+}
+
+// Renders the "Link existing…" popover body in place, without touching the rest of the action
+// bar — called on open and on every pick/search/navigate inside it. Two levels: pick a type
+// (like a tiny category list), then pick one or more real items of that type using the SAME
+// click/ctrl/shift rules as the main rowlist's applyClick: plain click replaces the pick set
+// with just that row, ctrl toggles one row in/out without touching the rest, shift range-
+// selects between the last-picked row and this one (also replacing, not adding to, the prior
+// pick) — scoped to the currently visible (filtered) list, same idea as the main rowlist's
+// shift-range but local to this popover.
+function renderLinkPicker() {
+  const body = document.getElementById("linkPickerBody");
+  const footer = document.getElementById("linkPickerFooter");
+  if (!body || !footer) return;
+  const byType = linkPickerCandidatesByType();
+  body.innerHTML = "";
+
+  if (!linkPickerType) {
+    if (!byType.size) {
+      body.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">Nothing linkable found.</span>`;
+    } else {
+      [...byType.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([type, items]) => {
+        const btn = document.createElement("button");
+        btn.className = "newmenu-item";
+        btn.setAttribute("style", typeStyle(type));
+        btn.innerHTML = `<span class="swatch"></span>${type.replace("_", " ")}<span class="newmenu-item-type">${items.length}</span>`;
+        btn.addEventListener("click", () => { linkPickerType = type; renderLinkPicker(); });
+        body.appendChild(btn);
+      });
+    }
+  } else {
+    // Locked to one type = no type list to go back to.
+    if (!linkPickerMode) {
+      const crumb = document.createElement("div");
+      crumb.className = "linkmenu-crumb";
+      crumb.innerHTML = `<button class="linkmenu-back">&lsaquo; Types</button><span>${linkPickerType.replace("_", " ")}</span>`;
+      crumb.querySelector(".linkmenu-back").addEventListener("click", () => { linkPickerType = null; renderLinkPicker(); });
+      body.appendChild(crumb);
+    }
+
+    const search = document.createElement("input");
+    search.className = "linkmenu-search";
+    search.type = "text";
+    search.placeholder = `Search ${linkPickerType.replace("_", " ")}…`;
+    search.addEventListener("click", (e) => e.stopPropagation());
+    body.appendChild(search);
+
+    const listEl = document.createElement("div");
+    listEl.className = "linkmenu-items";
+    body.appendChild(listEl);
+
+    const items = byType.get(linkPickerType) || [];
+    const paintRows = (filterText) => {
+      const q = filterText.trim().toLowerCase();
+      const visible = q ? items.filter((it) => it.label.toLowerCase().includes(q)) : items;
+      const visibleIds = visible.map((it) => it.id);
+      listEl.innerHTML = "";
+      if (!visible.length) {
+        listEl.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">No matches.</span>`;
+        return;
+      }
+      // Organizations (the one same-type-allowed case, only reachable with a single
+      // organization anchor) pick exactly like any other type here — direction is resolved
+      // AFTER confirming, via the ranking modal, not by guessing per row (see ambiguousPickIds).
+      visible.slice(0, 200).forEach((it) => {
+        const row = document.createElement("button");
+        row.className = "newmenu-item" + (linkPickerPicked.has(it.id) ? " selected" : "");
+        row.setAttribute("style", typeStyle(it.type));
+        row.innerHTML = `<span class="swatch"></span>${it.label}`;
+        row.addEventListener("click", (e) => {
+          // Same click/ctrl/shift rules as the main rowlist's applyClick: plain click REPLACES
+          // the pick set with just this one, ctrl toggles it in/out without touching the rest,
+          // shift range-selects between the last-picked anchor and this row (also replacing,
+          // not adding to, whatever was picked before — matching the main list's shift branch).
+          if (e.shiftKey && linkPickerShiftAnchor && visibleIds.includes(linkPickerShiftAnchor)) {
+            const lo = Math.min(visibleIds.indexOf(linkPickerShiftAnchor), visibleIds.indexOf(it.id));
+            const hi = Math.max(visibleIds.indexOf(linkPickerShiftAnchor), visibleIds.indexOf(it.id));
+            linkPickerPicked = new Map();
+            visibleIds.slice(lo, hi + 1).forEach((id) => {
+              const found = visible.find((x) => x.id === id);
+              if (found) linkPickerPicked.set(id, found);
+            });
+          } else if (e.ctrlKey || e.metaKey) {
+            if (linkPickerPicked.has(it.id)) linkPickerPicked.delete(it.id);
+            else linkPickerPicked.set(it.id, it);
+          } else {
+            linkPickerPicked = new Map([[it.id, it]]);
+          }
+          linkPickerShiftAnchor = it.id;
+          paintRows(search.value);
+          renderLinkPickerFooter();
+        });
+        listEl.appendChild(row);
+      });
+    };
+    paintRows("");
+    search.addEventListener("input", () => paintRows(search.value));
+  }
+
+  renderLinkPickerFooter();
+}
+
+function renderLinkPickerFooter() {
+  const footer = document.getElementById("linkPickerFooter");
+  if (!footer) return;
+  footer.innerHTML = "";
+  if (!linkPickerPicked.size) return;
+  const btn = document.createElement("button");
+  btn.className = "btn primary linkmenu-confirm";
+  btn.textContent = linkPickerMode ? linkPickerMode.confirmLabel(linkPickerPicked.size) : `Link ${linkPickerPicked.size} picked`;
+  btn.addEventListener("click", () => {
+    if (linkPickerMode) {
+      const { onConfirm } = linkPickerMode;
+      const picked = [...linkPickerPicked.values()];
+      document.getElementById("linkMenu")?.classList.remove("open");
+      linkPickerMode = null;
+      linkPickerType = null;
+      linkPickerPicked = new Map();
+      linkPickerShiftAnchor = null;
+      onConfirm(picked);
+      return;
+    }
+    const anchor = [...selection.values()][0];
+    const ambiguous = ambiguousPickIds();
+    const picked = [...linkPickerPicked.values()];
+    const unambiguous = picked.filter((it) => !ambiguous.has(it.id));
+    const ambiguousItems = picked.filter((it) => ambiguous.has(it.id));
+    document.getElementById("linkMenu")?.classList.remove("open");
+    linkPickerType = null;
+    linkPickerPicked = new Map();
+    linkPickerShiftAnchor = null;
+    // Unambiguous picks (e.g. facilities) link right away, same as before. Ambiguous ones
+    // (organizations picked against a single organization anchor) go to the ranking modal
+    // instead — resolved by dragging above/below the anchor, not by guessing a direction.
+    if (unambiguous.length) {
+      linkItems([...selection.values(), ...unambiguous].map((v) => ({ type: v.type, id: v.id })));
+    }
+    if (ambiguousItems.length) enterLinkRanking(anchor, ambiguousItems);
+  });
+  footer.appendChild(btn);
+}
+
+// The picker popover's markup + open/close wiring, shared by "Link existing…" and the
+// requiresLink standalone create. `onOpen` runs on each open, after the pick state is reset.
+function linkMenuHtml(buttonHtml, title) {
+  return `
+    <div class="newmenu" id="linkMenu">
+      ${buttonHtml}
+      <div class="newmenu-list linkmenu-list" id="linkList">
+        <div class="linkmenu-top">
+          <span class="linkmenu-title">${title}</span>
+          <button class="linkmenu-x" id="linkMenuClose" title="Close">&times;</button>
+        </div>
+        <div id="linkPickerBody"></div>
+        <div class="linkmenu-footer" id="linkPickerFooter"></div>
+      </div>
+    </div>`;
+}
+function wireLinkMenu(buttonId, onOpen) {
+  const linkMenu = document.getElementById("linkMenu");
+  document.getElementById(buttonId).addEventListener("click", async (e) => {
+    e.stopPropagation();
+    linkMenu.classList.toggle("open");
+    if (linkMenu.classList.contains("open")) {
+      // Fresh picking session each time the popover opens.
+      linkPickerMode = null;
+      linkPickerType = null;
+      linkPickerPicked = new Map();
+      linkPickerShiftAnchor = null;
+      await onOpen();
+      if (linkMenu.classList.contains("open")) renderLinkPicker();
+    }
+  });
+  // Without this, clicking anywhere inside the popover (search box, a row, the footer
+  // button) would bubble to the document-level "close on next click" listener below and
+  // collapse it before the click's own handler (pick/confirm) gets to run.
+  document.getElementById("linkList").addEventListener("click", (e) => e.stopPropagation());
+  document.getElementById("linkMenuClose").addEventListener("click", () => linkMenu.classList.remove("open"));
+  document.addEventListener("click", () => linkMenu.classList.remove("open"), { once: true });
+}
+
+function renderActionbar() {
+  const bar = els.actionbar;
+  // The popover is rebuilt below, so a mode left over from one closed with × must not leak
+  // into linkPickerCandidatesByType's normal "Link existing…" answer.
+  linkPickerMode = null;
+  if (selection.size === 0) {
+    // Nothing selected doesn't mean nothing can be created — browsing straight to a category
+    // page (e.g. Organizations) with no selection still offers a standalone "+ New <type>" for
+    // any type creation is wired for at all (CREATABLE). Clusters have to start somewhere;
+    // linking happens once there's something real to link to, not necessarily at birth.
+    const p = currentPane();
+    const standaloneType = p.type === "category" ? TYPE_FOR_CATEGORY[p.id] : null;
+    if (standaloneType && CREATABLE[standaloneType]) {
+      bar.className = "actionbar";
+      const niceType = standaloneType.replace("_", " ");
+      const required = CREATABLE[standaloneType].requiresLink;
+      if (required) {
+        // Can't exist alone (e.g. a site needs an organization) — pick the anchor(s) first,
+        // with the same picker/click rules as "Link existing…", then create linked to all.
+        const niceReq = required.replace("_", " ");
+        bar.innerHTML = `
+          <div class="selection-summary" style="color:var(--ink-faint);">Nothing selected</div>
+          ${linkMenuHtml(`<button class="btn primary" id="newStandaloneBtn">+ New ${niceType}…</button>`, `New ${niceType} in which ${niceReq}(s)?`)}
+        `;
+        wireLinkMenu("newStandaloneBtn", () => {
+          linkPickerType = required;
+          linkPickerMode = {
+            type: required,
+            confirmLabel: (n) => `Create ${niceType} in ${n} ${niceReq}${n === 1 ? "" : "s"}`,
+            onConfirm: async (picked) => {
+              const v = await askCreateValues(standaloneType);
+              if (v) createNode(standaloneType, v.name, picked.map((p) => ({ type: p.type, id: p.id })), `in ${picked.map((p) => p.label).join(", ")}`, v.fields);
+            },
+          };
+        });
+        return;
+      }
+      bar.innerHTML = `
+        <div class="selection-summary" style="color:var(--ink-faint);">Nothing selected</div>
+        <button class="btn primary" id="newStandaloneBtn">+ New ${standaloneType.replace("_", " ")}</button>
+      `;
+      document.getElementById("newStandaloneBtn").addEventListener("click", async () => {
+        const v = await askCreateValues(standaloneType);
+        if (v) createNode(standaloneType, v.name, [], undefined, v.fields);
+      });
+      return;
+    }
+    bar.className = "actionbar idle";
+    bar.innerHTML = `Select or open a node to see what can be created here.`;
+    return;
+  }
+  bar.className = "actionbar";
+  const names = [...selection.values()].map(v => v.label).join(", ");
+  // See adjacency.js: intersection of every selected item's adjacency, not union — a single
+  // new node gets linked to ALL of them at once, so its type must be valid for every one.
+  const creatable = creatableTypesFor([...selection.values()].map(v => v.type));
+  const canLink = selection.size >= 2 && selectionHasLinkablePair();
+  const hasExistingCandidates = linkPickerCandidatesByType().size > 0;
+
+  bar.innerHTML = `
+    <div class="selection-summary">
+      Selected <b>${selection.size}</b>
+      <span class="selection-names">${names}</span>
+    </div>
+    <button class="btn ghost" id="clearSel">Clear</button>
+    ${canLink ? `<button class="btn primary" id="linkSelectionBtn">Link selection</button>` : ""}
+    ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="linkExistingBtn">Link existing…</button>`, "Link existing") : ""}
+    <div class="newmenu" id="newMenu">
+      <button class="btn primary" id="newBtn">+ New</button>
+      <div class="newmenu-list" id="newList"></div>
+    </div>
+  `;
+  if (canLink) {
+    document.getElementById("linkSelectionBtn").addEventListener("click", () => {
+      linkItems([...selection.values()].map(v => ({ type: v.type, id: v.id })));
+    });
+  }
+  if (hasExistingCandidates) {
+    // linkPickerCandidatesByType only filters out already-related items when the anchor's
+    // relations are cached — usually true if the node was opened first, but a plain click-
+    // to-select never loads NODE_DETAIL. Fetch it (if needed) BEFORE the one render,
+    // rather than rendering then re-rendering after — a second render mid-interaction would
+    // reset which rows exist out from under a pick already in progress.
+    wireLinkMenu("linkExistingBtn", async () => {
+      const anchor = selection.size === 1 ? [...selection.values()][0] : null;
+      if (anchor && !(anchor.id in NODE_DETAIL)) await loadNodeDetail(anchor);
+    });
+  }
+  document.getElementById("clearSel").addEventListener("click", () => {
+    selection = new Map(); anchorId = null; treeMode = false; refreshLeftPane(); renderDetail(); renderActionbar();
+  });
+  const menu = document.getElementById("newMenu");
+  const list = document.getElementById("newList");
+  [...creatable].sort().forEach(t => {
+    const item = document.createElement("button");
+    item.className = "newmenu-item";
+    item.setAttribute("style", typeStyle(t));
+    item.innerHTML = `<span class="swatch"></span>${t.replace("_", " ")}`;
+    item.addEventListener("click", async () => {
+      menu.classList.remove("open");
+      // CREATABLE (from creation.js) only has entries for types with a real backend wired up
+      // so far — everything else still shows the placeholder toast, honestly, rather than
+      // pretending to create something.
+      // Also a placeholder when the type is wired but can't take a link to every selected type
+      // yet (e.g. experiment from a project) — /api/create would refuse it anyway.
+      if (!(t in CREATABLE) || [...selection.values()].some(v => !CREATABLE[t].linkFields[v.type])) {
+        showToast(`Would create a ${t.replace("_"," ")}, linked to ${names}`);
+        return;
+      }
+      const v = await askCreateValues(t);
+      if (!v) return;
+      const links = [...selection.values()].map(s => ({ type: s.type, id: s.id }));
+      createNode(t, v.name, links, `linked to ${names}`, v.fields);
+    });
+    list.appendChild(item);
+  });
+  if (!creatable.size) {
+    const msg = selection.size > 1
+      ? "Nothing can be linked to all of these at once."
+      : "Nothing creatable from this selection yet.";
+    list.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">${msg}</span>`;
+  }
+  document.getElementById("newBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.toggle("open");
+  });
+  document.addEventListener("click", () => menu.classList.remove("open"), { once: true });
+}
+
+function render() {
+  renderCrumbs();
+  refreshLeftPane();
+  renderDetail();
+  renderActionbar();
+  renderGraphMock();
+}
+
+/* ---------------- tree mode: a forest built from `selection` ---------------- */
+
+function refreshLeftPane() {
+  els.treeToggleBtn.textContent = treeMode ? "‹ Back to list" : "View selection as tree";
+  els.treeToggleBtn.style.display = (treeMode || selection.size > 0) ? "" : "none";
+  if (treeMode) renderTree(); else renderRows();
+}
+
+function toggleTreeMode() {
+  treeMode = !treeMode;
+  detailPath = [];
+  refreshLeftPane();
+  renderDetail();
+}
+
+function renderTree() {
+  const p = currentPane();
+  els.paneTitle.textContent = "Selection";
+  els.paneCount.textContent = `${selection.size} root${selection.size === 1 ? "" : "s"}`;
+  els.rowlist.innerHTML = "";
+  rowOrder = [];
+  addressableItems = new Map();
+
+  if (selection.size === 0) {
+    const div = document.createElement("div");
+    div.className = "empty-hint";
+    div.textContent = "Nothing selected yet — pick some rows, or click a node in the graph panel below.";
+    els.rowlist.appendChild(div);
+    return;
+  }
+
+  const roots = [...selection.values()];
+  roots.forEach((item, i) => renderTreeRow(item, 0, els.rowlist, [], i === roots.length - 1));
+}
+
+/* Real connector lines (like a file tree), not just indentation + color —
+   railFlags[i] says whether the vertical line at ancestor-column i must
+   keep running past this row (that ancestor still has more children
+   coming below) or stop (it was the last one). isLastSibling controls
+   whether THIS row's own elbow closes off after its horizontal stub. */
+function buildIndentHTML(railFlags, depth, isLastSibling) {
+  if (depth === 0) return "";
+  let html = '<span class="tree-indent">';
+  for (let i = 0; i < depth - 1; i++) {
+    html += `<span class="tree-rail">${railFlags[i] ? '<span class="rail-full"></span>' : ""}</span>`;
+  }
+  html += `<span class="tree-rail"><span class="rail-top"></span>${!isLastSibling ? '<span class="rail-bottom"></span>' : ""}<span class="rail-stub"></span></span>`;
+  html += "</span>";
+  return html;
+}
+
+function renderTreeRow(item, depth, container, railFlags, isLastSibling) {
+  rowOrder.push(item.id);
+  addressableItems.set(item.id, item);
+  const node = NODE_DETAIL[item.id] || null;
+  const hasChildren = !!(node && node.relations && node.relations.length);
+  const isExpanded = expandedIds.has(item.id);
+
+  const row = document.createElement("div");
+  row.className = "row" + (selection.has(item.id) ? " selected" : "");
+  row.setAttribute("style", typeStyle(item.type));
+  row.dataset.id = item.id;
+
+  row.innerHTML = `
+    ${buildIndentHTML(railFlags, depth, isLastSibling)}
+    <button class="row-nav" style="opacity:1; position:static; width:18px; height:18px; visibility:${hasChildren ? "visible" : "hidden"};" title="${isExpanded ? "Collapse" : "Expand"}">${isExpanded ? "▾" : "▸"}</button>
+    <span class="row-dot"></span>
+    <span class="row-main">
+      <span class="row-label">${item.label}</span>
+      <span class="row-type">${item.type === "category" ? "group · all members" : item.type.replace("_", " ")}</span>
+    </span>
+    <button class="row-nav" title="Open" aria-label="Open ${item.label}">›</button>
+  `;
+  const [caretBtn, openBtn] = row.querySelectorAll(".row-nav");
+  if (hasChildren) {
+    caretBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (isExpanded) expandedIds.delete(item.id); else expandedIds.add(item.id);
+      renderTree();
+    });
+  }
+  // In tree mode the › arrow opens a LOCAL breadcrumb in the right pane
+  // (detailPath) instead of a real navigation — the tree itself, the
+  // base, never moves because of this.
+  openBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    detailPath = [item];
+    renderDetail();
+    loadNodeDetail(item); // renderDetail alone never fetches: relations would read "No connections found"
+  });
+
+  container.appendChild(row);
+
+  if (hasChildren && isExpanded) {
+    // This row's own elbow column becomes an ancestor rail for its
+    // children: it keeps drawing a continuous line past them only if this
+    // row itself has more siblings coming after it.
+    const childRailFlags = [...railFlags, !isLastSibling];
+    const flatChildren = node.relations.flatMap(rel => rel.items.map(child => ({ child, rel })));
+
+    node.relations.forEach((rel, ri) => {
+      const label = document.createElement("div");
+      label.className = "rel-label";
+      label.style.cssText = `padding-left:${12 + (depth + 1) * 20}px; margin:4px 0 2px;`;
+      label.textContent = rel.label;
+      container.appendChild(label);
+      rel.items.forEach((child, ci) => {
+        const isLastOverall = ri === node.relations.length - 1 && ci === rel.items.length - 1;
+        renderTreeRow(child, depth + 1, container, childRailFlags, isLastOverall);
+      });
+    });
+  }
+}
+
+function renderGraphMock() {
+  const el = document.getElementById("graphMock");
+  if (!el) return;
+  const sample = []; // not wired to a real endpoint yet
+  el.innerHTML = "";
+  sample.forEach(id => {
+    const item = findItemById(id) || NODE_DETAIL[id];
+    if (!item) return;
+    const pill = document.createElement("button");
+    pill.className = "btn";
+    pill.setAttribute("style", typeStyle(item.type));
+    pill.innerHTML = `<span class="swatch" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--dot); margin-right:6px;"></span>${item.label}`;
+    pill.addEventListener("click", () => addToSelectionFromGraph({ id: item.id, type: item.type, label: item.label }));
+    el.appendChild(pill);
+  });
+}
+
+function findItemById(id) {
+  return Object.values(CATEGORY_ITEMS).flat().concat(ROOT).find(i => i.id === id) || null;
+}
+
+/* ---------------- click + drag / marquee select ----------------
+   Everything funnels through one mousedown -> mouseup pipeline instead of
+   splitting "click" and "drag" across two separate listener systems that
+   could race each other — the same pattern validated for real in the
+   Phase 0 spike. A stationary mousedown/mouseup pair (moved <= 4px) is a
+   click, resolved against whatever row the mousedown started on; anything
+   past that threshold is a marquee drag. Drag can start anywhere on the
+   page, not just over the row list. Native text-selection is killed at
+   mousedown time so a fast drag never races the browser's own selection
+   gesture into a second, unrelated highlight box. */
+(function setupSelection() {
+  let tracking = false, startX = 0, startY = 0, mod = "plain", box = null;
+  let downItem = null;   // the row (item + type) the mousedown actually started on, if any
+
+  function removeBox() { if (box) { box.remove(); box = null; } }
+  function modFromEvent(e) {
+    return e.shiftKey ? "shift" : (e.ctrlKey || e.metaKey) ? "ctrl" : "plain";
+  }
+
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    // Anything interactive must be skipped: the preventDefault below also swallows the native
+    // behaviour of whatever was pressed (a <select> never opens). A modal <dialog> is skipped
+    // wholesale — nothing inside a form should start a marquee.
+    if (e.target.closest(".row-nav, .crumb, .chip, .newmenu, .ranking-overlay, dialog, input, select, textarea, button")) return;
+    e.preventDefault();
+    document.body.style.userSelect = "none";
+
+    tracking = true; startX = e.clientX; startY = e.clientY; mod = modFromEvent(e);
+    const rowEl = e.target.closest(".row");
+    downItem = rowEl ? (addressableItems.get(rowEl.dataset.id) || null) : null;
+
+    removeBox();
+    box = document.createElement("div");
+    box.style.cssText = "position:fixed; left:0; top:0; width:0; height:0; border:1px solid var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); pointer-events:none; z-index:50;";
+    document.body.appendChild(box);
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!tracking || !box) return;
+    const x = Math.min(startX, e.clientX), y = Math.min(startY, e.clientY);
+    const w = Math.abs(e.clientX - startX), h = Math.abs(e.clientY - startY);
+    box.style.left = x + "px"; box.style.top = y + "px"; box.style.width = w + "px"; box.style.height = h + "px";
+  });
+
+  window.addEventListener("mouseup", (e) => {
+    if (!tracking) return;
+    tracking = false;
+    document.body.style.userSelect = "";
+    const moved = Math.hypot(e.clientX - startX, e.clientY - startY) > 4;
+
+    if (!moved) {
+      // Categories ARE selectable — the user can choose to, say, select
+      // "Organizations" and bind a variable to every org in it. Whether
+      // that fans out into N relations is a creation-panel concern, not a
+      // reason to block selection here.
+      if (downItem) applyClick(downItem, mod);
+    } else if (box) {
+      const bx = box.getBoundingClientRect();
+      const hit = [];
+      document.querySelectorAll(".row").forEach(row => {
+        const r = row.getBoundingClientRect();
+        if (r.right > bx.left && r.left < bx.right && r.bottom > bx.top && r.top < bx.bottom) {
+          hit.push(row.dataset.id);
+        }
+      });
+      if (hit.length) {
+        if (mod !== "ctrl") selection = new Map();
+        hit.forEach(id => {
+          const found = addressableItems.get(id);
+          if (found) expandForSelection(found).forEach(m => selection.set(m.id, m));
+        });
+        anchorId = hit[hit.length - 1];
+        refreshLeftPane(); renderDetail(); renderActionbar();
+      }
+    }
+    removeBox();
+    downItem = null;
+  });
+})();
+
+// Types the backend's NODE_TYPES (server/src/node-types.ts) actually knows how to view/edit/
+// link — NOT the same set as ADJACENT (which just says two types are conceptually related, not
+// that either side has a real settable DTO field for the other). Kept in sync by hand, same
+// pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
+// NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
+// appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object"]);
+
+// Reverse of BACKED_CATEGORIES, keyed by node type instead of category id — lets a freshly
+// created node (see the "+ New" handler above) get pushed into the same CATEGORY_ITEMS array
+// the category browser reads, instead of only existing in `selection` until the next reload.
+const CATEGORY_FOR_TYPE = {
+  organization: "cat-organizations",
+  experiment: "cat-experiments",
+  project: "cat-projects",
+  facility: "cat-facilities",
+  device: "cat-devices",
+  site: "cat-sites",
+  person: "cat-persons",
+  scientific_object: "cat-scientificobjects",
+  variable: "cat-variables",
+  germplasm: "cat-germplasm",
+  data_file: "cat-datafiles",
+  provenance: "cat-provenances",
+  event: "cat-events",
+  document: "cat-documents",
+  factor: "cat-factors",
+};
+
+// The other direction — which type's instances live in a given leaf category — used to decide
+// whether a standalone "+ New <type>" makes sense while browsing that category with nothing
+// selected (see renderActionbar).
+const TYPE_FOR_CATEGORY = Object.fromEntries(Object.entries(CATEGORY_FOR_TYPE).map(([type, catId]) => [catId, type]));
+
+const BACKED_CATEGORIES = {
+  "cat-organizations": "/api/organizations",
+  "cat-experiments": "/api/experiments",
+  "cat-projects": "/api/projects",
+  "cat-facilities": "/api/facilities",
+  "cat-devices": "/api/devices",
+  "cat-sites": "/api/sites",
+  "cat-persons": "/api/persons",
+  "cat-scientificobjects": "/api/scientific-objects",
+  "cat-variables": "/api/variables",
+  "cat-germplasm": "/api/germplasm",
+  "cat-datafiles": "/api/datafiles",
+  "cat-provenances": "/api/provenances",
+  "cat-events": "/api/events",
+  "cat-documents": "/api/documents",
+  "cat-factors": "/api/factors",
+};
+
+Promise.all(
+  Object.entries(BACKED_CATEGORIES).map(([categoryId, url]) =>
+    fetch(url)
+      .then(r => r.json())
+      .then(items => { CATEGORY_ITEMS[categoryId] = items; })
+      .catch(err => console.error(`Failed to load ${categoryId} from backend:`, err))
+  )
+).finally(render);
+</script>
