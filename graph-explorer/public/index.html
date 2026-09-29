@@ -896,9 +896,10 @@ let linkPickerMode = null;
 // "+ Add" in one experiment's box on a detail pane: {node, field, type, expId, expLabel, exclude}.
 // Takes over the action bar (picker locked to that type) until confirmed, cancelled, or navigated away.
 let inExperimentAdd = null;
-// After a link that created experiment copies: labels those objects have in their other
-// experiments (/api/link's carryOver). Offered in the action bar with nothing picked; skipping,
-// or navigating away, leaves the new copies as they are.
+// Labels offered in the action bar with nothing picked: after a link that created experiment
+// copies, what those objects have in their other experiments (carryOver); after germplasm was
+// set on an object, its children there that lack it (childOffer, items carry `parent`).
+// Skipping, or navigating away, changes nothing.
 let carryOverOffer = null;
 // A link that lives inside an experiment (an object's germplasm or parent) that the backend
 // couldn't place on its own: {what, lone, lonePrompt?, placeOptions?, experiments, objects, retry}.
@@ -1334,18 +1335,18 @@ async function applyCarryOver(picked) {
         body: JSON.stringify({ type: b.type, id: b.id, experiment: b.experiment, link: { field: b.field, uris: b.uris } }),
       });
       const body = await res.json();
-      if (!res.ok) { showToast(`Carried over ${done}; failed on ${b.label}: ${body.error || res.status}`); break; }
+      if (!res.ok) { showToast(`Set ${done}; failed on ${b.label}: ${body.error || res.status}`); break; }
       done += b.uris.length;
       invalidateNodeDetail(b.id);
       invalidateNodeDetail(b.experiment);
       b.uris.forEach(u => invalidateNodeDetail(u));
     } catch (err) {
-      showToast(`Carried over ${done}; failed on ${b.label}: ${err}`);
+      showToast(`Set ${done}; failed on ${b.label}: ${err}`);
       break;
     }
   }
   carryOverOffer = null;
-  if (done === picked.length) showToast(`Carried over ${done}`);
+  if (done === picked.length) showToast(`Set ${done} germplasm`);
   render();
 }
 
@@ -1362,6 +1363,7 @@ async function addInExperiment(a, picked) {
     picked.forEach(p => invalidateNodeDetail(p.id)); // their Experiments group changed
     invalidateNodeDetail(a.expId); // and the experiment's derived Species
     inExperimentAdd = null;
+    carryOverOffer = body.childOffer?.length ? { items: body.childOffer } : null;
     showToast(`${a.node.label} in ${a.expLabel}: added ${picked.map(p => p.label).join(", ")}`);
     renderDetail();
     renderActionbar();
@@ -1883,7 +1885,8 @@ async function linkItems(items, experiments) {
     // the detail pane, invalidateNodeDetail refetches it right away instead of leaving that
     // pane showing the pre-link state until the user navigates away and back.
     items.forEach(it => invalidateNodeDetail(it.id));
-    carryOverOffer = body.carryOver?.length ? { items: body.carryOver } : null;
+    const offers = [...(body.carryOver || []), ...(body.childOffer || [])];
+    carryOverOffer = offers.length ? { items: offers } : null;
     render();
     const already = (body.alreadyLinked ? `, ${body.alreadyLinked} already linked` : "") + (body.skipped ? `, ${body.skipped} not in the picked experiment(s) — left as they were` : "");
     showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
@@ -2379,18 +2382,24 @@ function renderActionbar() {
     const names = list => { const u = [...new Set(list)]; return u.length <= 2 ? u.join(" and ") : `${u.length}`; };
     const objs = names(c.map(x => x.label)), exps = names(c.map(x => x.experimentLabel));
     const strong = t => `<span style="color:var(--ink); font-weight:600;">${escapeHtml(t)}</span>`;
+    const kids = c.every(x => x.parent), mixed = !kids && c.some(x => x.parent);
+    const nKids = new Set(c.map(x => x.id)).size;
     bar.className = "actionbar";
     bar.innerHTML = `
-      <div class="selection-summary"><span>${strong(exps)} now ${new Set(c.map(x => x.experimentLabel)).size === 1 ? "has" : "have"} ${strong(objs)}${objs.match(/^\d+$/) ? " objects" : ""}, without ${new Set(c.map(x => x.id)).size === 1 ? "its" : "their"} germplasm from other experiments. Carry any over?</span></div>
-      ${linkMenuHtml(`<button class="btn primary" id="carryOverBtn">Choose…</button>`, "Carry over to the new experiment copies")}
+      <div class="selection-summary"><span>${kids
+        ? `${strong(names(c.map(x => x.from)))} ${new Set(c.map(x => x.parent)).size === 1 ? "has" : "have"} ${nKids} object${nKids === 1 ? "" : "s"} that ${nKids === 1 ? "is" : "are"} part of it in ${strong(exps)}, without this germplasm. Also set it on ${nKids === 1 ? "it" : "them"}?`
+        : mixed
+        ? "Some objects are missing germplasm they have in other experiments, or that their parent now has. Set any of it?"
+        : `${strong(exps)} now ${new Set(c.map(x => x.experimentLabel)).size === 1 ? "has" : "have"} ${strong(objs)}${objs.match(/^\d+$/) ? " objects" : ""}, without ${new Set(c.map(x => x.id)).size === 1 ? "its" : "their"} germplasm from other experiments. Carry any over?`}</span></div>
+      ${linkMenuHtml(`<button class="btn primary" id="carryOverBtn">Choose…</button>`, kids ? "Also set on the objects part of it" : "Carry over to the new experiment copies")}
       <button class="btn ghost" id="carryOverSkipBtn">Skip</button>
     `;
     wireLinkMenu("carryOverBtn", () => {
-      linkPickerType = "carry-over";
+      linkPickerType = kids ? "object" : "carry-over";
       linkPickerMode = {
-        type: "carry-over",
-        items: c.map(x => ({ ...x, type: x.valueType, id: `${x.id}|${x.experiment}|${x.field}|${x.value}`, label: `${x.valueLabel} → ${x.label} (from ${x.from})` })),
-        confirmLabel: (n) => `Carry over ${n}`,
+        type: linkPickerType,
+        items: c.map(x => ({ ...x, type: x.valueType, id: `${x.id}|${x.experiment}|${x.field}|${x.value}`, label: x.parent ? `${x.valueLabel} → ${x.label}` : `${x.valueLabel} → ${x.label} (from ${x.from})` })),
+        confirmLabel: (n) => kids ? `Set on ${n}` : `Carry over ${n}`,
         onConfirm: (picked) => applyCarryOver(picked),
       };
     });

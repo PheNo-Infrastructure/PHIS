@@ -62,7 +62,8 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       await respondOpenSilexErrors(res, async () => {
         await config.inExperiment!.update(id, experiment, { field, add: link?.uris, remove: unlink?.uri });
         const dto = (await authedGetOne(config.getUrl(id))).result;
-        const out = JSON.stringify({ id, type, label: String(dto.name ?? id), relations: await relationsFor(id, dto, config) });
+        const offer = link?.uris?.length && config.inExperiment!.childOffer ? await config.inExperiment!.childOffer(id, experiment, field, link.uris) : [];
+        const out = JSON.stringify({ id, type, label: String(dto.name ?? id), relations: await relationsFor(id, dto, config), ...(offer.length ? { childOffer: offer } : {}) });
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(out);
       });

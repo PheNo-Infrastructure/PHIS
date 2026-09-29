@@ -926,8 +926,15 @@ of a confirm, and the DELETE route refuses with 409 before any OpenSILEX call. N
 tests: a throwaway created with a geometry leaves a `set/ObservationCollection` triple behind
 even after an API delete — clean with SPARQL filtered on `zz_claude`.
 
-**Direction after this:** "also apply to its plants"; factor levels as a third row once factors
-are wired.
+**Also apply to its children (built 2026-09-29).** After germplasm is added to an object in an
+experiment ("+ Add" or link by selection), the response carries `childOffer`: the objects that are
+part of it there (`/scientific_objects?experiment=X&parent=P` — this filter DOES work, per
+experiment; probed) and lack that germplasm. The page offers them through the carry-over bar
+("Plot 1 has 2 objects that are part of it in X, without this germplasm. Also set it on them?"),
+nothing picked; confirm writes each pick with the in-experiment PUT. One level only (a plant's own
+children aren't offered in the same step).
+
+**Direction after this:** factor levels as a third row once factors are wired (PHIS has none yet).
 
 ## Access during development
 

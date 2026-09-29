@@ -1479,6 +1479,44 @@ test("e2e: Delete on an object with a location history explains why and points t
   });
 });
 
+test("e2e: after '+ Add' on a plot, the action bar offers the objects that are part of it (nothing picked); confirming writes only the picked ones", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const puts: any[] = [];
+    const kid = (id: string, label: string) => ({
+      type: "scientific_object", id, label, experiment: "exp-b", experimentLabel: "Barley 2026",
+      field: "hasGermplasm", value: "g-annika", valueType: "germplasm", valueLabel: "Annika", from: "Plot 1", parent: "plot",
+    });
+    const detail = { uri: "plot", actions: ["delete", "link"], deleteRemovesLinks: true, relations: [{ label: "In experiments", field: "experiment", items: [{
+      id: "exp-b", type: "experiment", label: "Barley 2026",
+      groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", items: [] }] }] }] };
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "g-annika", type: "germplasm", label: "Annika" }]) }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail) }));
+    await page.route("**/api/node", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      puts.push(b);
+      const offer = b.id === "plot" ? { childOffer: [kid("plant-1", "Plant 1"), kid("plant-2", "Plant 2")] } : {};
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: b.id, relations: detail.relations, ...offer }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "plot", type: "scientific_object", label: "Plot 1" }));
+    await page.waitForTimeout(400);
+    await page.locator("#detailBody .box-add").click();
+    await page.locator("#linkList .newmenu-item", { hasText: "Annika" }).click();
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(500);
+
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Plot 1 has 2 objects that are part of it in Barley 2026, without this germplasm\. Also set it on them\?/);
+    assert.deepEqual((await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim()), ["Annika → Plant 1", "Annika → Plant 2"]);
+    assert.equal(await page.locator(".linkmenu-confirm").count(), 0, "nothing picked");
+    await page.locator("#linkList .newmenu-item", { hasText: "Plant 2" }).click();
+    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Set on 1");
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(puts.slice(1), [{ type: "scientific_object", id: "plant-2", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g-annika"] } }]);
+  });
+});
+
 test("e2e: \"Link existing…\" popover closes via its own × button, not just an outside click", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);

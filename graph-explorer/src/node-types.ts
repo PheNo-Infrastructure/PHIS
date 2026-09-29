@@ -52,6 +52,9 @@ export type NodeConfig = {
     parentField?: string;
     experimentsOf: (id: string) => Promise<{ id: string; label: string }[]>;
     update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void>;
+    // After values were ADDED on a node inside an experiment: its children there (part of it)
+    // lacking them — offered, never applied (a plot's variety doesn't pass down — probed).
+    childOffer?: (id: string, expId: string, field: string, values: string[]) => Promise<CarryOver[]>;
   };
   // Relation groups that aren't a field on the node's own DTO but come from a query — e.g. an
   // experiment's scientific objects (each SO points at its experiment, not the reverse).
@@ -95,6 +98,7 @@ export type CarryOver = {
   type: string; id: string; label: string; // the object
   experiment: string; experimentLabel: string; // the copy it would go on
   field: string; value: string; valueType: string; valueLabel: string; from: string; // what, and which experiment has it
+  parent?: string; // set = a child offer: `from` is then the parent's label, not an experiment
 };
 
 // Adding an existing SO to an experiment = POSTing a copy with the SAME uri into that
@@ -191,6 +195,32 @@ async function soCarryOver(soId: string, expId: string): Promise<CarryOver[]> {
         have.add(`${field}|${i.id}`);
         out.push({ type: "scientific_object", id: soId, label: name, experiment: expId, experimentLabel: target.label, field, value: i.id, valueType, valueLabel: i.label, from: e.label });
       }
+    }
+  }
+  return out;
+}
+
+// The objects that are part of `soId` in `expId` (the parent filter works per experiment —
+// probed) and lack some of `values` in that row there.
+async function soChildOffer(soId: string, expId: string, field: string, values: string[]): Promise<CarryOver[]> {
+  const kids = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(expId)}&parent=${encodeURIComponent(soId)}&page_size=500`)).result;
+  if (!kids.length) return [];
+  const self = await compactUri(expId);
+  const exp = (await Promise.all((await queryItems(SO_EXPERIMENTS, soId)).map(async (e) => ({ ...e, key: await compactUri(e.id) })))).find((e) => e.key === self);
+  const parentLabel = String((await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}`)).result.name ?? soId);
+  const row = (groups: Awaited<ReturnType<typeof soRowsIn>>) => groups.find((g) => "field" in g && g.field === field);
+  const named = row(await soRowsIn(soId, expId));
+  const out: CarryOver[] = [];
+  for (const kid of kids) {
+    const have = new Set((row(await soRowsIn(String(kid.uri), expId))?.items ?? []).map((i) => i.id));
+    for (const v of values) {
+      const id = await compactUri(v);
+      if (have.has(id)) continue;
+      const item = named?.items.find((i) => i.id === id);
+      out.push({
+        type: "scientific_object", id: String(kid.uri), label: String(kid.name ?? kid.uri), experiment: expId, experimentLabel: exp?.label ?? expId,
+        field, value: id, valueType: (named as { type?: string } | undefined)?.type ?? "germplasm", valueLabel: item?.label ?? id, from: parentLabel, parent: soId,
+      });
     }
   }
   return out;
@@ -325,6 +355,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       parentField: "isPartOf",
       experimentsOf: (id) => queryItems(SO_EXPERIMENTS, id),
       update: updateSoInExperiment,
+      childOffer: soChildOffer,
     },
   },
   // A project holds no link to its experiments — each experiment's `projects` field does — so

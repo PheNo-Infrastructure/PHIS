@@ -625,6 +625,7 @@ test("PUT /api/node with an experiment: germplasm add/remove rewrites ONLY that 
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push(b); rels = b.relations; return jsonResponse(200, { result: "so-1" }); }
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] });
       if (url.includes("so-1?experiment=exp-b")) {
         return jsonResponse(200, { result: { uri: "so-1", name: "Plot 1", rdf_type: "vocabulary:Plot", geometry: { type: "Point" }, factor_level: [], relations: rels } });
       }
@@ -791,6 +792,7 @@ test("/api/link object + germplasm: one experiment = written there; several = ne
         puts.push({ so: b.uri, exp: b.experiment, values: b.relations.map((r: any) => r.value) });
         return jsonResponse(200, { result: b.uri });
       }
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] });
       const exps = url.match(/\/(so-[\w-]+)\/experiments/);
       if (exps) return jsonResponse(200, { result: inExps[exps[1]].map((e) => ({ experiment: e, experiment_name: names[e] })) });
       const copy = url.match(/scientific_objects\/(so-[\w-]+)\?experiment=/);
@@ -888,6 +890,38 @@ test("scientific object with a location history: detail says why Delete won't wo
     assert.equal(del.status, 409);
     assert.match((await del.json()).error, /^It has a location history in PHIS/);
     assert.deepEqual(deletes, []);
+  });
+});
+
+test("setting germplasm on an object in an experiment offers its children there that lack it (childOffer) — writes nothing to them", async () => {
+  await withServer(async (base) => {
+    const puts: string[] = [];
+    const rels: Record<string, { property: string; value: string }[]> = {
+      plot: [], "plant-1": [{ property: "vocabulary:isPartOf", value: "plot" }], "plant-2": [{ property: "vocabulary:isPartOf", value: "plot" }, { property: "vocabulary:hasGermplasm", value: "phis:id/annika" }],
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push(b.uri); rels[b.uri] = b.relations; return jsonResponse(200, { result: b.uri }); }
+      if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u === "phis:id/annika" ? "Annika" : u })) });
+      if (url.includes("scientific_objects?experiment=exp-b&parent=plot")) return jsonResponse(200, { result: [{ uri: "plant-1", name: "Plant 1" }, { uri: "plant-2", name: "Plant 2" }] });
+      const exps = url.match(/scientific_objects\/([\w-]+)\/experiments/);
+      if (exps) return jsonResponse(200, { result: [{ experiment: "exp-b", experiment_name: "Barley 2026" }] });
+      const copy = url.match(/scientific_objects\/([\w-]+)\?experiment=/);
+      if (copy) return jsonResponse(200, { result: { uri: copy[1], name: copy[1], rdf_type: "vocabulary:Plot", relations: rels[copy[1]] } });
+      const glob = url.match(/scientific_objects\/([\w-]+)$/);
+      if (glob) return jsonResponse(200, { result: { uri: glob[1], name: glob[1] === "plot" ? "Plot 1" : glob[1] } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await (await realFetch(`${base}/api/node`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "scientific_object", id: "plot", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["phis:id/annika"] } }),
+    })).json();
+    assert.deepEqual(res.childOffer, [{
+      type: "scientific_object", id: "plant-1", label: "Plant 1", experiment: "exp-b", experimentLabel: "Barley 2026",
+      field: "hasGermplasm", value: "phis:id/annika", valueType: "germplasm", valueLabel: "Annika", from: "Plot 1", parent: "plot",
+    }], "plant-2 already has Annika");
+    assert.deepEqual(puts, ["plot"], "only the plot was written");
   });
 });
 

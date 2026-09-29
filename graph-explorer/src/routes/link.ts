@@ -93,12 +93,15 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     let skipped = 0;
     const touched = new Set<string>();
     const carryOver: CarryOver[] = [];
+    const childOffer: CarryOver[] = [];
     for (const t of targets) {
       if (!t.exps.length) skipped++;
+      const cfg = NODE_TYPES[t.ownerType].inExperiment!;
       for (const e of t.exps) {
-        await NODE_TYPES[t.ownerType].inExperiment!.update(t.id, e.id, { field: t.field, add: t.otherIds });
+        await cfg.update(t.id, e.id, { field: t.field, add: t.otherIds });
         linkedPairs += t.otherIds.length;
         touched.add(e.id);
+        if (cfg.childOffer) childOffer.push(...(await cfg.childOffer(t.id, e.id, t.field, t.otherIds)));
       }
     }
     for (const op of ops) {
@@ -112,6 +115,8 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     const out = JSON.stringify({
       ok: true, linkedPairs, alreadyLinked,
       ...(carryOver.length ? { carryOver } : {}),
+      // Children (part of these objects there) that don't have the new germplasm — offered too.
+      ...(childOffer.length ? { childOffer } : {}),
       // Experiments whose derived data (Species) changed, and objects not in any picked one.
       ...(touched.size ? { touched: [...touched] } : {}),
       ...(skipped ? { skipped } : {}),
