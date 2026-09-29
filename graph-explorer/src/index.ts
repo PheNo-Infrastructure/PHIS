@@ -6,6 +6,7 @@ import { handleList } from "./routes/list.ts";
 import { handleCreate } from "./routes/create.ts";
 import { handleNodeDetail, handleNodeMutation } from "./routes/node.ts";
 import { handleLink } from "./routes/link.ts";
+import { handleParent } from "./routes/parent.ts";
 
 export { _resetAuthCacheForTests } from "./opensilex.ts";
 
@@ -19,6 +20,7 @@ const routeHandlers: RouteHandler[] = [
   handleNodeDetail,
   handleNodeMutation,
   handleLink,
+  handleParent,
 ];
 
 // Exported for tests. Every branch is wrapped so a failure anywhere (a bad

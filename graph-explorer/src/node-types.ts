@@ -45,6 +45,8 @@ export type NodeConfig = {
     fields: string[];
     // Which field a link to another type goes into (germplasm -> hasGermplasm), for /api/link.
     byType: Record<string, string>;
+    // The "part of" relation for /api/parent (child is part of parent), if the type has one.
+    parentField?: string;
     experimentsOf: (id: string) => Promise<{ id: string; label: string }[]>;
     update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void>;
   };
@@ -68,7 +70,7 @@ export type NodeConfig = {
     skipSelf?: true;
     // What the node is WITHIN each item, e.g. a scientific object's germplasm and parent inside
     // each experiment (they live only on that experiment's copy). Shown as one box per item.
-    itemGroups?: (id: string, itemId: string) => Promise<{ label: string; field?: string; type?: string; items: { id: string; type: string; label: string }[] }[]>;
+    itemGroups?: (id: string, itemId: string) => Promise<{ label: string; field?: string; type?: string; addable?: boolean; items: { id: string; type: string; label: string }[] }[]>;
     // Shown instead of hiding the group when it's empty.
     emptyText?: string;
   }[];
@@ -107,11 +109,14 @@ async function removeSoFromExperiment(soId: string, expId: string) {
 // global copy can't hold them, a new copy inherits nothing — probed live), so they're read per
 // experiment. `property` is the relation's local name; `byUris` names the values in one call.
 // Factor levels would be one more entry.
-// `writable` rows carry their property as the row's `field`, which /api/node's in-experiment
-// link/unlink accepts (Part of waits for a way to pick direction between two objects).
+// Flags: `removable` rows carry their property as the row's `field` (× in unlink mode; /api/node's
+// in-experiment PUT accepts it). `addable` rows also get "+ Add", link by selection (/api/link)
+// and are offered for carry-over. `single` = at most one value: setting one replaces the old
+// (an object has one parent). Part of isn't addable: parent/child goes through the ranking
+// modal (/api/parent), same as organizations.
 const SO_ROWS_PER_EXPERIMENT = [
-  { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris", writable: true },
-  { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, writable: false },
+  { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris", addable: true, removable: true, single: false },
+  { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: true },
 ];
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
 
@@ -135,6 +140,7 @@ async function updateSoInExperiment(soId: string, expId: string, mod: { field: s
     const keep = await Promise.all(relations.map(async (r) => !(mine(r) && (await compactUri(r.value)) === gone)));
     relations = relations.filter((_, i) => keep[i]);
   }
+  if (mod.add?.length && SO_ROWS_PER_EXPERIMENT.find((r) => r.property === mod.field)?.single) relations = relations.filter((r) => !mine(r));
   const have = new Set(await Promise.all(relations.filter(mine).map((r) => compactUri(r.value))));
   for (const uri of mod.add ?? []) {
     if (!have.has(await compactUri(uri))) relations.push({ property: `vocabulary:${mod.field}`, value: uri, inverse: false });
@@ -147,7 +153,7 @@ async function soRowsIn(soId: string, expId: string) {
   return Promise.all(
     SO_ROWS_PER_EXPERIMENT.map(async (row) => {
       const uris = relations.filter((r) => localName(r.property) === row.property).map((r) => String(r.value));
-      const field = row.writable ? { field: row.property, type: row.type } : {};
+      const field = row.removable ? { field: row.property, type: row.type, ...(row.addable ? { addable: true } : {}) } : {};
       if (!uris.length) return { label: row.label, ...field, items: [] };
       const named = (await authedPost(row.byUris(expId), uris)).result as unknown as { uri: string; name?: string }[];
       const names = new Map(await Promise.all(named.map(async (n) => [await compactUri(String(n.uri)), String(n.name ?? n.uri)] as const)));
@@ -160,8 +166,9 @@ async function soRowsIn(soId: string, expId: string) {
   );
 }
 
-// Germplasm (the writable rows) the object has in its OTHER experiments but not in `expId` — a
-// value found in several experiments is offered once, from the first.
+// Germplasm (the addable rows) the object has in its OTHER experiments but not in `expId` — a
+// value found in several experiments is offered once, from the first. Not the parent: it may not
+// be in the new experiment.
 async function soCarryOver(soId: string, expId: string): Promise<CarryOver[]> {
   // Ids arrive full or prefixed depending on who produced them (a POST vs a list) — compare compacted.
   const self = await compactUri(expId);
@@ -169,7 +176,7 @@ async function soCarryOver(soId: string, expId: string): Promise<CarryOver[]> {
   const target = exps.find((e) => e.key === self);
   const others = exps.filter((e) => e.key !== self);
   if (!target || !others.length) return [];
-  const writable = (groups: Awaited<ReturnType<typeof soRowsIn>>) => groups.filter((g) => "field" in g && g.field);
+  const writable = (groups: Awaited<ReturnType<typeof soRowsIn>>) => groups.filter((g) => "addable" in g && g.addable);
   const have = new Set(writable(await soRowsIn(soId, expId)).flatMap((g) => g.items.map((i) => `${(g as { field: string }).field}|${i.id}`)));
   const name = String((await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}`)).result.name ?? soId);
   const out: CarryOver[] = [];
@@ -304,8 +311,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       ),
     queryRelations: [SO_EXPERIMENTS_DETAIL],
     inExperiment: {
-      fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.writable).map((r) => r.property),
-      byType: Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.writable).map((r) => [r.type, r.property])),
+      fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.removable).map((r) => r.property),
+      byType: Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.addable).map((r) => [r.type, r.property])),
+      parentField: "isPartOf",
       experimentsOf: (id) => queryItems(SO_EXPERIMENTS, id),
       update: updateSoInExperiment,
     },

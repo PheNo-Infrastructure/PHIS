@@ -781,7 +781,7 @@ demands it.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A, B1, carry-over and B2 built**: see
+  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A, B1, carry-over, B2 and Part of built**: see
     "Scientific object labels per trial" below.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
@@ -904,11 +904,23 @@ are skipped and counted in the toast. "+ New" never offers these pairs (IN_EXPER
 the page; a new object isn't in any experiment yet) — creating "a plot of Annika in X" in one go
 would be its own step.
 
-**Direction after B2** (not a plan — pick the next one with the user): "Part of" (same-type,
-needs a direction choice like the org ranking); "+ New" object with germplasm + experiment
-selected; "also apply to its plants"; factor levels as a third row once factors are wired; the
-Delete gap for objects with a location (needs a decision: it means deleting move events,
-i.e. location history).
+**Part of (built 2026-09-29).** Decided with the user: every parent/child relationship goes
+through the drag-to-rank modal (RANKED_TYPES: organization, scientific_object). With one object
+selected, "Link existing…" offers objects; picks open the modal, which for objects has ONE
+parent slot (a second drop swaps the first back to Children). Confirm sends explicit
+{child, parent} pairs to `/api/parent`, which writes `isPartOf` on the child's copy in an
+experiment BOTH share (replacing an earlier parent there — rows now carry flags `addable`,
+`removable`, `single`), asks which when they share several (nothing picked), and when they
+share none offers adding the child to one of the parent's experiments first, then continues.
+Part of chips get × in unlink mode; no "+ Add" (ranking only); carry-over stays germplasm-only.
+
+**Decided 2026-09-29 (user):** "+ New" object with germplasm + experiment selected — not needed
+for manual use (imports will create objects). Delete of an object with a location — option (b):
+explain and point to PHIS, don't delete move events (location history) from the app.
+"Also apply to its plants" — build next; optional like everything else (nothing ticked).
+
+**Direction after Part of:** the Delete explanation (b); "also apply to its plants"; factor
+levels as a third row once factors are wired.
 
 ## Access during development
 

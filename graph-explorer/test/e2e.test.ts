@@ -510,7 +510,7 @@ test("e2e: '+ Add' in an experiment's box picks germplasm (already-set ones hidd
       uri: "so-1", actions: ["delete", "link"], deleteRemovesLinks: true,
       relations: [{ label: "In experiments", field: "experiment", items: [{
         id: "exp-b", type: "experiment", label: "Barley 2026",
-        groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: germ }, { label: "Part of", items: [] }],
+        groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: germ }, { label: "Part of", items: [] }],
       }] }],
     });
     await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
@@ -594,7 +594,7 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
       uri: "so-1", actions: ["delete", "link"], deleteRemovesLinks: true,
       relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-b", type: "experiment", label: evil,
-        groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [{ id: "g-x", type: "germplasm", label: evil }] }] }] }],
+        groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [{ id: "g-x", type: "germplasm", label: evil }] }] }] }],
     }) }));
     await page.goto(base);
     await page.waitForTimeout(1000);
@@ -1394,6 +1394,67 @@ test("e2e: with exactly one organization selected, \"Link existing…\" offers o
     assert.ok(anchorCall);
     assert.match((await page.locator("#toast").textContent()) ?? "", /Ranked 2 organizations/);
     assert.equal(await page.locator(".ranking-overlay").evaluate((el) => el.classList.contains("open")), false);
+  });
+});
+
+test("e2e: one object selected + other objects picked -> the ranking modal with ONE parent slot (a second drop swaps it out) -> /api/parent pairs; asks which experiment when needed", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const posts: any[] = [];
+    await page.route("**/api/scientific-objects", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "plot", type: "scientific_object", label: "Plot 1" }, { id: "block-a", type: "scientific_object", label: "Block A" },
+      { id: "block-b", type: "scientific_object", label: "Block B" }, { id: "plant", type: "scientific_object", label: "Plant 1" },
+    ]) }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", actions: ["delete", "link"], relations: [] }) }));
+    await page.route("**/api/parent", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      posts.push(b);
+      const body = b.experiments ? { ok: true, linkedPairs: 2, touched: b.experiments }
+        : { needsExperiment: { notInAny: [], experiments: [{ id: "exp-a", label: "Barley 2025", objects: 2 }, { id: "exp-b", label: "Barley 2026", objects: 1 }], objects: 2 } };
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Scientific Information");
+    await openRow(page, "Scientific Objects");
+    await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
+    await page.waitForTimeout(200);
+
+    await page.locator("#linkExistingBtn").click();
+    await page.waitForTimeout(150);
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "scientific object" }).click();
+    await page.waitForTimeout(150);
+    for (const name of ["Block A", "Block B", "Plant 1"]) await page.locator("#linkPickerBody .newmenu-item", { hasText: name }).click({ modifiers: ["Control"] });
+    await page.locator(".linkmenu-confirm").click();
+    await page.locator(".ranking-modal").waitFor({ state: "visible" });
+    assert.match(await page.locator(".ranking-hint").innerText(), /the parent of Plot 1.*One parent|An object has one parent/s);
+    assert.match(await page.locator('.ranking-zone[data-zone="parents"] .ranking-zone-label').innerText(), /^Parent \(0\)$/i);
+
+    const drag = (label: string) => page.evaluate((l) => {
+      const dt = new DataTransfer();
+      const source = [...document.querySelectorAll(".ranking-row")].find((r) => r.textContent!.includes(l)) as HTMLElement;
+      const target = document.querySelector('.ranking-zone[data-zone="parents"]') as HTMLElement;
+      source.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    }, label);
+    await drag("Block A");
+    await drag("Block B");
+    await page.waitForTimeout(200);
+    const zone = (z: string) => page.locator(`.ranking-zone[data-zone="${z}"] .ranking-row`).allTextContents().then((t) => t.map((x) => x.trim()).sort());
+    assert.deepEqual(await zone("parents"), ["Block B"], "Block B swapped Block A out");
+    assert.deepEqual(await zone("children"), ["Block A", "Plant 1"]);
+
+    await page.locator("#rankingConfirm").click();
+    await page.waitForTimeout(400);
+    assert.equal(posts[0].type, "scientific_object");
+    assert.deepEqual(posts[0].pairs.map((p: any) => `${p.child}<${p.parent}`).sort(), ["block-a<plot", "plant<plot", "plot<block-b"]);
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /“Part of” is kept per experiment, and these objects are in several\. Set it in which experiment\(s\)\?/);
+    await page.locator("#linkList .newmenu-item", { hasText: "Barley 2026" }).click();
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posts[1].experiments, ["exp-b"]);
+    assert.match((await page.locator("#toast").textContent()) ?? "", /Set 2 parent links/);
   });
 });
 

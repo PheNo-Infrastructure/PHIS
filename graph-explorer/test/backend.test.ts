@@ -555,7 +555,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
       typeName: "plant",
       actions: ["delete", "link"],
       deleteRemovesLinks: true,
-      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [] }, { label: "Part of", items: [] }] }] }],
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }] }] }],
     });
     const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", name: "X" }) });
     assert.equal(put.status, 400);
@@ -604,10 +604,10 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const g = (id: string, label: string) => ({ id, type: "germplasm", label });
     assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", items: [
-      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [g("phis:id/annika", "Annika")] }, { label: "Part of", items: [] }] },
+      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }] },
       { id: "exp-b", type: "experiment", label: "Barley 2026", groups: [
-        { label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
-        { label: "Part of", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
+        { label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
+        { label: "Part of", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
       ] },
     ] }]);
     assert.deepEqual(named.sort(), ["germplasm:phis:id/annika", "germplasm:phis:id/arild,phis:id/annika", "so:phis:id/block-a"]);
@@ -651,9 +651,13 @@ test("PUT /api/node with an experiment: germplasm add/remove rewrites ONLY that 
     await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", unlink: { field: "hasGermplasm", uri: "https://phis.pheno.no/id/annika" } });
     assert.deepEqual(puts[1].relations.map((r: any) => r.value), ["phis:id/block-a", "phis:id/arild"]);
 
-    const partOf = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "isPartOf", uris: ["x"] } });
-    assert.equal(partOf.status, 400, "Part of isn't writable yet");
-    assert.equal(puts.length, 2);
+    const partOf = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "isPartOf", uris: ["phis:id/block-b"] } });
+    assert.equal(partOf.status, 200);
+    assert.deepEqual(puts[2].relations.map((r: any) => r.value), ["phis:id/arild", "phis:id/block-b"], "one parent: block-a replaced, germplasm kept");
+
+    const bad = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasFactorLevel", uris: ["x"] } });
+    assert.equal(bad.status, 400, "only the per-experiment rows can be written");
+    assert.equal(puts.length, 3);
   });
 });
 
@@ -817,6 +821,52 @@ test("/api/link object + germplasm: one experiment = written there; several = ne
     puts.length = 0;
     assert.deepEqual(await link(["so-none", "so-one"]), { needsExperiment: { notInAny: [{ id: "so-none", label: "Name of so-none" }] } });
     assert.equal(puts.length, 0);
+  });
+});
+
+test("/api/parent: written only in an experiment BOTH share (replacing an earlier parent); several shared = needsExperiment; none shared = noShared; nothing written while asking", async () => {
+  await withServer(async (base) => {
+    const puts: { so: string; exp: string; relations: string[] }[] = [];
+    const inExps: Record<string, string[]> = { plot: ["exp-a", "exp-b"], block: ["exp-b"], block2: ["exp-a", "exp-b"], lone: ["exp-c"] };
+    const names: Record<string, string> = { "exp-a": "Barley 2025", "exp-b": "Barley 2026", "exp-c": "Barley 2027" };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") {
+        const b = JSON.parse(String(init.body));
+        puts.push({ so: b.uri, exp: b.experiment, relations: b.relations.map((r: any) => `${r.property.split(":").pop()}=${r.value}`) });
+        return jsonResponse(200, { result: b.uri });
+      }
+      const exps = url.match(/scientific_objects\/(\w+)\/experiments/);
+      if (exps) return jsonResponse(200, { result: inExps[exps[1]].map((e) => ({ experiment: e, experiment_name: names[e] })) });
+      const copy = url.match(/scientific_objects\/(\w+)\?experiment=/);
+      if (copy) return jsonResponse(200, { result: { uri: copy[1], name: copy[1], rdf_type: "vocabulary:Plot", relations: [
+        { property: "vocabulary:isPartOf", value: "old-block" }, { property: "vocabulary:hasGermplasm", value: "annika" },
+      ] } });
+      const glob = url.match(/scientific_objects\/(\w+)$/);
+      if (glob) return jsonResponse(200, { result: { uri: glob[1], name: `The ${glob[1]}` } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const parent = async (pairs: { child: string; parent: string }[], experiments?: string[]) => (await realFetch(`${base}/api/parent`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "scientific_object", pairs, ...(experiments ? { experiments } : {}) }),
+    }));
+
+    assert.deepEqual(await (await parent([{ child: "plot", parent: "block" }])).json(), { ok: true, linkedPairs: 1, touched: ["exp-b"] });
+    assert.deepEqual(puts, [{ so: "plot", exp: "exp-b", relations: ["hasGermplasm=annika", "isPartOf=block"] }], "only the shared exp-b; old parent replaced, germplasm kept");
+
+    puts.length = 0;
+    assert.deepEqual(await (await parent([{ child: "plot", parent: "block2" }])).json(), { needsExperiment: { notInAny: [], experiments: [
+      { id: "exp-a", label: "Barley 2025", objects: 1 }, { id: "exp-b", label: "Barley 2026", objects: 1 },
+    ], objects: 1 } });
+    assert.deepEqual(await (await parent([{ child: "lone", parent: "block" }])).json(), { needsExperiment: { noShared: [
+      { id: "lone", label: "The lone", parent: "block", parentLabel: "The block", parentExperiments: [{ id: "exp-b", label: "Barley 2026" }] },
+    ] } });
+    assert.equal(puts.length, 0, "nothing written while asking");
+
+    await parent([{ child: "plot", parent: "block2" }], ["exp-a"]);
+    assert.deepEqual(puts.map((p) => p.exp), ["exp-a"]);
+    assert.equal((await parent([{ child: "plot", parent: "plot" }])).status, 400, "an object can't be its own parent");
   });
 });
 

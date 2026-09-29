@@ -900,9 +900,10 @@ let inExperimentAdd = null;
 // experiments (/api/link's carryOver). Offered in the action bar with nothing picked; skipping,
 // or navigating away, leaves the new copies as they are.
 let carryOverOffer = null;
-// A link that lives inside an experiment (object <-> germplasm) that /api/link couldn't place
-// on its own: {items, notInAny, experiments}. The action bar asks — which experiment(s), nothing
-// picked; or first adds objects that are in none — then retries the same link.
+// A link that lives inside an experiment (an object's germplasm or parent) that the backend
+// couldn't place on its own: {what, lone, lonePrompt?, placeOptions?, experiments, objects, retry}.
+// The action bar asks — which experiment(s), nothing picked (then retry(picked)); or first adds
+// the `lone` objects to an experiment (placeOptions, else any) and then retry().
 let experimentChoice = null;
 
 /* Every item currently clickable ANYWHERE on screen (left rowlist, tree,
@@ -1448,7 +1449,7 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, canAdd
       h += `<div class="item-box"><div class="chip-row">${chip(it)}</div><div class="item-box-rows">`;
       (it.groups || []).forEach(g => {
         const chips = g.items.map(x => chipHtml(x, unlinking && g.field ? g.field : null, it.id)).join("");
-        const add = canAdd && g.field && !unlinking
+        const add = canAdd && g.addable && !unlinking
           ? `<button class="box-add" data-field="${escapeHtml(g.field)}" data-type="${escapeHtml(g.type)}" data-exp="${escapeHtml(it.id)}" data-exp-label="${escapeHtml(it.label)}" data-have="${escapeHtml(g.items.map(x => x.id).join(" "))}">+ Add</button>`
           : "";
         h += `<span class="item-box-key">${escapeHtml(g.label)}</span><div class="chip-row">${chips || (add ? "" : `<span class="rel-empty">none</span>`)}${add}</div>`;
@@ -1854,7 +1855,8 @@ async function linkItems(items, experiments) {
     const body = await res.json();
     if (!res.ok) { showToast(`Failed to link: ${body.error || res.status}`); return; }
     if (body.needsExperiment) {
-      experimentChoice = { items, ...body.needsExperiment };
+      const n = body.needsExperiment;
+      experimentChoice = { what: "germplasm", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
       renderActionbar();
       return;
     }
@@ -1874,6 +1876,46 @@ async function linkItems(items, experiments) {
   }
 }
 
+async function linkParents(type, pairs, experiments) {
+  try {
+    const res = await fetch("/api/parent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, pairs, ...(experiments ? { experiments } : {}) }),
+    });
+    const body = await res.json();
+    if (!res.ok) { showToast(`Failed to set parent: ${body.error || res.status}`); return; }
+    const retry = (exps) => linkParents(type, pairs, exps);
+    if (body.needsExperiment?.noShared) {
+      const ns = body.needsExperiment.noShared;
+      const strong = t => `<span style="color:var(--ink); font-weight:600;">${escapeHtml(t)}</span>`;
+      const options = new Map(ns.flatMap(n => n.parentExperiments).map(e => [e.id, { id: e.id, type: "experiment", label: e.label }]));
+      experimentChoice = {
+        what: "part of", retry, placeOptions: [...options.values()],
+        lone: ns.map(n => ({ id: n.id, label: n.label })),
+        lonePrompt: ns.length === 1
+          ? `${strong(ns[0].label)} and ${strong(ns[0].parentLabel)} aren't in the same experiment, and “part of” is set per experiment. Add ${strong(ns[0].label)} to one of ${strong(ns[0].parentLabel)}'s experiments first?`
+          : `${ns.length} objects aren't in an experiment with their parent, and “part of” is set per experiment. Add them to one of their parent's experiments first?`,
+      };
+      renderActionbar();
+      return;
+    }
+    if (body.needsExperiment) {
+      const n = body.needsExperiment;
+      experimentChoice = { what: "part of", lone: [], experiments: n.experiments, objects: n.objects, retry };
+      renderActionbar();
+      return;
+    }
+    experimentChoice = null;
+    (body.touched || []).forEach(id => invalidateNodeDetail(id));
+    pairs.forEach(p => { invalidateNodeDetail(p.child); invalidateNodeDetail(p.parent); });
+    render();
+    showToast(`Set ${body.linkedPairs} parent link${body.linkedPairs === 1 ? "" : "s"}${body.skipped ? `, ${body.skipped} not in the picked experiment(s) — left as they were` : ""}`);
+  } catch (err) {
+    showToast(`Failed to set parent: ${err}`);
+  }
+}
+
 // Which types could be linked TO the current selection as a real existing resource — same
 // intersection rule creatableTypesFor already uses for "+ New" (a candidate type must be
 // adjacent to EVERY selected item), further restricted to LINKABLE_TYPES on both sides (the
@@ -1884,12 +1926,14 @@ async function linkItems(items, experiments) {
 // the ambiguity has a real resolution: pick organizations the SAME way as any other type (see
 // paintRows — same click/ctrl/shift rules everywhere), and route the ambiguous ones to the
 // ranking modal on confirm instead of guessing a direction (see ambiguousPickIds below).
+// Types whose same-type links are parent/child, settled in the ranking modal (never guessed).
+const RANKED_TYPES = new Set(["organization", "scientific_object"]);
 function linkableExistingTypes() {
   const selectedTypes = [...selection.values()].map(v => v.type);
   if (!selectedTypes.length || !selectedTypes.every(t => LINKABLE_TYPES.has(t))) return new Set();
-  const soloOrg = selectedTypes.length === 1 && selectedTypes[0] === "organization";
+  const soloRanked = selectedTypes.length === 1 && RANKED_TYPES.has(selectedTypes[0]);
   const candidates = creatableTypesFor(selectedTypes);
-  return new Set([...candidates].filter(t => LINKABLE_TYPES.has(t) && (soloOrg || !selectedTypes.includes(t))));
+  return new Set([...candidates].filter(t => LINKABLE_TYPES.has(t) && (soloRanked || !selectedTypes.includes(t))));
 }
 
 // Of whatever's currently picked, which ones have an ambiguous relation to the anchor and need
@@ -1899,8 +1943,8 @@ function linkableExistingTypes() {
 // same-type candidates in exactly this situation.
 function ambiguousPickIds() {
   const selectedValues = [...selection.values()];
-  if (selectedValues.length !== 1 || selectedValues[0].type !== "organization") return new Set();
-  return new Set([...linkPickerPicked.values()].filter(it => it.type === "organization").map(it => it.id));
+  if (selectedValues.length !== 1 || !RANKED_TYPES.has(selectedValues[0].type)) return new Set();
+  return new Set([...linkPickerPicked.values()].filter(it => it.type === selectedValues[0].type).map(it => it.id));
 }
 
 // ---------------- link-ranking modal ----------------
@@ -1931,6 +1975,9 @@ function renderLinkRankingModal() {
   overlay.classList.add("open");
   const { anchor, parents, children, selectedIds } = linkRanking;
   const allIds = [...parents.keys(), ...children.keys()];
+  // Objects have one parent ("part of", inside an experiment); organizations can have several.
+  const oneParent = anchor.type === "scientific_object";
+  const noun = anchor.type === "organization" ? "organization" : "object";
 
   const zoneHtml = (map, zoneKey, label) => {
     const items = [...map.values()];
@@ -1951,8 +1998,8 @@ function renderLinkRankingModal() {
         <span>Rank relative to ${escapeHtml(anchor.label)}</span>
         <button class="ranking-close" id="rankingClose" title="Cancel">&times;</button>
       </div>
-      <p class="ranking-hint">Drag an organization above the line to make it a <b>parent</b> of ${escapeHtml(anchor.label)}, or leave/drop it below to make it a <b>child</b>. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
-      ${zoneHtml(parents, "parents", "Parents")}
+      <p class="ranking-hint">Drag an ${noun} above the line to make it ${oneParent ? "<b>the parent</b>" : "a <b>parent</b>"} of ${escapeHtml(anchor.label)}, or leave/drop it below to make it a <b>child</b>.${oneParent ? " An object has one parent: dropping another there swaps it out. The link is set inside an experiment both are in." : ""} Click, ctrl-click, or shift-click to select several first and drag them together.</p>
+      ${zoneHtml(parents, "parents", oneParent ? "Parent" : "Parents")}
       <div class="ranking-anchor"><span class="swatch"></span>${escapeHtml(anchor.label)}<span class="ranking-anchor-tag">anchor</span></div>
       ${zoneHtml(children, "children", "Children")}
       <div class="ranking-footer">
@@ -2005,6 +2052,11 @@ function renderLinkRankingModal() {
         other.delete(dragId);
         target.set(dragId, item);
       });
+      // One parent for objects: the last one dropped stays, any other goes back to children.
+      if (linkRanking.anchor.type === "scientific_object" && linkRanking.parents.size > 1) {
+        const keep = ids.filter(id => linkRanking.parents.has(id)).pop();
+        [...linkRanking.parents.entries()].filter(([id]) => id !== keep).forEach(([id, it]) => { linkRanking.parents.delete(id); linkRanking.children.set(id, it); });
+      }
       renderLinkRankingModal();
     });
   });
@@ -2022,6 +2074,11 @@ async function confirmLinkRanking() {
   const total = parentIds.length + childItems.length;
   exitLinkRanking();
   if (!total) return;
+  if (anchor.type === "scientific_object") {
+    // "part of" lives inside an experiment — explicit pairs, the backend finds the shared one.
+    const pairs = [...parentIds.map(p => ({ child: anchor.id, parent: p })), ...childItems.map(c => ({ child: c.id, parent: anchor.id }))];
+    return linkParents(anchor.type, pairs);
+  }
   try {
     if (parentIds.length) {
       // Every dragged-to-Parents org goes into ONE PUT on the anchor (batched, same as
@@ -2266,13 +2323,14 @@ function renderActionbar() {
   if (experimentChoice) {
     const x = experimentChoice;
     const strong = t => `<span style="color:var(--ink); font-weight:600;">${escapeHtml(t)}</span>`;
-    const lone = x.notInAny.length;
+    const lone = x.lone.length;
+    const What = x.what === "germplasm" ? "Germplasm" : `“${x.what[0].toUpperCase()}${x.what.slice(1)}”`;
     bar.className = "actionbar";
     bar.innerHTML = `
       <div class="selection-summary"><span>${lone
-        ? `${x.notInAny.map(o => strong(o.label)).join(", ")} ${lone === 1 ? "isn't" : "aren't"} in any experiment yet, and germplasm is set per experiment. Add ${lone === 1 ? "it" : "them"} to one first?`
-        : `Germplasm is kept per experiment, and ${x.objects === 1 ? "this object is" : "these objects are"} in several. Set it in which experiment(s)?`}</span></div>
-      ${linkMenuHtml(`<button class="btn primary" id="expChoiceBtn">${lone ? "Add to experiment…" : "Choose…"}</button>`, lone ? "Add to which experiment(s)?" : "Set the germplasm in")}
+        ? (x.lonePrompt || `${x.lone.map(o => strong(o.label)).join(", ")} ${lone === 1 ? "isn't" : "aren't"} in any experiment yet, and ${x.what} is set per experiment. Add ${lone === 1 ? "it" : "them"} to one first?`)
+        : `${What} is kept per experiment, and ${x.objects === 1 ? "this object is" : "these objects are"} in several. Set it in which experiment(s)?`}</span></div>
+      ${linkMenuHtml(`<button class="btn primary" id="expChoiceBtn">${lone ? "Add to experiment…" : "Choose…"}</button>`, lone ? "Add to which experiment(s)?" : `Set ${x.what === "germplasm" ? "the germplasm" : `“${escapeHtml(x.what)}”`} in`)}
       <button class="btn ghost" id="expChoiceCancelBtn">Cancel</button>
     `;
     wireLinkMenu("expChoiceBtn", () => {
@@ -2280,19 +2338,20 @@ function renderActionbar() {
       linkPickerMode = lone
         ? {
             type: "experiment",
+            ...(x.placeOptions ? { items: x.placeOptions } : {}),
             confirmLabel: (n) => `Add to ${n} experiment${n === 1 ? "" : "s"}`,
             onConfirm: async (picked) => {
               // Put the objects in the picked experiment(s) — a plain link — then retry the original.
-              await linkItems([...x.notInAny.map(o => ({ type: "scientific_object", id: o.id })), ...picked.map(p => ({ type: "experiment", id: p.id }))]);
-              carryOverOffer = null; // objects in no experiment have nothing to carry
-              linkItems(x.items);
+              await linkItems([...x.lone.map(o => ({ type: "scientific_object", id: o.id })), ...picked.map(p => ({ type: "experiment", id: p.id }))]);
+              carryOverOffer = null; // not the point here; their labels can be set after
+              x.retry();
             },
           }
         : {
             type: "experiment",
             items: x.experiments.map(e => ({ id: e.id, type: "experiment", label: `${e.label} · ${e.objects} object${e.objects === 1 ? "" : "s"}` })),
             confirmLabel: (n) => `Set in ${n} experiment${n === 1 ? "" : "s"}`,
-            onConfirm: (picked) => linkItems(x.items, picked.map(p => p.id)),
+            onConfirm: (picked) => x.retry(picked.map(p => p.id)),
           };
     });
     document.getElementById("expChoiceCancelBtn").addEventListener("click", () => { experimentChoice = null; renderActionbar(); });
