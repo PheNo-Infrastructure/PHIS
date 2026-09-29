@@ -30,7 +30,7 @@ export type NodeConfig = {
   // for sites and experiments) — so the confirm names them instead of routing to unlink mode.
   deleteRemovesLinks?: true;
   // DELETE calls to make before deleteUrl — e.g. a scientific object's per-experiment copies
-  // (a plain delete only removes the global copy, and vice versa).
+  // (OpenSILEX refuses deleting the global copy while any experiment copy exists — probed).
   deleteFirst?: (id: string) => Promise<string[]>;
   // Links that are an OPERATION, not a field on either DTO — keyed by the relation-group field
   // name the detail pane uses for them. A scientific object "in" an experiment is its own copy
