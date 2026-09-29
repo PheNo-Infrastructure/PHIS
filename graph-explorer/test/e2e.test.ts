@@ -1458,6 +1458,27 @@ test("e2e: one object selected + other objects picked -> the ranking modal with 
   });
 });
 
+test("e2e: Delete on an object with a location history explains why and points to PHIS instead of a confirm; OK closes it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let dialogs = 0;
+    page.on("dialog", (d) => { dialogs++; d.dismiss(); });
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "so-geo", actions: ["delete", "link"], deleteRemovesLinks: true, relations: [],
+      deleteBlocked: "has a location history in PHIS (where it was placed, and when). Delete it in PHIS instead — its location history is under Events and Positions.",
+    }) }));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "so-geo", type: "scientific_object", label: "Geo plot" }));
+    await page.waitForTimeout(400);
+    await page.locator("#deleteNodeBtn").click();
+    await page.waitForTimeout(200);
+    assert.equal(dialogs, 0, "no confirm");
+    assert.match(await page.locator("#detailBody .unlink-intro").innerText(), /CAN'T DELETE HERE — Geo plot has a location history in PHIS.*Events and Positions/s);
+    await page.locator("#deleteBlockedOkBtn").click();
+    assert.equal(await page.locator("#detailBody .unlink-intro").count(), 0);
+  });
+});
+
 test("e2e: \"Link existing…\" popover closes via its own × button, not just an outside click", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);

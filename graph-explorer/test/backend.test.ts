@@ -870,6 +870,27 @@ test("/api/parent: written only in an experiment BOTH share (replacing an earlie
   });
 });
 
+test("scientific object with a location history: detail says why Delete won't work, DELETE is refused (409) before any OpenSILEX delete", async () => {
+  await withServer(async (base) => {
+    const deletes: string[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (init?.method === "DELETE") { deletes.push(url); return jsonResponse(200, { result: "ok" }); }
+      if (url.includes("/so-geo/experiments")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/scientific_objects/so-geo")) {
+        return jsonResponse(200, { result: { uri: "so-geo", name: "Geo plot", location: { geojson: { type: "Feature", geometry: { type: "Point", coordinates: [1, 2] } } } } });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-geo`)).json();
+    assert.match(detail.deleteBlocked, /location history/);
+    const del = await realFetch(`${base}/api/node?type=scientific_object&id=so-geo`, { method: "DELETE" });
+    assert.equal(del.status, 409);
+    assert.match((await del.json()).error, /^It has a location history in PHIS/);
+    assert.deepEqual(deletes, []);
+  });
+});
+
 test("GET /api/node-detail rejects an unsupported type or missing id", async () => {
   await withServer(async (base) => {
     const res = await realFetch(`${base}/api/node-detail?type=germplasm&id=x`);

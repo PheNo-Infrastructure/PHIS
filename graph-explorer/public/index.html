@@ -905,6 +905,9 @@ let carryOverOffer = null;
 // The action bar asks — which experiment(s), nothing picked (then retry(picked)); or first adds
 // the `lone` objects to an experiment (placeOptions, else any) and then retry().
 let experimentChoice = null;
+// id of the node whose Delete was refused up front (node.deleteBlocked) — shows the reason in
+// the detail pane instead of a confirm or a bare error toast. Cleared on navigation.
+let deleteBlockedShown = null;
 
 /* Every item currently clickable ANYWHERE on screen (left rowlist, tree,
    or the local member-list in the detail pane when it's showing a
@@ -1095,6 +1098,7 @@ function navigateTo(newPath) {
   inExperimentAdd = null;
   carryOverOffer = null;
   experimentChoice = null;
+  deleteBlockedShown = null;
   render();
   loadNodeDetail(newPath[newPath.length - 1]);
 }
@@ -1200,6 +1204,11 @@ async function deleteNode(item, force = false) {
   // (rel.blocksDelete — an experiment's scientific objects) always routes to unlink mode,
   // where the banner explains why and offers to delete those first.
   const node = NODE_DETAIL[item.id];
+  if (node?.deleteBlocked) {
+    deleteBlockedShown = item.id;
+    renderDetail();
+    return;
+  }
   const blockers = (node?.relations ?? []).filter(rel => rel.blocksDelete);
   const related = (node?.relations ?? []).filter(rel => !rel.blocksDelete).flatMap(rel => rel.items);
   if (!force && (blockers.length || (related.length && !node?.deleteRemovesLinks))) {
@@ -1516,6 +1525,12 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     </div>
   `;
   if (!isCategoryMembers) html += typeInfoHtml(type);
+  if (node?.deleteBlocked && deleteBlockedShown === focusNode.id) {
+    html += `<div class="unlink-intro">
+      <span class="unlink-intro-text"><b>CAN'T DELETE HERE</b> — ${escapeHtml(label)} ${escapeHtml(node.deleteBlocked)}</span>
+      <span class="unlink-intro-actions"><button class="btn warn small" id="deleteBlockedOkBtn">OK</button></span>
+    </div>`;
+  }
 
   if (isCategoryMembers) {
     // A category isn't a resource with relations — it's a group. Show
@@ -1580,6 +1595,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   }
 
   document.getElementById("renameNodeBtn")?.addEventListener("click", () => renameNode(focusNode));
+  document.getElementById("deleteBlockedOkBtn")?.addEventListener("click", () => { deleteBlockedShown = null; renderDetail(); });
   document.getElementById("deleteNodeBtn")?.addEventListener("click", () => deleteNode(focusNode));
   document.getElementById("unlinkModeBtn")?.addEventListener("click", () => { unlinkTargetId = focusNode.id; render(); });
   // The open node's own title is a chip too: however you navigated here (breadcrumb, chip, tree),

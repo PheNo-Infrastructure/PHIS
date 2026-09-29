@@ -29,6 +29,9 @@ export type NodeConfig = {
   // Delete goes ahead with links still in place — OpenSILEX drops them with the node (confirmed
   // for sites and experiments) — so the confirm names them instead of routing to unlink mode.
   deleteRemovesLinks?: true;
+  // Why OpenSILEX will refuse deleting THIS node, read from its own record — shown before the
+  // user tries (node-detail's `deleteBlocked`) and enforced by the DELETE route.
+  deleteBlockedBy?: (dto: Record<string, unknown>) => string | null;
   // DELETE calls to make before deleteUrl — e.g. a scientific object's per-experiment copies
   // (OpenSILEX refuses deleting the global copy while any experiment copy exists — probed).
   deleteFirst?: (id: string) => Promise<string[]>;
@@ -310,6 +313,12 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         (e) => `/core/scientific_objects/${encodeURIComponent(id)}?experiment=${encodeURIComponent(e.id)}`
       ),
     queryRelations: [SO_EXPERIMENTS_DETAIL],
+    // An object given a position gets a Move event, and OpenSILEX refuses deleting it while one
+    // exists ("object has associated moves" — probed). Decided with the user: the app doesn't
+    // delete location history; it explains and points to PHIS.
+    deleteBlockedBy: (dto) => ((dto.location as { geojson?: unknown } | null)?.geojson
+      ? "has a location history in PHIS (where it was placed, and when). OpenSILEX won't delete an object that has one, and this app doesn't delete location history. Delete it in PHIS instead — open the object there; its location history is under Events and Positions."
+      : null),
     inExperiment: {
       fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.removable).map((r) => r.property),
       byType: Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.addable).map((r) => [r.type, r.property])),

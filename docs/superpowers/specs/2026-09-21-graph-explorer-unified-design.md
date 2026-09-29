@@ -919,8 +919,15 @@ for manual use (imports will create objects). Delete of an object with a locatio
 explain and point to PHIS, don't delete move events (location history) from the app.
 "Also apply to its plants" — build next; optional like everything else (nothing ticked).
 
-**Direction after Part of:** the Delete explanation (b); "also apply to its plants"; factor
-levels as a third row once factors are wired.
+**Delete explanation (built 2026-09-29).** `NodeConfig.deleteBlockedBy(dto)`: a scientific object
+whose record has `location.geojson` (it has a Move event) gets `deleteBlocked` in node-detail;
+Delete then shows "CAN'T DELETE HERE — … Delete it in PHIS instead" (Events / Positions) instead
+of a confirm, and the DELETE route refuses with 409 before any OpenSILEX call. Note for live
+tests: a throwaway created with a geometry leaves a `set/ObservationCollection` triple behind
+even after an API delete — clean with SPARQL filtered on `zz_claude`.
+
+**Direction after this:** "also apply to its plants"; factor levels as a third row once factors
+are wired.
 
 ## Access during development
 

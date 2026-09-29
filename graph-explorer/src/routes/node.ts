@@ -23,6 +23,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       ...(typeof dto.rdf_type_name === "string" && dto.rdf_type_name ? { typeName: dto.rdf_type_name } : {}),
       actions: (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
       ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
+      ...(config.deleteBlockedBy?.(dto) ? { deleteBlocked: config.deleteBlockedBy(dto) } : {}),
       relations: await relationsFor(id, dto, config),
     });
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -119,6 +120,12 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     await respondOpenSilexErrors(res, async () => {
+      const blocked = config.deleteBlockedBy?.((await authedGetOne(config.getUrl(id))).result);
+      if (blocked) {
+        res.writeHead(409, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `It ${blocked}` }));
+        return;
+      }
       // Enforced here, not just in the UI: OpenSILEX deletes e.g. a non-empty experiment and
       // orphans its scientific objects (undeletable afterwards) — probed live.
       for (const q of (config.queryRelations ?? []).filter((q) => q.blocksDelete)) {
