@@ -946,6 +946,13 @@ must be stated. Another guided test is planned.
 
 ## Selection-first interaction (designed 2026-09-29)
 
+**Comparison with the PHIS UI (2026-09-29, same six tasks, same fresh "ZZ demo" data, same user).**
+Graph Explorer (after steps 1-4): 6/6 recorded correctly. PHIS/OpenSILEX UI: 3/6 — no way found
+to (3) reuse an object in a new trial with its previous variety, (4) remove "part of" starting
+from the parent, (5) undo one object's variety. Caveats: task 5 may be possible via the object's
+edit form but wasn't found; the user had done the tasks in the app first (practice favours PHIS).
+Worth repeating with someone new to both before drawing firm conclusions.
+
 **Why.** Two guided user tests (see above) showed the user's instincts go to the selection —
 select the things, then act — and the stumbles came from the other mechanics (Link existing's
 one-anchor ranking, "+ Add" in a box, the tree/list switch). The user: "I would like the
