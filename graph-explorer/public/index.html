@@ -207,7 +207,7 @@ button { font-family: inherit; }
 /* ---------- workspace ---------- */
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr) minmax(0, 4fr);
   gap: 16px;
   align-items: start;
 }
@@ -701,6 +701,23 @@ button { font-family: inherit; }
 @media (max-width: 760px) {
   .workspace { grid-template-columns: 1fr; }
 }
+/* Selection pane (right column): what's gathered, plus the actions on it. */
+.sel-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.sel-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-size: 12.5px; }
+.sel-item .row-dot { flex: none; }
+.sel-item .sel-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-item button { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.sel-item button:hover { color: var(--accent); }
+#selectionPane .actionbar { flex-wrap: wrap; }
+/* Its menus open upward and are often taller than a short selection — don't clip them. */
+#selectionPane { overflow: visible; }
+/* The list above already shows what's selected; the bar's own "Selected N" would only repeat it.
+   Other bar sentences (a question, an offer) take a full line above the buttons. */
+#selectionPane .sel-count-summary { display: none; }
+#selectionPane .selection-summary { flex-basis: 100%; }
+/* …and open downward, so the list and the question they answer stay readable above them. */
+#selectionPane .newmenu-list { z-index: 30; bottom: auto; top: calc(100% + 6px); }
+#treePane .rowlist { max-height: 360px; overflow: auto; }
 </style>
 
 <div class="app">
@@ -721,10 +738,7 @@ button { font-family: inherit; }
     <section class="pane" id="explorerPane" aria-label="Explorer list">
       <div class="pane-head">
         <h2 id="paneTitle">Graph</h2>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span class="pane-count" id="paneCount"></span>
-          <button class="btn ghost" id="treeToggleBtn" style="padding:4px 9px; font-size:11.5px;"></button>
-        </div>
+        <span class="pane-count" id="paneCount"></span>
       </div>
       <div class="rowlist" id="rowlist"></div>
     </section>
@@ -734,13 +748,26 @@ button { font-family: inherit; }
         <h2>Detail</h2>
       </div>
       <div class="detail-body" id="detailBody"></div>
+    </section>
+
+    <!-- What's gathered, and what can be done with it (selection-first design, 2026-09-29). -->
+    <section class="pane" id="selectionPane" aria-label="Selection">
+      <div class="pane-head">
+        <h2>Selection</h2>
+        <span class="pane-count" id="selCount"></span>
+      </div>
+      <div class="sel-list" id="selList"></div>
       <div class="actionbar" id="actionbar"></div>
     </section>
   </div>
 
-  <div class="pane" style="padding:10px 14px;" aria-label="Graph panel (simulated)">
-    <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); margin-bottom:8px;">Graph panel &mdash; simulated for this prototype</div>
-    <div id="graphMock" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+  <!-- How the selection connects. The real graph will replace this tree here. -->
+  <div class="pane" id="treePane" aria-label="How the selection connects">
+    <div class="pane-head">
+      <h2>How the selection connects</h2>
+      <span class="pane-count">the graph will show this later</span>
+    </div>
+    <div class="rowlist" id="treeArea"></div>
   </div>
 
   <div class="hint-banner">
@@ -868,7 +895,6 @@ let rowOrder = [];
    still there once you leave. This is deliberate: selection is the single
    source of truth for "what's gathered so far," list and tree are just two
    views onto it. */
-let treeMode = false;
 let expandedIds = new Set();
 
 /* Local breadcrumb for the right-hand pane, only meaningful in tree mode.
@@ -925,9 +951,10 @@ const els = {
   detailBody: document.getElementById("detailBody"),
   actionbar: document.getElementById("actionbar"),
   toast: document.getElementById("toast"),
-  treeToggleBtn: document.getElementById("treeToggleBtn"),
+  selList: document.getElementById("selList"),
+  selCount: document.getElementById("selCount"),
+  treeArea: document.getElementById("treeArea"),
 };
-els.treeToggleBtn.addEventListener("click", toggleTreeMode);
 
 function currentPane() { return path[path.length - 1]; }
 
@@ -1034,14 +1061,15 @@ function renderRows() {
   });
 }
 
-function applyClick(item, mod) {
-  if (mod === "shift" && anchorId && rowOrder.includes(anchorId) && rowOrder.includes(item.id)) {
-    const lo = Math.min(rowOrder.indexOf(anchorId), rowOrder.indexOf(item.id));
-    const hi = Math.max(rowOrder.indexOf(anchorId), rowOrder.indexOf(item.id));
+// `order` = the visible order of the area the click came from (the list, or the tree), so a
+// shift-range never spans two areas.
+function applyClick(item, mod, order = rowOrder) {
+  if (mod === "shift" && anchorId && order.includes(anchorId) && order.includes(item.id)) {
+    const lo = Math.min(order.indexOf(anchorId), order.indexOf(item.id));
+    const hi = Math.max(order.indexOf(anchorId), order.indexOf(item.id));
     selection = new Map();
-    const items = itemsForPane();
-    rowOrder.slice(lo, hi + 1).forEach(id => {
-      const found = items.find(i => i.id === id);
+    order.slice(lo, hi + 1).forEach(id => {
+      const found = addressableItems.get(id);
       if (found) expandForSelection(found).forEach(m => selection.set(m.id, m));
     });
   } else if (mod === "ctrl") {
@@ -1064,20 +1092,6 @@ function applyClick(item, mod) {
   renderActionbar();
 }
 
-/* Adds (never replaces) — used by the simulated graph panel, since
-   clicking a node "out there" should never blow away what you've already
-   gathered. Also jumps into tree mode so you immediately see how the new
-   pick relates to everything else selected so far. */
-function addToSelectionFromGraph(item) {
-  selection.set(item.id, item);
-  anchorId = item.id;
-  expandedIds.add(item.id);
-  treeMode = true;
-  refreshLeftPane();
-  renderDetail();
-  renderActionbar();
-}
-
 function openNode(item) {
   navigateTo([...path, item]);
 }
@@ -1094,7 +1108,7 @@ function openRelatedNode(item) {
 
 function navigateTo(newPath) {
   path = newPath;
-  treeMode = false; // opening a node is a deliberate breadcrumb commit — back to plain browsing
+  detailPath = []; // a real navigation ends any local detail opened from the tree
   unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink
   inExperimentAdd = null;
   carryOverOffer = null;
@@ -1232,7 +1246,6 @@ async function deleteNode(item, force = false) {
     related.forEach(it => invalidateNodeDetail(it.id)); // their relations still list this node
     unlinkTargetId = null;
     if (path[path.length - 1]?.id === item.id) path = path.slice(0, -1);
-    treeMode = false;
     render();
     showToast(`Deleted ${item.label}`);
   } catch (err) {
@@ -1414,13 +1427,13 @@ function renderDetail() {
   const p = currentPane();
   const isOpenNode = p.id !== "root" && p.type !== "category";
 
-  if (isOpenNode) {
-    renderNodeDetail(p, { local: false });
+  if (detailPath.length > 0) {
+    renderNodeDetail(detailPath[detailPath.length - 1], { local: true });
     return;
   }
 
-  if (treeMode && detailPath.length > 0) {
-    renderNodeDetail(detailPath[detailPath.length - 1], { local: true });
+  if (isOpenNode) {
+    renderNodeDetail(p, { local: false });
     return;
   }
 
@@ -1432,7 +1445,7 @@ function renderDetail() {
     return;
   }
   const names = [...selection.values()].map(n => escapeHtml(n.label)).join(", ");
-  els.detailBody.innerHTML = info + `<div class="detail-empty"><span><b style="color:var(--ink); font-family:var(--font-mono);">${selection.size}</b>&nbsp;selected &mdash; ${names}<br><br>Use the action bar below to create something linked to ${selection.size > 1 ? "all of them" : "it"}, or click the &rsaquo; arrow on a row to open it.</span></div>`;
+  els.detailBody.innerHTML = info + `<div class="detail-empty"><span><b style="color:var(--ink); font-family:var(--font-mono);">${selection.size}</b>&nbsp;selected &mdash; ${names}<br><br>Use the buttons in the Selection pane to link or create something linked to ${selection.size > 1 ? "all of them" : "it"}, or click the &rsaquo; arrow on a row to open it.</span></div>`;
   wireTypeInfo(els.detailBody);
 }
 
@@ -1676,7 +1689,6 @@ function toggleChipSelection(item) {
   if (selection.has(item.id)) selection.delete(item.id);
   else selection.set(item.id, item);
   anchorId = item.id;
-  treeMode = true; // jump into the selection tree so the pick is immediately visible
   refreshLeftPane();
   renderDetail();
   renderActionbar();
@@ -2508,7 +2520,7 @@ function renderActionbar() {
   const hasExistingCandidates = linkPickerCandidatesByType().size > 0;
 
   bar.innerHTML = `
-    <div class="selection-summary">
+    <div class="selection-summary sel-count-summary">
       Selected <b>${selection.size}</b>
       <span class="selection-names">${names}</span>
     </div>
@@ -2537,7 +2549,7 @@ function renderActionbar() {
     });
   }
   document.getElementById("clearSel").addEventListener("click", () => {
-    selection = new Map(); anchorId = null; treeMode = false; refreshLeftPane(); renderDetail(); renderActionbar();
+    selection = new Map(); anchorId = null; refreshLeftPane(); renderDetail(); renderActionbar();
   });
   const menu = document.getElementById("newMenu");
   const list = document.getElementById("newList");
@@ -2585,42 +2597,51 @@ function render() {
   refreshLeftPane();
   renderDetail();
   renderActionbar();
-  renderGraphMock();
 }
 
 /* ---------------- tree mode: a forest built from `selection` ---------------- */
 
+// Everything that shows the selection: the list (browse), the selection pane (what's gathered)
+// and the tree along the bottom (how it connects) — all always visible, no switching.
 function refreshLeftPane() {
-  els.treeToggleBtn.textContent = treeMode ? "‹ Back to list" : "View selection as tree";
-  els.treeToggleBtn.style.display = (treeMode || selection.size > 0) ? "" : "none";
-  if (treeMode) renderTree(); else renderRows();
+  renderRows();
+  renderSelectionList();
+  renderTree();
 }
 
-function toggleTreeMode() {
-  treeMode = !treeMode;
-  detailPath = [];
-  refreshLeftPane();
-  renderDetail();
-}
-
-function renderTree() {
-  const p = currentPane();
-  els.paneTitle.textContent = "Selection";
-  els.paneCount.textContent = `${selection.size} root${selection.size === 1 ? "" : "s"}`;
-  els.rowlist.innerHTML = "";
-  rowOrder = [];
-  addressableItems = new Map();
-
-  if (selection.size === 0) {
-    const div = document.createElement("div");
-    div.className = "empty-hint";
-    div.textContent = "Nothing selected yet — pick some rows, or click a node in the graph panel below.";
-    els.rowlist.appendChild(div);
+function renderSelectionList() {
+  els.selCount.textContent = selection.size ? `${selection.size} item${selection.size === 1 ? "" : "s"}` : "";
+  els.selList.innerHTML = "";
+  if (!selection.size) {
+    els.selList.innerHTML = `<div class="empty-hint">Nothing selected yet. Click a row to select it; ctrl-click to add more.</div>`;
     return;
   }
+  [...selection.values()].forEach(item => {
+    const div = document.createElement("div");
+    div.className = "sel-item";
+    div.setAttribute("style", typeStyle(item.type));
+    div.innerHTML = `<span class="row-dot"></span><span class="sel-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+      <button class="sel-open" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
+      <button class="sel-remove" title="Remove from selection" aria-label="Remove ${escapeHtml(item.label)} from selection">&times;</button>`;
+    div.querySelector(".sel-open").addEventListener("click", () => item.type === "category" ? navigateTo([...path, item]) : openRelatedNode(item));
+    div.querySelector(".sel-remove").addEventListener("click", () => {
+      selection.delete(item.id);
+      refreshLeftPane(); renderDetail(); renderActionbar();
+    });
+    els.selList.appendChild(div);
+  });
+}
 
+let treeOrder = [];
+function renderTree() {
+  els.treeArea.innerHTML = "";
+  treeOrder = [];
+  if (selection.size === 0) {
+    els.treeArea.innerHTML = `<div class="empty-hint">Select something to see how it connects.</div>`;
+    return;
+  }
   const roots = [...selection.values()];
-  roots.forEach((item, i) => renderTreeRow(item, 0, els.rowlist, [], i === roots.length - 1));
+  roots.forEach((item, i) => renderTreeRow(item, 0, els.treeArea, [], i === roots.length - 1));
 }
 
 /* Real connector lines (like a file tree), not just indentation + color —
@@ -2640,7 +2661,7 @@ function buildIndentHTML(railFlags, depth, isLastSibling) {
 }
 
 function renderTreeRow(item, depth, container, railFlags, isLastSibling) {
-  rowOrder.push(item.id);
+  treeOrder.push(item.id);
   addressableItems.set(item.id, item);
   const node = NODE_DETAIL[item.id] || null;
   const hasChildren = !!(node && node.relations && node.relations.length);
@@ -2669,9 +2690,8 @@ function renderTreeRow(item, depth, container, railFlags, isLastSibling) {
       renderTree();
     });
   }
-  // In tree mode the › arrow opens a LOCAL breadcrumb in the right pane
-  // (detailPath) instead of a real navigation — the tree itself, the
-  // base, never moves because of this.
+  // The › arrow opens a LOCAL breadcrumb in the detail pane (detailPath) instead of a real
+  // navigation — the list and the tree stay where they are.
   openBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     detailPath = [item];
@@ -2702,23 +2722,6 @@ function renderTreeRow(item, depth, container, railFlags, isLastSibling) {
   }
 }
 
-function renderGraphMock() {
-  const el = document.getElementById("graphMock");
-  if (!el) return;
-  const sample = []; // not wired to a real endpoint yet
-  el.innerHTML = "";
-  sample.forEach(id => {
-    const item = findItemById(id) || NODE_DETAIL[id];
-    if (!item) return;
-    const pill = document.createElement("button");
-    pill.className = "btn";
-    pill.setAttribute("style", typeStyle(item.type));
-    pill.innerHTML = `<span class="swatch" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--dot); margin-right:6px;"></span>${escapeHtml(item.label)}`;
-    pill.addEventListener("click", () => addToSelectionFromGraph({ id: item.id, type: item.type, label: item.label }));
-    el.appendChild(pill);
-  });
-}
-
 // "A", "A and B", "A, B and C" — for messages that name what was done.
 function andList(labels) {
   const u = [...new Set(labels)];
@@ -2743,6 +2746,7 @@ function findItemById(id) {
 (function setupSelection() {
   let tracking = false, startX = 0, startY = 0, mod = "plain", box = null;
   let downItem = null;   // the row (item + type) the mousedown actually started on, if any
+  let downInTree = false; // …and whether it was in the tree (shift ranges stay within one area)
 
   function removeBox() { if (box) { box.remove(); box = null; } }
   function modFromEvent(e) {
@@ -2761,6 +2765,7 @@ function findItemById(id) {
     tracking = true; startX = e.clientX; startY = e.clientY; mod = modFromEvent(e);
     const rowEl = e.target.closest(".row");
     downItem = rowEl ? (addressableItems.get(rowEl.dataset.id) || null) : null;
+    downInTree = !!rowEl?.closest("#treeArea");
 
     removeBox();
     box = document.createElement("div");
@@ -2786,7 +2791,7 @@ function findItemById(id) {
       // "Organizations" and bind a variable to every org in it. Whether
       // that fans out into N relations is a creation-panel concern, not a
       // reason to block selection here.
-      if (downItem) applyClick(downItem, mod);
+      if (downItem) applyClick(downItem, mod, downInTree ? treeOrder : rowOrder);
     } else if (box) {
       const bx = box.getBoundingClientRect();
       const hit = [];

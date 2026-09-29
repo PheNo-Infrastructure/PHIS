@@ -1115,9 +1115,8 @@ test("e2e: opening a node from the selection TREE (local detail) fetches its rel
     await openRow(page, "Organizations");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
-    await page.locator("#treeToggleBtn").click();
-    await page.waitForTimeout(300);
-    await page.locator("#rowlist .row .row-nav").last().click(); // the tree row's open arrow
+    // The tree is always visible along the bottom now — no switch.
+    await page.locator("#treeArea .row .row-nav").last().click(); // the tree row's open arrow
     await page.waitForTimeout(500);
 
     assert.equal(fetched, 1);

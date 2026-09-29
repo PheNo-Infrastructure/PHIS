@@ -987,7 +987,11 @@ panel goes away.
 **Order (one step at a time, each tested + committed):** 1 layout; 2 Link/Unlink selection
 (flexible-anchor ranking, "why not" text, Unlink selection); 3 retire the side mechanics
 (Add to selection…, no "+ Add", no one-item ranking); 4 "Contains"; 5 the real graph (own
-design, later). Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
+design, later). **Step 1 built 2026-09-29**: the selection pane is always visible (an empty
+hint, and it holds the standalone "+ New <type>"), not only once something is selected — a pane
+that appears on the first click would shift the whole layout; its menus open downward so the
+question they answer stays readable; tree/list switch, treeMode and the simulated graph panel are
+gone (clicks remember their area, so shift-ranges stay within the list or the tree). Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
 of the second test exercise steps 2 and 4).
 
 ## Access during development
