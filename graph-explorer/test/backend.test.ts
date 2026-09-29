@@ -807,7 +807,10 @@ test("/api/link object + germplasm: one experiment = written there; several = ne
       body: JSON.stringify({ items: [...sos.map((id) => ({ type: "scientific_object", id })), { type: "germplasm", id: "phis:id/annika" }], ...(experiments ? { experiments } : {}) }),
     })).json();
 
-    assert.deepEqual(await link(["so-one"]), { ok: true, linkedPairs: 1, alreadyLinked: 0, touched: ["exp-a"] });
+    assert.deepEqual(await link(["so-one"]), {
+      ok: true, linkedPairs: 1, alreadyLinked: 0, touched: ["exp-a"],
+      written: [{ id: "so-one", values: ["phis:id/annika"], experiments: ["Barley 2025"], only: true }],
+    }, "says where, and that nobody was asked (its only experiment)");
     assert.deepEqual(puts, [{ so: "so-one", exp: "exp-a", values: ["phis:id/annika"] }]);
 
     puts.length = 0;
@@ -854,7 +857,10 @@ test("/api/parent: written only in an experiment BOTH share (replacing an earlie
       body: JSON.stringify({ type: "scientific_object", pairs, ...(experiments ? { experiments } : {}) }),
     }));
 
-    assert.deepEqual(await (await parent([{ child: "plot", parent: "block" }])).json(), { ok: true, linkedPairs: 1, touched: ["exp-b"] });
+    assert.deepEqual(await (await parent([{ child: "plot", parent: "block" }])).json(), {
+      ok: true, linkedPairs: 1, touched: ["exp-b"],
+      written: [{ child: "plot", parent: "block", experiments: ["Barley 2026"], only: true }],
+    });
     assert.deepEqual(puts, [{ so: "plot", exp: "exp-b", relations: ["hasGermplasm=annika", "isPartOf=block"] }], "only the shared exp-b; old parent replaced, germplasm kept");
 
     puts.length = 0;

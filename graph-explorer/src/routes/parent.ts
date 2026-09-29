@@ -33,7 +33,7 @@ export const handleParent: RouteHandler = async (req, res, { pathname }) => {
 
     const noShared: { id: string; label: string; parent: string; parentLabel: string; parentExperiments: { id: string; label: string }[] }[] = [];
     const choices = new Map<string, { id: string; label: string; objects: number }>();
-    const writes: { child: string; parent: string; exps: { id: string }[] }[] = [];
+    const writes: { child: string; parent: string; exps: { id: string; label: string }[] }[] = [];
     let needsChoice = false;
     for (const p of pairs) {
       const parentExps = await experiments(p.parent);
@@ -60,15 +60,17 @@ export const handleParent: RouteHandler = async (req, res, { pathname }) => {
     let linkedPairs = 0;
     let skipped = 0;
     const touched = new Set<string>();
+    const written: { child: string; parent: string; experiments: string[]; only: boolean }[] = [];
     for (const w of writes) {
       if (!w.exps.length) skipped++;
+      else written.push({ child: w.child, parent: w.parent, experiments: w.exps.map((e) => (e as { label: string }).label), only: !chosen });
       for (const e of w.exps) {
         await cfg.update(w.child, e.id, { field, add: [w.parent] }); // single-valued: replaces any earlier parent there
         linkedPairs++;
         touched.add(e.id);
       }
     }
-    const out = JSON.stringify({ ok: true, linkedPairs, ...(touched.size ? { touched: [...touched] } : {}), ...(skipped ? { skipped } : {}) });
+    const out = JSON.stringify({ ok: true, linkedPairs, written, ...(touched.size ? { touched: [...touched] } : {}), ...(skipped ? { skipped } : {}) });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(out);
   });

@@ -1848,6 +1848,18 @@ async function createNode(type, name, links, toastSuffix, fields = {}) {
 // batches same-type items into one PUT per owner (see routes/link.ts). Same-type-only
 // selections (e.g. three organizations, nothing else) never resolve — which one is whose
 // parent is ambiguous, matching linkFieldFor's server-side limitation.
+// "Link selection", except when the selection is objects + germplasm only: then the button
+// says what it will write ("Set Annika on 2 objects…"), so a leftover pick shows before clicking.
+function linkSelectionLabel() {
+  const items = [...selection.values()];
+  const types = [...new Set(items.map(v => v.type))];
+  if (types.length !== 2 || !inExperimentOnly(types[0], types[1])) return "Link selection";
+  const objects = items.filter(v => v.type === "scientific_object");
+  const values = items.filter(v => v.type !== "scientific_object");
+  const what = values.length <= 2 ? andList(values.map(v => v.label)) : `${values.length} germplasm`;
+  return `Set ${what} on ${objects.length === 1 ? objects[0].label : `${objects.length} objects`}…`;
+}
+
 function selectionHasLinkablePair() {
   const types = [...new Set([...selection.values()].map(v => v.type))];
   for (let i = 0; i < types.length; i++) {
@@ -1889,7 +1901,15 @@ async function linkItems(items, experiments) {
     carryOverOffer = offers.length ? { items: offers } : null;
     render();
     const already = (body.alreadyLinked ? `, ${body.alreadyLinked} already linked` : "") + (body.skipped ? `, ${body.skipped} not in the picked experiment(s) — left as they were` : "");
-    showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
+    if (body.written?.length) {
+      // Say exactly what went where — a leftover selection or an automatic choice is then visible.
+      const w = body.written;
+      const where = andList(w.flatMap(x => x.experiments));
+      const why = w.every(x => x.only) ? ` — the only experiment ${w.length === 1 ? "it's" : "they're"} in` : "";
+      showToast(`${andList(w.flatMap(x => x.values).map(labelOf))} set on ${andList(w.map(x => labelOf(x.id)))} in ${where}${why}${already}`);
+    } else {
+      showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
+    }
   } catch (err) {
     showToast(`Failed to link: ${err}`);
   }
@@ -1929,7 +1949,11 @@ async function linkParents(type, pairs, experiments) {
     (body.touched || []).forEach(id => invalidateNodeDetail(id));
     pairs.forEach(p => { invalidateNodeDetail(p.child); invalidateNodeDetail(p.parent); });
     render();
-    showToast(`Set ${body.linkedPairs} parent link${body.linkedPairs === 1 ? "" : "s"}${body.skipped ? `, ${body.skipped} not in the picked experiment(s) — left as they were` : ""}`);
+    const skippedNote = body.skipped ? `; ${body.skipped} not in the picked experiment(s) — left as they were` : "";
+    const w = body.written || [];
+    showToast(w.length === 1
+      ? `${labelOf(w[0].child)} is now part of ${labelOf(w[0].parent)} in ${andList(w[0].experiments)}${w[0].only ? " — the only experiment both are in" : ""}${skippedNote}`
+      : `Set ${w.length} parent links: ${w.map(x => `${labelOf(x.child)} in ${labelOf(x.parent)} (${andList(x.experiments)})`).join("; ")}${skippedNote}`);
   } catch (err) {
     showToast(`Failed to set parent: ${err}`);
   }
@@ -2489,7 +2513,7 @@ function renderActionbar() {
       <span class="selection-names">${names}</span>
     </div>
     <button class="btn ghost" id="clearSel">Clear</button>
-    ${canLink ? `<button class="btn primary" id="linkSelectionBtn">Link selection</button>` : ""}
+    ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="linkExistingBtn">Link existing…</button>`, "Link existing") : ""}
     <div class="newmenu" id="newMenu">
       <button class="btn primary" id="newBtn">+ New</button>
@@ -2694,6 +2718,13 @@ function renderGraphMock() {
     el.appendChild(pill);
   });
 }
+
+// "A", "A and B", "A, B and C" — for messages that name what was done.
+function andList(labels) {
+  const u = [...new Set(labels)];
+  return u.length <= 1 ? (u[0] ?? "") : `${u.slice(0, -1).join(", ")} and ${u[u.length - 1]}`;
+}
+const labelOf = id => findItemById(id)?.label ?? id;
 
 function findItemById(id) {
   return Object.values(CATEGORY_ITEMS).flat().concat(ROOT).find(i => i.id === id) || null;

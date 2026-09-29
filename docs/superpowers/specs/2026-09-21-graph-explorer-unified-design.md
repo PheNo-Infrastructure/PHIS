@@ -934,6 +934,14 @@ experiment; probed) and lack that germplasm. The page offers them through the ca
 nothing picked; confirm writes each pick with the in-experiment PUT. One level only (a plant's own
 children aren't offered in the same step).
 
+**Guided user test (2026-09-29, "ZZ demo" data, deleted after).** The user completed all six tasks;
+two findings: (1) setting a parent chose the only shared experiment silently — "why 2026?"; (2) a
+leftover selection wrote a germplasm onto an extra object unnoticed. Fixes: when objects +
+germplasm are selected the button says what it will write ("Set Annika on 2 objects…"), and
+/api/link and /api/parent return `written` so the message says what went where, incl. "— the only
+experiment it's/both are in" when nobody was asked. Rule going forward: an automatic choice
+must be stated. Another guided test is planned.
+
 **Direction after this:** factor levels as a third row once factors are wired (PHIS has none yet).
 
 ## Access during development

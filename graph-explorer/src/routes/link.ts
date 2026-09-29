@@ -94,8 +94,12 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     const touched = new Set<string>();
     const carryOver: CarryOver[] = [];
     const childOffer: CarryOver[] = [];
+    // What went where, so the page can say it — including when the experiment was the object's
+    // only one and nobody was asked (`only`).
+    const written: { id: string; values: string[]; experiments: string[]; only: boolean }[] = [];
     for (const t of targets) {
       if (!t.exps.length) skipped++;
+      else written.push({ id: t.id, values: t.otherIds, experiments: t.exps.map((e) => e.label), only: !chosen });
       const cfg = NODE_TYPES[t.ownerType].inExperiment!;
       for (const e of t.exps) {
         await cfg.update(t.id, e.id, { field: t.field, add: t.otherIds });
@@ -117,6 +121,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       ...(carryOver.length ? { carryOver } : {}),
       // Children (part of these objects there) that don't have the new germplasm — offered too.
       ...(childOffer.length ? { childOffer } : {}),
+      ...(written.length ? { written } : {}),
       // Experiments whose derived data (Species) changed, and objects not in any picked one.
       ...(touched.size ? { touched: [...touched] } : {}),
       ...(skipped ? { skipped } : {}),

@@ -1408,7 +1408,7 @@ test("e2e: one object selected + other objects picked -> the ranking modal with 
     await page.route("**/api/parent", (r) => {
       const b = JSON.parse(r.request().postData() || "{}");
       posts.push(b);
-      const body = b.experiments ? { ok: true, linkedPairs: 2, touched: b.experiments }
+      const body = b.experiments ? { ok: true, linkedPairs: 2, touched: b.experiments, written: b.pairs.slice(0, 2).map((p: any) => ({ ...p, experiments: ["Barley 2026"], only: false })) }
         : { needsExperiment: { notInAny: [], experiments: [{ id: "exp-a", label: "Barley 2025", objects: 2 }, { id: "exp-b", label: "Barley 2026", objects: 1 }], objects: 2 } };
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     });
@@ -1454,7 +1454,7 @@ test("e2e: one object selected + other objects picked -> the ranking modal with 
     await page.locator(".linkmenu-confirm").click();
     await page.waitForTimeout(400);
     assert.deepEqual(posts[1].experiments, ["exp-b"]);
-    assert.match((await page.locator("#toast").textContent()) ?? "", /Set 2 parent links/);
+    assert.match((await page.locator("#toast").textContent()) ?? "", /Set 2 parent links: .* in .* \(Barley 2026\)/);
   });
 });
 
@@ -1514,6 +1514,30 @@ test("e2e: after '+ Add' on a plot, the action bar offers the objects that are p
     await page.locator(".linkmenu-confirm").click();
     await page.waitForTimeout(400);
     assert.deepEqual(puts.slice(1), [{ type: "scientific_object", id: "plant-2", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g-annika"] } }]);
+  });
+});
+
+test("e2e: objects + germplasm selected: the button says what it will write, and the message says what went where (incl. 'the only experiment')", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/scientific-objects", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "plot-1", type: "scientific_object", label: "Plot 1" }, { id: "plot-3", type: "scientific_object", label: "Plot 3" },
+    ]) }));
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "g-annika", type: "germplasm", label: "Annika" }]) }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", actions: ["link"], relations: [] }) }));
+    await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, linkedPairs: 2, alreadyLinked: 0,
+      written: [{ id: "plot-1", values: ["g-annika"], experiments: ["Barley 2026"], only: true }, { id: "plot-3", values: ["g-annika"], experiments: ["Barley 2026"], only: true }],
+    }) }));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      for (const it of [{ id: "plot-1", type: "scientific_object", label: "Plot 1" }, { id: "plot-3", type: "scientific_object", label: "Plot 3" }, { id: "g-annika", type: "germplasm", label: "Annika" }]) selection.set(it.id, it);
+      renderActionbar();
+    });
+    assert.equal((await page.locator("#linkSelectionBtn").innerText()).trim(), "Set Annika on 2 objects…", "a leftover Plot 1 shows up as '2' before clicking");
+    await page.locator("#linkSelectionBtn").click();
+    await page.waitForTimeout(400);
+    assert.equal((await page.locator("#toast").textContent())?.trim(), "Annika set on Plot 1 and Plot 3 in Barley 2026 — the only experiment they're in");
   });
 });
 
