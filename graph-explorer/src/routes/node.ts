@@ -49,6 +49,24 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       res.end(JSON.stringify({ error: "edit not implemented for this type, or id/name/unlink/link missing" }));
       return true;
     }
+    const experiment = (body as { experiment?: string }).experiment;
+    if (experiment) {
+      // A link that lives only inside one experiment (see NodeConfig.inExperiment).
+      const field = (unlink ?? link)?.field ?? "";
+      if (!config.inExperiment?.fields.includes(field) || name) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `${field || "this"} can't be set inside an experiment for this type` }));
+        return true;
+      }
+      await respondOpenSilexErrors(res, async () => {
+        await config.inExperiment!.update(id, experiment, { field, add: link?.uris, remove: unlink?.uri });
+        const dto = (await authedGetOne(config.getUrl(id))).result;
+        const out = JSON.stringify({ id, type, label: String(dto.name ?? id), relations: await relationsFor(id, dto, config) });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(out);
+      });
+      return true;
+    }
     const ctx = config.contextLinks?.[(unlink ?? link)?.field ?? ""];
     if (ctx) {
       // An operation-style link (see contextLinks) — no DTO PUT involved.

@@ -554,7 +554,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
       typeName: "plant",
       actions: ["delete", "link"],
       deleteRemovesLinks: true,
-      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", items: [] }, { label: "Part of", items: [] }] }] }],
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [] }, { label: "Part of", items: [] }] }] }],
     });
     const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", name: "X" }) });
     assert.equal(put.status, 400);
@@ -603,13 +603,72 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const g = (id: string, label: string) => ({ id, type: "germplasm", label });
     assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", items: [
-      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", items: [g("phis:id/annika", "Annika")] }, { label: "Part of", items: [] }] },
+      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [g("phis:id/annika", "Annika")] }, { label: "Part of", items: [] }] },
       { id: "exp-b", type: "experiment", label: "Barley 2026", groups: [
-        { label: "Germplasm", items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
+        { label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
         { label: "Part of", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
       ] },
     ] }]);
     assert.deepEqual(named.sort(), ["germplasm:phis:id/annika", "germplasm:phis:id/arild,phis:id/annika", "so:phis:id/block-a"]);
+  });
+});
+
+test("PUT /api/node with an experiment: germplasm add/remove rewrites ONLY that copy, keeps every other relation, dedupes, never sends geometry", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    let rels: { property: string; value: string; inverse: boolean }[] = [
+      { property: "vocabulary:isPartOf", value: "phis:id/block-a", inverse: false },
+      { property: "vocabulary:hasGermplasm", value: "phis:id/annika", inverse: false },
+    ];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push(b); rels = b.relations; return jsonResponse(200, { result: "so-1" }); }
+      if (url.includes("so-1?experiment=exp-b")) {
+        return jsonResponse(200, { result: { uri: "so-1", name: "Plot 1", rdf_type: "vocabulary:Plot", geometry: { type: "Point" }, factor_level: [], relations: rels } });
+      }
+      if (url.includes("/so-1/experiments")) return jsonResponse(200, { result: [{ experiment: "exp-b", experiment_name: "Barley 2026" }] });
+      if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u.split("/").pop() })) });
+      if (url.includes("/core/scientific_objects/so-1")) return jsonResponse(200, { result: { uri: "so-1", name: "Plot 1", relations: [] } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const put = (body: unknown) => realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+    const added = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["https://phis.pheno.no/id/annika", "phis:id/arild"] } });
+    assert.equal(added.status, 200);
+    assert.deepEqual(puts[0], {
+      uri: "so-1", name: "Plot 1", rdf_type: "vocabulary:Plot", experiment: "exp-b",
+      relations: [
+        { property: "vocabulary:isPartOf", value: "phis:id/block-a", inverse: false },
+        { property: "vocabulary:hasGermplasm", value: "phis:id/annika", inverse: false },
+        { property: "vocabulary:hasGermplasm", value: "phis:id/arild", inverse: false },
+      ],
+    }, "annika already there (full vs prefixed uri) is not added twice; parent kept; no geometry");
+    const box = (await added.json()).relations[0].items[0];
+    assert.deepEqual(box.groups[0].items.map((i: any) => i.id), ["phis:id/annika", "phis:id/arild"]);
+
+    await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", unlink: { field: "hasGermplasm", uri: "https://phis.pheno.no/id/annika" } });
+    assert.deepEqual(puts[1].relations.map((r: any) => r.value), ["phis:id/block-a", "phis:id/arild"]);
+
+    const partOf = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "isPartOf", uris: ["x"] } });
+    assert.equal(partOf.status, 400, "Part of isn't writable yet");
+    assert.equal(puts.length, 2);
+  });
+});
+
+test("PUT /api/node with an experiment refuses (409, no PUT) when the copy has factor levels not carried in its relations", async () => {
+  await withServer(async (base) => {
+    let puts = 0;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (init?.method === "PUT") { puts++; return jsonResponse(200, { result: "so-1" }); }
+      if (url.includes("so-1?experiment=exp-b")) return jsonResponse(200, { result: { uri: "so-1", name: "P", rdf_type: "vocabulary:Plot", factor_level: [{ uri: "fl-1" }], relations: [] } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g"] } }) });
+    assert.equal(res.status, 409);
+    assert.match((await res.json()).error, /factor levels/);
+    assert.equal(puts, 0);
   });
 });
 

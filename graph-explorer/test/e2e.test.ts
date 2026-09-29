@@ -499,6 +499,53 @@ test("e2e: a scientific object shows one box per experiment with its germplasm/p
   });
 });
 
+test("e2e: '+ Add' in an experiment's box picks germplasm (already-set ones hidden) and writes it in THAT experiment; × in unlink mode removes it there", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const puts: any[] = [];
+    let germ = [{ id: "g-annika", type: "germplasm", label: "Annika" }];
+    const detail = () => ({
+      uri: "so-1", actions: ["delete", "link"], deleteRemovesLinks: true,
+      relations: [{ label: "In experiments", field: "experiment", items: [{
+        id: "exp-b", type: "experiment", label: "Barley 2026",
+        groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: germ }, { label: "Part of", items: [] }],
+      }] }],
+    });
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "g-annika", type: "germplasm", label: "Annika" }, { id: "g-arild", type: "germplasm", label: "Arild" },
+    ]) }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail()) }));
+    await page.route("**/api/node", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      puts.push(b);
+      if (b.link) germ = [...germ, ...b.link.uris.map((id: string) => ({ id, type: "germplasm", label: "Arild" }))];
+      if (b.unlink) germ = germ.filter((g) => g.id !== b.unlink.uri);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "so-1", type: "scientific_object", label: "Plot 1", relations: detail().relations }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
+    await page.waitForTimeout(400);
+
+    await page.locator("#detailBody .box-add").click();
+    await page.waitForTimeout(300);
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Add germplasm to Plot 1 in Barley 2026/);
+    assert.deepEqual((await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim()), ["Arild"], "Annika is already set here");
+    await page.locator("#linkList .newmenu-item", { hasText: "Arild" }).click();
+    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Set 1 germplasm on Plot 1 in Barley 2026");
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(puts[0], { type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g-arild"] } });
+    assert.match(await page.locator("#detailBody .item-box").innerText(), /Annika[\s\S]*Arild/);
+    assert.doesNotMatch(await page.locator("#actionbar").innerText(), /Add germplasm/, "action bar back to normal");
+
+    await page.locator("#unlinkModeBtn").click();
+    await page.waitForTimeout(200);
+    await page.locator("#detailBody .item-box .chip-unlink[data-uri='g-annika']").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(puts[1], { type: "scientific_object", id: "so-1", experiment: "exp-b", unlink: { field: "hasGermplasm", uri: "g-annika" } });
+  });
+});
+
 test("e2e: ctrl-clicking a relation chip adds it to the current selection instead of navigating", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (route) => {

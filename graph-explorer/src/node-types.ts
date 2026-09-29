@@ -38,6 +38,10 @@ export type NodeConfig = {
   // that copy (the object's other experiments and its global copy stay). Registered on BOTH
   // types so either side's detail pane / selection can drive it.
   contextLinks?: Record<string, ContextLink>;
+  // Links that exist only INSIDE one experiment (a scientific object's germplasm): /api/node's
+  // PUT with an `experiment` routes here. `fields` = what may be written (the itemGroups rows'
+  // `field`), so the detail pane and the route agree on what's editable.
+  inExperiment?: { fields: string[]; update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void> };
   // Relation groups that aren't a field on the node's own DTO but come from a query — e.g. an
   // experiment's scientific objects (each SO points at its experiment, not the reverse).
   // Read-only in the detail pane (no `field`, so no Unlink). `item` maps a result row to a
@@ -58,7 +62,7 @@ export type NodeConfig = {
     skipSelf?: true;
     // What the node is WITHIN each item, e.g. a scientific object's germplasm and parent inside
     // each experiment (they live only on that experiment's copy). Shown as one box per item.
-    itemGroups?: (id: string, itemId: string) => Promise<{ label: string; items: { id: string; type: string; label: string }[] }[]>;
+    itemGroups?: (id: string, itemId: string) => Promise<{ label: string; field?: string; type?: string; items: { id: string; type: string; label: string }[] }[]>;
     // Shown instead of hiding the group when it's empty.
     emptyText?: string;
   }[];
@@ -86,24 +90,55 @@ async function removeSoFromExperiment(soId: string, expId: string) {
 // global copy can't hold them, a new copy inherits nothing — probed live), so they're read per
 // experiment. `property` is the relation's local name; `byUris` names the values in one call.
 // Factor levels would be one more entry.
+// `writable` rows carry their property as the row's `field`, which /api/node's in-experiment
+// link/unlink accepts (Part of waits for a way to pick direction between two objects).
 const SO_ROWS_PER_EXPERIMENT = [
-  { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris" },
-  { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}` },
+  { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris", writable: true },
+  { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, writable: false },
 ];
+const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
+
+// Adds/removes values of one relation on the object's copy in ONE experiment. The PUT replaces
+// the copy's whole relations list (leaving parent out wiped it — probed), so everything else is
+// read and sent back as-is. geometry is never sent: OpenSILEX refuses it on updates (location
+// changes are move events) and omitting it keeps the location (probed 2026-09-29).
+async function updateSoInExperiment(soId: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) {
+  const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`)).result;
+  let relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
+    .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
+  // Factor levels come back in their own field; unverified whether they're also in `relations`
+  // (PHIS has no factors yet) — refuse rather than risk the PUT dropping them.
+  // ponytail: guard until a factor exists to probe with; then carry them explicitly or drop this.
+  if (Array.isArray(copy.factor_level) && copy.factor_level.length && !relations.some((r) => localName(r.property) === "hasFactorLevel")) {
+    throw new OpenSilexError(409, "This object has factor levels, and editing it here could drop them. Edit it in PHIS directly.");
+  }
+  const mine = (r: { property: string }) => localName(r.property) === mod.field;
+  if (mod.remove) {
+    const gone = await compactUri(mod.remove);
+    const keep = await Promise.all(relations.map(async (r) => !(mine(r) && (await compactUri(r.value)) === gone)));
+    relations = relations.filter((_, i) => keep[i]);
+  }
+  const have = new Set(await Promise.all(relations.filter(mine).map((r) => compactUri(r.value))));
+  for (const uri of mod.add ?? []) {
+    if (!have.has(await compactUri(uri))) relations.push({ property: `vocabulary:${mod.field}`, value: uri, inverse: false });
+  }
+  await authedPut("/core/scientific_objects", { uri: soId, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
+}
 async function soRowsIn(soId: string, expId: string) {
   const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`)).result;
   const relations = (Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string }[];
   return Promise.all(
     SO_ROWS_PER_EXPERIMENT.map(async (row) => {
-      const uris = relations.filter((r) => String(r.property).split(/[:#/]/).pop() === row.property).map((r) => String(r.value));
-      if (!uris.length) return { label: row.label, items: [] };
+      const uris = relations.filter((r) => localName(r.property) === row.property).map((r) => String(r.value));
+      const field = row.writable ? { field: row.property, type: row.type } : {};
+      if (!uris.length) return { label: row.label, ...field, items: [] };
       const named = (await authedPost(row.byUris(expId), uris)).result as unknown as { uri: string; name?: string }[];
       const names = new Map(await Promise.all(named.map(async (n) => [await compactUri(String(n.uri)), String(n.name ?? n.uri)] as const)));
       const items = await Promise.all(uris.map(async (u) => {
         const id = await compactUri(u);
         return { id, type: row.type, label: names.get(id) ?? id };
       }));
-      return { label: row.label, items };
+      return { label: row.label, ...field, items };
     })
   );
 }
@@ -223,6 +258,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         (e) => `/core/scientific_objects/${encodeURIComponent(id)}?experiment=${encodeURIComponent(e.id)}`
       ),
     queryRelations: [SO_EXPERIMENTS_DETAIL],
+    inExperiment: { fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.writable).map((r) => r.property), update: updateSoInExperiment },
   },
   // A project holds no link to its experiments — each experiment's `projects` field does — so
   // they come from a query, and link/unlink goes through the experiment's side (linkFieldFor).

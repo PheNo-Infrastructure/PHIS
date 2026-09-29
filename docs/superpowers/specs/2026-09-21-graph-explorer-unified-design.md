@@ -781,7 +781,7 @@ demands it.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links — **designed 2026-09-29, step A built; linking next**: see
+  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A and B1 built; B2 (link by selection) next**: see
     "Scientific object labels per trial" below.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
@@ -864,11 +864,26 @@ can only be set inside a trial"). Chips inside follow the normal click rules.
   germplasm in each, a plant under it; compare with what was saved; list ZZ leftovers);
   screenshots for the user before committing.
 
-**Direction after step A** (not a plan — pick the next one with the user when A is done):
-linking germplasm and parent with the trial list, including "set germplasm" inside a trial's
-box (which knows its trial, so no question); carry-over when an object joins a trial (fixes
-today's add-to-experiment dropping labels); "also apply to its plants"; factor levels as a
-third row once factors are wired.
+**Step B1 — set/remove germplasm inside a box (built 2026-09-29).** Each box's Germplasm row
+has "+ Add": the action bar switches to "Add germplasm to <object> in <experiment>" and opens
+the "Link existing…" picker locked to germplasm (already-set ones hidden, normal click rules,
+several allowed); confirming writes only that experiment's copy. Removing = Unlink…, where the
+germplasm chips inside boxes get ×. Backend: `PUT /api/node` with an `experiment` goes to
+`NodeConfig.inExperiment` (fields = the writable itemGroups rows, only `hasGermplasm` so far):
+read the copy, edit its `relations` (compacted-uri dedupe), PUT everything back without
+`geometry`. Probed first: a PUT carrying `geometry` is refused ("create a new move event
+instead"), and omitting it keeps the object's location. Refused with 409 while a copy has
+factor levels not visible in its relations (unverifiable until a factor exists).
+Found on the way: an object created with a geometry gets a Move event, and OpenSILEX refuses
+to delete it while that exists — the app's Delete has no way forward for it yet (needs the
+usual banner + "delete its location history" step, or a pointer to PHIS).
+
+**Direction after B1** (not a plan — pick the next one with the user):
+B2, linking by selection (objects + a germplasm, from either side) with the experiment list,
+nothing ticked, and "add it to an experiment first" for objects in none; "Part of" (same-type,
+needs a direction choice like the org ranking); carry-over when an object joins an experiment
+(fixes add-to-experiment dropping labels); "also apply to its plants"; factor levels as a
+third row once factors are wired; the Delete gap for objects with a location.
 
 ## Access during development
 
