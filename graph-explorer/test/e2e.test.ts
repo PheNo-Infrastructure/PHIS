@@ -584,7 +584,7 @@ test("e2e: after linking objects into an experiment, the action bar offers their
   });
 });
 
-test("e2e: a PHIS name containing HTML is shown as text in chips, boxes and the picker — never run", async () => {
+test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title, chips, boxes, picker) — never run", async () => {
   await withServerAndBrowser(async (base, page) => {
     const evil = `<img src=x onerror="window.__pwned=1">Evil`;
     await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "g-evil", type: "germplasm", label: evil }]) }));
@@ -603,6 +603,17 @@ test("e2e: a PHIS name containing HTML is shown as text in chips, boxes and the 
     assert.equal(await page.locator("#detailBody img, #actionbar img").count(), 0);
     assert.match(await page.locator("#detailBody .item-box").innerText(), /<img src=x/);
     assert.match(await page.locator("#linkList .linkmenu-items").innerText(), /<img src=x/);
+
+    // List rows, the node title and the selection summary too.
+    await page.evaluate((l) => openNode({ id: "g-evil", type: "germplasm", label: l }), evil);
+    await page.waitForTimeout(400);
+    await page.locator("#selfChip").click();
+    await page.waitForTimeout(200);
+    await page.evaluate(() => navigateTo([path[0], ROOT.find((r: any) => r.label === "Scientific Information"), { id: "cat-germplasm", type: "category", label: "Germplasm" }]));
+    await page.waitForTimeout(400);
+    assert.match(await page.locator("#rowlist").innerText(), /<img src=x/);
+    assert.equal(await page.locator("img").count(), 0, "no <img> anywhere on the page");
+    assert.equal(await page.evaluate(() => (window as any).__pwned), undefined);
   });
 });
 

@@ -1012,10 +1012,10 @@ function renderRows() {
     row.innerHTML = `
       <span class="row-dot"></span>
       <span class="row-main">
-        <span class="row-label">${item.label}</span>
+        <span class="row-label">${escapeHtml(item.label)}</span>
         <span class="row-type">${item.type === "category" ? "group · all members" : item.type.replace("_", " ")}</span>
       </span>
-      <button class="row-nav" title="Open" aria-label="Open ${item.label}">›</button>
+      <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
     `;
 
     const navBtn = row.querySelector(".row-nav");
@@ -1414,7 +1414,7 @@ function renderDetail() {
     wireTypeInfo(els.detailBody);
     return;
   }
-  const names = [...selection.values()].map(n => n.label).join(", ");
+  const names = [...selection.values()].map(n => escapeHtml(n.label)).join(", ");
   els.detailBody.innerHTML = info + `<div class="detail-empty"><span><b style="color:var(--ink); font-family:var(--font-mono);">${selection.size}</b>&nbsp;selected &mdash; ${names}<br><br>Use the action bar below to create something linked to ${selection.size > 1 ? "all of them" : "it"}, or click the &rsaquo; arrow on a row to open it.</span></div>`;
   wireTypeInfo(els.detailBody);
 }
@@ -1435,7 +1435,7 @@ function chipHtml(it, unlinkField, expId) {
 // "+ Add" when `canAdd`, × on its chips in unlink mode. `unlinkable` decides per item whether
 // it gets an × (unlink mode only).
 function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, canAdd = false } = {}) {
-  let h = `<div class="rel-group"><div class="rel-label">${rel.label}</div>`;
+  let h = `<div class="rel-group"><div class="rel-label">${escapeHtml(rel.label)}</div>`;
   if (!rel.items.length) return h + `<span class="rel-empty">${rel.emptyText || "None."}</span></div>`;
   const chip = it => chipHtml(it, rel.field && unlinkable(it) ? rel.field : null);
   if (rel.items.some(it => it.groups)) {
@@ -1446,7 +1446,7 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, canAdd
         const add = canAdd && g.field && !unlinking
           ? `<button class="box-add" data-field="${escapeHtml(g.field)}" data-type="${escapeHtml(g.type)}" data-exp="${escapeHtml(it.id)}" data-exp-label="${escapeHtml(it.label)}" data-have="${escapeHtml(g.items.map(x => x.id).join(" "))}">+ Add</button>`
           : "";
-        h += `<span class="item-box-key">${g.label}</span><div class="chip-row">${chips || (add ? "" : `<span class="rel-empty">none</span>`)}${add}</div>`;
+        h += `<span class="item-box-key">${escapeHtml(g.label)}</span><div class="chip-row">${chips || (add ? "" : `<span class="rel-empty">none</span>`)}${add}</div>`;
       });
       h += `</div></div>`;
     });
@@ -1468,8 +1468,8 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       if (i > 0) html += `<span class="crumb-sep">›</span>`;
       const isLast = i === detailPath.length - 1;
       html += isLast
-        ? `<span class="local-crumb current">${seg.label}</span>`
-        : `<button class="local-crumb" data-crumb="${i}">${seg.label}</button>`;
+        ? `<span class="local-crumb current">${escapeHtml(seg.label)}</span>`
+        : `<button class="local-crumb" data-crumb="${i}">${escapeHtml(seg.label)}</button>`;
     });
     html += `</div>`;
   }
@@ -1500,13 +1500,13 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       <div class="node-kicker"><span class="swatch"></span>${type === "category" ? "group · all members" : type.replace("_", " ")}${node?.typeName ? ` · ${node.typeName}` : ""}</div>
       <div class="node-title-row">
         ${isCategoryMembers
-          ? `<div class="node-title">${label}</div>`
-          : `<button class="node-title self-chip${selection.has(focusNode.id) ? " selected" : ""}" id="selfChip" title="Click to select this ${type.replace("_", " ")} (ctrl/cmd-click adds it to the selection)">${label}</button>`}
+          ? `<div class="node-title">${escapeHtml(label)}</div>`
+          : `<button class="node-title self-chip${selection.has(focusNode.id) ? " selected" : ""}" id="selfChip" title="Click to select this ${type.replace("_", " ")} (ctrl/cmd-click adds it to the selection)">${escapeHtml(label)}</button>`}
         ${canRename ? `<button class="btn ghost small" id="renameNodeBtn">Rename</button>` : ""}
         ${canUnlink ? `<button class="btn ghost small" id="unlinkModeBtn">Unlink…</button>` : ""}
         ${canDelete ? `<button class="btn ${deleteRedirects ? "warn" : "ghost"} small" id="deleteNodeBtn">${deleteLabel}</button>` : ""}
       </div>
-      ${node ? `<div class="node-uri">${node.uri}</div>` : ""}
+      ${node ? `<div class="node-uri">${escapeHtml(node.uri)}</div>` : ""}
     </div>
   `;
   if (!isCategoryMembers) html += typeInfoHtml(type);
@@ -1533,12 +1533,12 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       const them = blockerCount === 1 ? "it" : "them";
       html += `<div class="unlink-intro">
         <span class="unlink-intro-text">${blockers.length
-          ? `<b>CAN'T DELETE YET</b> — ${label} still holds ${blockerWhat}. Deleting the ${niceType} with ${them} inside would leave ${them} orphaned in PHIS, so ${blockerCount === 1 ? "it has" : "they have"} to go first — remove one with its ×, or clear them all (anything also used by another experiment is only removed from this one).`
+          ? `<b>CAN'T DELETE YET</b> — ${escapeHtml(label)} still holds ${blockerWhat}. Deleting the ${niceType} with ${them} inside would leave ${them} orphaned in PHIS, so ${blockerCount === 1 ? "it has" : "they have"} to go first — remove one with its ×, or clear them all (anything also used by another experiment is only removed from this one).`
           : lastReq
-          ? `<b>UNLINK MODE</b> — a ${niceType} must belong to at least one ${lastReq.type.replace("_", " ")}, so <b>${lastReq.label}</b> can't be unlinked. Delete the ${niceType} instead — that also removes every link below.`
+          ? `<b>UNLINK MODE</b> — a ${niceType} must belong to at least one ${lastReq.type.replace("_", " ")}, so <b>${escapeHtml(lastReq.label)}</b> can't be unlinked. Delete the ${niceType} instead — that also removes every link below.`
           : node.deleteRemovesLinks
           ? `<b>UNLINK MODE</b> — remove any link below with its ×.`
-          : `<b>UNLINK MODE</b> — delete is blocked while ${label} is still linked to the items below.`}</span>
+          : `<b>UNLINK MODE</b> — delete is blocked while ${escapeHtml(label)} is still linked to the items below.`}</span>
         <span class="unlink-intro-actions">
           ${blockers.length ? `<button class="btn warn small" id="deleteBlockersBtn">Clear ${blockerWhat}…</button>` : ""}
           ${lastReq && !blockers.length ? `<button class="btn warn small" id="forceDeleteBtn">Delete ${niceType}</button>` : ""}
@@ -1684,10 +1684,10 @@ function renderDetailMembers(categoryId) {
     row.innerHTML = `
       <span class="row-dot"></span>
       <span class="row-main">
-        <span class="row-label">${m.label}</span>
+        <span class="row-label">${escapeHtml(m.label)}</span>
         <span class="row-type">${m.type === "category" ? "group · all members" : m.type.replace("_", " ")}</span>
       </span>
-      <button class="row-nav" title="Open" aria-label="Open ${m.label}">›</button>
+      <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(m.label)}">›</button>
     `;
     row.querySelector(".row-nav").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1758,7 +1758,7 @@ async function askCreateValues(type) {
     if (!options[fd.key].length) { showToast(`Couldn't load the ${fd.label.toLowerCase()} list`); return null; }
   }
   const input = (fd) => fd.input === "select"
-    ? `<select name="${fd.key}"${fd.required ? " required" : ""}><option value="">Choose…</option>${options[fd.key].map(o => `<option value="${o.id}">${o.label}</option>`).join("")}</select>`
+    ? `<select name="${fd.key}"${fd.required ? " required" : ""}><option value="">Choose…</option>${options[fd.key].map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}</select>`
     : `<input name="${fd.key}" type="${fd.input || "text"}"${fd.required ? " required" : ""}>`;
   return new Promise((resolve) => {
     const dlg = document.createElement("dialog");
@@ -1926,7 +1926,7 @@ function renderLinkRankingModal() {
       <div class="ranking-zone-label">${label} (${items.length})</div>
       ${items.map(it => `
         <div class="ranking-row${selectedIds.has(it.id) ? " selected" : ""}" draggable="true" data-id="${it.id}" style="${typeStyle(it.type)}">
-          <span class="swatch"></span>${it.label}
+          <span class="swatch"></span>${escapeHtml(it.label)}
         </div>
       `).join("") || `<div class="ranking-empty">Drop here</div>`}
     </div>`;
@@ -1936,12 +1936,12 @@ function renderLinkRankingModal() {
     <div class="ranking-backdrop" id="rankingBackdrop"></div>
     <div class="ranking-modal">
       <div class="ranking-header">
-        <span>Rank relative to ${anchor.label}</span>
+        <span>Rank relative to ${escapeHtml(anchor.label)}</span>
         <button class="ranking-close" id="rankingClose" title="Cancel">&times;</button>
       </div>
-      <p class="ranking-hint">Drag an organization above the line to make it a <b>parent</b> of ${anchor.label}, or leave/drop it below to make it a <b>child</b>. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
+      <p class="ranking-hint">Drag an organization above the line to make it a <b>parent</b> of ${escapeHtml(anchor.label)}, or leave/drop it below to make it a <b>child</b>. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
       ${zoneHtml(parents, "parents", "Parents")}
-      <div class="ranking-anchor"><span class="swatch"></span>${anchor.label}<span class="ranking-anchor-tag">anchor</span></div>
+      <div class="ranking-anchor"><span class="swatch"></span>${escapeHtml(anchor.label)}<span class="ranking-anchor-tag">anchor</span></div>
       ${zoneHtml(children, "children", "Children")}
       <div class="ranking-footer">
         <button class="btn ghost" id="rankingCancel">Cancel</button>
@@ -2344,7 +2344,7 @@ function renderActionbar() {
     return;
   }
   bar.className = "actionbar";
-  const names = [...selection.values()].map(v => v.label).join(", ");
+  const names = [...selection.values()].map(v => escapeHtml(v.label)).join(", ");
   // See adjacency.js: intersection of every selected item's adjacency, not union — a single
   // new node gets linked to ALL of them at once, so its type must be valid for every one.
   const creatable = creatableTypesFor([...selection.values()].map(v => v.type));
@@ -2407,7 +2407,7 @@ function renderActionbar() {
       const v = await askCreateValues(t);
       if (!v) return;
       const links = [...selection.values()].map(s => ({ type: s.type, id: s.id }));
-      createNode(t, v.name, links, `linked to ${names}`, v.fields);
+      createNode(t, v.name, links, `linked to ${[...selection.values()].map(s => s.label).join(", ")}`, v.fields); // toast = plain text, not the escaped `names`
     });
     list.appendChild(item);
   });
@@ -2500,10 +2500,10 @@ function renderTreeRow(item, depth, container, railFlags, isLastSibling) {
     <button class="row-nav" style="opacity:1; position:static; width:18px; height:18px; visibility:${hasChildren ? "visible" : "hidden"};" title="${isExpanded ? "Collapse" : "Expand"}">${isExpanded ? "▾" : "▸"}</button>
     <span class="row-dot"></span>
     <span class="row-main">
-      <span class="row-label">${item.label}</span>
+      <span class="row-label">${escapeHtml(item.label)}</span>
       <span class="row-type">${item.type === "category" ? "group · all members" : item.type.replace("_", " ")}</span>
     </span>
-    <button class="row-nav" title="Open" aria-label="Open ${item.label}">›</button>
+    <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
   `;
   const [caretBtn, openBtn] = row.querySelectorAll(".row-nav");
   if (hasChildren) {
@@ -2557,7 +2557,7 @@ function renderGraphMock() {
     const pill = document.createElement("button");
     pill.className = "btn";
     pill.setAttribute("style", typeStyle(item.type));
-    pill.innerHTML = `<span class="swatch" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--dot); margin-right:6px;"></span>${item.label}`;
+    pill.innerHTML = `<span class="swatch" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--dot); margin-right:6px;"></span>${escapeHtml(item.label)}`;
     pill.addEventListener("click", () => addToSelectionFromGraph({ id: item.id, type: item.type, label: item.label }));
     el.appendChild(pill);
   });

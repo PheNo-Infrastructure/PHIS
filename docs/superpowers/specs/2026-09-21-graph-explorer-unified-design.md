@@ -797,9 +797,9 @@ demands it.
   PHIS meeting, not for the app to enforce. Annotations/documents (0 of each in PHIS) would be
   one queryRelation shared by every type; later. Groups (access control) are out of scope.
   Names from PHIS are user-typed and the page acts as the server's account, so they must be
-  escaped before going into HTML (`escapeHtml`, 2026-09-29): done for chips, experiment boxes,
-  the picker and the new action-bar sentences; still TODO for the list rows, node title,
-  unlink-mode banner, group member rows and the ranking modal — needed before any deploy.
+  escaped before going into HTML (`escapeHtml`, 2026-09-29) — done everywhere a PHIS value
+  reaches innerHTML (rows, tree, title, uri, chips, boxes, banners, picker, ranking modal, create
+  form options); toasts/prompts/confirms are plain text. New HTML templates must use it too.
 
 **Frontend: the validated design, unchanged.** The interactive mockup at
 `graph-explorer/public/index.html`,
