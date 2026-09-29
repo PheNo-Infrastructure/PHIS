@@ -126,6 +126,10 @@ async function removeSoFromExperiment(soId: string, expId: string) {
 const SO_ROWS_PER_EXPERIMENT = [
   { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris", addable: true, removable: true, single: false },
   { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: true },
+  // The other side of "part of" (OpenSILEX stores it only on the child): the objects part of
+  // this one there, via the per-experiment parent filter (probed). Removing one clears ITS
+  // isPartOf. Shown so a relation is visible and removable from both sides.
+  { label: "Contains", property: "contains", inverseOf: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: false },
 ];
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
 
@@ -133,7 +137,14 @@ const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
 // the copy's whole relations list (leaving parent out wiped it — probed), so everything else is
 // read and sent back as-is. geometry is never sent: OpenSILEX refuses it on updates (location
 // changes are move events) and omitting it keeps the location (probed 2026-09-29).
-async function updateSoInExperiment(soId: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) {
+async function updateSoInExperiment(soId: string, expId: string, mod: { field: string; add?: string[]; remove?: string }): Promise<void> {
+  // An inverse row lives on the OTHER object: removing child C from "Contains" of P clears C's isPartOf P.
+  const inverse = SO_ROWS_PER_EXPERIMENT.find((r) => r.property === mod.field)?.inverseOf;
+  if (inverse) {
+    if (mod.add?.length) throw new OpenSilexError(400, "Children are added from the child's side (Link selection with the ranking list).");
+    if (mod.remove) await updateSoInExperiment(mod.remove, expId, { field: inverse, remove: soId });
+    return;
+  }
   const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`)).result;
   let relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
     .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
@@ -161,7 +172,9 @@ async function soRowsIn(soId: string, expId: string) {
   const relations = (Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string }[];
   return Promise.all(
     SO_ROWS_PER_EXPERIMENT.map(async (row) => {
-      const uris = relations.filter((r) => localName(r.property) === row.property).map((r) => String(r.value));
+      const uris = row.inverseOf
+        ? ((await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(expId)}&parent=${encodeURIComponent(soId)}&page_size=500`)).result).map((k) => String(k.uri))
+        : relations.filter((r) => localName(r.property) === row.property).map((r) => String(r.value));
       const field = row.removable ? { field: row.property, type: row.type, ...(row.addable ? { addable: true } : {}) } : {};
       if (!uris.length) return { label: row.label, ...field, items: [] };
       const named = (await authedPost(row.byUris(expId), uris)).result as unknown as { uri: string; name?: string }[];

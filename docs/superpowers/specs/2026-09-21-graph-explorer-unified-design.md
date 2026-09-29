@@ -1001,7 +1001,8 @@ as sentences without `confirm`, removes them in order with `confirm` and stops a
 failure; the page shows the sentences in a confirm. **Step 3 built**: "Add to selection…" (the
 old Link existing popover) only selects — same-type candidates are offered whenever everything
 selected is one parent/child type; "+ Add" in experiment boxes, its action-bar state and the
-one-item ranking route are gone. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
+one-item ranking route are gone. **Step 4 built**: "Contains" row (`inverseOf: isPartOf`, read with the
+parent filter); removing a child there clears the child's isPartOf. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
 of the second test exercise steps 2 and 4).
 
 ## Access during development

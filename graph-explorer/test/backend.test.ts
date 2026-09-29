@@ -537,6 +537,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
     let puts = 0;
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       if (init?.method === "DELETE") { deletes.push(url); return jsonResponse(200, { result: "ok" }); }
       if (init?.method === "PUT") { puts++; return jsonResponse(200, { result: "x" }); }
       if (url.includes("/experiments")) {
@@ -555,7 +556,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
       typeName: "plant",
       actions: ["delete", "link"],
       deleteRemovesLinks: true,
-      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }] }] }],
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }] }] }],
     });
     const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", name: "X" }) });
     assert.equal(put.status, 400);
@@ -574,6 +575,7 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const named: string[] = [];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (url.includes("/so-1/experiments")) {
         return jsonResponse(200, { result: [
@@ -604,10 +606,11 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const g = (id: string, label: string) => ({ id, type: "germplasm", label });
     assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", items: [
-      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }] },
+      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }] },
       { id: "exp-b", type: "experiment", label: "Barley 2026", groups: [
         { label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
         { label: "Part of", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
+        { label: "Contains", field: "contains", type: "scientific_object", items: [] },
       ] },
     ] }]);
     assert.deepEqual(named.sort(), ["germplasm:phis:id/annika", "germplasm:phis:id/arild,phis:id/annika", "so:phis:id/block-a"]);
@@ -704,6 +707,7 @@ test("scientific object <-> experiment links are operations: /api/link POSTs a c
     let posted: any = null;
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       const m = init?.method ?? "GET";
       if (m === "POST") { posted = JSON.parse(String(init!.body)); calls.push("POST"); return jsonResponse(201, { result: "so-1" }); }
       if (m === "DELETE") { calls.push("DELETE " + url.split("/core/")[1]); return jsonResponse(200, { result: "ok" }); }
@@ -746,6 +750,7 @@ test("/api/link offers carry-over: germplasm an object has in OTHER experiments,
     const names: Record<string, string> = { "exp-A": "Barley 2025", "exp-B": "Barley 2027", "exp-C": "Barley 2026" };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       const m = init?.method ?? "GET";
       if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u.split("/").pop() })) });
@@ -911,6 +916,7 @@ test("setting germplasm on an object in an experiment offers its children there 
       if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push(b.uri); rels[b.uri] = b.relations; return jsonResponse(200, { result: b.uri }); }
       if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u === "phis:id/annika" ? "Annika" : u })) });
       if (url.includes("scientific_objects?experiment=exp-b&parent=plot")) return jsonResponse(200, { result: [{ uri: "plant-1", name: "Plant 1" }, { uri: "plant-2", name: "Plant 2" }] });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       const exps = url.match(/scientific_objects\/([\w-]+)\/experiments/);
       if (exps) return jsonResponse(200, { result: [{ experiment: "exp-b", experiment_name: "Barley 2026" }] });
       const copy = url.match(/scientific_objects\/([\w-]+)\?experiment=/);
@@ -940,6 +946,7 @@ test("/api/unlink: lists the links BETWEEN the selected items in words (nothing 
     };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push({ so: b.uri, relations: b.relations.map((r: any) => r.value) }); rels[b.uri] = b.relations; return jsonResponse(200, { result: b.uri }); }
       if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u })) });
@@ -961,6 +968,35 @@ test("/api/unlink: lists the links BETWEEN the selected items in words (nothing 
     const done = await post(true);
     assert.equal(done.removed.length, 2);
     assert.deepEqual(puts.at(-1)!.relations, ["phis:id/other"], "only Annika and the parent removed; the other germplasm kept");
+  });
+});
+
+test("'Contains' on a parent lists its children in that experiment; removing one clears the CHILD's isPartOf (the parent isn't written)", async () => {
+  await withServer(async (base) => {
+    const puts: { so: string; relations: string[] }[] = [];
+    const rels: Record<string, { property: string; value: string }[]> = { row: [], "plant-b": [{ property: "vocabulary:isPartOf", value: "row" }, { property: "vocabulary:hasGermplasm", value: "zebra" }] };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push({ so: b.uri, relations: b.relations.map((r: any) => r.value) }); rels[b.uri] = b.relations; return jsonResponse(200, { result: b.uri }); }
+      if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u === "plant-b" ? "Plant B" : u })) });
+      if (url.includes("&parent=row")) return jsonResponse(200, { result: Object.keys(rels).filter((k) => rels[k].some((r) => r.property.endsWith("isPartOf") && r.value === "row")).map((k) => ({ uri: k, name: k })) });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] });
+      const exps = url.match(/scientific_objects\/([\w-]+)\/experiments/);
+      if (exps) return jsonResponse(200, { result: [{ experiment: "exp-b", experiment_name: "Wheat 2026" }] });
+      const copy = url.match(/scientific_objects\/([\w-]+)\?experiment=/);
+      if (copy) return jsonResponse(200, { result: { uri: copy[1], name: copy[1], rdf_type: "vocabulary:Plot", relations: rels[copy[1]] } });
+      const glob = url.match(/scientific_objects\/([\w-]+)$/);
+      if (glob) return jsonResponse(200, { result: { uri: glob[1], name: glob[1] } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const contains = async () => (await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=row`)).json()).relations[0].items[0].groups.find((g: any) => g.label === "Contains");
+    assert.deepEqual(await contains(), { label: "Contains", field: "contains", type: "scientific_object", items: [{ id: "plant-b", type: "scientific_object", label: "Plant B" }] });
+
+    const res = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "row", experiment: "exp-b", unlink: { field: "contains", uri: "plant-b" } }) });
+    assert.equal(res.status, 200);
+    assert.deepEqual(puts, [{ so: "plant-b", relations: ["zebra"] }], "only the child written: its parent gone, its germplasm kept");
+    assert.deepEqual((await contains()).items, []);
   });
 });
 
