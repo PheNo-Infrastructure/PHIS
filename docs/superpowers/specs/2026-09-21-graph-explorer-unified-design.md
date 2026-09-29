@@ -781,7 +781,7 @@ demands it.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A and B1 built; B2 (link by selection) next**: see
+  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A, B1 and carry-over built**: see
     "Scientific object labels per trial" below.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
@@ -796,6 +796,10 @@ demands it.
   "barley", unused; local "Hordeum vulgare", 20 varieties) — a user-practice question left for a
   PHIS meeting, not for the app to enforce. Annotations/documents (0 of each in PHIS) would be
   one queryRelation shared by every type; later. Groups (access control) are out of scope.
+  Names from PHIS are user-typed and the page acts as the server's account, so they must be
+  escaped before going into HTML (`escapeHtml`, 2026-09-29): done for chips, experiment boxes,
+  the picker and the new action-bar sentences; still TODO for the list rows, node title,
+  unlink-mode banner, group member rows and the ranking modal — needed before any deploy.
 
 **Frontend: the validated design, unchanged.** The interactive mockup at
 `graph-explorer/public/index.html`,
@@ -878,11 +882,19 @@ Found on the way: an object created with a geometry gets a Move event, and OpenS
 to delete it while that exists — the app's Delete has no way forward for it yet (needs the
 usual banner + "delete its location history" step, or a pointer to PHIS).
 
-**Direction after B1** (not a plan — pick the next one with the user):
+**Carry-over (built 2026-09-29).** `/api/link` still only creates the new experiment copies
+(name + type). For each NEW object<->experiment pair it then collects the germplasm the object
+has in its other experiments but not the new one (`ContextLink.carryOver`, once per value,
+from the first experiment that has it; ids compared compacted — a POST returns full uris, lists
+prefixed) and returns them as `carryOver`. The page offers them in the action bar ("<exp> now
+has <objects>, without its/their germplasm from other experiments. Carry any over?") through the
+same picker, nothing picked; confirm writes each pick via the in-experiment PUT, Skip or
+navigating away writes nothing. Germplasm only: a parent may not be in the new experiment.
+
+**Direction after carry-over** (not a plan — pick the next one with the user):
 B2, linking by selection (objects + a germplasm, from either side) with the experiment list,
 nothing ticked, and "add it to an experiment first" for objects in none; "Part of" (same-type,
-needs a direction choice like the org ranking); carry-over when an object joins an experiment
-(fixes add-to-experiment dropping labels); "also apply to its plants"; factor levels as a
+needs a direction choice like the org ranking); "also apply to its plants"; factor levels as a
 third row once factors are wired; the Delete gap for objects with a location.
 
 ## Access during development

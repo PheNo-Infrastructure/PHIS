@@ -1,6 +1,6 @@
 import { respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { applyLink, resolveLink, type ResolvedLink } from "../node-types.ts";
+import { applyLink, resolveLink, type CarryOver, type ResolvedLink } from "../node-types.ts";
 
 // Links a whole selection of EXISTING nodes directly (no third node created) — the counterpart
 // to the unlink flow in routes/node.ts, and to /api/create's `links` (which links a NEW node to
@@ -48,13 +48,18 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   await respondOpenSilexErrors(res, async () => {
     let linkedPairs = 0;
     let alreadyLinked = 0;
+    const carryOver: CarryOver[] = [];
     for (const op of ops) {
-      const { linked, already } = await applyLink(op.r, op.ownerIds, op.otherIds);
-      linkedPairs += linked;
-      alreadyLinked += already;
+      const r = await applyLink(op.r, op.ownerIds, op.otherIds);
+      linkedPairs += r.linked;
+      alreadyLinked += r.already;
+      carryOver.push(...r.carryOver);
     }
+    // Labels the new links left behind (e.g. an object's germplasm from its other experiments) —
+    // the page offers them, nothing ticked; only a pick writes anything.
+    const out = JSON.stringify({ ok: true, linkedPairs, alreadyLinked, ...(carryOver.length ? { carryOver } : {}) });
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, linkedPairs, alreadyLinked }));
+    res.end(out);
   });
   return true;
 };

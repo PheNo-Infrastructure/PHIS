@@ -896,6 +896,10 @@ let linkPickerMode = null;
 // "+ Add" in one experiment's box on a detail pane: {node, field, type, expId, expLabel, exclude}.
 // Takes over the action bar (picker locked to that type) until confirmed, cancelled, or navigated away.
 let inExperimentAdd = null;
+// After a link that created experiment copies: labels those objects have in their other
+// experiments (/api/link's carryOver). Offered in the action bar with nothing picked; skipping,
+// or navigating away, leaves the new copies as they are.
+let carryOverOffer = null;
 
 /* Every item currently clickable ANYWHERE on screen (left rowlist, tree,
    or the local member-list in the detail pane when it's showing a
@@ -1084,6 +1088,7 @@ function navigateTo(newPath) {
   treeMode = false; // opening a node is a deliberate breadcrumb commit — back to plain browsing
   unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink
   inExperimentAdd = null;
+  carryOverOffer = null;
   render();
   loadNodeDetail(newPath[newPath.length - 1]);
 }
@@ -1297,6 +1302,38 @@ async function unlinkOne(item, field, uri, experiment) {
   }
 }
 
+async function applyCarryOver(picked) {
+  const batches = new Map();
+  picked.forEach(p => {
+    const key = `${p.id.split("|").slice(0, 3).join("|")}`;
+    const orig = carryOverOffer.items.find(x => `${x.id}|${x.experiment}|${x.field}|${x.value}` === p.id);
+    if (!batches.has(key)) batches.set(key, { ...orig, uris: [] });
+    batches.get(key).uris.push(orig.value);
+  });
+  let done = 0;
+  for (const b of batches.values()) {
+    try {
+      const res = await fetch("/api/node", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: b.type, id: b.id, experiment: b.experiment, link: { field: b.field, uris: b.uris } }),
+      });
+      const body = await res.json();
+      if (!res.ok) { showToast(`Carried over ${done}; failed on ${b.label}: ${body.error || res.status}`); break; }
+      done += b.uris.length;
+      invalidateNodeDetail(b.id);
+      invalidateNodeDetail(b.experiment);
+      b.uris.forEach(u => invalidateNodeDetail(u));
+    } catch (err) {
+      showToast(`Carried over ${done}; failed on ${b.label}: ${err}`);
+      break;
+    }
+  }
+  carryOverOffer = null;
+  if (done === picked.length) showToast(`Carried over ${done}`);
+  render();
+}
+
 async function addInExperiment(a, picked) {
   try {
     const res = await fetch("/api/node", {
@@ -1382,9 +1419,15 @@ function renderDetail() {
   wireTypeInfo(els.detailBody);
 }
 
+// Names come from PHIS, where any user can type anything, and this page acts as the server's
+// account — so they're escaped before going into HTML. Not yet applied to every older
+// innerHTML spot (rows, node title, confirms); see the spec's Known gaps.
+const escapeHtml = v => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
 function chipHtml(it, unlinkField, expId) {
-  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${it.id}" data-type="${it.type}"><span class="swatch"></span>${it.label}${it.count ? ` <span style="opacity:.6">&middot; ${it.count}</span>` : ""}`
-    + (unlinkField ? `<button class="chip-unlink" data-field="${unlinkField}" data-uri="${it.id}"${expId ? ` data-exp="${expId}"` : ""} title="Unlink">&times;</button>` : "")
+  const e = escapeHtml;
+  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"><span class="swatch"></span>${e(it.label)}${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
+    + (unlinkField ? `<button class="chip-unlink" data-field="${e(unlinkField)}" data-uri="${e(it.id)}"${expId ? ` data-exp="${e(expId)}"` : ""} title="Unlink">&times;</button>` : "")
     + `</span>`;
 }
 // One relation group. Items carrying `groups` (what the node is within that item) render as
@@ -1401,7 +1444,7 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, canAdd
       (it.groups || []).forEach(g => {
         const chips = g.items.map(x => chipHtml(x, unlinking && g.field ? g.field : null, it.id)).join("");
         const add = canAdd && g.field && !unlinking
-          ? `<button class="box-add" data-field="${g.field}" data-type="${g.type}" data-exp="${it.id}" data-exp-label="${it.label}" data-have="${g.items.map(x => x.id).join(" ")}">+ Add</button>`
+          ? `<button class="box-add" data-field="${escapeHtml(g.field)}" data-type="${escapeHtml(g.type)}" data-exp="${escapeHtml(it.id)}" data-exp-label="${escapeHtml(it.label)}" data-have="${escapeHtml(g.items.map(x => x.id).join(" "))}">+ Add</button>`
           : "";
         h += `<span class="item-box-key">${g.label}</span><div class="chip-row">${chips || (add ? "" : `<span class="rel-empty">none</span>`)}${add}</div>`;
       });
@@ -1810,6 +1853,7 @@ async function linkItems(items) {
     // the detail pane, invalidateNodeDetail refetches it right away instead of leaving that
     // pane showing the pre-link state until the user navigates away and back.
     items.forEach(it => invalidateNodeDetail(it.id));
+    carryOverOffer = body.carryOver?.length ? { items: body.carryOver } : null;
     render();
     const already = body.alreadyLinked ? `, ${body.alreadyLinked} already linked` : "";
     showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
@@ -2002,7 +2046,7 @@ async function confirmLinkRanking() {
 // each linkable candidate type, minus whatever's already selected. Grouped (not flat) so the
 // popover can browse type-by-type instead of dumping everything into one long list.
 function linkPickerCandidatesByType() {
-  if (linkPickerMode) return new Map([[linkPickerMode.type, (CATEGORY_ITEMS[CATEGORY_FOR_TYPE[linkPickerMode.type]] || []).filter(it => !linkPickerMode.exclude?.has(it.id))]]);
+  if (linkPickerMode) return new Map([[linkPickerMode.type, (linkPickerMode.items || CATEGORY_ITEMS[CATEGORY_FOR_TYPE[linkPickerMode.type]] || []).filter(it => !linkPickerMode.exclude?.has(it.id))]]);
   const selectedIds = new Set(selection.keys());
   // When there's exactly one selected node and its detail is cached, also drop anything already
   // related to it — otherwise "Link existing…" happily re-offers an org's own parent/child/
@@ -2089,7 +2133,7 @@ function renderLinkPicker() {
         const row = document.createElement("button");
         row.className = "newmenu-item" + (linkPickerPicked.has(it.id) ? " selected" : "");
         row.setAttribute("style", typeStyle(it.type));
-        row.innerHTML = `<span class="swatch"></span>${it.label}`;
+        row.innerHTML = `<span class="swatch"></span>${escapeHtml(it.label)}`;
         row.addEventListener("click", (e) => {
           // Same click/ctrl/shift rules as the main rowlist's applyClick: plain click REPLACES
           // the pick set with just this one, ctrl toggles it in/out without touching the rest,
@@ -2207,13 +2251,37 @@ function renderActionbar() {
   // The popover is rebuilt below, so a mode left over from one closed with × must not leak
   // into linkPickerCandidatesByType's normal "Link existing…" answer.
   linkPickerMode = null;
+  if (carryOverOffer) {
+    const c = carryOverOffer.items;
+    const names = list => { const u = [...new Set(list)]; return u.length <= 2 ? u.join(" and ") : `${u.length}`; };
+    const objs = names(c.map(x => x.label)), exps = names(c.map(x => x.experimentLabel));
+    const strong = t => `<span style="color:var(--ink); font-weight:600;">${escapeHtml(t)}</span>`;
+    bar.className = "actionbar";
+    bar.innerHTML = `
+      <div class="selection-summary"><span>${strong(exps)} now ${new Set(c.map(x => x.experimentLabel)).size === 1 ? "has" : "have"} ${strong(objs)}${objs.match(/^\d+$/) ? " objects" : ""}, without ${new Set(c.map(x => x.id)).size === 1 ? "its" : "their"} germplasm from other experiments. Carry any over?</span></div>
+      ${linkMenuHtml(`<button class="btn primary" id="carryOverBtn">Choose…</button>`, "Carry over to the new experiment copies")}
+      <button class="btn ghost" id="carryOverSkipBtn">Skip</button>
+    `;
+    wireLinkMenu("carryOverBtn", () => {
+      linkPickerType = "carry-over";
+      linkPickerMode = {
+        type: "carry-over",
+        items: c.map(x => ({ ...x, type: x.valueType, id: `${x.id}|${x.experiment}|${x.field}|${x.value}`, label: `${x.valueLabel} → ${x.label} (from ${x.from})` })),
+        confirmLabel: (n) => `Carry over ${n}`,
+        onConfirm: (picked) => applyCarryOver(picked),
+      };
+    });
+    document.getElementById("carryOverSkipBtn").addEventListener("click", () => { carryOverOffer = null; renderActionbar(); });
+    document.getElementById("carryOverBtn").click(); // open straight away, nothing picked
+    return;
+  }
   if (inExperimentAdd) {
     const a = inExperimentAdd;
     const niceType = a.type.replace("_", " ");
     bar.className = "actionbar";
     bar.innerHTML = `
-      <div class="selection-summary"><span>Add ${niceType} to <span style="color:var(--ink); font-weight:600;">${a.node.label}</span> in <span style="color:var(--ink); font-weight:600;">${a.expLabel}</span></span></div>
-      ${linkMenuHtml(`<button class="btn primary" id="inExpAddBtn">Pick ${niceType}…</button>`, `${niceType} for ${a.node.label} in ${a.expLabel}`)}
+      <div class="selection-summary"><span>Add ${niceType} to <span style="color:var(--ink); font-weight:600;">${escapeHtml(a.node.label)}</span> in <span style="color:var(--ink); font-weight:600;">${escapeHtml(a.expLabel)}</span></span></div>
+      ${linkMenuHtml(`<button class="btn primary" id="inExpAddBtn">Pick ${niceType}…</button>`, `${niceType} for ${escapeHtml(a.node.label)} in ${escapeHtml(a.expLabel)}`)}
       <button class="btn ghost" id="inExpCancelBtn">Cancel</button>
     `;
     wireLinkMenu("inExpAddBtn", () => {

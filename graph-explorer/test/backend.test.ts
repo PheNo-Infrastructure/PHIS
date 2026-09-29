@@ -729,6 +729,50 @@ test("scientific object <-> experiment links are operations: /api/link POSTs a c
   });
 });
 
+test("/api/link offers carry-over: germplasm an object has in OTHER experiments, once per value, none for objects without labels; writes nothing itself", async () => {
+  await withServer(async (base) => {
+    const writes: string[] = [];
+    const copies: Record<string, { property: string; value: string }[]> = {
+      "so-1|exp-A": [{ property: "vocabulary:hasGermplasm", value: "phis:id/annika" }, { property: "vocabulary:isPartOf", value: "phis:id/blk" }],
+      "so-1|exp-C": [{ property: "vocabulary:hasGermplasm", value: "phis:id/arild" }, { property: "vocabulary:hasGermplasm", value: "phis:id/annika" }],
+      "so-1|exp-B": [], "so-2|exp-A": [], "so-2|exp-B": [],
+    };
+    const names: Record<string, string> = { "exp-A": "Barley 2025", "exp-B": "Barley 2027", "exp-C": "Barley 2026" };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      const m = init?.method ?? "GET";
+      if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u.split("/").pop() })) });
+      if (m !== "GET") { writes.push(`${m} ${url.split("/core/")[1]}`); return jsonResponse(201, { result: "x" }); }
+      const exps = url.match(/\/(so-\d)\/experiments/);
+      if (exps) {
+        const ids = Object.keys(copies).filter((k) => k.startsWith(exps[1] + "|")).map((k) => k.split("|")[1]);
+        return jsonResponse(200, { result: ids.map((e) => ({ experiment: e, experiment_name: names[e] })) });
+      }
+      if (url.includes("scientific_objects?experiment=exp-B")) return jsonResponse(200, { result: [] });
+      const copy = url.match(/scientific_objects\/(so-\d)\?experiment=(exp-\w)/);
+      if (copy) return jsonResponse(200, { result: { uri: copy[1], relations: copies[`${copy[1]}|${copy[2]}`] } });
+      const glob = url.match(/scientific_objects\/(so-\d)$/);
+      if (glob) return jsonResponse(200, { result: { uri: glob[1], name: glob[1] === "so-1" ? "Plot 1" : "Plot 2", rdf_type: "vocabulary:Plot" } });
+      throw new Error(`unexpected fetch: ${m} ${url}`);
+    }) as typeof fetch;
+
+    const res = await realFetch(`${base}/api/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [{ type: "experiment", id: "exp-B" }, { type: "scientific_object", id: "so-1" }, { type: "scientific_object", id: "so-2" }] }),
+    });
+    const body = await res.json();
+    const offer = (value: string, label: string, from: string) => ({
+      type: "scientific_object", id: "so-1", label: "Plot 1", experiment: "exp-B", experimentLabel: "Barley 2027",
+      field: "hasGermplasm", value, valueType: "germplasm", valueLabel: label, from,
+    });
+    assert.deepEqual(body.carryOver, [offer("phis:id/annika", "annika", "Barley 2025"), offer("phis:id/arild", "arild", "Barley 2026")],
+      "annika once (from the first experiment that has it); parent not offered; nothing for so-2");
+    assert.deepEqual(writes, ["POST scientific_objects", "POST scientific_objects"], "only the two new copies — no label written");
+  });
+});
+
 test("GET /api/node-detail rejects an unsupported type or missing id", async () => {
   await withServer(async (base) => {
     const res = await realFetch(`${base}/api/node-detail?type=germplasm&id=x`);

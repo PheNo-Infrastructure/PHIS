@@ -546,6 +546,66 @@ test("e2e: '+ Add' in an experiment's box picks germplasm (already-set ones hidd
   });
 });
 
+test("e2e: after linking objects into an experiment, the action bar offers their germplasm from other experiments — nothing picked; confirm writes only the pick; Skip writes nothing", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const puts: any[] = [];
+    const offer = (value: string, label: string, from: string) => ({
+      type: "scientific_object", id: "so-1", label: "Plot 1", experiment: "exp-B", experimentLabel: "Barley 2027",
+      field: "hasGermplasm", value, valueType: "germplasm", valueLabel: label, from,
+    });
+    await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, linkedPairs: 1, alreadyLinked: 0, carryOver: [offer("g-annika", "Annika", "Barley 2025"), offer("g-arild", "Arild", "Barley 2026")],
+    }) }));
+    await page.route("**/api/node", (r) => { puts.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ relations: [] }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const link = () => page.evaluate(() => linkItems([{ type: "experiment", id: "exp-B" }, { type: "scientific_object", id: "so-1" }]));
+
+    await link();
+    await page.waitForTimeout(400);
+    const bar = async () => (await page.locator("#actionbar").innerText()).replace(/\s+/g, " ");
+    assert.match(await bar(), /Barley 2027 now has Plot 1, without its germplasm from other experiments\. Carry any over\?/);
+    assert.deepEqual((await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim()),
+      ["Annika → Plot 1 (from Barley 2025)", "Arild → Plot 1 (from Barley 2026)"]);
+    assert.equal(await page.locator(".linkmenu-confirm").count(), 0, "nothing picked, nothing to confirm");
+    await page.locator("#linkList .newmenu-item", { hasText: "Arild" }).click();
+    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Carry over 1");
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(puts, [{ type: "scientific_object", id: "so-1", experiment: "exp-B", link: { field: "hasGermplasm", uris: ["g-arild"] } }]);
+    assert.doesNotMatch(await bar(), /Carry any over/);
+
+    await link();
+    await page.waitForTimeout(400);
+    await page.locator("#carryOverSkipBtn").click();
+    await page.waitForTimeout(200);
+    assert.equal(puts.length, 1, "Skip writes nothing");
+    assert.doesNotMatch(await bar(), /Carry any over/);
+  });
+});
+
+test("e2e: a PHIS name containing HTML is shown as text in chips, boxes and the picker — never run", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const evil = `<img src=x onerror="window.__pwned=1">Evil`;
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "g-evil", type: "germplasm", label: evil }]) }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "so-1", actions: ["delete", "link"], deleteRemovesLinks: true,
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-b", type: "experiment", label: evil,
+        groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [{ id: "g-x", type: "germplasm", label: evil }] }] }] }],
+    }) }));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
+    await page.waitForTimeout(400);
+    await page.locator("#detailBody .box-add").click();
+    await page.waitForTimeout(400);
+    assert.equal(await page.evaluate(() => (window as any).__pwned), undefined, "no injected handler ran");
+    assert.equal(await page.locator("#detailBody img, #actionbar img").count(), 0);
+    assert.match(await page.locator("#detailBody .item-box").innerText(), /<img src=x/);
+    assert.match(await page.locator("#linkList .linkmenu-items").innerText(), /<img src=x/);
+  });
+});
+
 test("e2e: ctrl-clicking a relation chip adds it to the current selection instead of navigating", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (route) => {

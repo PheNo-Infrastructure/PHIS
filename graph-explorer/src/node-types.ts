@@ -73,6 +73,17 @@ export type ContextLink = {
   current: (id: string) => Promise<string[]>; // ids of the other side currently linked
   link: (id: string, otherId: string) => Promise<void>;
   unlink: (id: string, otherId: string) => Promise<void>;
+  // After a NEW link: labels the node has elsewhere that the new link didn't bring along (a
+  // scientific object joining an experiment starts with none). Offered, never applied.
+  carryOver?: (id: string, otherId: string) => Promise<CarryOver[]>;
+};
+
+// One label that could be copied into a new experiment copy — written only if the user picks it,
+// through /api/node's in-experiment link (NodeConfig.inExperiment).
+export type CarryOver = {
+  type: string; id: string; label: string; // the object
+  experiment: string; experimentLabel: string; // the copy it would go on
+  field: string; value: string; valueType: string; valueLabel: string; from: string; // what, and which experiment has it
 };
 
 // Adding an existing SO to an experiment = POSTing a copy with the SAME uri into that
@@ -141,6 +152,32 @@ async function soRowsIn(soId: string, expId: string) {
       return { label: row.label, ...field, items };
     })
   );
+}
+
+// Germplasm (the writable rows) the object has in its OTHER experiments but not in `expId` — a
+// value found in several experiments is offered once, from the first.
+async function soCarryOver(soId: string, expId: string): Promise<CarryOver[]> {
+  // Ids arrive full or prefixed depending on who produced them (a POST vs a list) — compare compacted.
+  const self = await compactUri(expId);
+  const exps = await Promise.all((await queryItems(SO_EXPERIMENTS, soId)).map(async (e) => ({ ...e, key: await compactUri(e.id) })));
+  const target = exps.find((e) => e.key === self);
+  const others = exps.filter((e) => e.key !== self);
+  if (!target || !others.length) return [];
+  const writable = (groups: Awaited<ReturnType<typeof soRowsIn>>) => groups.filter((g) => "field" in g && g.field);
+  const have = new Set(writable(await soRowsIn(soId, expId)).flatMap((g) => g.items.map((i) => `${(g as { field: string }).field}|${i.id}`)));
+  const name = String((await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}`)).result.name ?? soId);
+  const out: CarryOver[] = [];
+  for (const e of others) {
+    for (const g of writable(await soRowsIn(soId, e.id))) {
+      const { field, type: valueType } = g as { field: string; type: string };
+      for (const i of g.items) {
+        if (have.has(`${field}|${i.id}`)) continue;
+        have.add(`${field}|${i.id}`);
+        out.push({ type: "scientific_object", id: soId, label: name, experiment: expId, experimentLabel: target.label, field, value: i.id, valueType, valueLabel: i.label, from: e.label });
+      }
+    }
+  }
+  return out;
 }
 
 const SO_EXPERIMENTS: QueryRelation = {
@@ -230,6 +267,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         current: async (expId) => (await queryItems(EXPERIMENT_SOS, expId)).map((i) => i.id),
         link: (expId, soId) => addSoToExperiment(soId, expId),
         unlink: (expId, soId) => removeSoFromExperiment(soId, expId),
+        carryOver: (expId, soId) => soCarryOver(soId, expId),
       },
     },
   },
@@ -251,6 +289,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         current: async (soId) => (await queryItems(SO_EXPERIMENTS, soId)).map((i) => i.id),
         link: (soId, expId) => addSoToExperiment(soId, expId),
         unlink: (soId, expId) => removeSoFromExperiment(soId, expId),
+        carryOver: (soId, expId) => soCarryOver(soId, expId),
       },
     },
     deleteFirst: async (id) =>
@@ -443,6 +482,7 @@ export function resolveLink(typeA: string, typeB: string): ResolvedLink | null {
 export async function applyLink(r: ResolvedLink, ownerIds: string[], otherIds: string[]) {
   let linked = 0;
   let already = 0;
+  const carryOver: CarryOver[] = [];
   for (const ownerId of ownerIds) {
     const existing = new Set(r.ctx ? await r.ctx.current(ownerId) : []);
     if (!r.ctx) {
@@ -451,11 +491,14 @@ export async function applyLink(r: ResolvedLink, ownerIds: string[], otherIds: s
     }
     for (const otherId of otherIds) {
       if (existing.has(otherId)) { already++; continue; }
-      if (r.ctx) await r.ctx.link(ownerId, otherId);
+      if (r.ctx) {
+        await r.ctx.link(ownerId, otherId);
+        if (r.ctx.carryOver) carryOver.push(...(await r.ctx.carryOver(ownerId, otherId)));
+      }
       linked++;
     }
   }
-  return { linked, already };
+  return { linked, already, carryOver };
 }
 
 // Given two node types, finds which one (if either) can hold a real link to the other via its
