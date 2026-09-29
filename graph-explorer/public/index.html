@@ -900,6 +900,10 @@ let inExperimentAdd = null;
 // experiments (/api/link's carryOver). Offered in the action bar with nothing picked; skipping,
 // or navigating away, leaves the new copies as they are.
 let carryOverOffer = null;
+// A link that lives inside an experiment (object <-> germplasm) that /api/link couldn't place
+// on its own: {items, notInAny, experiments}. The action bar asks — which experiment(s), nothing
+// picked; or first adds objects that are in none — then retries the same link.
+let experimentChoice = null;
 
 /* Every item currently clickable ANYWHERE on screen (left rowlist, tree,
    or the local member-list in the detail pane when it's showing a
@@ -1089,6 +1093,7 @@ function navigateTo(newPath) {
   unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink
   inExperimentAdd = null;
   carryOverOffer = null;
+  experimentChoice = null;
   render();
   loadNodeDetail(newPath[newPath.length - 1]);
 }
@@ -1839,15 +1844,22 @@ function selectionHasLinkablePair() {
 // and "Link existing" (items = the current selection PLUS one item picked from a searchable
 // list of real candidates — see linkableExistingCandidates — so finding and linking a target
 // doesn't require first navigating away to select it manually).
-async function linkItems(items) {
+async function linkItems(items, experiments) {
   try {
     const res = await fetch("/api/link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ items, ...(experiments ? { experiments } : {}) }),
     });
     const body = await res.json();
     if (!res.ok) { showToast(`Failed to link: ${body.error || res.status}`); return; }
+    if (body.needsExperiment) {
+      experimentChoice = { items, ...body.needsExperiment };
+      renderActionbar();
+      return;
+    }
+    experimentChoice = null;
+    (body.touched || []).forEach(id => invalidateNodeDetail(id));
     // Every involved node's cached relations are now potentially stale — drop them rather than
     // guess how the response maps onto each one. If one of them is the node currently open in
     // the detail pane, invalidateNodeDetail refetches it right away instead of leaving that
@@ -1855,7 +1867,7 @@ async function linkItems(items) {
     items.forEach(it => invalidateNodeDetail(it.id));
     carryOverOffer = body.carryOver?.length ? { items: body.carryOver } : null;
     render();
-    const already = body.alreadyLinked ? `, ${body.alreadyLinked} already linked` : "";
+    const already = (body.alreadyLinked ? `, ${body.alreadyLinked} already linked` : "") + (body.skipped ? `, ${body.skipped} not in the picked experiment(s) — left as they were` : "");
     showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
   } catch (err) {
     showToast(`Failed to link: ${err}`);
@@ -2251,6 +2263,42 @@ function renderActionbar() {
   // The popover is rebuilt below, so a mode left over from one closed with × must not leak
   // into linkPickerCandidatesByType's normal "Link existing…" answer.
   linkPickerMode = null;
+  if (experimentChoice) {
+    const x = experimentChoice;
+    const strong = t => `<span style="color:var(--ink); font-weight:600;">${escapeHtml(t)}</span>`;
+    const lone = x.notInAny.length;
+    bar.className = "actionbar";
+    bar.innerHTML = `
+      <div class="selection-summary"><span>${lone
+        ? `${x.notInAny.map(o => strong(o.label)).join(", ")} ${lone === 1 ? "isn't" : "aren't"} in any experiment yet, and germplasm is set per experiment. Add ${lone === 1 ? "it" : "them"} to one first?`
+        : `Germplasm is kept per experiment, and ${x.objects === 1 ? "this object is" : "these objects are"} in several. Set it in which experiment(s)?`}</span></div>
+      ${linkMenuHtml(`<button class="btn primary" id="expChoiceBtn">${lone ? "Add to experiment…" : "Choose…"}</button>`, lone ? "Add to which experiment(s)?" : "Set the germplasm in")}
+      <button class="btn ghost" id="expChoiceCancelBtn">Cancel</button>
+    `;
+    wireLinkMenu("expChoiceBtn", () => {
+      linkPickerType = "experiment";
+      linkPickerMode = lone
+        ? {
+            type: "experiment",
+            confirmLabel: (n) => `Add to ${n} experiment${n === 1 ? "" : "s"}`,
+            onConfirm: async (picked) => {
+              // Put the objects in the picked experiment(s) — a plain link — then retry the original.
+              await linkItems([...x.notInAny.map(o => ({ type: "scientific_object", id: o.id })), ...picked.map(p => ({ type: "experiment", id: p.id }))]);
+              carryOverOffer = null; // objects in no experiment have nothing to carry
+              linkItems(x.items);
+            },
+          }
+        : {
+            type: "experiment",
+            items: x.experiments.map(e => ({ id: e.id, type: "experiment", label: `${e.label} · ${e.objects} object${e.objects === 1 ? "" : "s"}` })),
+            confirmLabel: (n) => `Set in ${n} experiment${n === 1 ? "" : "s"}`,
+            onConfirm: (picked) => linkItems(x.items, picked.map(p => p.id)),
+          };
+    });
+    document.getElementById("expChoiceCancelBtn").addEventListener("click", () => { experimentChoice = null; renderActionbar(); });
+    document.getElementById("expChoiceBtn").click(); // open straight away, nothing picked
+    return;
+  }
   if (carryOverOffer) {
     const c = carryOverOffer.items;
     const names = list => { const u = [...new Set(list)]; return u.length <= 2 ? u.join(" and ") : `${u.length}`; };
@@ -2399,7 +2447,7 @@ function renderActionbar() {
       // yet (e.g. a scientific object from another one) — /api/create would refuse it anyway.
       // A link the new node's own DTO can't hold is linked right after, like "Link selection";
       // that works for any distinct pair of LINKABLE_TYPES (checked against the backend by a test).
-      const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type));
+      const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type) && !inExperimentOnly(t, v.type));
       if (!(t in CREATABLE) || ![...selection.values()].every(canLink)) {
         showToast(`Would create a ${t.replace("_"," ")}, linked to ${names}`);
         return;
@@ -2654,7 +2702,12 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm"]);
+// Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —
+// "Link selection" handles them by asking which experiment, but "+ New" can't (a brand-new
+// object isn't in any yet), so they're never offered there. Same drift check as LINKABLE_TYPES.
+const IN_EXPERIMENT_PAIRS = new Set(["scientific_object:germplasm"]);
+const inExperimentOnly = (a, b) => IN_EXPERIMENT_PAIRS.has(`${a}:${b}`) || IN_EXPERIMENT_PAIRS.has(`${b}:${a}`);
 
 // Reverse of BACKED_CATEGORIES, keyed by node type instead of category id — lets a freshly
 // created node (see the "+ New" handler above) get pushed into the same CATEGORY_ITEMS array

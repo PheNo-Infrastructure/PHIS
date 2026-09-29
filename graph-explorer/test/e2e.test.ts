@@ -119,6 +119,9 @@ test("e2e: the mockup's LINKABLE_TYPES stays in sync with node-types.ts's real N
     });
     const writable = Object.entries(NODE_TYPES).filter(([, c]) => (c.actions ?? ["link"]).includes("link")).map(([t]) => t);
     assert.deepEqual(new Set(linkableTypes), new Set(writable));
+    const pagePairs: string[] = await page.evaluate(() => [...(IN_EXPERIMENT_PAIRS as Set<string>)]);
+    const realPairs = Object.entries(NODE_TYPES).flatMap(([t, c]) => Object.keys(c.inExperiment?.byType ?? {}).map((o) => `${t}:${o}`));
+    assert.deepEqual(new Set(pagePairs), new Set(realPairs), "IN_EXPERIMENT_PAIRS drifted from NODE_TYPES' inExperiment.byType");
   });
 });
 
@@ -614,6 +617,55 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
     assert.match(await page.locator("#rowlist").innerText(), /<img src=x/);
     assert.equal(await page.locator("img").count(), 0, "no <img> anywhere on the page");
     assert.equal(await page.evaluate(() => (window as any).__pwned), undefined);
+  });
+});
+
+test("e2e: linking objects + a germplasm asks which experiment (nothing picked) when they're in several, and 'add to one first' when in none — then continues", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const posts: any[] = [];
+    let objectsPlaced = false;
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "exp-a", type: "experiment", label: "Barley 2025" }, { id: "exp-b", type: "experiment", label: "Barley 2026" },
+    ]) }));
+    await page.route("**/api/link", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      posts.push(b);
+      const json = (x: unknown) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(x) });
+      const ids = b.items.map((i: any) => i.id);
+      if (ids.includes("so-lone") && ids.includes("g-annika") && !objectsPlaced) return json({ needsExperiment: { notInAny: [{ id: "so-lone", label: "Lone plot" }] } });
+      if (ids.includes("so-lone") && ids.includes("exp-b")) { objectsPlaced = true; return json({ ok: true, linkedPairs: 1, alreadyLinked: 0 }); }
+      if (ids.includes("so-two") && !b.experiments) return json({ needsExperiment: { notInAny: [], experiments: [{ id: "exp-a", label: "Barley 2025", objects: 1 }, { id: "exp-b", label: "Barley 2026", objects: 1 }], objects: 1 } });
+      return json({ ok: true, linkedPairs: 1, alreadyLinked: 0, touched: b.experiments ?? ["exp-b"] });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const bar = async () => (await page.locator("#actionbar").innerText()).replace(/\s+/g, " ");
+    const rows = async () => (await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim());
+
+    // Several experiments: the list, nothing picked; confirming sends only the pick.
+    await page.evaluate(() => linkItems([{ type: "scientific_object", id: "so-two" }, { type: "germplasm", id: "g-annika" }]));
+    await page.waitForTimeout(400);
+    assert.match(await bar(), /Germplasm is kept per experiment, and this object is in several\. Set it in which experiment\(s\)\?/);
+    assert.deepEqual(await rows(), ["Barley 2025 · 1 object", "Barley 2026 · 1 object"]);
+    assert.equal(await page.locator(".linkmenu-confirm").count(), 0, "nothing picked");
+    await page.locator("#linkList .newmenu-item", { hasText: "Barley 2026" }).click();
+    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Set in 1 experiment");
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posts.at(-1).experiments, ["exp-b"]);
+    assert.doesNotMatch(await bar(), /which experiment/);
+
+    // In none: add it to an experiment first, then the original link goes through.
+    posts.length = 0;
+    await page.evaluate(() => linkItems([{ type: "scientific_object", id: "so-lone" }, { type: "germplasm", id: "g-annika" }]));
+    await page.waitForTimeout(400);
+    assert.match(await bar(), /Lone plot isn't in any experiment yet, and germplasm is set per experiment\. Add it to one first\?/);
+    await page.locator("#linkList .newmenu-item", { hasText: "Barley 2026" }).click();
+    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Add to 1 experiment");
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(600);
+    assert.deepEqual(posts.map((p) => p.items.map((i: any) => i.id)), [["so-lone", "g-annika"], ["so-lone", "exp-b"], ["so-lone", "g-annika"]]);
+    assert.doesNotMatch(await bar(), /any experiment yet/);
   });
 });
 

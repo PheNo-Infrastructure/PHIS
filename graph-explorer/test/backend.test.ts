@@ -426,7 +426,7 @@ test("experiment node-detail appends a 'Scientific objects' group from the SO-by
   });
 });
 
-test("germplasm node-detail: single-uri species labelled from species_name, members minus itself (full vs prefixed uri), view-only", async () => {
+test("germplasm node-detail: single-uri species labelled from species_name, members minus itself (full vs prefixed uri); only 'link' (from objects)", async () => {
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
@@ -441,7 +441,7 @@ test("germplasm node-detail: single-uri species labelled from species_name, memb
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
     const detail = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=phis:id/sp`)).json();
-    assert.deepEqual(detail.actions, []);
+    assert.deepEqual(detail.actions, ["link"]);
     assert.deepEqual(detail.relations, [
       { label: "Species", items: [{ id: "phis:id/parent", type: "germplasm", label: "Parent" }] },
       { label: "Varieties and accessions", items: [{ id: "phis:id/acc", type: "germplasm", label: "A1" }] },
@@ -524,7 +524,8 @@ test("the page's '+ New' rule never offers a link /api/create would refuse", asy
   for (const v of Object.keys(ADJACENT)) {
     for (const t of creatableTypesFor([v])) {
       if (!(t in CREATABLE)) continue;
-      const offered = CREATABLE[t].linkFields[v] || (v !== t && linkable.has(t) && linkable.has(v));
+      const inExperimentOnly = NODE_TYPES[t]?.inExperiment?.byType[v] || NODE_TYPES[v]?.inExperiment?.byType[t];
+      const offered = CREATABLE[t].linkFields[v] || (v !== t && linkable.has(t) && linkable.has(v) && !inExperimentOnly);
       if (offered) assert.ok(CREATABLE[t].linkFields[v] || resolveLink(t, v), `${v} -> new ${t} is offered but can't be linked`);
     }
   }
@@ -770,6 +771,52 @@ test("/api/link offers carry-over: germplasm an object has in OTHER experiments,
     assert.deepEqual(body.carryOver, [offer("phis:id/annika", "annika", "Barley 2025"), offer("phis:id/arild", "arild", "Barley 2026")],
       "annika once (from the first experiment that has it); parent not offered; nothing for so-2");
     assert.deepEqual(writes, ["POST scientific_objects", "POST scientific_objects"], "only the two new copies — no label written");
+  });
+});
+
+test("/api/link object + germplasm: one experiment = written there; several = needsExperiment (nothing written); picked = only those copies; none = notInAny", async () => {
+  await withServer(async (base) => {
+    const puts: { so: string; exp: string; values: string[] }[] = [];
+    const inExps: Record<string, string[]> = { "so-one": ["exp-a"], "so-two": ["exp-a", "exp-b"], "so-b": ["exp-b"], "so-none": [] };
+    const names: Record<string, string> = { "exp-a": "Barley 2025", "exp-b": "Barley 2026" };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") {
+        const b = JSON.parse(String(init.body));
+        puts.push({ so: b.uri, exp: b.experiment, values: b.relations.map((r: any) => r.value) });
+        return jsonResponse(200, { result: b.uri });
+      }
+      const exps = url.match(/\/(so-[\w-]+)\/experiments/);
+      if (exps) return jsonResponse(200, { result: inExps[exps[1]].map((e) => ({ experiment: e, experiment_name: names[e] })) });
+      const copy = url.match(/scientific_objects\/(so-[\w-]+)\?experiment=/);
+      if (copy) return jsonResponse(200, { result: { uri: copy[1], name: copy[1], rdf_type: "vocabulary:Plot", relations: [] } });
+      const glob = url.match(/scientific_objects\/(so-[\w-]+)$/);
+      if (glob) return jsonResponse(200, { result: { uri: glob[1], name: `Name of ${glob[1]}` } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const link = async (sos: string[], experiments?: string[]) => (await realFetch(`${base}/api/link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [...sos.map((id) => ({ type: "scientific_object", id })), { type: "germplasm", id: "phis:id/annika" }], ...(experiments ? { experiments } : {}) }),
+    })).json();
+
+    assert.deepEqual(await link(["so-one"]), { ok: true, linkedPairs: 1, alreadyLinked: 0, touched: ["exp-a"] });
+    assert.deepEqual(puts, [{ so: "so-one", exp: "exp-a", values: ["phis:id/annika"] }]);
+
+    puts.length = 0;
+    assert.deepEqual(await link(["so-one", "so-two"]), { needsExperiment: { notInAny: [], experiments: [
+      { id: "exp-a", label: "Barley 2025", objects: 2 }, { id: "exp-b", label: "Barley 2026", objects: 1 },
+    ], objects: 2 } });
+    assert.equal(puts.length, 0, "nothing written while asking");
+
+    const picked = await link(["so-two", "so-b"], ["exp-a"]);
+    assert.deepEqual(puts, [{ so: "so-two", exp: "exp-a", values: ["phis:id/annika"] }], "only the picked experiment's copy");
+    assert.equal(picked.skipped, 1, "so-b isn't in exp-a");
+
+    puts.length = 0;
+    assert.deepEqual(await link(["so-none", "so-one"]), { needsExperiment: { notInAny: [{ id: "so-none", label: "Name of so-none" }] } });
+    assert.equal(puts.length, 0);
   });
 });
 

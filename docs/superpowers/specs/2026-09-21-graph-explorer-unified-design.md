@@ -781,7 +781,7 @@ demands it.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A, B1 and carry-over built**: see
+  - SO parent / germplasm / factor-level links — **designed 2026-09-29, steps A, B1, carry-over and B2 built**: see
     "Scientific object labels per trial" below.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
@@ -891,11 +891,24 @@ has <objects>, without its/their germplasm from other experiments. Carry any ove
 same picker, nothing picked; confirm writes each pick via the in-experiment PUT, Skip or
 navigating away writes nothing. Germplasm only: a parent may not be in the new experiment.
 
-**Direction after carry-over** (not a plan — pick the next one with the user):
-B2, linking by selection (objects + a germplasm, from either side) with the experiment list,
-nothing ticked, and "add it to an experiment first" for objects in none; "Part of" (same-type,
-needs a direction choice like the org ranking); "also apply to its plants"; factor levels as a
-third row once factors are wired; the Delete gap for objects with a location.
+**Step B2 — link by selection (built 2026-09-29).** Germplasm is now linkable (`actions:
+["link"]`, in LINKABLE_TYPES), so "Link selection" and "Link existing…" work for objects +
+germplasm from either side. `/api/link` treats pairs in `NodeConfig.inExperiment.byType` as
+in-experiment links and checks every object BEFORE writing anything: an object in exactly one
+experiment is written there; one in several (and no `experiments` sent) or in none makes the
+answer `needsExperiment: {notInAny, experiments?, objects?}` with nothing written. The page then
+asks in the action bar — which experiment(s), nothing picked, each labelled with how many of the
+objects are in it; or "isn't in any experiment yet … Add it to one first?" (links it to the
+picked experiment(s), then retries the original link). Picked experiments an object isn't in
+are skipped and counted in the toast. "+ New" never offers these pairs (IN_EXPERIMENT_PAIRS on
+the page; a new object isn't in any experiment yet) — creating "a plot of Annika in X" in one go
+would be its own step.
+
+**Direction after B2** (not a plan — pick the next one with the user): "Part of" (same-type,
+needs a direction choice like the org ranking); "+ New" object with germplasm + experiment
+selected; "also apply to its plants"; factor levels as a third row once factors are wired; the
+Delete gap for objects with a location (needs a decision: it means deleting move events,
+i.e. location history).
 
 ## Access during development
 

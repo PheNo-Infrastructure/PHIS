@@ -41,7 +41,13 @@ export type NodeConfig = {
   // Links that exist only INSIDE one experiment (a scientific object's germplasm): /api/node's
   // PUT with an `experiment` routes here. `fields` = what may be written (the itemGroups rows'
   // `field`), so the detail pane and the route agree on what's editable.
-  inExperiment?: { fields: string[]; update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void> };
+  inExperiment?: {
+    fields: string[];
+    // Which field a link to another type goes into (germplasm -> hasGermplasm), for /api/link.
+    byType: Record<string, string>;
+    experimentsOf: (id: string) => Promise<{ id: string; label: string }[]>;
+    update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void>;
+  };
   // Relation groups that aren't a field on the node's own DTO but come from a query — e.g. an
   // experiment's scientific objects (each SO points at its experiment, not the reverse).
   // Read-only in the detail pane (no `field`, so no Unlink). `item` maps a result row to a
@@ -297,7 +303,12 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         (e) => `/core/scientific_objects/${encodeURIComponent(id)}?experiment=${encodeURIComponent(e.id)}`
       ),
     queryRelations: [SO_EXPERIMENTS_DETAIL],
-    inExperiment: { fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.writable).map((r) => r.property), update: updateSoInExperiment },
+    inExperiment: {
+      fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.writable).map((r) => r.property),
+      byType: Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.writable).map((r) => [r.type, r.property])),
+      experimentsOf: (id) => queryItems(SO_EXPERIMENTS, id),
+      update: updateSoInExperiment,
+    },
   },
   // A project holds no link to its experiments — each experiment's `projects` field does — so
   // they come from a query, and link/unlink goes through the experiment's side (linkFieldFor).
@@ -319,7 +330,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Experiments", type: "experiment", url: (id) => `/core/experiments?projects=${encodeURIComponent(id)}&page_size=500` },
     ],
   },
-  // View-only for now. Species/variety/accession are single uris (+ *_name), not ref arrays.
+  // The record itself is read-only here (no rename/delete). Species/variety/accession are single uris (+ *_name), not ref arrays.
   // Probed live on throwaways: ?species=X returns X's members plus X itself (skipSelf), and
   // /{uri}/experiments works (a species reaches experiments through its accessions). Which
   // scientific objects use a germplasm has no query yet: /scientific_objects?germplasm= is
@@ -334,7 +345,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Accession", field: "accession", type: "germplasm", nameField: "accession_name" },
     ],
     updateLinkFields: [],
-    actions: [],
+    // "link" only for scientific objects (their side holds it — /api/link's in-experiment pairs);
+    // the germplasm record itself still isn't edited here.
+    actions: ["link"],
     queryRelations: [
       { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true },
       { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
