@@ -1226,6 +1226,38 @@ test("e2e: Link selection with 3 objects: flexible anchor — 'make anchor' swap
   });
 });
 
+test("e2e: Unlink selection names every link in a confirm before removing; cancelling writes nothing", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const posts: any[] = [];
+    const dialogs: string[] = [];
+    let accept = false;
+    page.on("dialog", (d) => { dialogs.push(d.message()); accept ? d.accept() : d.dismiss(); });
+    await page.route("**/api/unlink", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      posts.push(b);
+      const body = b.confirm ? { removed: ["Plant B is part of Row 2 in Wheat 2026"], touched: ["exp"] } : { links: ["Plant B is part of Row 2 in Wheat 2026"] };
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      selection.set("plant-b", { id: "plant-b", type: "scientific_object", label: "Plant B" });
+      selection.set("row-2", { id: "row-2", type: "scientific_object", label: "Row 2" });
+      refreshLeftPane(); renderActionbar();
+    });
+    await page.locator("#unlinkSelectionBtn").click();
+    await page.waitForTimeout(300);
+    assert.match(dialogs[0], /Remove this link\?\s+• Plant B is part of Row 2 in Wheat 2026/);
+    assert.equal(posts.filter((p) => p.confirm).length, 0, "cancelled: nothing removed");
+
+    accept = true;
+    await page.locator("#unlinkSelectionBtn").click();
+    await page.waitForTimeout(400);
+    assert.equal(posts.filter((p) => p.confirm).length, 1);
+    assert.match((await page.locator("#toast").textContent()) ?? "", /Removed: Plant B is part of Row 2 in Wheat 2026/);
+  });
+});
+
 test("e2e: a selection with something that fits nothing else offers no \"Link selection\" and names it", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);

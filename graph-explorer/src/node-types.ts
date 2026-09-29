@@ -55,6 +55,8 @@ export type NodeConfig = {
     // After values were ADDED on a node inside an experiment: its children there (part of it)
     // lacking them — offered, never applied (a plot's variety doesn't pass down — probed).
     childOffer?: (id: string, expId: string, field: string, values: string[]) => Promise<CarryOver[]>;
+    // The values (compacted ids) a node has in one row inside one experiment — for /api/unlink.
+    valuesIn: (id: string, expId: string, field: string) => Promise<string[]>;
   };
   // Relation groups that aren't a field on the node's own DTO but come from a query — e.g. an
   // experiment's scientific objects (each SO points at its experiment, not the reverse).
@@ -356,6 +358,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       experimentsOf: (id) => queryItems(SO_EXPERIMENTS, id),
       update: updateSoInExperiment,
       childOffer: soChildOffer,
+      valuesIn: async (id, expId, field) => ((await soRowsIn(id, expId)).find((g) => "field" in g && g.field === field)?.items ?? []).map((i) => i.id),
     },
   },
   // A project holds no link to its experiments — each experiment's `projects` field does — so

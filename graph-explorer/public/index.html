@@ -1950,6 +1950,33 @@ async function linkItems(items, experiments) {
   }
 }
 
+// "Unlink selection": asks the backend which links exist between the selected items, names
+// every one in a confirm, and only then removes them (stopping at the first failure).
+async function unlinkSelection(items) {
+  const post = (confirm) => fetch("/api/unlink", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: items.map(v => ({ type: v.type, id: v.id })), ...(confirm ? { confirm: true } : {}) }),
+  });
+  try {
+    const res = await post(false);
+    const body = await res.json();
+    if (!res.ok) { showToast(`Failed to unlink: ${body.error || res.status}`); return; }
+    if (!body.links.length) { showToast("These aren't linked to each other — nothing to remove."); return; }
+    if (!confirm(`Remove ${body.links.length === 1 ? "this link" : `these ${body.links.length} links`}?\n\n${body.links.map(l => `• ${l}`).join("\n")}`)) return;
+    const done = await post(true);
+    const result = await done.json();
+    items.forEach(it => invalidateNodeDetail(it.id));
+    (result.touched || []).forEach(id => invalidateNodeDetail(id));
+    render();
+    showToast(done.ok
+      ? `Removed: ${result.removed.join("; ")}`
+      : `Removed ${result.removed?.length ?? 0}, then stopped at “${result.failed}”: ${result.error || done.status}`);
+  } catch (err) {
+    showToast(`Failed to unlink: ${err}`);
+  }
+}
+
 async function linkParents(type, pairs, experiments) {
   try {
     const res = await fetch("/api/parent", {
@@ -2575,6 +2602,7 @@ function renderActionbar() {
     <button class="btn ghost" id="clearSel">Clear</button>
     ${plan.why ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
+    ${canLink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
     ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="linkExistingBtn">Link existing…</button>`, "Link existing") : ""}
     <div class="newmenu" id="newMenu">
       <button class="btn primary" id="newBtn">+ New</button>
@@ -2588,6 +2616,7 @@ function renderActionbar() {
       if (plan.kind === "rank") enterLinkRanking(items[0], items.slice(1));
       else linkItems(items.map(v => ({ type: v.type, id: v.id })));
     });
+    document.getElementById("unlinkSelectionBtn").addEventListener("click", () => unlinkSelection([...selection.values()]));
   }
   if (hasExistingCandidates) {
     // linkPickerCandidatesByType only filters out already-related items when the anchor's

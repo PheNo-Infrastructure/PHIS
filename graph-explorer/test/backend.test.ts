@@ -931,6 +931,39 @@ test("setting germplasm on an object in an experiment offers its children there 
   });
 });
 
+test("/api/unlink: lists the links BETWEEN the selected items in words (nothing written), then removes exactly those on confirm", async () => {
+  await withServer(async (base) => {
+    const puts: { so: string; relations: string[] }[] = [];
+    const rels: Record<string, { property: string; value: string }[]> = {
+      plot: [{ property: "vocabulary:hasGermplasm", value: "phis:id/annika" }, { property: "vocabulary:isPartOf", value: "block" }, { property: "vocabulary:hasGermplasm", value: "phis:id/other" }],
+      block: [],
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push({ so: b.uri, relations: b.relations.map((r: any) => r.value) }); rels[b.uri] = b.relations; return jsonResponse(200, { result: b.uri }); }
+      if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u })) });
+      const exps = url.match(/scientific_objects\/(\w+)\/experiments/);
+      if (exps) return jsonResponse(200, { result: [{ experiment: "exp-b", experiment_name: "Wheat 2026" }] });
+      const copy = url.match(/scientific_objects\/(\w+)\?experiment=/);
+      if (copy) return jsonResponse(200, { result: { uri: copy[1], name: copy[1], rdf_type: "vocabulary:Plot", relations: rels[copy[1]] } });
+      const glob = url.match(/scientific_objects\/(\w+)$/);
+      if (glob) return jsonResponse(200, { result: { uri: glob[1], name: glob[1] === "plot" ? "Plot 1" : "Block A" } });
+      if (url.includes("/core/germplasm/")) return jsonResponse(200, { result: { uri: "phis:id/annika", name: "Annika" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const items = [{ type: "scientific_object", id: "plot" }, { type: "germplasm", id: "phis:id/annika" }, { type: "scientific_object", id: "block" }];
+    const post = async (confirm: boolean) => (await realFetch(`${base}/api/unlink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, confirm }) })).json();
+
+    assert.deepEqual((await post(false)).links.sort(), ["Annika on Plot 1 in Wheat 2026", "Plot 1 is part of Block A in Wheat 2026"]);
+    assert.equal(puts.length, 0, "the dry run writes nothing");
+
+    const done = await post(true);
+    assert.equal(done.removed.length, 2);
+    assert.deepEqual(puts.at(-1)!.relations, ["phis:id/other"], "only Annika and the parent removed; the other germplasm kept");
+  });
+});
+
 test("GET /api/node-detail rejects an unsupported type or missing id", async () => {
   await withServer(async (base) => {
     const res = await realFetch(`${base}/api/node-detail?type=germplasm&id=x`);

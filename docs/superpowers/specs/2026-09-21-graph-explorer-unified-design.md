@@ -994,7 +994,11 @@ question they answer stays readable; tree/list switch, treeMode and the simulate
 gone (clicks remember their area, so shift-ranges stay within the list or the tree). **Step 2a built
 2026-09-29**: `linkPlan()` decides rank / link / none(+why); every item must have a linkable
 partner ("X can't be linked to anything else selected — remove it to link the rest"); the
-ranking modal has "make anchor" per row and the anchor is a drop target. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
+ranking modal has "make anchor" per row and the anchor is a drop target. **Step 2b built**:
+`/api/unlink` finds every link between the selected items (DTO fields incl. same-type ones like
+organization parents, object<->experiment, germplasm and "part of" per experiment), returns them
+as sentences without `confirm`, removes them in order with `confirm` and stops at the first
+failure; the page shows the sentences in a confirm. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
 of the second test exercise steps 2 and 4).
 
 ## Access during development
