@@ -1164,17 +1164,80 @@ test("e2e: selecting two existing, different-typed adjacent nodes offers \"Link 
   });
 });
 
-test("e2e: selecting only same-type nodes never offers \"Link selection\" (direction would be ambiguous)", async () => {
+test("e2e: two of a type WITHOUT parent/child (facilities) offer no \"Link selection\" and say why; two organizations open the ranking list", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
     await page.waitForTimeout(1000);
     await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "Facilities");
     await page.locator("#rowlist .row").nth(0).click();
     await page.waitForTimeout(150);
     await page.locator("#rowlist .row").nth(1).click({ modifiers: ["Control"] });
     await page.waitForTimeout(200);
     assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
+    assert.match(await page.locator("#actionbar .link-why").innerText(), /Two facilitys? can't be linked to each other/);
+
+    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await openRow(page, "Organizations");
+    await page.locator("#rowlist .row").nth(0).click();
+    await page.locator("#rowlist .row").nth(1).click({ modifiers: ["Control"] });
+    await page.waitForTimeout(200);
+    await page.locator("#linkSelectionBtn").click();
+    await page.locator(".ranking-modal").waitFor({ state: "visible" });
+    assert.equal(await page.locator('.ranking-zone[data-zone="children"] .ranking-row').count(), 1, "the first selected is the anchor, the other its child");
+  });
+});
+
+test("e2e: Link selection with 3 objects: flexible anchor — 'make anchor' swaps, then one drag gives three levels in one round", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const posts: any[] = [];
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", actions: ["delete", "link"], relations: [] }) }));
+    await page.route("**/api/parent", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      posts.push(b);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 2, written: b.pairs.map((p: any) => ({ ...p, experiments: ["Wheat 2025"], only: true })) }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      for (const it of [{ id: "plant", label: "Plant A" }, { id: "row", label: "Row 1" }, { id: "field", label: "Field East" }]) selection.set(it.id, { ...it, type: "scientific_object" });
+      refreshLeftPane(); renderActionbar();
+    });
+    await page.locator("#linkSelectionBtn").click();
+    await page.locator(".ranking-modal").waitFor({ state: "visible" });
+    assert.match(await page.locator(".ranking-anchor").innerText(), /Plant A/, "first selected starts as the anchor");
+
+    await page.locator(".ranking-row", { hasText: "Row 1" }).locator(".make-anchor").click();
+    assert.match(await page.locator(".ranking-anchor").innerText(), /Row 1/);
+    const zone = (z: string) => page.locator(`.ranking-zone[data-zone="${z}"] .ranking-row`).allTextContents().then((t) => t.map((x) => x.replace("make anchor", "").trim()).sort());
+    assert.deepEqual(await zone("children"), ["Field East", "Plant A"], "the old anchor dropped in as a child");
+
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      const source = [...document.querySelectorAll(".ranking-row")].find((r) => r.textContent!.includes("Field East")) as HTMLElement;
+      const target = document.querySelector('.ranking-zone[data-zone="parents"]') as HTMLElement;
+      source.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+      target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await page.locator("#rankingConfirm").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posts[0].pairs.map((p: any) => `${p.child}<${p.parent}`).sort(), ["plant<row", "row<field"], "Field East > Row 1 > Plant A in one round");
+  });
+});
+
+test("e2e: a selection with something that fits nothing else offers no \"Link selection\" and names it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      selection.set("so-1", { id: "so-1", type: "scientific_object", label: "Plot 1" });
+      selection.set("g-1", { id: "g-1", type: "germplasm", label: "Annika" });
+      selection.set("prj-1", { id: "prj-1", type: "project", label: "Big project" });
+      refreshLeftPane(); renderActionbar();
+    });
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
+    assert.match(await page.locator("#actionbar .link-why").innerText(), /Big project \(project\) can't be linked to anything else selected/);
   });
 });
 
@@ -1440,7 +1503,7 @@ test("e2e: one object selected + other objects picked -> the ranking modal with 
     await drag("Block A");
     await drag("Block B");
     await page.waitForTimeout(200);
-    const zone = (z: string) => page.locator(`.ranking-zone[data-zone="${z}"] .ranking-row`).allTextContents().then((t) => t.map((x) => x.trim()).sort());
+    const zone = (z: string) => page.locator(`.ranking-zone[data-zone="${z}"] .ranking-row`).allTextContents().then((t) => t.map((x) => x.replace("make anchor", "").trim()).sort());
     assert.deepEqual(await zone("parents"), ["Block B"], "Block B swapped Block A out");
     assert.deepEqual(await zone("children"), ["Block A", "Plant 1"]);
 

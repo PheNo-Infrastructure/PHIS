@@ -991,7 +991,10 @@ design, later). **Step 1 built 2026-09-29**: the selection pane is always visibl
 hint, and it holds the standalone "+ New <type>"), not only once something is selected — a pane
 that appears on the first click would shift the whole layout; its menus open downward so the
 question they answer stays readable; tree/list switch, treeMode and the simulated graph panel are
-gone (clicks remember their area, so shift-ranges stay within the list or the tree). Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
+gone (clicks remember their area, so shift-ranges stay within the list or the tree). **Step 2a built
+2026-09-29**: `linkPlan()` decides rank / link / none(+why); every item must have a linkable
+partner ("X can't be linked to anything else selected — remove it to link the rest"); the
+ranking modal has "make anchor" per row and the anchor is a drop target. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
 of the second test exercise steps 2 and 4).
 
 ## Access during development

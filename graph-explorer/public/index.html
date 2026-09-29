@@ -649,6 +649,10 @@ button { font-family: inherit; }
   border: 1px solid transparent;
 }
 .ranking-row:hover { background: var(--surface-2); }
+.ranking-row .make-anchor { margin-left: auto; border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 11px; padding: 0 2px; }
+.ranking-row .make-anchor:hover { color: var(--accent); }
+.ranking-anchor.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+.link-why { color: var(--ink-faint); font-size: 12px; }
 .ranking-row.selected { background: var(--accent-soft); border-color: var(--accent); }
 .ranking-row .swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-faint)); flex: none; }
 .ranking-anchor {
@@ -1872,6 +1876,25 @@ function linkSelectionLabel() {
   return `Set ${what} on ${objects.length === 1 ? objects[0].label : `${objects.length} objects`}…`;
 }
 
+// What "Link selection" would do with the current selection (selection-first design):
+//   rank — two or more of ONE parent/child type and nothing else -> the ranking list;
+//   link — different types, and every item can link to at least one other selected item;
+//   none — otherwise, with `why` naming what doesn't fit (so there's no silent dead end).
+function linkPlan() {
+  const items = [...selection.values()];
+  if (items.length < 2) return { kind: "none" };
+  const types = [...new Set(items.map(v => v.type))];
+  const nice = t => t.replace("_", " ");
+  if (types.length === 1) {
+    return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${nice(types[0])}s can't be linked to each other.` };
+  }
+  const pairOk = (a, b) => a !== b && LINKABLE_TYPES.has(a) && LINKABLE_TYPES.has(b) && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a));
+  const misfit = items.find(v => !items.some(w => w !== v && pairOk(v.type, w.type)));
+  return misfit
+    ? { kind: "none", why: `${misfit.label} (${nice(misfit.type)}) can't be linked to anything else selected — remove it to link the rest.` }
+    : { kind: "link" };
+}
+
 function selectionHasLinkablePair() {
   const types = [...new Set([...selection.values()].map(v => v.type))];
   for (let i = 0; i < types.length; i++) {
@@ -2039,8 +2062,9 @@ function renderLinkRankingModal() {
     return `<div class="ranking-zone" data-zone="${zoneKey}">
       <div class="ranking-zone-label">${label} (${items.length})</div>
       ${items.map(it => `
-        <div class="ranking-row${selectedIds.has(it.id) ? " selected" : ""}" draggable="true" data-id="${it.id}" style="${typeStyle(it.type)}">
+        <div class="ranking-row${selectedIds.has(it.id) ? " selected" : ""}" draggable="true" data-id="${escapeHtml(it.id)}" style="${typeStyle(it.type)}">
           <span class="swatch"></span>${escapeHtml(it.label)}
+          <button class="make-anchor" data-anchor="${escapeHtml(it.id)}" title="Make this the anchor">make anchor</button>
         </div>
       `).join("") || `<div class="ranking-empty">Drop here</div>`}
     </div>`;
@@ -2053,9 +2077,9 @@ function renderLinkRankingModal() {
         <span>Rank relative to ${escapeHtml(anchor.label)}</span>
         <button class="ranking-close" id="rankingClose" title="Cancel">&times;</button>
       </div>
-      <p class="ranking-hint">Drag an ${noun} above the line to make it ${oneParent ? "<b>the parent</b>" : "a <b>parent</b>"} of ${escapeHtml(anchor.label)}, or leave/drop it below to make it a <b>child</b>.${oneParent ? " An object has one parent: dropping another there swaps it out. The link is set inside an experiment both are in." : ""} Click, ctrl-click, or shift-click to select several first and drag them together.</p>
+      <p class="ranking-hint">Drag an ${noun} above the line to make it ${oneParent ? "<b>the parent</b>" : "a <b>parent</b>"} of ${escapeHtml(anchor.label)}, or leave/drop it below to make it a <b>child</b>.${oneParent ? " An object has one parent: dropping another there swaps it out. The link is set inside an experiment both are in." : ""} Any row can be the anchor: drag it onto the middle, or use “make anchor”. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
       ${zoneHtml(parents, "parents", oneParent ? "Parent" : "Parents")}
-      <div class="ranking-anchor"><span class="swatch"></span>${escapeHtml(anchor.label)}<span class="ranking-anchor-tag">anchor</span></div>
+      <div class="ranking-anchor" data-zone="anchor"><span class="swatch"></span>${escapeHtml(anchor.label)}<span class="ranking-anchor-tag">anchor</span></div>
       ${zoneHtml(children, "children", "Children")}
       <div class="ranking-footer">
         <button class="btn ghost" id="rankingCancel">Cancel</button>
@@ -2090,6 +2114,29 @@ function renderLinkRankingModal() {
       e.dataTransfer.setData("text/plain", JSON.stringify(dragIds));
       e.dataTransfer.effectAllowed = "move";
     });
+  });
+
+  // Flexible anchor: the chosen row becomes the anchor, the old anchor drops in as a child.
+  const makeAnchor = (id) => {
+    const item = linkRanking.parents.get(id) || linkRanking.children.get(id);
+    if (!item) return;
+    linkRanking.parents.delete(id);
+    linkRanking.children.delete(id);
+    linkRanking.children.set(linkRanking.anchor.id, linkRanking.anchor);
+    linkRanking.anchor = item;
+    linkRanking.selectedIds = new Set();
+    renderLinkRankingModal();
+  };
+  overlay.querySelectorAll(".make-anchor").forEach((btn) => {
+    btn.addEventListener("click", (e) => { e.stopPropagation(); makeAnchor(btn.dataset.anchor); });
+  });
+  const anchorEl = overlay.querySelector(".ranking-anchor");
+  anchorEl.addEventListener("dragover", (e) => { e.preventDefault(); anchorEl.classList.add("drag-over"); });
+  anchorEl.addEventListener("dragleave", () => anchorEl.classList.remove("drag-over"));
+  anchorEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const ids = JSON.parse(e.dataTransfer.getData("text/plain") || "[]");
+    if (ids.length) makeAnchor(ids[0]); // one anchor: the first of a dragged group
   });
 
   overlay.querySelectorAll(".ranking-zone").forEach((zone) => {
@@ -2516,7 +2563,8 @@ function renderActionbar() {
   // See adjacency.js: intersection of every selected item's adjacency, not union — a single
   // new node gets linked to ALL of them at once, so its type must be valid for every one.
   const creatable = creatableTypesFor([...selection.values()].map(v => v.type));
-  const canLink = selection.size >= 2 && selectionHasLinkablePair();
+  const plan = linkPlan();
+  const canLink = plan.kind !== "none";
   const hasExistingCandidates = linkPickerCandidatesByType().size > 0;
 
   bar.innerHTML = `
@@ -2525,6 +2573,7 @@ function renderActionbar() {
       <span class="selection-names">${names}</span>
     </div>
     <button class="btn ghost" id="clearSel">Clear</button>
+    ${plan.why ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="linkExistingBtn">Link existing…</button>`, "Link existing") : ""}
     <div class="newmenu" id="newMenu">
@@ -2534,7 +2583,10 @@ function renderActionbar() {
   `;
   if (canLink) {
     document.getElementById("linkSelectionBtn").addEventListener("click", () => {
-      linkItems([...selection.values()].map(v => ({ type: v.type, id: v.id })));
+      const items = [...selection.values()];
+      // Parent/child: the first selected starts as the anchor, the rest as its children.
+      if (plan.kind === "rank") enterLinkRanking(items[0], items.slice(1));
+      else linkItems(items.map(v => ({ type: v.type, id: v.id })));
     });
   }
   if (hasExistingCandidates) {
