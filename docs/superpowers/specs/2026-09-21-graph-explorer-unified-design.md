@@ -777,7 +777,13 @@ demands it.
   experiment, scientific object, project, germplasm (view-only). Direction set 2026-09-25: finish the foundation
   (wire the remaining types) before imports. Live record counts then: germplasm 183,
   devices 7, events 7, persons 4, factors/variables/provenances/data files/documents 0.
-  Candidate next steps, none started — pick ONE with the user:
+  **Next (decided 2026-09-29, not started): a demo of the prototype.** (1) The TraitFinder
+  instrument import (the file-import path in Creation model; needs factor levels, not built
+  yet). (2) Online for the demo against a TEST environment holding a copy of prod data
+  (scripts/test-env.ps1 + a restore from the daily backups) — never against prod; the server
+  acts with the .env account, so the online copy needs access protection first. The graph
+  (selection-first step 5) waits until after the demo.
+  Older candidate next steps:
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
