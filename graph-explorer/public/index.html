@@ -434,8 +434,6 @@ button { font-family: inherit; }
 .item-box-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .item-box-key { font-size: 12px; color: var(--ink-faint); }
 .rel-empty { color: var(--ink-faint); font-size: 12.5px; }
-.box-add { border: 1px dashed var(--border-strong); background: none; border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--ink-faint); cursor: pointer; }
-.box-add:hover { border-color: var(--accent); color: var(--accent); }
 
 /* selection / CTA bar */
 .actionbar {
@@ -923,9 +921,6 @@ let linkPickerShiftAnchor = null;  // last picked id, for shift-range within the
 // to the selection — {type, confirmLabel(n), onConfirm(items)}. Used by standalone "+ New site"
 // to pick the organization(s) a site can't exist without (CREATABLE[t].requiresLink).
 let linkPickerMode = null;
-// "+ Add" in one experiment's box on a detail pane: {node, field, type, expId, expLabel, exclude}.
-// Takes over the action bar (picker locked to that type) until confirmed, cancelled, or navigated away.
-let inExperimentAdd = null;
 // Labels offered in the action bar with nothing picked: after a link that created experiment
 // copies, what those objects have in their other experiments (carryOver); after germplasm was
 // set on an object, its children there that lack it (childOffer, items carry `parent`).
@@ -1114,7 +1109,6 @@ function navigateTo(newPath) {
   path = newPath;
   detailPath = []; // a real navigation ends any local detail opened from the tree
   unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink
-  inExperimentAdd = null;
   carryOverOffer = null;
   experimentChoice = null;
   deleteBlockedShown = null;
@@ -1367,28 +1361,6 @@ async function applyCarryOver(picked) {
   render();
 }
 
-async function addInExperiment(a, picked) {
-  try {
-    const res = await fetch("/api/node", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: a.node.type, id: a.node.id, experiment: a.expId, link: { field: a.field, uris: picked.map(p => p.id) } }),
-    });
-    const body = await res.json();
-    if (!res.ok) { showToast(`Failed to add: ${body.error || res.status}`); return; }
-    NODE_DETAIL[a.node.id] = { ...NODE_DETAIL[a.node.id], relations: body.relations };
-    picked.forEach(p => invalidateNodeDetail(p.id)); // their Experiments group changed
-    invalidateNodeDetail(a.expId); // and the experiment's derived Species
-    inExperimentAdd = null;
-    carryOverOffer = body.childOffer?.length ? { items: body.childOffer } : null;
-    showToast(`${a.node.label} in ${a.expLabel}: added ${picked.map(p => p.label).join(", ")}`);
-    renderDetail();
-    renderActionbar();
-  } catch (err) {
-    showToast(`Failed to add: ${err}`);
-  }
-}
-
 async function unlinkAll(item) {
   const node = NODE_DETAIL[item.id];
   const targets = (node?.relations ?? [])
@@ -1465,10 +1437,10 @@ function chipHtml(it, unlinkField, expId) {
     + `</span>`;
 }
 // One relation group. Items carrying `groups` (what the node is within that item) render as
-// boxes; empty rows say "none". A box row with a `field` is editable inside that experiment:
-// "+ Add" when `canAdd`, × on its chips in unlink mode. `unlinkable` decides per item whether
-// it gets an × (unlink mode only).
-function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, canAdd = false } = {}) {
+// boxes; empty rows say "none". A box row with a `field` gets × on its chips in unlink mode.
+// Adding goes through the selection (select the object and the value, then Link selection).
+// `unlinkable` decides per item whether it gets an × (unlink mode only).
+function relGroupHtml(rel, { unlinkable = () => false, unlinking = false } = {}) {
   let h = `<div class="rel-group"><div class="rel-label">${escapeHtml(rel.label)}</div>`;
   if (!rel.items.length) return h + `<span class="rel-empty">${rel.emptyText || "None."}</span></div>`;
   const chip = it => chipHtml(it, rel.field && unlinkable(it) ? rel.field : null);
@@ -1477,10 +1449,7 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, canAdd
       h += `<div class="item-box"><div class="chip-row">${chip(it)}</div><div class="item-box-rows">`;
       (it.groups || []).forEach(g => {
         const chips = g.items.map(x => chipHtml(x, unlinking && g.field ? g.field : null, it.id)).join("");
-        const add = canAdd && g.addable && !unlinking
-          ? `<button class="box-add" data-field="${escapeHtml(g.field)}" data-type="${escapeHtml(g.type)}" data-exp="${escapeHtml(it.id)}" data-exp-label="${escapeHtml(it.label)}" data-have="${escapeHtml(g.items.map(x => x.id).join(" "))}">+ Add</button>`
-          : "";
-        h += `<span class="item-box-key">${escapeHtml(g.label)}</span><div class="chip-row">${chips || (add ? "" : `<span class="rel-empty">none</span>`)}${add}</div>`;
+        h += `<span class="item-box-key">${escapeHtml(g.label)}</span><div class="chip-row">${chips || `<span class="rel-empty">none</span>`}</div>`;
       });
       h += `</div></div>`;
     });
@@ -1591,7 +1560,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
       }
     } else {
-      node.relations.forEach(rel => { html += relGroupHtml(rel, { canAdd: canEdit && actions.includes("link") }); });
+      node.relations.forEach(rel => { html += relGroupHtml(rel); });
     }
   } else {
     // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely
@@ -1650,17 +1619,6 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       renderDetail();
     });
   }
-
-  els.detailBody.querySelectorAll(".box-add").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation(); // else the picker's close-on-next-click listener catches this same click
-      inExperimentAdd = {
-        node: focusNode, field: btn.dataset.field, type: btn.dataset.type,
-        expId: btn.dataset.exp, expLabel: btn.dataset.expLabel, exclude: new Set(btn.dataset.have.split(" ").filter(Boolean)),
-      };
-      renderActionbar();
-    });
-  });
 
   els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => {
     chip.addEventListener("click", (e) => {
@@ -2025,31 +1983,18 @@ async function linkParents(type, pairs, experiments) {
 // intersection rule creatableTypesFor already uses for "+ New" (a candidate type must be
 // adjacent to EVERY selected item), further restricted to LINKABLE_TYPES on both sides (the
 // candidate AND every already-selected type), and excluding any type already present in the
-// selection — same-type linking is normally the ambiguous case linkFieldFor refuses server-
-// side (e.g. don't offer "link an existing organization" when an organization is already
-// selected) — EXCEPT organization<->organization with exactly one organization selected, where
-// the ambiguity has a real resolution: pick organizations the SAME way as any other type (see
-// paintRows — same click/ctrl/shift rules everywhere), and route the ambiguous ones to the
-// ranking modal on confirm instead of guessing a direction (see ambiguousPickIds below).
+// selection — EXCEPT when everything selected is one parent/child type (RANKED_TYPES): then
+// more of that type can be gathered, and "Link selection" settles direction in the ranking list.
 // Types whose same-type links are parent/child, settled in the ranking modal (never guessed).
 const RANKED_TYPES = new Set(["organization", "scientific_object"]);
 function linkableExistingTypes() {
   const selectedTypes = [...selection.values()].map(v => v.type);
   if (!selectedTypes.length || !selectedTypes.every(t => LINKABLE_TYPES.has(t))) return new Set();
-  const soloRanked = selectedTypes.length === 1 && RANKED_TYPES.has(selectedTypes[0]);
+  // Same-type candidates too when everything selected is one parent/child type — so more can be
+  // gathered before "Link selection" opens the ranking list.
+  const oneRanked = new Set(selectedTypes).size === 1 && RANKED_TYPES.has(selectedTypes[0]);
   const candidates = creatableTypesFor(selectedTypes);
-  return new Set([...candidates].filter(t => LINKABLE_TYPES.has(t) && (soloRanked || !selectedTypes.includes(t))));
-}
-
-// Of whatever's currently picked, which ones have an ambiguous relation to the anchor and need
-// the ranking modal instead of a normal /api/link call. Today that's only organizations picked
-// against a single organization anchor (the one same-type case linkableExistingTypes allows at
-// all) — structurally can't happen for any other combination, since that function only permits
-// same-type candidates in exactly this situation.
-function ambiguousPickIds() {
-  const selectedValues = [...selection.values()];
-  if (selectedValues.length !== 1 || !RANKED_TYPES.has(selectedValues[0].type)) return new Set();
-  return new Set([...linkPickerPicked.values()].filter(it => it.type === selectedValues[0].type).map(it => it.id));
+  return new Set([...candidates].filter(t => LINKABLE_TYPES.has(t) && (oneRanked || !selectedTypes.includes(t))));
 }
 
 // ---------------- link-ranking modal ----------------
@@ -2324,9 +2269,7 @@ function renderLinkPicker() {
         listEl.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">No matches.</span>`;
         return;
       }
-      // Organizations (the one same-type-allowed case, only reachable with a single
-      // organization anchor) pick exactly like any other type here — direction is resolved
-      // AFTER confirming, via the ranking modal, not by guessing per row (see ambiguousPickIds).
+      // Same click/ctrl/shift rules as every other list; picks only join the selection.
       visible.slice(0, 200).forEach((it) => {
         const row = document.createElement("button");
         row.className = "newmenu-item" + (linkPickerPicked.has(it.id) ? " selected" : "");
@@ -2372,7 +2315,7 @@ function renderLinkPickerFooter() {
   if (!linkPickerPicked.size) return;
   const btn = document.createElement("button");
   btn.className = "btn primary linkmenu-confirm";
-  btn.textContent = linkPickerMode ? linkPickerMode.confirmLabel(linkPickerPicked.size) : `Link ${linkPickerPicked.size} picked`;
+  btn.textContent = linkPickerMode ? linkPickerMode.confirmLabel(linkPickerPicked.size) : `Add ${linkPickerPicked.size} to selection`;
   btn.addEventListener("click", () => {
     if (linkPickerMode) {
       const { onConfirm } = linkPickerMode;
@@ -2385,22 +2328,15 @@ function renderLinkPickerFooter() {
       onConfirm(picked);
       return;
     }
-    const anchor = [...selection.values()][0];
-    const ambiguous = ambiguousPickIds();
+    // "Add to selection…" only SELECTS (selection-first design) — linking is always the
+    // selection pane's "Link selection", which then decides link / rank / why-not.
     const picked = [...linkPickerPicked.values()];
-    const unambiguous = picked.filter((it) => !ambiguous.has(it.id));
-    const ambiguousItems = picked.filter((it) => ambiguous.has(it.id));
     document.getElementById("linkMenu")?.classList.remove("open");
     linkPickerType = null;
     linkPickerPicked = new Map();
     linkPickerShiftAnchor = null;
-    // Unambiguous picks (e.g. facilities) link right away, same as before. Ambiguous ones
-    // (organizations picked against a single organization anchor) go to the ranking modal
-    // instead — resolved by dragging above/below the anchor, not by guessing a direction.
-    if (unambiguous.length) {
-      linkItems([...selection.values(), ...unambiguous].map((v) => ({ type: v.type, id: v.id })));
-    }
-    if (ambiguousItems.length) enterLinkRanking(anchor, ambiguousItems);
+    picked.forEach((it) => selection.set(it.id, it));
+    refreshLeftPane(); renderDetail(); renderActionbar();
   });
   footer.appendChild(btn);
 }
@@ -2517,28 +2453,6 @@ function renderActionbar() {
     document.getElementById("carryOverBtn").click(); // open straight away, nothing picked
     return;
   }
-  if (inExperimentAdd) {
-    const a = inExperimentAdd;
-    const niceType = a.type.replace("_", " ");
-    bar.className = "actionbar";
-    bar.innerHTML = `
-      <div class="selection-summary"><span>Add ${niceType} to <span style="color:var(--ink); font-weight:600;">${escapeHtml(a.node.label)}</span> in <span style="color:var(--ink); font-weight:600;">${escapeHtml(a.expLabel)}</span></span></div>
-      ${linkMenuHtml(`<button class="btn primary" id="inExpAddBtn">Pick ${niceType}…</button>`, `${niceType} for ${escapeHtml(a.node.label)} in ${escapeHtml(a.expLabel)}`)}
-      <button class="btn ghost" id="inExpCancelBtn">Cancel</button>
-    `;
-    wireLinkMenu("inExpAddBtn", () => {
-      linkPickerType = a.type;
-      linkPickerMode = {
-        type: a.type,
-        exclude: a.exclude,
-        confirmLabel: (n) => `Set ${n} ${niceType} on ${a.node.label} in ${a.expLabel}`,
-        onConfirm: (picked) => addInExperiment(a, picked),
-      };
-    });
-    document.getElementById("inExpCancelBtn").addEventListener("click", () => { inExperimentAdd = null; renderActionbar(); });
-    document.getElementById("inExpAddBtn").click(); // open straight away — "+ Add" already said what to do
-    return;
-  }
   if (selection.size === 0) {
     // Nothing selected doesn't mean nothing can be created — browsing straight to a category
     // page (e.g. Organizations) with no selection still offers a standalone "+ New <type>" for
@@ -2603,7 +2517,7 @@ function renderActionbar() {
     ${plan.why ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${canLink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
-    ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="linkExistingBtn">Link existing…</button>`, "Link existing") : ""}
+    ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="addToSelectionBtn">Add to selection…</button>`, "Add to selection") : ""}
     <div class="newmenu" id="newMenu">
       <button class="btn primary" id="newBtn">+ New</button>
       <div class="newmenu-list" id="newList"></div>
@@ -2624,7 +2538,7 @@ function renderActionbar() {
     // to-select never loads NODE_DETAIL. Fetch it (if needed) BEFORE the one render,
     // rather than rendering then re-rendering after — a second render mid-interaction would
     // reset which rows exist out from under a pick already in progress.
-    wireLinkMenu("linkExistingBtn", async () => {
+    wireLinkMenu("addToSelectionBtn", async () => {
       const anchor = selection.size === 1 ? [...selection.values()][0] : null;
       if (anchor && !(anchor.id in NODE_DETAIL)) await loadNodeDetail(anchor);
     });

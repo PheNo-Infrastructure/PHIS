@@ -502,7 +502,7 @@ test("e2e: a scientific object shows one box per experiment with its germplasm/p
   });
 });
 
-test("e2e: '+ Add' in an experiment's box picks germplasm (already-set ones hidden) and writes it in THAT experiment; × in unlink mode removes it there", async () => {
+test("e2e: no '+ Add' in boxes — germplasm is added through the selection (Add to selection… -> Link selection); × in unlink mode removes it in THAT experiment", async () => {
   await withServerAndBrowser(async (base, page) => {
     const puts: any[] = [];
     let germ = [{ id: "g-annika", type: "germplasm", label: "Annika" }];
@@ -517,10 +517,11 @@ test("e2e: '+ Add' in an experiment's box picks germplasm (already-set ones hidd
       { id: "g-annika", type: "germplasm", label: "Annika" }, { id: "g-arild", type: "germplasm", label: "Arild" },
     ]) }));
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail()) }));
+    const links: any[] = [];
+    await page.route("**/api/link", (r) => { links.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
     await page.route("**/api/node", (r) => {
       const b = JSON.parse(r.request().postData() || "{}");
       puts.push(b);
-      if (b.link) germ = [...germ, ...b.link.uris.map((id: string) => ({ id, type: "germplasm", label: "Arild" }))];
       if (b.unlink) germ = germ.filter((g) => g.id !== b.unlink.uri);
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "so-1", type: "scientific_object", label: "Plot 1", relations: detail().relations }) });
     });
@@ -528,24 +529,27 @@ test("e2e: '+ Add' in an experiment's box picks germplasm (already-set ones hidd
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await page.waitForTimeout(400);
+    assert.equal(await page.locator("#detailBody .box-add").count(), 0, "no second mechanic in the boxes");
 
-    await page.locator("#detailBody .box-add").click();
-    await page.waitForTimeout(300);
-    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Add germplasm to Plot 1 in Barley 2026/);
-    assert.deepEqual((await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim()), ["Arild"], "Annika is already set here");
-    await page.locator("#linkList .newmenu-item", { hasText: "Arild" }).click();
-    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Set 1 germplasm on Plot 1 in Barley 2026");
+    // Select the object (its title), find the germplasm with "Add to selection…", then Link selection.
+    await page.locator("#selfChip").click();
+    await page.locator("#addToSelectionBtn").click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "germplasm" }).click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "Arild" }).click();
+    assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Add 1 to selection");
     await page.locator(".linkmenu-confirm").click();
-    await page.waitForTimeout(400);
-    assert.deepEqual(puts[0], { type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g-arild"] } });
-    assert.match(await page.locator("#detailBody .item-box").innerText(), /Annika[\s\S]*Arild/);
-    assert.doesNotMatch(await page.locator("#actionbar").innerText(), /Add germplasm/, "action bar back to normal");
+    await page.waitForTimeout(200);
+    assert.equal(links.length, 0, "picking only selects");
+    assert.equal((await page.locator("#linkSelectionBtn").innerText()).trim(), "Set Arild on Plot 1…");
+    await page.locator("#linkSelectionBtn").click();
+    await page.waitForTimeout(300);
+    assert.deepEqual(links[0].items.map((i: any) => i.id).sort(), ["g-arild", "so-1"]);
 
     await page.locator("#unlinkModeBtn").click();
     await page.waitForTimeout(200);
     await page.locator("#detailBody .item-box .chip-unlink[data-uri='g-annika']").click();
     await page.waitForTimeout(400);
-    assert.deepEqual(puts[1], { type: "scientific_object", id: "so-1", experiment: "exp-b", unlink: { field: "hasGermplasm", uri: "g-annika" } });
+    assert.deepEqual(puts[0], { type: "scientific_object", id: "so-1", experiment: "exp-b", unlink: { field: "hasGermplasm", uri: "g-annika" } });
   });
 });
 
@@ -600,8 +604,10 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await page.waitForTimeout(400);
-    await page.locator("#detailBody .box-add").click();
-    await page.waitForTimeout(400);
+    await page.locator("#selfChip").click();
+    await page.locator("#addToSelectionBtn").click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "germplasm" }).click();
+    await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => (window as any).__pwned), undefined, "no injected handler ran");
     assert.equal(await page.locator("#detailBody img, #actionbar img").count(), 0);
     assert.match(await page.locator("#detailBody .item-box").innerText(), /<img src=x/);
@@ -1312,7 +1318,7 @@ test("e2e: selecting several facilities plus one organization offers \"Link sele
   });
 });
 
-test("e2e: \"Link existing…\" is a two-level type-then-item browser: pick a type, search, multi-pick, then confirm once", async () => {
+test("e2e: \"Add to selection…\" is a two-level type-then-item browser: pick a type, search, multi-pick, then confirm once", async () => {
   await withServerAndBrowser(async (base, page) => {
     let capturedBody: unknown = null;
     await page.route("**/api/link", (route) => {
@@ -1336,7 +1342,7 @@ test("e2e: \"Link existing…\" is a two-level type-then-item browser: pick a ty
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
 
-    const linkExistingBtn = page.locator("#linkExistingBtn");
+    const linkExistingBtn = page.locator("#addToSelectionBtn");
     await linkExistingBtn.waitFor({ state: "visible" });
     await linkExistingBtn.click();
     await page.waitForTimeout(150);
@@ -1368,11 +1374,16 @@ test("e2e: \"Link existing…\" is a two-level type-then-item browser: pick a ty
 
     const confirmBtn = page.locator(".linkmenu-confirm");
     await confirmBtn.waitFor({ state: "visible" });
-    assert.match((await confirmBtn.textContent()) ?? "", /Link 2 picked/);
+    assert.match((await confirmBtn.textContent()) ?? "", /Add 2 to selection/);
     await confirmBtn.click();
     await page.waitForTimeout(300);
+    // Picking only selects (selection-first): nothing linked yet, the picks are in the selection.
+    assert.equal(capturedBody, null);
+    assert.equal(await page.locator("#selList .sel-item").count(), 3);
+    await page.locator("#linkSelectionBtn").click();
+    await page.waitForTimeout(300);
 
-    const { items } = capturedBody as { items: { type: string; id: string }[] };
+    const { items } = capturedBody as unknown as { items: { type: string; id: string }[] };
     assert.equal(items.length, 3);
     assert.equal(items.filter((i) => i.type === "facility").length, 2);
     const crumbs = await page.locator(".crumb").allTextContents();
@@ -1381,7 +1392,7 @@ test("e2e: \"Link existing…\" is a two-level type-then-item browser: pick a ty
   });
 });
 
-test("e2e: \"Link existing…\" picking follows the exact same click/ctrl/shift rules as the main rowlist — plain click REPLACES, ctrl toggles", async () => {
+test("e2e: \"Add to selection…\" picking follows the exact same click/ctrl/shift rules as the main rowlist — plain click REPLACES, ctrl toggles", async () => {
   await withServerAndBrowser(async (base, page) => {
     // See the identical mock in the test above — decouples candidate availability from real
     // backend relations so this purely-interaction-mechanics test isn't at the mercy of how
@@ -1395,7 +1406,7 @@ test("e2e: \"Link existing…\" picking follows the exact same click/ctrl/shift 
     await openRow(page, "Organizations");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
-    await page.locator("#linkExistingBtn").click();
+    await page.locator("#addToSelectionBtn").click();
     await page.waitForTimeout(150);
     await page.locator("#linkPickerBody .newmenu-item", { hasText: "facility" }).click();
     await page.waitForTimeout(150);
@@ -1410,7 +1421,7 @@ test("e2e: \"Link existing…\" picking follows the exact same click/ctrl/shift 
     await rows.nth(1).click();
     await page.waitForTimeout(100);
     assert.equal(await page.locator("#linkPickerBody .newmenu-item.selected").count(), 1);
-    assert.match((await page.locator(".linkmenu-confirm").textContent()) ?? "", /Link 1 picked/);
+    assert.match((await page.locator(".linkmenu-confirm").textContent()) ?? "", /Add 1 to selection/);
 
     // Ctrl-click row 2 ADDS to row 1 (now 2 picked), ctrl-click row 1 again removes it (back to 1).
     await rows.nth(2).click({ modifiers: ["Control"] });
@@ -1422,7 +1433,7 @@ test("e2e: \"Link existing…\" picking follows the exact same click/ctrl/shift 
   });
 });
 
-test("e2e: with exactly one organization selected, \"Link existing…\" offers organizations as normal picks, and confirming routes them to the ranking modal instead of linking blindly", async () => {
+test("e2e: one organization selected + more picked via \"Add to selection…\" -> Link selection opens the ranking modal instead of linking blindly", async () => {
   await withServerAndBrowser(async (base, page) => {
     const putCalls: { type: string; id: string; link: { field: string; uris: string[] } }[] = [];
     await page.route("**/api/node", (route) => {
@@ -1438,7 +1449,7 @@ test("e2e: with exactly one organization selected, \"Link existing…\" offers o
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
 
-    await page.locator("#linkExistingBtn").click();
+    await page.locator("#addToSelectionBtn").click();
     await page.waitForTimeout(150);
     // organization is offered as a candidate type here (the one same-type exception) — and
     // picked with the exact same click/ctrl rules as any other type, no special buttons.
@@ -1454,9 +1465,10 @@ test("e2e: with exactly one organization selected, \"Link existing…\" offers o
 
     await page.locator(".linkmenu-confirm").click();
     await page.waitForTimeout(300);
+    await page.locator("#linkSelectionBtn").click(); // three organizations selected -> ranking
+    await page.waitForTimeout(300);
 
-    // Confirming with ambiguous (organization) picks opens the ranking modal instead of
-    // linking blindly — no PUT has fired yet.
+    // Same-type parent/child opens the ranking modal instead of linking blindly — no PUT yet.
     assert.equal(putCalls.length, 0);
     await page.locator(".ranking-modal").waitFor({ state: "visible" });
     assert.equal(await page.locator('.ranking-zone[data-zone="children"] .ranking-row').count(), 2);
@@ -1491,7 +1503,7 @@ test("e2e: with exactly one organization selected, \"Link existing…\" offers o
   });
 });
 
-test("e2e: one object selected + other objects picked -> the ranking modal with ONE parent slot (a second drop swaps it out) -> /api/parent pairs; asks which experiment when needed", async () => {
+test("e2e: one object selected + other objects added -> Link selection -> the ranking modal with ONE parent slot (a second drop swaps it out) -> /api/parent pairs; asks which experiment when needed", async () => {
   await withServerAndBrowser(async (base, page) => {
     const posts: any[] = [];
     await page.route("**/api/scientific-objects", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
@@ -1513,12 +1525,13 @@ test("e2e: one object selected + other objects picked -> the ranking modal with 
     await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
     await page.waitForTimeout(200);
 
-    await page.locator("#linkExistingBtn").click();
+    await page.locator("#addToSelectionBtn").click();
     await page.waitForTimeout(150);
     await page.locator("#linkPickerBody .newmenu-item", { hasText: "scientific object" }).click();
     await page.waitForTimeout(150);
     for (const name of ["Block A", "Block B", "Plant 1"]) await page.locator("#linkPickerBody .newmenu-item", { hasText: name }).click({ modifiers: ["Control"] });
     await page.locator(".linkmenu-confirm").click();
+    await page.locator("#linkSelectionBtn").click();
     await page.locator(".ranking-modal").waitFor({ state: "visible" });
     assert.match(await page.locator(".ranking-hint").innerText(), /the parent of Plot 1.*One parent|An object has one parent/s);
     assert.match(await page.locator('.ranking-zone[data-zone="parents"] .ranking-zone-label').innerText(), /^Parent \(0\)$/i);
@@ -1573,7 +1586,7 @@ test("e2e: Delete on an object with a location history explains why and points t
   });
 });
 
-test("e2e: after '+ Add' on a plot, the action bar offers the objects that are part of it (nothing picked); confirming writes only the picked ones", async () => {
+test("e2e: after setting germplasm on a plot (Link selection), the action bar offers the objects that are part of it (nothing picked); confirming writes only the picked ones", async () => {
   await withServerAndBrowser(async (base, page) => {
     const puts: any[] = [];
     const kid = (id: string, label: string) => ({
@@ -1585,19 +1598,22 @@ test("e2e: after '+ Add' on a plot, the action bar offers the objects that are p
       groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", items: [] }] }] }] };
     await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "g-annika", type: "germplasm", label: "Annika" }]) }));
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(detail) }));
+    await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, linkedPairs: 1, alreadyLinked: 0, childOffer: [kid("plant-1", "Plant 1"), kid("plant-2", "Plant 2")],
+      written: [{ id: "plot", values: ["g-annika"], experiments: ["Barley 2026"], only: true }],
+    }) }));
     await page.route("**/api/node", (r) => {
-      const b = JSON.parse(r.request().postData() || "{}");
-      puts.push(b);
-      const offer = b.id === "plot" ? { childOffer: [kid("plant-1", "Plant 1"), kid("plant-2", "Plant 2")] } : {};
-      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: b.id, relations: detail.relations, ...offer }) });
+      puts.push(JSON.parse(r.request().postData() || "{}"));
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ relations: detail.relations }) });
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await page.evaluate(() => openNode({ id: "plot", type: "scientific_object", label: "Plot 1" }));
-    await page.waitForTimeout(400);
-    await page.locator("#detailBody .box-add").click();
-    await page.locator("#linkList .newmenu-item", { hasText: "Annika" }).click();
-    await page.locator(".linkmenu-confirm").click();
+    await page.evaluate(() => {
+      selection.set("plot", { id: "plot", type: "scientific_object", label: "Plot 1" });
+      selection.set("g-annika", { id: "g-annika", type: "germplasm", label: "Annika" });
+      refreshLeftPane(); renderActionbar();
+    });
+    await page.locator("#linkSelectionBtn").click();
     await page.waitForTimeout(500);
 
     assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Plot 1 has 2 objects that are part of it in Barley 2026, without this germplasm\. Also set it on them\?/);
@@ -1607,7 +1623,7 @@ test("e2e: after '+ Add' on a plot, the action bar offers the objects that are p
     assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Set on 1");
     await page.locator(".linkmenu-confirm").click();
     await page.waitForTimeout(400);
-    assert.deepEqual(puts.slice(1), [{ type: "scientific_object", id: "plant-2", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g-annika"] } }]);
+    assert.deepEqual(puts, [{ type: "scientific_object", id: "plant-2", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["g-annika"] } }]);
   });
 });
 
@@ -1635,7 +1651,7 @@ test("e2e: objects + germplasm selected: the button says what it will write, and
   });
 });
 
-test("e2e: \"Link existing…\" popover closes via its own × button, not just an outside click", async () => {
+test("e2e: \"Add to selection…\" popover closes via its own × button, not just an outside click", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
     await page.waitForTimeout(1000);
@@ -1643,7 +1659,7 @@ test("e2e: \"Link existing…\" popover closes via its own × button, not just a
     await openRow(page, "Organizations");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
-    await page.locator("#linkExistingBtn").click();
+    await page.locator("#addToSelectionBtn").click();
     await page.waitForTimeout(150);
     assert.ok(await page.locator("#linkMenu").evaluate((el) => el.classList.contains("open")));
     await page.locator("#linkMenuClose").click();

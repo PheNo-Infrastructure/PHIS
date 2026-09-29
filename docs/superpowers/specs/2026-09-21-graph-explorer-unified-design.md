@@ -998,7 +998,10 @@ ranking modal has "make anchor" per row and the anchor is a drop target. **Step 
 `/api/unlink` finds every link between the selected items (DTO fields incl. same-type ones like
 organization parents, object<->experiment, germplasm and "part of" per experiment), returns them
 as sentences without `confirm`, removes them in order with `confirm` and stops at the first
-failure; the page shows the sentences in a confirm. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
+failure; the page shows the sentences in a confirm. **Step 3 built**: "Add to selection…" (the
+old Link existing popover) only selects — same-type candidates are offered whenever everything
+selected is one parent/child type; "+ Add" in experiment boxes, its action-bar state and the
+one-item ranking route are gone. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
 of the second test exercise steps 2 and 4).
 
 ## Access during development
