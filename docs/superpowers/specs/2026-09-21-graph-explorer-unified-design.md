@@ -944,6 +944,52 @@ must be stated. Another guided test is planned.
 
 **Direction after this:** factor levels as a third row once factors are wired (PHIS has none yet).
 
+## Selection-first interaction (designed 2026-09-29)
+
+**Why.** Two guided user tests (see above) showed the user's instincts go to the selection —
+select the things, then act — and the stumbles came from the other mechanics (Link existing's
+one-anchor ranking, "+ Add" in a box, the tree/list switch). The user: "I would like the
+selection to be the main mechanic behind linking and creating, and we should deviate from that
+as little as possible. Currently it feels like the user has to learn many different mechanics."
+
+**The model.** Two mechanics: **select**, then **Link selection** / **Unlink selection** /
+**+ New**. Everything else is either a way to select (rows, chips, search, later the graph) or
+a question the app asks (which experiment, carry-over, also-on-its-children — nothing ticked).
+
+**Link selection decides from the selection:**
+- Different types that can all link -> direct link (experiment question and messages as built;
+  objects + germplasm keep the descriptive label "Set Annika on 2 objects…").
+- Two or more of ONE parent/child type (scientific objects, organizations) and nothing else ->
+  the drag-to-rank list with a **flexible anchor**: the first selected starts as anchor, the rest
+  as its children; any item can be made the anchor (drag into the middle / "make anchor"). Parent
+  slot above (one for objects, several for organizations), children below — three levels fit in
+  one round with the middle item as anchor; a second round only for 4+ levels or siblings under
+  different parents.
+- Anything that can't all be linked together -> no button; the selection pane says why.
+- **Unlink selection** appears when selected items are linked to each other; its confirm names
+  exactly what is removed and where. × on chips (unlink mode) stays as a shortcut (user: "Both").
+
+**Selecting.** "Link existing…" becomes **"Add to selection…"** (same search popover, only
+selects). "+ Add" in experiment boxes and the one-item ranking path are removed. Ctrl-click on
+chips, rows and marquee stay.
+
+**Both directions everywhere.** Every relation shows (and is removable) on both nodes, incl.
+the side OpenSILEX doesn't store: a parent's experiment box gets **"Contains"** (its children
+there, via the working `?parent=` filter). A germplasm's objects stay unavailable (ignored filter).
+
+**Layout (chosen from mockups).** Three columns on top — list (browse) | detail (read) |
+**selection pane** (plain list with × per item, Clear, and the action buttons) — and a
+full-width bottom area for the **graph** (the selection and its direct neighbours; clicking a
+node selects it; could preview what a button would add). Until the graph is built, the bottom
+area always shows the selection tree — no tree/list switch any more. The simulated graph
+panel goes away.
+
+**Order (one step at a time, each tested + committed):** 1 layout; 2 Link/Unlink selection
+(flexible-anchor ranking, "why not" text, Unlink selection); 3 retire the side mechanics
+(Add to selection…, no "+ Add", no one-item ranking); 4 "Contains"; 5 the real graph (own
+design, later). Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
+of the second test exercise steps 2 and 4).
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only
