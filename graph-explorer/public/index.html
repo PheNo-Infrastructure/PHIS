@@ -428,6 +428,12 @@ button { font-family: inherit; }
   cursor: pointer;
 }
 .chip-unlink:hover { color: var(--type-color, var(--accent)); }
+/* One box per item whose rows only hold within it — a scientific object's germplasm/parent
+   per experiment (relationsFor's itemGroups). */
+.item-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.item-box-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
+.item-box-key { font-size: 12px; color: var(--ink-faint); }
+.rel-empty { color: var(--ink-faint); font-size: 12.5px; }
 
 /* selection / CTA bar */
 .actionbar {
@@ -1348,6 +1354,31 @@ function renderDetail() {
   wireTypeInfo(els.detailBody);
 }
 
+function chipHtml(it, unlinkField) {
+  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${it.id}" data-type="${it.type}"><span class="swatch"></span>${it.label}${it.count ? ` <span style="opacity:.6">&middot; ${it.count}</span>` : ""}`
+    + (unlinkField ? `<button class="chip-unlink" data-field="${unlinkField}" data-uri="${it.id}" title="Unlink">&times;</button>` : "")
+    + `</span>`;
+}
+// One relation group. Items carrying `groups` (what the node is within that item) render as
+// boxes; empty rows say "none" on purpose — that's where setting them will go. `unlinkable`
+// decides per item whether it gets an × (unlink mode only).
+function relGroupHtml(rel, unlinkable = () => false) {
+  let h = `<div class="rel-group"><div class="rel-label">${rel.label}</div>`;
+  if (!rel.items.length) return h + `<span class="rel-empty">${rel.emptyText || "None."}</span></div>`;
+  const chip = it => chipHtml(it, rel.field && unlinkable(it) ? rel.field : null);
+  if (rel.items.some(it => it.groups)) {
+    rel.items.forEach(it => {
+      h += `<div class="item-box"><div class="chip-row">${chip(it)}</div><div class="item-box-rows">`;
+      (it.groups || []).forEach(g => {
+        h += `<span class="item-box-key">${g.label}</span><div class="chip-row">${g.items.length ? g.items.map(x => chipHtml(x)).join("") : `<span class="rel-empty">none</span>`}</div>`;
+      });
+      h += `</div></div>`;
+    });
+    return h + `</div>`;
+  }
+  return h + `<div class="chip-row">${rel.items.map(chip).join("")}</div></div>`;
+}
+
 function renderNodeDetail(focusNode, { local } = { local: false }) {
   const node = NODE_DETAIL[focusNode.id] || null;
   const label = focusNode.label;
@@ -1439,26 +1470,12 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
           <button class="btn warn small" id="cancelUnlinkBtn">Cancel</button>
         </span>
       </div>`;
-      node.relations.forEach(rel => {
-        html += `<div class="rel-group"><div class="rel-label">${rel.label}</div><div class="chip-row">`;
-        rel.items.forEach(it => {
-          html += `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${it.id}" data-type="${it.type}"><span class="swatch"></span>${it.label}`;
-          if (rel.field && it.id !== lastReq?.id) html += `<button class="chip-unlink" data-field="${rel.field}" data-uri="${it.id}" title="Unlink">&times;</button>`;
-          html += `</span>`;
-        });
-        html += `</div></div>`;
-      });
+      node.relations.forEach(rel => { html += relGroupHtml(rel, it => it.id !== lastReq?.id); });
       if (!anyUnlinkable && !lastReq && !blockers.length) {
         html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
       }
     } else {
-      node.relations.forEach(rel => {
-        html += `<div class="rel-group"><div class="rel-label">${rel.label}</div><div class="chip-row">`;
-        rel.items.forEach(it => {
-          html += `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${it.id}" data-type="${it.type}"><span class="swatch"></span>${it.label}${it.count ? ` <span style="opacity:.6">&middot; ${it.count}</span>` : ""}</span>`;
-        });
-        html += `</div></div>`;
-      });
+      node.relations.forEach(rel => { html += relGroupHtml(rel); });
     }
   } else {
     // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely
@@ -1610,6 +1627,7 @@ const TYPE_INFO = {
       "Creating one with several experiments selected creates it in all of them.",
       "Linking it to another experiment adds a copy there; unlinking (×) removes only that experiment's copy — its other experiments keep it.",
       "Names are stored per copy, and an experiment can't hold two objects with the same name. Renaming isn't offered here yet for that reason.",
+      "Germplasm and parent are stored per copy too, so each experiment's box shows what the object is in that experiment. A new copy starts without them.",
       "Deleting an object removes every copy. Unlinking it from its last experiment keeps it as a global object instead.",
       "An experiment can't be deleted while it holds objects (OpenSILEX would orphan them). Clearing them deletes objects that are only in that experiment and just removes shared ones.",
     ],

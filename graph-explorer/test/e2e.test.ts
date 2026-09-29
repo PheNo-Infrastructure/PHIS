@@ -465,6 +465,40 @@ test("e2e: germplasm nests under its species — the category lists species, an 
   });
 });
 
+test("e2e: a scientific object shows one box per experiment with its germplasm/parent there; 'none' and no-experiment texts; × on the box's experiment in unlink mode", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const box = (id: string, label: string, germ: { id: string; label: string }[]) => ({
+      id, type: "experiment", label,
+      groups: [{ label: "Germplasm", items: germ.map((g) => ({ ...g, type: "germplasm" })) }, { label: "Part of", items: [] }],
+    });
+    await page.route("**/api/node-detail*", (route) => {
+      const id = new URL(route.request().url()).searchParams.get("id");
+      const relations = id === "so-lone"
+        ? [{ label: "In experiments", field: "experiment", items: [], emptyText: "Not in any experiment. Germplasm and parent can only be set inside an experiment." }]
+        : [{ label: "In experiments", field: "experiment", items: [box("exp-a", "Barley 2025", [{ id: "g-annika", label: "Annika" }]), box("exp-b", "Barley 2026", [])] }];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: id, actions: ["delete", "link"], deleteRemovesLinks: true, relations }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
+    await page.waitForTimeout(400);
+
+    const boxes = page.locator("#detailBody .item-box");
+    assert.equal(await boxes.count(), 2);
+    assert.match(await boxes.nth(0).innerText(), /Barley 2025[\s\S]*Germplasm[\s\S]*Annika[\s\S]*Part of[\s\S]*none/);
+    assert.match(await boxes.nth(1).innerText(), /Barley 2026[\s\S]*Germplasm[\s\S]*none/);
+    assert.equal(await page.locator("#detailBody .chip-unlink").count(), 0, "no × outside unlink mode");
+
+    await page.locator("#unlinkModeBtn").click();
+    await page.waitForTimeout(200);
+    assert.deepEqual(await page.locator("#detailBody .chip-unlink").evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.uri)), ["exp-a", "exp-b"], "only the experiments get ×, not the chips inside");
+
+    await page.evaluate(() => openNode({ id: "so-lone", type: "scientific_object", label: "Lone" }));
+    await page.waitForTimeout(400);
+    assert.match(await page.locator("#detailBody").innerText(), /Not in any experiment\. Germplasm and parent can only be set inside an experiment\./);
+  });
+});
+
 test("e2e: ctrl-clicking a relation chip adds it to the current selection instead of navigating", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (route) => {

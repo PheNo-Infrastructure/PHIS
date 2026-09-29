@@ -15,17 +15,18 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
   }
   await respondOpenSilexErrors(res, async () => {
     const dto = (await authedGetOne(config.getUrl(id))).result;
+    // Body fully built BEFORE writeHead (same reason as list.ts): a relation query failing after
+    // the 200 header went out can't be reported anymore and leaves the request hanging.
+    const body = JSON.stringify({
+      uri: String(dto.uri ?? id),
+      // OpenSILEX's own label for the node's class, e.g. "Sample", "Compartment", "research unit".
+      ...(typeof dto.rdf_type_name === "string" && dto.rdf_type_name ? { typeName: dto.rdf_type_name } : {}),
+      actions: (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
+      ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
+      relations: await relationsFor(id, dto, config),
+    });
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        uri: String(dto.uri ?? id),
-        // OpenSILEX's own label for the node's class, e.g. "Sample", "Compartment", "research unit".
-        ...(typeof dto.rdf_type_name === "string" && dto.rdf_type_name ? { typeName: dto.rdf_type_name } : {}),
-        actions: (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
-        ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
-        relations: await relationsFor(id, dto, config),
-      })
-    );
+    res.end(body);
   });
   return true;
 };
@@ -55,8 +56,9 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
         if (unlink) await ctx.unlink(id, unlink.uri);
         for (const uri of link?.uris ?? []) await ctx.link(id, uri);
         const dto = (await authedGetOne(config.getUrl(id))).result;
+        const body = JSON.stringify({ id, type, label: String(dto.name ?? id), relations: await relationsFor(id, dto, config) });
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ id, type, label: String(dto.name ?? id), relations: await relationsFor(id, dto, config) }));
+        res.end(body);
       });
       return true;
     }
@@ -77,15 +79,14 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
             ),
           }
         : current;
+      const body = JSON.stringify({
+        id,
+        type,
+        label: finalName,
+        ...(unlink ? { relations: await relationsFor(id, patched, config) } : {}),
+      });
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          id,
-          type,
-          label: finalName,
-          ...(unlink ? { relations: await relationsFor(id, patched, config) } : {}),
-        })
-      );
+      res.end(body);
     });
     return true;
   }

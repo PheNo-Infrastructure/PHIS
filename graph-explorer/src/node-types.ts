@@ -52,9 +52,15 @@ export type NodeConfig = {
     // Deleting the node is refused while this group is non-empty — e.g. an experiment that still
     // holds scientific objects: OpenSILEX would delete it anyway and orphan them (probed live).
     blocksDelete?: true;
-    // The query also returns the node itself (germplasm ?species=X includes X) — drop it. Ids
-    // come back compacted, matching /api/germplasm's (see its parent comment).
+    // Return ids compacted (phis:id/...), matching /api/germplasm's (see its parent comment).
+    compactIds?: true;
+    // The query also returns the node itself (germplasm ?species=X includes X) — drop it.
     skipSelf?: true;
+    // What the node is WITHIN each item, e.g. a scientific object's germplasm and parent inside
+    // each experiment (they live only on that experiment's copy). Shown as one box per item.
+    itemGroups?: (id: string, itemId: string) => Promise<{ label: string; items: { id: string; type: string; label: string }[] }[]>;
+    // Shown instead of hiding the group when it's empty.
+    emptyText?: string;
   }[];
 };
 
@@ -76,12 +82,44 @@ async function removeSoFromExperiment(soId: string, expId: string) {
   await authedDelete(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`);
 }
 
+// What a scientific object is within one experiment. These live ONLY on its copy there (the
+// global copy can't hold them, a new copy inherits nothing — probed live), so they're read per
+// experiment. `property` is the relation's local name; `byUris` names the values in one call.
+// Factor levels would be one more entry.
+const SO_ROWS_PER_EXPERIMENT = [
+  { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris" },
+  { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}` },
+];
+async function soRowsIn(soId: string, expId: string) {
+  const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`)).result;
+  const relations = (Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string }[];
+  return Promise.all(
+    SO_ROWS_PER_EXPERIMENT.map(async (row) => {
+      const uris = relations.filter((r) => String(r.property).split(/[:#/]/).pop() === row.property).map((r) => String(r.value));
+      if (!uris.length) return { label: row.label, items: [] };
+      const named = (await authedPost(row.byUris(expId), uris)).result as unknown as { uri: string; name?: string }[];
+      const names = new Map(await Promise.all(named.map(async (n) => [await compactUri(String(n.uri)), String(n.name ?? n.uri)] as const)));
+      const items = await Promise.all(uris.map(async (u) => {
+        const id = await compactUri(u);
+        return { id, type: row.type, label: names.get(id) ?? id };
+      }));
+      return { label: row.label, items };
+    })
+  );
+}
+
 const SO_EXPERIMENTS: QueryRelation = {
-  label: "Experiments",
+  label: "In experiments",
   field: "experiment",
   type: "experiment",
   url: (id) => `/core/scientific_objects/${encodeURIComponent(id)}/experiments`,
   item: (r) => (r.experiment && r.experiment_name ? { id: String(r.experiment), label: String(r.experiment_name) } : null),
+};
+// Only for the detail pane: link/unlink/delete only need the experiment ids (SO_EXPERIMENTS).
+const SO_EXPERIMENTS_DETAIL: QueryRelation = {
+  ...SO_EXPERIMENTS,
+  itemGroups: soRowsIn,
+  emptyText: "Not in any experiment. Germplasm and parent can only be set inside an experiment.",
 };
 
 const EXPERIMENT_SOS: QueryRelation = {
@@ -148,6 +186,8 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteRemovesLinks: true,
     queryRelations: [
       EXPERIMENT_SOS,
+      // Derived by OpenSILEX from its objects' germplasm (not settable on the experiment).
+      { label: "Species", type: "germplasm", url: (id) => `/core/experiments/${encodeURIComponent(id)}/species`, compactIds: true },
     ],
     contextLinks: {
       scientific_object: {
@@ -182,7 +222,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       (await queryItems(SO_EXPERIMENTS, id)).map(
         (e) => `/core/scientific_objects/${encodeURIComponent(id)}?experiment=${encodeURIComponent(e.id)}`
       ),
-    queryRelations: [SO_EXPERIMENTS],
+    queryRelations: [SO_EXPERIMENTS_DETAIL],
   },
   // A project holds no link to its experiments — each experiment's `projects` field does — so
   // they come from a query, and link/unlink goes through the experiment's side (linkFieldFor).
@@ -272,9 +312,10 @@ export type QueryRelation = NonNullable<NodeConfig["queryRelations"]>[number];
 export async function queryItems(q: QueryRelation, id: string) {
   let rows = (await authedGet(q.url(id))).result;
   // Uris come back full or prefixed (phis:id/...) depending on the endpoint, so compare compacted.
+  if (q.compactIds || q.skipSelf) rows = await Promise.all(rows.map(async (r) => ({ ...r, uri: await compactUri(String(r.uri)) })));
   if (q.skipSelf) {
     const self = await compactUri(id);
-    rows = (await Promise.all(rows.map(async (r) => ({ ...r, uri: await compactUri(String(r.uri)) })))).filter((r) => r.uri !== self);
+    rows = rows.filter((r) => r.uri !== self);
   }
   return rows
     .map((r) => (q.item ? q.item(r) : { id: String(r.uri), label: String(r.name ?? r.uri) }))
@@ -285,10 +326,13 @@ export async function queryItems(q: QueryRelation, id: string) {
 // relationsFromDto plus any queryRelations groups — what node-detail (and an unlink response,
 // which replaces the frontend's cached relations wholesale) returns.
 export async function relationsFor(id: string, dto: Record<string, unknown>, config: NodeConfig) {
-  const groups: { label: string; field?: string; blocksDelete?: true; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
+  const groups: { label: string; field?: string; blocksDelete?: true; emptyText?: string; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
   for (const q of config.queryRelations ?? []) {
-    const items = await queryItems(q, id);
-    if (items.length) groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}) });
+    let items: { id: string; type: string; label: string; groups?: unknown[] }[] = await queryItems(q, id);
+    if (q.itemGroups) items = await Promise.all(items.map(async (it) => ({ ...it, groups: await q.itemGroups!(id, it.id) })));
+    if (items.length || q.emptyText) {
+      groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
+    }
   }
   return groups;
 }

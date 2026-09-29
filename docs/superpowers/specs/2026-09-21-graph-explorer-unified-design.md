@@ -781,7 +781,7 @@ demands it.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links — **designed 2026-09-29, step A is next**: see
+  - SO parent / germplasm / factor-level links — **designed 2026-09-29, step A built; linking next**: see
     "Scientific object labels per trial" below.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
@@ -845,13 +845,15 @@ ctrl selects, × removes the object from that trial — the existing unlink). In
 that's where setting a label will go. An object in no trial says so ("Germplasm and parent
 can only be set inside a trial"). Chips inside follow the normal click rules.
 
-**Step A — show, read-only (next to build).**
+**Step A — show, read-only (built 2026-09-29).**
 - Backend: for a scientific object, node-detail reads each experiment copy
   (`/scientific_objects/{uri}?experiment=X`, one per trial from `/{uri}/experiments`),
-  takes `parent`/`parent_name` and the `hasGermplasm` relations, names the germplasm in one
-  `POST /core/germplasm/by_uris`, and returns
-  `trials: [{ id, label, field: "experiment", groups: [{label: "Germplasm", items}, {label: "Part of", items}] }]`
-  in place of the Experiments group. The per-trial rows are config (property, label, type),
+  takes the `hasGermplasm` and `isPartOf` relations, names each row's values in one `by_uris`
+  call (germplasm; scientific objects in that experiment), and attaches them to the items of
+  the object's "In experiments" group (`items[].groups: [{label: "Germplasm", items}, {label:
+  "Part of", items}]`, via the queryRelation's `itemGroups`) — so unlink mode, the delete
+  confirm and unlink responses keep working unchanged. An empty group comes back with
+  `emptyText`. The per-trial rows are config (property, label, type),
   so factor levels later are one more entry. Experiment node-detail gains a read-only
   "Species" query group (`/experiments/{uri}/species`). No writes.
 - Page: render the trial boxes; "none" rows; the no-trial line; delete confirm still names
