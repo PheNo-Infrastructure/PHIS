@@ -37,3 +37,6 @@ dbg-patch*.json
 # Graph Explorer
 graph-explorer/.env
 graph-explorer/node_modules/
+
+# Brainstorming companion mockups (local only)
+.superpowers/

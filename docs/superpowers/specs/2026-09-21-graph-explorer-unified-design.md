@@ -781,10 +781,8 @@ demands it.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links. SO↔germplasm is the ONLY way germplasm meets an
-    experiment: an experiment's `species` and a germplasm's experiments are derived from the
-    `hasGermplasm` relation on SO copies inside the experiment (probed live; not settable on
-    ExperimentCreationDTO). Fold a read-only "Species" group on experiments into that step.
+  - SO parent / germplasm / factor-level links — **designed 2026-09-29, step A is next**: see
+    "Scientific object labels per trial" below.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
     toward imports; revisit only if someone really lays out experiments by hand.
@@ -811,6 +809,64 @@ the existing PHIS green palette (`#3D8526` / `#F2F5DE` / `#264030`), per-
 type accent colors. Vanilla HTML/CSS/JS, calling the new backend over a
 plain REST API — no framework decision forced yet; add one later only if
 hand-rolled state management actually becomes the bottleneck.
+
+## Scientific object labels per trial (designed 2026-09-29)
+
+**What OpenSILEX does (probed live on ZZ throwaways, 2026-09-29).** A scientific object is
+one URI with a global copy (name, type; always exists, and can't be deleted while any
+experiment copy does) plus one copy per experiment. Its labels — `hasGermplasm`, parent
+(`isPartOf`), factor levels — live ONLY on experiment copies:
+- The global copy can't carry them (POST refused, with a misleading "can't have factor levels").
+- A new experiment copy inherits nothing, from the global copy or other experiments.
+- A copy's PUT replaces its whole `relations` list (leaving parent out wiped it): always
+  read-modify-write.
+- A plant does not inherit its plot's germplasm.
+- One copy can hold several germplasm (mixtures) — germplasm↔SO is many-to-many.
+
+So germplasm meets an experiment only through an object in it; the app edits links only where
+OpenSILEX stores them and shows derived ones (a germplasm's experiments, an experiment's
+species) read-only. Same plot, different trial, possibly a different variety — which is why
+every label is "in trial X".
+
+**The rule for every write (agreed with the user):** the app never writes a label into a
+trial the user didn't tick. When a choice exists it shows a list of the candidates using the
+normal click rules, **nothing ticked by default**, and the button stays disabled until
+something is; when there's nothing to choose, no list appears. The same list serves three
+places: which trial(s) a new label goes into (object in several trials, reached from outside
+one), what carries over when an object joins another trial, and whether a plot's label also
+goes on its plants. Nothing-ticked is the data-safe default (a hasty click can't relabel an
+old trial's measurements); whether researchers would rather have everything pre-ticked is an
+open question for the PHIS meeting, and a one-line change.
+
+**Layout (chosen from three mockups):** an object's detail pane shows **one box per trial**
+("In trials"), replacing its Experiments group. Box header = the trial chip (click opens,
+ctrl selects, × removes the object from that trial — the existing unlink). Inside, fixed rows
+— Germplasm (several chips allowed) and Part of — with empty rows shown as "none", since
+that's where setting a label will go. An object in no trial says so ("Germplasm and parent
+can only be set inside a trial"). Chips inside follow the normal click rules.
+
+**Step A — show, read-only (next to build).**
+- Backend: for a scientific object, node-detail reads each experiment copy
+  (`/scientific_objects/{uri}?experiment=X`, one per trial from `/{uri}/experiments`),
+  takes `parent`/`parent_name` and the `hasGermplasm` relations, names the germplasm in one
+  `POST /core/germplasm/by_uris`, and returns
+  `trials: [{ id, label, field: "experiment", groups: [{label: "Germplasm", items}, {label: "Part of", items}] }]`
+  in place of the Experiments group. The per-trial rows are config (property, label, type),
+  so factor levels later are one more entry. Experiment node-detail gains a read-only
+  "Species" query group (`/experiments/{uri}/species`). No writes.
+- Page: render the trial boxes; "none" rows; the no-trial line; delete confirm still names
+  every trial.
+- Tests: backend unit (2 trials with different germplasm/parent, batch naming, empty rows,
+  no trials, experiment Species); e2e with mocked detail (boxes, × unlink, chip opens under
+  its species, "none"/no-trial texts); live on throwaways (2 trials, a plot with different
+  germplasm in each, a plant under it; compare with what was saved; list ZZ leftovers);
+  screenshots for the user before committing.
+
+**Direction after step A** (not a plan — pick the next one with the user when A is done):
+linking germplasm and parent with the trial list, including "set germplasm" inside a trial's
+box (which knows its trial, so no question); carry-over when an object joins a trial (fixes
+today's add-to-experiment dropping labels); "also apply to its plants"; factor levels as a
+third row once factors are wired.
 
 ## Access during development
 
