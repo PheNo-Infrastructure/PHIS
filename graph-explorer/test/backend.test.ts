@@ -424,6 +424,55 @@ test("experiment node-detail appends a 'Scientific objects' group from the SO-by
   });
 });
 
+test("germplasm node-detail: single-uri species labelled from species_name, members minus itself (full vs prefixed uri), view-only", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (url.includes("/core/germplasm?species=")) {
+        return jsonResponse(200, { result: [{ uri: "https://phis.pheno.no/id/sp", name: "Barley" }, { uri: "https://phis.pheno.no/id/acc", name: "A1" }] });
+      }
+      if (url.includes("/experiments?")) return jsonResponse(200, { result: [{ uri: "exp-1", name: "E" }] });
+      if (url.includes("/core/germplasm/")) {
+        return jsonResponse(200, { result: { uri: "phis:id/sp", name: "Barley", rdf_type_name: "Species", species: "phis:id/parent", species_name: "Parent", variety: null } });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const detail = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=phis:id/sp`)).json();
+    assert.deepEqual(detail.actions, []);
+    assert.deepEqual(detail.relations, [
+      { label: "Species", items: [{ id: "phis:id/parent", type: "germplasm", label: "Parent" }] },
+      { label: "Varieties and accessions", items: [{ id: "phis:id/acc", type: "germplasm", label: "A1" }] },
+      { label: "Experiments", items: [{ id: "exp-1", type: "experiment", label: "E" }] },
+    ]);
+  });
+});
+
+test("GET /api/germplasm: ids and species parents compacted to one form; an unknown parent is dropped, not hidden under", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (url.includes("/core/germplasm?")) {
+        return jsonResponse(200, { result: [
+          { uri: "https://phis.pheno.no/id/sp", name: "Barley", species: null },
+          { uri: "https://phis.pheno.no/id/v1", name: "Annika", species: "phis:id/sp" },
+          { uri: "https://phis.pheno.no/id/a1", name: "A1", species: "https://phis.pheno.no/id/sp" },
+          { uri: "https://phis.pheno.no/id/a2", name: "A2", species: "phis:id/gone" },
+        ] });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const rows = await (await realFetch(`${base}/api/germplasm`)).json();
+    assert.deepEqual(rows, [
+      { id: "phis:id/sp", type: "germplasm", label: "Barley" },
+      { id: "phis:id/v1", type: "germplasm", label: "Annika", parent: "phis:id/sp" },
+      { id: "phis:id/a1", type: "germplasm", label: "A1", parent: "phis:id/sp" },
+      { id: "phis:id/a2", type: "germplasm", label: "A2" },
+    ]);
+  });
+});
+
 test("POST /api/create scientific_object: one POST per experiment (same uri for the copies), rdf_type required; a failed copy is a warning on a 201, not a failed create", async () => {
   await withServer(async (base) => {
     const posts: any[] = [];

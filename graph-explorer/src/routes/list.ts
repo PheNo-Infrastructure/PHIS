@@ -1,9 +1,12 @@
-import { authedGet, type RawItem } from "../opensilex.ts";
+import { authedGet, compactUri, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 
 const byName = (i: RawItem) => String(i.name ?? i.uri);
 
-type ListRoute = { url: string; type: string; label: (i: RawItem) => string };
+// parent: the one node an item sits under in the category browser (a germplasm's species) —
+// the page lists only parentless items at the category level and an opened node's children
+// under it. Only for strictly single-parent relations; many-to-many ones stay relation chips.
+type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
@@ -22,7 +25,7 @@ const listRoutes: Record<string, ListRoute> = {
   },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
-  "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName },
+  "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species },
   "/api/datafiles": { url: "/core/datafiles?page_size=500", type: "data_file", label: (i) => String(i.filename ?? i.uri) },
   "/api/provenances": { url: "/core/provenances?page_size=500", type: "provenance", label: byName },
   "/api/events": { url: "/core/events?page_size=500", type: "event", label: (i) => String(i.description ?? i.rdf_type_name ?? i.uri) },
@@ -42,7 +45,23 @@ export const handleList: RouteHandler = async (req, res, { pathname }) => {
   // Body is fully built BEFORE writeHead so a bad shape here still lands in the catch block
   // below instead of sending a 200 header and then failing mid-response (which would hang
   // the connection open forever — a real bug this ordering fix caught during testing).
-  const payload = JSON.stringify(items.map((i) => ({ id: String(i.uri), type: route.type, label: route.label(i) })));
+  let rows: { id: string; type: string; label: string; parent?: string }[] = items.map((i) => ({ id: String(i.uri), type: route.type, label: route.label(i) }));
+  if (route.parent) {
+    // A germplasm's own uri comes back full (https://phis.pheno.no/id/...) while its species
+    // field is often prefixed (phis:id/...), same as the detail pane's chips — so ids and
+    // parents are compacted to one form. A parent not in the list is dropped: the item then
+    // shows at the category level instead of being hidden under nothing.
+    const ids = await Promise.all(items.map((i) => compactUri(String(i.uri))));
+    const known = new Set(ids);
+    rows = await Promise.all(
+      items.map(async (i, n) => {
+        const p = route.parent!(i);
+        const parent = typeof p === "string" && p ? await compactUri(p) : undefined;
+        return { ...rows[n], id: ids[n], ...(parent && known.has(parent) ? { parent } : {}) };
+      })
+    );
+  }
+  const payload = JSON.stringify(rows);
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(payload);
   return true;

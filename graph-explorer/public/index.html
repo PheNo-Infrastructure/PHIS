@@ -910,8 +910,12 @@ function currentPane() { return path[path.length - 1]; }
 function itemsForPane() {
   const p = currentPane();
   if (p.id === "root") return ROOT;
-  return CATEGORY_ITEMS[p.id] || [];
+  // Items with a `parent` (a germplasm's species — see the backend's list.ts) sit under it: a
+  // category lists only the parentless ones, an opened node lists its own children.
+  if (p.type !== "category") return categoryRows(p).filter(i => i.parent === p.id);
+  return (CATEGORY_ITEMS[p.id] || []).filter(i => !i.parent);
 }
+function categoryRows(item) { return CATEGORY_ITEMS[CATEGORY_FOR_TYPE[item.type]] || []; }
 
 function typeStyle(type) {
   const t = TYPES[type] || TYPES.category;
@@ -1076,10 +1080,18 @@ function navigateTo(newPath) {
 // header comment) — walk it to find which two category crumbs a given type lives under.
 function canonicalPathFor(item) {
   const categoryId = CATEGORY_FOR_TYPE[item.type];
+  // Its parents too (an accession's species), outermost first; the length cap guards a cycle.
+  const ancestors = [];
+  for (let p = categoryRows(item).find(i => i.id === item.id)?.parent; p && ancestors.length < 10; ) {
+    const row = categoryRows(item).find(i => i.id === p);
+    if (!row) break;
+    ancestors.unshift(row);
+    p = row.parent;
+  }
   for (const topCat of ROOT) {
-    if (categoryId && topCat.id === categoryId) return [path[0], topCat, item];
+    if (categoryId && topCat.id === categoryId) return [path[0], topCat, ...ancestors, item];
     const leafCat = (CATEGORY_ITEMS[topCat.id] || []).find(c => c.id === categoryId);
-    if (leafCat) return [path[0], topCat, leafCat, item];
+    if (leafCat) return [path[0], topCat, leafCat, ...ancestors, item];
   }
   // Type not wired into the category tree at all (shouldn't happen for anything with its own
   // relations) — fall back to appending, same as before this existed.

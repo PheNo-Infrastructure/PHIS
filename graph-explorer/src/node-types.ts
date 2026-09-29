@@ -1,10 +1,12 @@
-import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete } from "./opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete, compactUri } from "./opensilex.ts";
 
 // View/edit/delete config, one entry per type — same reasoning as CREATABLE in creation.js:
 // adding a type is "add one entry here," not a new code path. Unlike CREATABLE this doesn't
 // need to be shared with the browser (the frontend never sees DTO field names, only the
 // {label, items} shape the backend already translated), so it stays plain TS, not inlined JS.
-export type RelationGroup = { label: string; field: string; type: string };
+// nameField: for a single-uri field (a germplasm's `species`), the DTO field holding its label
+// (`species_name`).
+export type RelationGroup = { label: string; field: string; type: string; nameField?: string };
 
 export type Action = "rename" | "delete" | "link";
 export const allows = (config: NodeConfig, action: Action) => (config.actions ?? ["rename", "delete", "link"]).includes(action);
@@ -50,6 +52,9 @@ export type NodeConfig = {
     // Deleting the node is refused while this group is non-empty — e.g. an experiment that still
     // holds scientific objects: OpenSILEX would delete it anyway and orphan them (probed live).
     blocksDelete?: true;
+    // The query also returns the node itself (germplasm ?species=X includes X) — drop it. Ids
+    // come back compacted, matching /api/germplasm's (see its parent comment).
+    skipSelf?: true;
   }[];
 };
 
@@ -199,6 +204,27 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Experiments", type: "experiment", url: (id) => `/core/experiments?projects=${encodeURIComponent(id)}&page_size=500` },
     ],
   },
+  // View-only for now. Species/variety/accession are single uris (+ *_name), not ref arrays.
+  // Probed live on throwaways: ?species=X returns X's members plus X itself (skipSelf), and
+  // /{uri}/experiments works (a species reaches experiments through its accessions). Which
+  // scientific objects use a germplasm has no query yet: /scientific_objects?germplasm= is
+  // ignored by OpenSILEX, and the hasGermplasm relation sits only on the experiment copy.
+  germplasm: {
+    getUrl: (id) => `/core/germplasm/${encodeURIComponent(id)}`,
+    putUrl: "/core/germplasm",
+    deleteUrl: (id) => `/core/germplasm/${encodeURIComponent(id)}`,
+    relationGroups: [
+      { label: "Species", field: "species", type: "germplasm", nameField: "species_name" },
+      { label: "Variety", field: "variety", type: "germplasm", nameField: "variety_name" },
+      { label: "Accession", field: "accession", type: "germplasm", nameField: "accession_name" },
+    ],
+    updateLinkFields: [],
+    actions: [],
+    queryRelations: [
+      { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true },
+      { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
+    ],
+  },
   site: {
     getUrl: (id) => `/core/sites/${encodeURIComponent(id)}`,
     putUrl: "/core/sites",
@@ -228,8 +254,9 @@ export function relationsFromDto(dto: Record<string, unknown>, config: NodeConfi
   return config.relationGroups.flatMap((rg) => {
     const refs = dto[rg.field];
     // Most relation fields are {uri, name} refs; some (an experiment's supervisors/factors) are
-    // bare uri strings.
-    const items = (Array.isArray(refs) ? (refs as (NamedRef | string)[]) : []).map((r) => (typeof r === "string" ? { uri: r } : r)).map((r) => ({
+    // bare uri strings; a few hold ONE uri with its label in nameField (a germplasm's species).
+    const list = Array.isArray(refs) ? (refs as (NamedRef | string)[]) : typeof refs === "string" ? [{ uri: refs, name: rg.nameField ? (dto[rg.nameField] as string | undefined) : undefined }] : [];
+    const items = list.map((r) => (typeof r === "string" ? { uri: r } : r)).map((r) => ({
       id: String(r.uri),
       type: rg.type,
       label: String(r.name ?? r.uri),
@@ -243,7 +270,12 @@ export function relationsFromDto(dto: Record<string, unknown>, config: NodeConfi
 export type QueryRelation = NonNullable<NodeConfig["queryRelations"]>[number];
 
 export async function queryItems(q: QueryRelation, id: string) {
-  const rows = (await authedGet(q.url(id))).result;
+  let rows = (await authedGet(q.url(id))).result;
+  // Uris come back full or prefixed (phis:id/...) depending on the endpoint, so compare compacted.
+  if (q.skipSelf) {
+    const self = await compactUri(id);
+    rows = (await Promise.all(rows.map(async (r) => ({ ...r, uri: await compactUri(String(r.uri)) })))).filter((r) => r.uri !== self);
+  }
   return rows
     .map((r) => (q.item ? q.item(r) : { id: String(r.uri), label: String(r.name ?? r.uri) }))
     .filter((it): it is { id: string; label: string } => it !== null)

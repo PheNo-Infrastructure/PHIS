@@ -429,6 +429,42 @@ test("e2e: clicking a relation chip jumps to that resource's own canonical bread
   });
 });
 
+test("e2e: germplasm nests under its species — the category lists species, an opened species lists its members, a chip lands on species > member", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/germplasm", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+        { id: "sp-1", type: "germplasm", label: "Mock Barley" },
+        { id: "acc-1", type: "germplasm", label: "Mock Accession", parent: "sp-1" },
+        { id: "acc-2", type: "germplasm", label: "Other Accession", parent: "sp-1" },
+      ]) })
+    );
+    await page.route("**/api/node-detail*", (route) => {
+      const id = new URL(route.request().url()).searchParams.get("id");
+      const relations = id === "exp-x" ? [{ label: "Germplasm", items: [{ id: "acc-2", type: "germplasm", label: "Other Accession" }] }] : [];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: id, actions: [], relations }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Scientific Information");
+    await openRow(page, "Germplasm");
+    const rowLabels = () => page.locator("#rowlist .row .row-label").allTextContents();
+    assert.deepEqual(await rowLabels(), ["Mock Barley"]);
+
+    await openRow(page, "Mock Barley");
+    assert.deepEqual(await rowLabels(), ["Mock Accession", "Other Accession"]);
+    await openRow(page, "Mock Accession");
+    const crumbs = async () => (await page.locator(".crumb").allTextContents()).map((c) => c.trim());
+    assert.deepEqual(await crumbs(), ["Graph", "Scientific Information", "Germplasm", "Mock Barley", "Mock Accession"]);
+
+    // A chip from somewhere else (an experiment) lands under the species too.
+    await page.evaluate(() => openNode({ id: "exp-x", type: "experiment", label: "Exp X" }));
+    await page.waitForTimeout(400);
+    await page.locator(".chip[data-openid='acc-2']").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(await crumbs(), ["Graph", "Scientific Information", "Germplasm", "Mock Barley", "Other Accession"]);
+  });
+});
+
 test("e2e: ctrl-clicking a relation chip adds it to the current selection instead of navigating", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (route) => {

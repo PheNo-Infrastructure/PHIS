@@ -773,23 +773,31 @@ demands it.
   `http://localhost:4000` — this serves the mockup *and* the API from
   one process/origin (no CORS, no separate "open the HTML file"
   step — that was an early mistake, corrected once).
-- **What's NOT built yet (as of 2026-09-25).** Wired types: facility, organization, site,
-  experiment, scientific object, project. Direction set 2026-09-25: finish the foundation
+- **What's NOT built yet (as of 2026-09-29).** Wired types: facility, organization, site,
+  experiment, scientific object, project, germplasm (view-only). Direction set 2026-09-25: finish the foundation
   (wire the remaining types) before imports. Live record counts then: germplasm 183,
   devices 7, events 7, persons 4, factors/variables/provenances/data files/documents 0.
   Candidate next steps, none started — pick ONE with the user:
-  - Germplasm (most real data; SO↔germplasm is what makes measurements meaningful),
-    likely view-only first.
   - Device (needs `rdf_type` + move events for facility hosting — see "Device deferred").
   - Scientific-object rename — needs a decision first: rename every experiment copy, or
     only the copy in the experiment being viewed (names are per copy, unique per experiment).
-  - SO parent / germplasm / factor-level links.
+  - SO parent / germplasm / factor-level links. SO↔germplasm is the ONLY way germplasm meets an
+    experiment: an experiment's `species` and a germplasm's experiments are derived from the
+    `hasGermplasm` relation on SO copies inside the experiment (probed live; not settable on
+    ExperimentCreationDTO). Fold a read-only "Species" group on experiments into that step.
   - Several scientific objects at once ("Plant 1–24") was considered and set aside: an
     import would create objects from the file's own IDs, not a counter, so it doesn't build
     toward imports; revisit only if someone really lays out experiments by hand.
   - Then the file-import path described in Creation model above.
   Known gaps: 2 real sites with an `address` can't be edited in the app (OpenSILEX PUT bug,
   guarded with a 409); supervisors/factors chips show bare URIs (no person label lookup).
+  Germplasm (2026-09-29): browsed as species > variety/accession (list rows carry `parent`,
+  a single-parent relation only; pedigree and usage stay chips). A germplasm's scientific
+  objects can't be listed: OpenSILEX ignores `/scientific_objects?germplasm=`, and
+  `hasGermplasm` sits only on the experiment copy. Barley exists twice as a species (AGROVOC
+  "barley", unused; local "Hordeum vulgare", 20 varieties) — a user-practice question left for a
+  PHIS meeting, not for the app to enforce. Annotations/documents (0 of each in PHIS) would be
+  one queryRelation shared by every type; later. Groups (access control) are out of scope.
 
 **Frontend: the validated design, unchanged.** The interactive mockup at
 `graph-explorer/public/index.html`,
