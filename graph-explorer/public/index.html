@@ -145,6 +145,17 @@ button { font-family: inherit; }
   font-family: var(--font-mono);
 }
 
+/* ---------- instrument import: reuses the ranking dialog's overlay/modal ---------- */
+.masthead-right { display: flex; align-items: baseline; gap: 14px; }
+.import-modal { width: min(600px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 32px)); }
+.import-section { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.import-section h3 { margin: 0; font-size: 13px; font-weight: 700; }
+.import-section h3 small { font-weight: 400; color: var(--ink-faint); margin-left: 6px; }
+.import-section p { margin: 0; font-size: 12.5px; }
+.import-names { color: var(--ink-faint); font-size: 12px; }
+.import-warning { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn-ink); border-radius: var(--radius); padding: 8px; font-size: 12.5px; }
+.import-footer { display: flex; justify-content: flex-end; gap: 8px; align-items: center; font-size: 12px; color: var(--ink-faint); }
+
 /* ---------- top bar: search + breadcrumb ---------- */
 .topbar {
   display: flex;
@@ -728,7 +739,7 @@ button { font-family: inherit; }
 <div class="app">
   <div class="masthead">
     <h1>Graph Explorer</h1>
-    <span class="subtitle">phis.pheno.no &middot; design prototype</span>
+    <span class="masthead-right"><button class="btn small" id="importBtn">Import from an instrument…</button><span class="subtitle">phis.pheno.no &middot; design prototype</span></span>
   </div>
 
   <div class="topbar">
@@ -785,6 +796,7 @@ button { font-family: inherit; }
 
 <div class="toast" id="toast"></div>
 <div class="ranking-overlay" id="linkRankingOverlay"></div>
+<div class="ranking-overlay" id="importOverlay"></div>
 
 <script>
 /* ---------------- mock graph data ---------------- */
@@ -2876,4 +2888,68 @@ Promise.all(
       .catch(err => console.error(`Failed to load ${categoryId} from backend:`, err))
   )
 ).finally(render);
+
+/* ---------- instrument import (step 2: the plan; nothing is written yet) ----------
+   The ZIP goes to /api/import/plan unchanged; the server's instrument plugins read it and answer
+   what would be created or reused in PHIS. Shown in PHIS's words with a plain line under each. */
+function openImport() {
+  const overlay = document.getElementById("importOverlay");
+  overlay.innerHTML = `
+    <div class="ranking-backdrop" id="importBackdrop"></div>
+    <div class="ranking-modal import-modal">
+      <div class="ranking-header"><span>Import from an instrument</span><button class="ranking-close" id="importClose" title="Close">&times;</button></div>
+      <p class="ranking-hint">Choose the ZIP your instrument produced (e.g. a TraitFinder export). You'll see what it would create in PHIS first — nothing is written until you confirm.</p>
+      <input type="file" id="importFile" accept=".zip,application/zip">
+      <div id="importPlan"></div>
+    </div>`;
+  overlay.classList.add("open");
+  const close = () => { overlay.classList.remove("open"); overlay.innerHTML = ""; };
+  document.getElementById("importBackdrop").addEventListener("click", close);
+  document.getElementById("importClose").addEventListener("click", close);
+  document.getElementById("importFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    const out = document.getElementById("importPlan");
+    if (!f) { out.innerHTML = ""; return; }
+    out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>`;
+    try {
+      const res = await fetch("/api/import/plan", { method: "POST", headers: { "Content-Type": "application/zip" }, body: f });
+      const body = await res.json();
+      out.innerHTML = res.ok ? importPlanHtml(body) : `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
+    } catch (err) {
+      out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>`;
+    }
+  });
+}
+document.getElementById("importBtn").addEventListener("click", openImport);
+
+function importPlanHtml(p) {
+  const list = (names, max = 8) => escapeHtml(names.slice(0, max).join(", ") + (names.length > max ? `, … (${names.length} in all)` : ""));
+  const g = p.germplasm;
+  const newCount = g.missing.length;
+  const sample = p.objects.sample[0];
+  return `
+    <p class="ranking-hint">Recognised as <b>${escapeHtml(p.instrument)}</b>.</p>
+    ${p.warnings.map(w => `<div class="import-warning">${escapeHtml(w)}</div>`).join("")}
+    <div class="import-section">
+      <h3>Experiment<small>your trial</small></h3>
+      <p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>
+      ${p.experiment.exists ? `<div class="import-warning">An experiment with this name already exists in PHIS.</div>` : ""}
+    </div>
+    <div class="import-section">
+      <h3>Germplasm<small>plant material: species, varieties, lines</small></h3>
+      ${g.existing.length ? `<p>Already in PHIS, reused: ${g.existing.length} <span class="import-names">(${list(g.existing.map(x => x.name))})</span></p>` : ""}
+      ${newCount ? `<p>New: ${newCount} <span class="import-names">(${list(g.missing)})</span></p>
+        <p><label>Species for the new germplasm: <select id="importSpecies"><option value="">Choose…</option>${p.speciesOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}</select></label></p>` : ""}
+      ${g.ambiguous.map(a => `<div class="import-warning">"${escapeHtml(a.name)}" matches ${a.ids.length} germplasm in PHIS — it isn't clear which one is meant.</div>`).join("")}
+    </div>
+    <div class="import-section">
+      <h3>Factors<small>treatments and design</small></h3>
+      ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.levels.length} levels <span class="import-names">(${list(f.levels, 12)})</span></p>`).join("") : "<p>None.</p>"}
+    </div>
+    <div class="import-section">
+      <h3>${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></h3>
+      <p>New: ${p.objects.count}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`)].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
+    </div>
+    <div class="import-footer">Nothing has been written to PHIS.</div>`;
+}
 </script>

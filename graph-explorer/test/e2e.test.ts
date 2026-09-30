@@ -1499,7 +1499,7 @@ test("e2e: one organization selected + more picked via \"Add to selection…\" -
     const anchorCall = putCalls.find((c) => c.link.uris.length === 1 && c.link.field === "parents");
     assert.ok(anchorCall);
     assert.match((await page.locator("#toast").textContent()) ?? "", /Ranked 2 organizations/);
-    assert.equal(await page.locator(".ranking-overlay").evaluate((el) => el.classList.contains("open")), false);
+    assert.equal(await page.locator("#linkRankingOverlay").evaluate((el) => el.classList.contains("open")), false);
   });
 });
 
@@ -1677,5 +1677,38 @@ test("e2e: Tabular Data (deliberately unwired) shows honest empty state, not fak
 
     const text = await page.locator("#rowlist").textContent();
     assert.match(text ?? "", /Nothing here yet/);
+  });
+});
+
+test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the plan in PHIS terms — warnings first, species not pre-picked, nothing written", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let uploaded = 0;
+    await page.route("**/api/import/plan", (route) => {
+      uploaded = route.request().postDataBuffer()?.length ?? 0;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        instrument: "TraitFinder (PlantEye)",
+        experiment: { name: "PBar1x4 – TraitFinder – 2025-10-22", startDate: "2025-10-22", exists: false },
+        germplasm: { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril", "<b>Bad</b>"], ambiguous: [] },
+        speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
+        factors: [{ name: "Replicate", levels: ["1", "2"] }],
+        objects: { count: 3, sample: [{ name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1" } }] },
+        warnings: ["On 2025-10-29 the sheet disagrees."],
+      }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK-fake-zip") });
+    await page.locator(".import-section").first().waitFor();
+    assert.equal(uploaded, 11, "the file goes up unchanged");
+    const text = (await page.locator("#importPlan").innerText()).replace(/\s+/g, " ");
+    assert.match(text, /Recognised as TraitFinder \(PlantEye\)\. On 2025-10-29 the sheet disagrees\. Experiment/, "the warning comes before the plan");
+    assert.match(text, /Already in PHIS, reused: 1 \(Olve\) New: 2 \(Tiril, <b>Bad<\/b>\)/, "names from the file are shown as text");
+    assert.match(text, /Replicate: 2 levels \(1, 2\)/);
+    assert.match(text, /Scientific objects.* New: 3 \(e\.g\. PB001: Olve, Replicate 1\)/);
+    assert.match(text, /Nothing has been written to PHIS\./);
+    assert.equal(await page.locator("#importSpecies").inputValue(), "", "no species chosen for the user");
+    await page.locator("#importClose").click();
+    assert.equal(await page.locator("#importOverlay.open").count(), 0);
   });
 });
