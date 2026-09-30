@@ -116,8 +116,8 @@ async function removeSoFromExperiment(soId: string, expId: string) {
 
 // What a scientific object is within one experiment. These live ONLY on its copy there (the
 // global copy can't hold them, a new copy inherits nothing — probed live), so they're read per
-// experiment. `property` is the relation's local name; `byUris` names the values in one call.
-// Factor levels would be one more entry.
+// experiment. `property` is the relation's local name; `byUris` names the values in one call
+// (`names` instead, for values with no by_uris endpoint).
 // Flags: `removable` rows carry their property as the row's `field` (× in unlink mode; /api/node's
 // in-experiment PUT accepts it). `addable` rows also get "+ Add", link by selection (/api/link)
 // and are offered for carry-over. `single` = at most one value: setting one replaces the old
@@ -130,7 +130,23 @@ const SO_ROWS_PER_EXPERIMENT = [
   // this one there, via the per-experiment parent filter (probed). Removing one clears ITS
   // isPartOf. Shown so a relation is visible and removable from both sides.
   { label: "Contains", property: "contains", inverseOf: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: false },
+  // Read-only for now (editing is a later step). A level has no node of its own, so its chip is
+  // its FACTOR, labelled "Replicate: 2". Stored in `relations` like the rest (probed 2026-09-30).
+  { label: "Factor levels", property: "hasFactorLevel", type: "factor", names: factorLevelChips, addable: false, removable: false, single: false },
 ];
+// Every factor of the experiment with its levels comes back in one call — enough to name them all.
+async function factorLevelChips(expId: string, uris: string[]) {
+  const factors = (await authedGet(`/core/experiments/${encodeURIComponent(expId)}/factors`)).result as { uri: string; name?: string; levels?: { uri: string; name?: string }[] }[];
+  const byLevel = new Map<string, { id: string; label: string }>();
+  for (const f of factors) {
+    const id = f.uri; // full: the factor endpoints 404 a prefixed uri (probed)
+    for (const l of f.levels ?? []) byLevel.set(await compactUri(l.uri), { id, label: `${f.name ?? id}: ${l.name ?? l.uri}` });
+  }
+  return Promise.all(uris.map(async (u) => {
+    const key = await compactUri(u);
+    return { ...(byLevel.get(key) ?? { id: u, label: key }), type: "factor" };
+  }));
+}
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
 
 // Adds/removes values of one relation on the object's copy in ONE experiment. The PUT replaces
@@ -148,12 +164,8 @@ async function updateSoInExperiment(soId: string, expId: string, mod: { field: s
   const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`)).result;
   let relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
     .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
-  // Factor levels come back in their own field; unverified whether they're also in `relations`
-  // (PHIS has no factors yet) — refuse rather than risk the PUT dropping them.
-  // ponytail: guard until a factor exists to probe with; then carry them explicitly or drop this.
-  if (Array.isArray(copy.factor_level) && copy.factor_level.length && !relations.some((r) => localName(r.property) === "hasFactorLevel")) {
-    throw new OpenSilexError(409, "This object has factor levels, and editing it here could drop them. Edit it in PHIS directly.");
-  }
+  // Factor levels are in `relations` too (hasFactorLevel; `factor_level` stays null — probed
+  // 2026-09-30), so they go back unchanged with everything else.
   const mine = (r: { property: string }) => localName(r.property) === mod.field;
   if (mod.remove) {
     const gone = await compactUri(mod.remove);
@@ -177,7 +189,8 @@ async function soRowsIn(soId: string, expId: string) {
         : relations.filter((r) => localName(r.property) === row.property).map((r) => String(r.value));
       const field = row.removable ? { field: row.property, type: row.type, ...(row.addable ? { addable: true } : {}) } : {};
       if (!uris.length) return { label: row.label, ...field, items: [] };
-      const named = (await authedPost(row.byUris(expId), uris)).result as unknown as { uri: string; name?: string }[];
+      if (row.names) return { label: row.label, ...field, items: await row.names(expId, uris) };
+      const named = (await authedPost(row.byUris!(expId), uris)).result as unknown as { uri: string; name?: string }[];
       const names = new Map(await Promise.all(named.map(async (n) => [await compactUri(String(n.uri)), String(n.name ?? n.uri)] as const)));
       const items = await Promise.all(uris.map(async (u) => {
         const id = await compactUri(u);
@@ -313,12 +326,13 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Projects", field: "projects", type: "project" },
       { label: "Scientific supervisors", field: "scientific_supervisors", type: "person" },
       { label: "Technical supervisors", field: "technical_supervisors", type: "person" },
-      { label: "Factors", field: "factors", type: "factor" },
     ],
+    // `factors` stays in the PUT (or it'd be wiped) but is shown by name through the query below.
     updateLinkFields: ["organisations", "facilities", "projects", "scientific_supervisors", "technical_supervisors", "factors"],
     deleteRemovesLinks: true,
     queryRelations: [
       EXPERIMENT_SOS,
+      { label: "Factors", type: "factor", url: (id) => `/core/experiments/${encodeURIComponent(id)}/factors` },
       // Derived by OpenSILEX from its objects' germplasm (not settable on the experiment).
       { label: "Species", type: "germplasm", url: (id) => `/core/experiments/${encodeURIComponent(id)}/species`, compactIds: true },
     ],
@@ -415,6 +429,20 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     queryRelations: [
       { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true },
       { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
+    ],
+  },
+  // Read-only for now. A factor belongs to one experiment; its levels have no node of their own,
+  // so they're listed as plain chips.
+  factor: {
+    getUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
+    putUrl: "/core/experiments/factors",
+    deleteUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    queryRelations: [
+      { label: "Experiment", type: "experiment", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/experiments` },
+      { label: "Levels", type: "factor_level", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/levels` },
     ],
   },
   site: {

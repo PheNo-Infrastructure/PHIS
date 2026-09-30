@@ -778,8 +778,8 @@ demands it.
   (wire the remaining types) before imports. Live record counts then: germplasm 183,
   devices 7, events 7, persons 4, factors/variables/provenances/data files/documents 0.
   **Next (decided 2026-09-29, not started): a demo of the prototype.** (1) The TraitFinder
-  instrument import (the file-import path in Creation model; needs factor levels, not built
-  yet). (2) Online for the demo against a TEST environment holding a copy of prod data
+  instrument import (the file-import path in Creation model; factor levels shown read-only since 2026-09-30,
+  written by the import). (2) Online for the demo against a TEST environment holding a copy of prod data
   (scripts/test-env.ps1 + a restore from the daily backups) — never against prod; the server
   acts with the .env account, so the online copy needs access protection first. The graph
   (selection-first step 5) waits until after the demo.
@@ -948,7 +948,16 @@ germplasm are selected the button says what it will write ("Set Annika on 2 obje
 experiment it's/both are in" when nobody was asked. Rule going forward: an automatic choice
 must be stated. Another guided test is planned.
 
-**Direction after this:** factor levels as a third row once factors are wired (PHIS has none yet).
+**Factor levels, read-only (built 2026-09-30, on phis-test).** Probed: a plant's level sits in its
+experiment copy's `relations` as `vocabulary:hasFactorLevel` (`factor_level` stays null), so the
+in-experiment read-modify-write already carries it — the 409 guard is gone. Each trial box has a
+"Factor levels" row; a level has no node of its own, so its chip is its factor, labelled
+"Replicate: 2" (named from `/experiments/{uri}/factors`, one call). An experiment lists its Factors
+by name (the `factors` field stays in the PUT). A factor opens read-only: its experiment and levels.
+Factor ids stay FULL uris — the factor endpoints 404 a prefixed one.
+**TODO (decided 2026-09-30, after the demo):** edit factor levels by hand — "+ Add", Unlink,
+carry-over and child offers like germplasm, and creating factors/levels in the app. For the demo
+the TraitFinder import writes them.
 
 ## Selection-first interaction (designed 2026-09-29)
 
