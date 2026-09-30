@@ -204,7 +204,7 @@ test("POST /api/import/run that fails part-way says what it created and how to s
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200, "already streaming when it failed");
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
-    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 1 of 3 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
-    assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 2, "stops at the failure");
+    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 2 of 3 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
+    assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 3, "the batch in flight finishes; the report counts what exists");
   });
 });

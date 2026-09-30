@@ -6,6 +6,7 @@ import { prepare } from "./plan.ts";
 import type { Files } from "./plugins.ts";
 
 const enc = encodeURIComponent;
+const OBJECTS_AT_ONCE = 4;
 const firstUri = (r: { result: unknown }) => String([r.result].flat()[0]);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -50,15 +51,19 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       for (const l of (await authedGet(`/core/experiments/factors/${enc(id)}/levels`)).result) levels.set(`${f.name}|${l.name}`, l.uri);
     }
 
-    // ponytail: one POST per object (no batch endpoint in this OpenSILEX) — ~100 in a few seconds.
-    for (const o of trial.objects) {
-      const relations = [
-        ...(o.germplasm ? [{ property: "vocabulary:hasGermplasm", value: germplasm.get(o.germplasm), inverse: false }] : []),
-        ...Object.entries(o.factors).map(([f, l]) => ({ property: "vocabulary:hasFactorLevel", value: levels.get(`${f}|${l}`), inverse: false })),
-      ];
-      await authedPost("/core/scientific_objects", { name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations });
-      done.objects++;
-      tick(`Creating scientific objects: ${done.objects} of ${trial.objects.length}`);
+    // One POST per object (no batch endpoint in this OpenSILEX), OBJECTS_AT_ONCE in flight: each costs
+    // OpenSILEX ~0.5-1 CPU-s, and with no CPU limit 4-5 at a time is ~2x faster; more gains nothing
+    // on the 4-vCPU node (measured 2026-09-30). A failure stops the next batch.
+    for (let i = 0; i < trial.objects.length; i += OBJECTS_AT_ONCE) {
+      await Promise.all(trial.objects.slice(i, i + OBJECTS_AT_ONCE).map(async (o) => {
+        const relations = [
+          ...(o.germplasm ? [{ property: "vocabulary:hasGermplasm", value: germplasm.get(o.germplasm), inverse: false }] : []),
+          ...Object.entries(o.factors).map(([f, l]) => ({ property: "vocabulary:hasFactorLevel", value: levels.get(`${f}|${l}`), inverse: false })),
+        ];
+        await authedPost("/core/scientific_objects", { name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations });
+        done.objects++;
+        tick(`Creating scientific objects: ${done.objects} of ${trial.objects.length}`);
+      }));
     }
   } catch (err) {
     const what = done.experiment
