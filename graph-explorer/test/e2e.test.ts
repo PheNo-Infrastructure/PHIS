@@ -41,21 +41,21 @@ async function openRow(page: import("playwright").Page, text: string) {
 }
 
 const WIRED_CATEGORIES: Array<{ branch: string; label: string; fakeIdPrefix: string }> = [
-  { branch: "Scientific Organization", label: "Organizations", fakeIdPrefix: "org-" },
-  { branch: "Scientific Organization", label: "Experiments", fakeIdPrefix: "exp-" },
-  { branch: "Scientific Organization", label: "Factors", fakeIdPrefix: "fac-irrigation" },
-  { branch: "Scientific Organization", label: "Projects", fakeIdPrefix: "proj-" },
-  { branch: "Scientific Organization", label: "Facilities", fakeIdPrefix: "fac-" },
-  { branch: "Scientific Organization", label: "Devices", fakeIdPrefix: "dev-" },
-  { branch: "Scientific Organization", label: "Sites", fakeIdPrefix: "site-" },
-  { branch: "Scientific Organization", label: "Persons", fakeIdPrefix: "person-" },
-  { branch: "Scientific Information", label: "Scientific Objects", fakeIdPrefix: "so-" },
-  { branch: "Scientific Information", label: "Variables", fakeIdPrefix: "var-" },
-  { branch: "Scientific Information", label: "Germplasm", fakeIdPrefix: "germ-" },
-  { branch: "Data", label: "Data files", fakeIdPrefix: "datafile-" },
-  { branch: "Data", label: "Provenances", fakeIdPrefix: "prov-" },
-  { branch: "Data", label: "Events", fakeIdPrefix: "event-" },
-  { branch: "Data", label: "Documents", fakeIdPrefix: "doc-" },
+  { branch: "People", label: "Institutes & groups", fakeIdPrefix: "org-" },
+  { branch: "Trials", label: "Experiments", fakeIdPrefix: "exp-" },
+  { branch: "Trials", label: "Treatments", fakeIdPrefix: "fac-irrigation" },
+  { branch: "People", label: "Projects", fakeIdPrefix: "proj-" },
+  { branch: "Setup", label: "Facilities", fakeIdPrefix: "fac-" },
+  { branch: "Setup", label: "Instruments & sensors", fakeIdPrefix: "dev-" },
+  { branch: "Setup", label: "Sites", fakeIdPrefix: "site-" },
+  { branch: "People", label: "People", fakeIdPrefix: "person-" },
+  { branch: "Trials", label: "Plants & plots", fakeIdPrefix: "so-" },
+  { branch: "Data", label: "Traits", fakeIdPrefix: "var-" },
+  { branch: "Trials", label: "Plant material", fakeIdPrefix: "germ-" },
+  { branch: "Data", label: "Images & files", fakeIdPrefix: "datafile-" },
+  { branch: "Data", label: "How data was collected", fakeIdPrefix: "prov-" },
+  { branch: "Setup", label: "Logbook", fakeIdPrefix: "event-" },
+  { branch: "Data", label: "Documents & protocols", fakeIdPrefix: "doc-" },
 ];
 
 for (const { branch, label, fakeIdPrefix } of WIRED_CATEGORIES) {
@@ -133,7 +133,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     await page.waitForTimeout(1000);
 
     // Select one real Experiment
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Trials");
     await openRow(page, "Experiments");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
@@ -144,12 +144,12 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment in full — 6 types, proving the solo case is unconstrained.
     assert.deepEqual(
       new Set(soloItems.map((s) => s.trim())),
-      new Set(["organization", "facility", "project", "person", "factor", "scientific object"])
+      new Set(["institute or group", "facility", "project", "person", "treatment", "plant or plot"])
     );
     await page.locator("#newBtn").click(); // close
 
     // Ctrl-click a real Project into the selection too
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "People");
     await page.waitForTimeout(200);
     await openRow(page, "Projects");
     await page.locator("#rowlist .row").first().click({ modifiers: ["Control"] });
@@ -170,12 +170,12 @@ test("e2e: '+ New' menu shows the honest empty state when a multi-selection shar
     await page.goto(base);
     await page.waitForTimeout(1000);
 
-    // Select the Sites category (group-select = every site) and ctrl-click the
-    // Projects category (every project) — ADJACENT.site ∩ ADJACENT.project = {}.
-    await openRow(page, "Scientific Organization");
-    await page.locator(".row[data-id]", { hasText: "Sites" }).first().click();
+    // Select the Treatments category (group-select = every factor) and ctrl-click the
+    // Plant material category (every germplasm) — ADJACENT.factor ∩ ADJACENT.germplasm = {}.
+    await openRow(page, "Trials");
+    await page.locator(".row[data-id]", { hasText: "Treatments" }).first().click();
     await page.waitForTimeout(200);
-    await page.locator(".row[data-id]", { hasText: "Projects" }).first().click({ modifiers: ["Control"] });
+    await page.locator(".row[data-id]", { hasText: "Plant material" }).first().click({ modifiers: ["Control"] });
     await page.waitForTimeout(200);
 
     await page.locator("#newBtn").click();
@@ -201,14 +201,14 @@ test("e2e: browsing a category with nothing selected offers a standalone \"+ New
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
 
     // Nothing selected yet — the idle actionbar offers a standalone create, not the
     // selection-driven "+ New" menu.
     await page.waitForTimeout(200);
     const standaloneBtn = page.locator("#newStandaloneBtn");
-    assert.match((await standaloneBtn.textContent()) ?? "", /\+ New organization/);
+    assert.match((await standaloneBtn.textContent()) ?? "", /\+ New institute or group/);
 
     await standaloneBtn.click();
     await page.waitForTimeout(300);
@@ -240,7 +240,7 @@ test("e2e: standalone \"+ New site\" picks organization(s) first (same click rul
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Setup");
     await openRow(page, "Sites");
     await page.waitForTimeout(200);
 
@@ -261,7 +261,7 @@ test("e2e: standalone \"+ New site\" picks organization(s) first (same click rul
     await rows.nth(1).click();
     assert.equal(await page.locator("#linkPickerBody .newmenu-item.selected").count(), 1);
     await rows.nth(2).click({ modifiers: ["Control"] });
-    assert.match((await page.locator(".linkmenu-confirm").textContent()) ?? "", /Create site in 2 organizations/);
+    assert.match((await page.locator(".linkmenu-confirm").textContent()) ?? "", /Create site in 2 institutes or groups/);
 
     const pickedLabels = await page.locator("#linkPickerBody .newmenu-item.selected").allTextContents();
     await page.locator(".linkmenu-confirm").click();
@@ -296,8 +296,8 @@ test("e2e: creating a facility from a selected organization auto-attaches it and
     await page.goto(base);
     await page.waitForTimeout(1000);
 
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
 
@@ -309,7 +309,7 @@ test("e2e: creating a facility from a selected organization auto-attaches it and
     const toastText = await page.locator("#toast").textContent();
     assert.match(toastText ?? "", /Created Mock New Facility/);
 
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "Setup");
     await page.waitForTimeout(200);
     await openRow(page, "Facilities");
     const rowText = await page.locator("#rowlist").textContent();
@@ -331,7 +331,7 @@ test("e2e: opening a facility shows its real relations, and Rename/Delete work e
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Setup");
     await openRow(page, "Facilities");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(400);
@@ -416,8 +416,8 @@ test("e2e: clicking a relation chip jumps to that resource's own canonical bread
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(400);
 
@@ -428,7 +428,7 @@ test("e2e: clicking a relation chip jumps to that resource's own canonical bread
     const crumbs = await page.locator(".crumb").allTextContents();
     // Lands on Facility's own canonical path (Scientific Organization > Facilities > it) —
     // not "...Organizations > <org> > Mock Facility", which is what appending would produce.
-    assert.deepEqual(crumbs.map((c) => c.trim()), ["Graph", "Scientific Organization", "Facilities", "Mock Facility"]);
+    assert.deepEqual(crumbs.map((c) => c.trim()), ["Graph", "Setup", "Facilities", "Mock Facility"]);
   });
 });
 
@@ -448,8 +448,8 @@ test("e2e: germplasm nests under its species — the category lists species, an 
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Information");
-    await openRow(page, "Germplasm");
+    await openRow(page, "Trials");
+    await openRow(page, "Plant material");
     const rowLabels = () => page.locator("#rowlist .row .row-label").allTextContents();
     assert.deepEqual(await rowLabels(), ["Mock Barley"]);
 
@@ -457,14 +457,14 @@ test("e2e: germplasm nests under its species — the category lists species, an 
     assert.deepEqual(await rowLabels(), ["Mock Accession", "Other Accession"]);
     await openRow(page, "Mock Accession");
     const crumbs = async () => (await page.locator(".crumb").allTextContents()).map((c) => c.trim());
-    assert.deepEqual(await crumbs(), ["Graph", "Scientific Information", "Germplasm", "Mock Barley", "Mock Accession"]);
+    assert.deepEqual(await crumbs(), ["Graph", "Trials", "Plant material", "Mock Barley", "Mock Accession"]);
 
     // A chip from somewhere else (an experiment) lands under the species too.
     await page.evaluate(() => openNode({ id: "exp-x", type: "experiment", label: "Exp X" }));
     await page.waitForTimeout(400);
     await page.locator(".chip[data-openid='acc-2']").click();
     await page.waitForTimeout(400);
-    assert.deepEqual(await crumbs(), ["Graph", "Scientific Information", "Germplasm", "Mock Barley", "Other Accession"]);
+    assert.deepEqual(await crumbs(), ["Graph", "Trials", "Plant material", "Mock Barley", "Other Accession"]);
   });
 });
 
@@ -534,7 +534,7 @@ test("e2e: no '+ Add' in boxes — germplasm is added through the selection (Add
     // Select the object (its title), find the germplasm with "Add to selection…", then Link selection.
     await page.locator("#selfChip").click();
     await page.locator("#addToSelectionBtn").click();
-    await page.locator("#linkPickerBody .newmenu-item", { hasText: "germplasm" }).click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "plant material" }).click();
     await page.locator("#linkPickerBody .newmenu-item", { hasText: "Arild" }).click();
     assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Add 1 to selection");
     await page.locator(".linkmenu-confirm").click();
@@ -571,7 +571,7 @@ test("e2e: after linking objects into an experiment, the action bar offers their
     await link();
     await page.waitForTimeout(400);
     const bar = async () => (await page.locator("#actionbar").innerText()).replace(/\s+/g, " ");
-    assert.match(await bar(), /Barley 2027 now has Plot 1, without its germplasm from other experiments\. Carry any over\?/);
+    assert.match(await bar(), /Barley 2027 now has Plot 1, without its plant material from other experiments\. Copy any over\?/);
     assert.deepEqual((await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim()),
       ["Annika → Plot 1 (from Barley 2025)", "Arild → Plot 1 (from Barley 2026)"]);
     assert.equal(await page.locator(".linkmenu-confirm").count(), 0, "nothing picked, nothing to confirm");
@@ -580,14 +580,14 @@ test("e2e: after linking objects into an experiment, the action bar offers their
     await page.locator(".linkmenu-confirm").click();
     await page.waitForTimeout(400);
     assert.deepEqual(puts, [{ type: "scientific_object", id: "so-1", experiment: "exp-B", link: { field: "hasGermplasm", uris: ["g-arild"] } }]);
-    assert.doesNotMatch(await bar(), /Carry any over/);
+    assert.doesNotMatch(await bar(), /Copy any over/);
 
     await link();
     await page.waitForTimeout(400);
     await page.locator("#carryOverSkipBtn").click();
     await page.waitForTimeout(200);
     assert.equal(puts.length, 1, "Skip writes nothing");
-    assert.doesNotMatch(await bar(), /Carry any over/);
+    assert.doesNotMatch(await bar(), /Copy any over/);
   });
 });
 
@@ -606,7 +606,7 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
     await page.waitForTimeout(400);
     await page.locator("#selfChip").click();
     await page.locator("#addToSelectionBtn").click();
-    await page.locator("#linkPickerBody .newmenu-item", { hasText: "germplasm" }).click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "plant material" }).click();
     await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => (window as any).__pwned), undefined, "no injected handler ran");
     assert.equal(await page.locator("#detailBody img, #actionbar img").count(), 0);
@@ -618,7 +618,7 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
     await page.waitForTimeout(400);
     await page.locator("#selfChip").click();
     await page.waitForTimeout(200);
-    await page.evaluate(() => navigateTo([path[0], ROOT.find((r: any) => r.label === "Scientific Information"), { id: "cat-germplasm", type: "category", label: "Germplasm" }]));
+    await page.evaluate(() => navigateTo([path[0], ROOT.find((r: any) => r.label === "Trials"), { id: "cat-germplasm", type: "category", label: "Germplasm" }]));
     await page.waitForTimeout(400);
     assert.match(await page.locator("#rowlist").innerText(), /<img src=x/);
     assert.equal(await page.locator("img").count(), 0, "no <img> anywhere on the page");
@@ -651,8 +651,8 @@ test("e2e: linking objects + a germplasm asks which experiment (nothing picked) 
     // Several experiments: the list, nothing picked; confirming sends only the pick.
     await page.evaluate(() => linkItems([{ type: "scientific_object", id: "so-two" }, { type: "germplasm", id: "g-annika" }]));
     await page.waitForTimeout(400);
-    assert.match(await bar(), /Germplasm is kept per experiment, and this object is in several\. Set it in which experiment\(s\)\?/);
-    assert.deepEqual(await rows(), ["Barley 2025 · 1 object", "Barley 2026 · 1 object"]);
+    assert.match(await bar(), /Plant material is kept per experiment, and this one is in several\. Set it in which experiment\(s\)\?/);
+    assert.deepEqual(await rows(), ["Barley 2025 · 1 plant or plot", "Barley 2026 · 1 plant or plot"]);
     assert.equal(await page.locator(".linkmenu-confirm").count(), 0, "nothing picked");
     await page.locator("#linkList .newmenu-item", { hasText: "Barley 2026" }).click();
     assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Set in 1 experiment");
@@ -665,7 +665,7 @@ test("e2e: linking objects + a germplasm asks which experiment (nothing picked) 
     posts.length = 0;
     await page.evaluate(() => linkItems([{ type: "scientific_object", id: "so-lone" }, { type: "germplasm", id: "g-annika" }]));
     await page.waitForTimeout(400);
-    assert.match(await bar(), /Lone plot isn't in any experiment yet, and germplasm is set per experiment\. Add it to one first\?/);
+    assert.match(await bar(), /Lone plot isn't in any experiment yet, and plant material is set per experiment\. Add it to one first\?/);
     await page.locator("#linkList .newmenu-item", { hasText: "Barley 2026" }).click();
     assert.equal((await page.locator(".linkmenu-confirm").innerText()).trim(), "Add to 1 experiment");
     await page.locator(".linkmenu-confirm").click();
@@ -689,20 +689,20 @@ test("e2e: ctrl-clicking a relation chip adds it to the current selection instea
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     // Pre-select a real Experiment first — ctrl-clicking the chip below must ADD to this,
     // never replace it (same reasoning as the simulated graph panel's pick behavior).
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "Trials");
     await page.waitForTimeout(200);
     await openRow(page, "Experiments");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
     const preExistingLabel = await page.locator(".selection-summary .selection-names").textContent();
 
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "People");
     await page.waitForTimeout(200);
-    await openRow(page, "Organizations");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(400);
 
@@ -764,8 +764,8 @@ test("e2e: unlinking a relation from one side drops the OTHER side's cached deta
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(400);
     assert.match(await page.locator("#detailBody").textContent() ?? "", /Mock Child Org/);
@@ -780,7 +780,7 @@ test("e2e: unlinking a relation from one side drops the OTHER side's cached deta
     await page.waitForTimeout(300);
 
     // Navigate back to the parent — its cache must have been dropped by the unlink above.
-    await page.locator(".crumb", { hasText: "Organizations" }).click();
+    await page.locator(".crumb", { hasText: "Institutes & groups" }).click();
     await page.waitForTimeout(300);
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(400);
@@ -818,7 +818,7 @@ test("e2e: a site down to its LAST organization can't unlink it — the unlink v
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Setup");
     await openRow(page, "Sites");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(400);
@@ -828,7 +828,7 @@ test("e2e: a site down to its LAST organization can't unlink it — the unlink v
     // Only the facility is unlinkable; the last org has no × and the banner says why.
     assert.equal(await page.locator(".chip-unlink").count(), 1);
     assert.equal(await page.locator(".chip[data-openid='mock-org'] .chip-unlink").count(), 0);
-    assert.match((await page.locator(".unlink-intro").textContent()) ?? "", /must belong to at least one organization.*Mock Only Org/s);
+    assert.match((await page.locator(".unlink-intro").textContent()) ?? "", /must belong to at least one institute or group.*Mock Only Org/s);
 
     await page.locator("#forceDeleteBtn").click();
     await page.waitForTimeout(300);
@@ -851,8 +851,8 @@ test("e2e: '+ New' → experiment from a selected organization opens a form (not
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
     await page.locator("#newBtn").click();
@@ -888,12 +888,12 @@ test("e2e: '+ New' → scientific object from ONE selected experiment: form has 
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Trials");
     await openRow(page, "Experiments");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
     await page.locator("#newBtn").click();
-    await page.locator("#newList .newmenu-item", { hasText: "scientific object" }).click();
+    await page.locator("#newList .newmenu-item", { hasText: "plant or plot" }).click();
 
     const form = page.locator("dialog.create-dialog");
     await form.waitFor({ state: "visible" });
@@ -930,13 +930,13 @@ test("e2e: '+ New' → scientific object with TWO experiments selected creates i
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Trials");
     await openRow(page, "Experiments");
     await page.locator("#rowlist .row").nth(0).click();
     await page.locator("#rowlist .row").nth(1).click({ modifiers: ["Control"] });
     await page.waitForTimeout(200);
     await page.locator("#newBtn").click();
-    await page.locator("#newList .newmenu-item", { hasText: "scientific object" }).click();
+    await page.locator("#newList .newmenu-item", { hasText: "plant or plot" }).click();
     const form = page.locator("dialog.create-dialog");
     await form.waitFor({ state: "visible" });
     await form.locator("input[name=name]").fill("Mock Plant");
@@ -953,19 +953,19 @@ test("e2e: the Scientific Objects page shows a collapsible 'How scientific objec
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Information");
-    await openRow(page, "Scientific Objects");
+    await openRow(page, "Trials");
+    await openRow(page, "Plants & plots");
     const box = page.locator("details.type-info");
-    assert.match((await box.locator("summary").textContent()) ?? "", /How scientific objects work/);
+    assert.match((await box.locator("summary").textContent()) ?? "", /How plants and plots work/);
     assert.equal(await box.evaluate((d: HTMLDetailsElement) => d.open), false, "collapsed by default");
     await box.locator("summary").click();
-    assert.match((await box.textContent()) ?? "", /separate copy of it in each experiment/);
+    assert.match((await box.textContent()) ?? "", /is kept separately, so a change in one experiment never alters another/);
     await page.waitForTimeout(200); // "toggle" fires async — let it be stored before reloading
 
     await page.reload();
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Information");
-    await openRow(page, "Scientific Objects");
+    await openRow(page, "Trials");
+    await openRow(page, "Plants & plots");
     assert.equal(await page.locator("details.type-info").evaluate((d: HTMLDetailsElement) => d.open), true, "open state remembered");
   });
 });
@@ -975,7 +975,7 @@ test("e2e: opening a real experiment shows its relations as chips with Rename an
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Trials");
     await openRow(page, "Experiments");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(1500);
@@ -1023,7 +1023,7 @@ test("e2e: deleting an experiment that holds scientific objects: banner explains
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Trials");
     await openRow(page, "Experiments");
     await page.locator("#rowlist .row .row-nav").first().click();
     await page.waitForTimeout(500);
@@ -1057,8 +1057,8 @@ test("e2e: a type whose Delete takes its links along (e.g. scientific object) ge
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row .row-nav").first().click(); // any node — detail is mocked
     await page.waitForTimeout(500);
 
@@ -1078,8 +1078,8 @@ test("e2e: the open node's own title is a selectable chip — plain click select
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", relations: [] }) }));
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     const rows = page.locator("#rowlist .row");
     const otherId = await rows.nth(1).getAttribute("data-id");
     await rows.nth(0).locator(".row-nav").click(); // navigate INTO org 0: it leaves the row list
@@ -1117,8 +1117,8 @@ test("e2e: opening a node from the selection TREE (local detail) fetches its rel
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
     // The tree is always visible along the bottom now — no switch.
@@ -1143,8 +1143,8 @@ test("e2e: selecting two existing, different-typed adjacent nodes offers \"Link 
     await page.waitForTimeout(1000);
 
     // Select one real Organization.
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
 
@@ -1152,7 +1152,7 @@ test("e2e: selecting two existing, different-typed adjacent nodes offers \"Link 
     assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
 
     // Ctrl-click one real Facility in too — organization and facility are adjacent.
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "Setup");
     await page.waitForTimeout(200);
     await openRow(page, "Facilities");
     await page.locator("#rowlist .row").first().click({ modifiers: ["Control"] });
@@ -1174,17 +1174,17 @@ test("e2e: two of a type WITHOUT parent/child (facilities) offer no \"Link selec
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Setup");
     await openRow(page, "Facilities");
     await page.locator("#rowlist .row").nth(0).click();
     await page.waitForTimeout(150);
     await page.locator("#rowlist .row").nth(1).click({ modifiers: ["Control"] });
     await page.waitForTimeout(200);
     assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
-    assert.match(await page.locator("#actionbar .link-why").innerText(), /Two facilitys? can't be linked to each other/);
+    assert.match(await page.locator("#actionbar .link-why").innerText(), /Two facilities can't be linked to each other/);
 
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
-    await openRow(page, "Organizations");
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").nth(0).click();
     await page.locator("#rowlist .row").nth(1).click({ modifiers: ["Control"] });
     await page.waitForTimeout(200);
@@ -1290,7 +1290,7 @@ test("e2e: selecting several facilities plus one organization offers \"Link sele
     await page.goto(base);
     await page.waitForTimeout(1000);
 
-    await openRow(page, "Scientific Organization");
+    await openRow(page, "Setup");
     await openRow(page, "Facilities");
     await page.locator("#rowlist .row").nth(0).click();
     await page.waitForTimeout(150);
@@ -1299,9 +1299,9 @@ test("e2e: selecting several facilities plus one organization offers \"Link sele
     await page.locator("#rowlist .row").nth(2).click({ modifiers: ["Control"] });
     await page.waitForTimeout(150);
 
-    await page.locator(".crumb", { hasText: "Scientific Organization" }).click();
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "People");
     await page.waitForTimeout(200);
-    await openRow(page, "Organizations");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click({ modifiers: ["Control"] });
     await page.waitForTimeout(200);
 
@@ -1337,8 +1337,8 @@ test("e2e: \"Add to selection…\" is a two-level type-then-item browser: pick a
     await page.waitForTimeout(1000);
 
     // Select one real Organization — stays put, never navigates to Facilities.
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
 
@@ -1387,7 +1387,7 @@ test("e2e: \"Add to selection…\" is a two-level type-then-item browser: pick a
     assert.equal(items.length, 3);
     assert.equal(items.filter((i) => i.type === "facility").length, 2);
     const crumbs = await page.locator(".crumb").allTextContents();
-    assert.match(crumbs.join(" "), /Organizations/);
+    assert.match(crumbs.join(" "), /Institutes & groups/);
     assert.match((await page.locator("#toast").textContent()) ?? "", /Linked 2 relations\b/);
   });
 });
@@ -1402,8 +1402,8 @@ test("e2e: \"Add to selection…\" picking follows the exact same click/ctrl/shi
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
     await page.locator("#addToSelectionBtn").click();
@@ -1444,8 +1444,8 @@ test("e2e: one organization selected + more picked via \"Add to selection…\" -
 
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
 
@@ -1453,7 +1453,7 @@ test("e2e: one organization selected + more picked via \"Add to selection…\" -
     await page.waitForTimeout(150);
     // organization is offered as a candidate type here (the one same-type exception) — and
     // picked with the exact same click/ctrl rules as any other type, no special buttons.
-    await page.locator("#linkPickerBody .newmenu-item", { hasText: "organization" }).click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "institute or group" }).click();
     await page.waitForTimeout(150);
 
     const rows = page.locator("#linkPickerBody .newmenu-item");
@@ -1498,7 +1498,7 @@ test("e2e: one organization selected + more picked via \"Add to selection…\" -
     assert.equal(putCalls.length, 2);
     const anchorCall = putCalls.find((c) => c.link.uris.length === 1 && c.link.field === "parents");
     assert.ok(anchorCall);
-    assert.match((await page.locator("#toast").textContent()) ?? "", /Ranked 2 organizations/);
+    assert.match((await page.locator("#toast").textContent()) ?? "", /Ranked 2 institutes or groups/);
     assert.equal(await page.locator(".ranking-overlay").evaluate((el) => el.classList.contains("open")), false);
   });
 });
@@ -1520,21 +1520,21 @@ test("e2e: one object selected + other objects added -> Link selection -> the ra
     });
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Information");
-    await openRow(page, "Scientific Objects");
+    await openRow(page, "Trials");
+    await openRow(page, "Plants & plots");
     await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
     await page.waitForTimeout(200);
 
     await page.locator("#addToSelectionBtn").click();
     await page.waitForTimeout(150);
-    await page.locator("#linkPickerBody .newmenu-item", { hasText: "scientific object" }).click();
+    await page.locator("#linkPickerBody .newmenu-item", { hasText: "plant or plot" }).click();
     await page.waitForTimeout(150);
     for (const name of ["Block A", "Block B", "Plant 1"]) await page.locator("#linkPickerBody .newmenu-item", { hasText: name }).click({ modifiers: ["Control"] });
     await page.locator(".linkmenu-confirm").click();
     await page.locator("#linkSelectionBtn").click();
     await page.locator(".ranking-modal").waitFor({ state: "visible" });
-    assert.match(await page.locator(".ranking-hint").innerText(), /the parent of Plot 1.*One parent|An object has one parent/s);
-    assert.match(await page.locator('.ranking-zone[data-zone="parents"] .ranking-zone-label').innerText(), /^Parent \(0\)$/i);
+    assert.match(await page.locator(".ranking-hint").innerText(), /if Plot 1 is inside it.*inside one thing at most/s);
+    assert.match(await page.locator('.ranking-zone[data-zone="parents"] .ranking-zone-label').innerText(), /^Plot 1 is inside \(0\)$/i);
 
     const drag = (label: string) => page.evaluate((l) => {
       const dt = new DataTransfer();
@@ -1556,12 +1556,12 @@ test("e2e: one object selected + other objects added -> Link selection -> the ra
     await page.waitForTimeout(400);
     assert.equal(posts[0].type, "scientific_object");
     assert.deepEqual(posts[0].pairs.map((p: any) => `${p.child}<${p.parent}`).sort(), ["block-a<plot", "plant<plot", "plot<block-b"]);
-    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /“Part of” is kept per experiment, and these objects are in several\. Set it in which experiment\(s\)\?/);
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /What it is inside is kept per experiment, and these are in several\. Set it in which experiment\(s\)\?/);
     await page.locator("#linkList .newmenu-item", { hasText: "Barley 2026" }).click();
     await page.locator(".linkmenu-confirm").click();
     await page.waitForTimeout(400);
     assert.deepEqual(posts[1].experiments, ["exp-b"]);
-    assert.match((await page.locator("#toast").textContent()) ?? "", /Set 2 parent links: .* in .* \(Barley 2026\)/);
+    assert.match((await page.locator("#toast").textContent()) ?? "", /Set what 2 plants or plots are inside: .* in .* \(Barley 2026\)/);
   });
 });
 
@@ -1616,7 +1616,7 @@ test("e2e: after setting germplasm on a plot (Link selection), the action bar of
     await page.locator("#linkSelectionBtn").click();
     await page.waitForTimeout(500);
 
-    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Plot 1 has 2 objects that are part of it in Barley 2026, without this germplasm\. Also set it on them\?/);
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Plot 1 has 2 plants or plots inside it in Barley 2026, without this plant material\. Also set it on them\?/);
     assert.deepEqual((await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim()), ["Annika → Plant 1", "Annika → Plant 2"]);
     assert.equal(await page.locator(".linkmenu-confirm").count(), 0, "nothing picked");
     await page.locator("#linkList .newmenu-item", { hasText: "Plant 2" }).click();
@@ -1644,7 +1644,7 @@ test("e2e: objects + germplasm selected: the button says what it will write, and
       for (const it of [{ id: "plot-1", type: "scientific_object", label: "Plot 1" }, { id: "plot-3", type: "scientific_object", label: "Plot 3" }, { id: "g-annika", type: "germplasm", label: "Annika" }]) selection.set(it.id, it);
       renderActionbar();
     });
-    assert.equal((await page.locator("#linkSelectionBtn").innerText()).trim(), "Set Annika on 2 objects…", "a leftover Plot 1 shows up as '2' before clicking");
+    assert.equal((await page.locator("#linkSelectionBtn").innerText()).trim(), "Set Annika on 2 plants or plots…", "a leftover Plot 1 shows up as '2' before clicking");
     await page.locator("#linkSelectionBtn").click();
     await page.waitForTimeout(400);
     assert.equal((await page.locator("#toast").textContent())?.trim(), "Annika set on Plot 1 and Plot 3 in Barley 2026 — the only experiment they're in");
@@ -1655,8 +1655,8 @@ test("e2e: \"Add to selection…\" popover closes via its own × button, not jus
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
     await page.waitForTimeout(1000);
-    await openRow(page, "Scientific Organization");
-    await openRow(page, "Organizations");
+    await openRow(page, "People");
+    await openRow(page, "Institutes & groups");
     await page.locator("#rowlist .row").first().click();
     await page.waitForTimeout(200);
     await page.locator("#addToSelectionBtn").click();
@@ -1673,7 +1673,7 @@ test("e2e: Tabular Data (deliberately unwired) shows honest empty state, not fak
     await page.goto(base);
     await page.waitForTimeout(1000);
     await openRow(page, "Data");
-    await openRow(page, "Tabular Data");
+    await openRow(page, "Measurements");
 
     const text = await page.locator("#rowlist").textContent();
     assert.match(text ?? "", /Nothing here yet/);

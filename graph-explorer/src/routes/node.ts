@@ -133,7 +133,7 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
         const blockers = await queryItems(q, id);
         if (blockers.length) {
           res.writeHead(409, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: `Can't delete: it still holds ${blockers.length} ${q.label.toLowerCase()} (${blockers.map((b) => b.label).join(", ")}). Deleting it would orphan them in PHIS — delete them first.` }));
+          res.end(JSON.stringify({ error: `Can't delete yet: ${blockers.map((b) => b.label).join(", ")} ${blockers.length === 1 ? "is" : "are"} still in it (${q.label.toLowerCase()}). Remove ${blockers.length === 1 ? "it" : "them"} first, or ${blockers.length === 1 ? "it" : "they"} would be left behind with nowhere to belong.` }));
           return;
         }
       }

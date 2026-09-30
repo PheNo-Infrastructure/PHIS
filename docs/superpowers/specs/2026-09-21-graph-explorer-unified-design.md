@@ -955,6 +955,19 @@ in-experiment read-modify-write already carries it — the 409 guard is gone. Ea
 "Replicate: 2" (named from `/experiments/{uri}/factors`, one call). An experiment lists its Factors
 by name (the `factors` field stays in the PUT). A factor opens read-only: its experiment and levels.
 Factor ids stay FULL uris — the factor endpoints 404 a prefixed one.
+**Plain words everywhere (decided 2026-09-30).** The app's purpose is to lower PHIS's barrier of
+entry: scientists should never need PHIS training, nor (except for minor things) the PHIS UI. So
+the page shows no PHIS/ontology terms. Menu regrouped trial-first from a simulated plant scientist,
+each item with a plain-examples hint: Trials (Experiments, Plants & plots, Plant material,
+Treatments) · Data (Traits, Measurements, Images & files, How data was collected, Documents &
+protocols) · Setup (Sites, Facilities, Instruments & sensors, Logbook) · People (People, Institutes
+& groups, Projects). Every type name on the page comes from `TYPES[t].name`/`plural` via
+`typeName()`; pane rows say Plant material / Inside / Contains / Treatments; the scientific-object
+help box explains behaviour, not OpenSILEX copies. To validate with real users (first-click tasks).
+Remaining wording debt, after the demo: "Link selection"/"Unlink" verbs, the ranking modal's
+"anchor", raw OpenSILEX errors in toasts, the URI line in the detail pane, a selection hint, the
+"Graph" root crumb, and the two "do it in PHIS" messages (location history, sites with an address)
+— each needs the missing feature, not a rewording.
 **TODO (decided 2026-09-30, after the demo):** edit factor levels by hand — "+ Add", Unlink,
 carry-over and child offers like germplasm, and creating factors/levels in the app. For the demo
 the TraitFinder import writes them.

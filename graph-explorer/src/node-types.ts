@@ -124,15 +124,15 @@ async function removeSoFromExperiment(soId: string, expId: string) {
 // (an object has one parent). Part of isn't addable: parent/child goes through the ranking
 // modal (/api/parent), same as organizations.
 const SO_ROWS_PER_EXPERIMENT = [
-  { label: "Germplasm", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris", addable: true, removable: true, single: false },
-  { label: "Part of", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: true },
+  { label: "Plant material", property: "hasGermplasm", type: "germplasm", byUris: () => "/core/germplasm/by_uris", addable: true, removable: true, single: false },
+  { label: "Inside", property: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: true },
   // The other side of "part of" (OpenSILEX stores it only on the child): the objects part of
   // this one there, via the per-experiment parent filter (probed). Removing one clears ITS
   // isPartOf. Shown so a relation is visible and removable from both sides.
   { label: "Contains", property: "contains", inverseOf: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: false },
   // Read-only for now (editing is a later step). A level has no node of its own, so its chip is
   // its FACTOR, labelled "Replicate: 2". Stored in `relations` like the rest (probed 2026-09-30).
-  { label: "Factor levels", property: "hasFactorLevel", type: "factor", names: factorLevelChips, addable: false, removable: false, single: false },
+  { label: "Treatments", property: "hasFactorLevel", type: "factor", names: factorLevelChips, addable: false, removable: false, single: false },
 ];
 // Every factor of the experiment with its levels comes back in one call — enough to name them all.
 async function factorLevelChips(expId: string, uris: string[]) {
@@ -265,11 +265,11 @@ const SO_EXPERIMENTS: QueryRelation = {
 const SO_EXPERIMENTS_DETAIL: QueryRelation = {
   ...SO_EXPERIMENTS,
   itemGroups: soRowsIn,
-  emptyText: "Not in any experiment. Germplasm and parent can only be set inside an experiment.",
+  emptyText: "Not in any experiment yet. Its plant material, treatments and what it is inside are set per experiment — add it to one first.",
 };
 
 const EXPERIMENT_SOS: QueryRelation = {
-  label: "Scientific objects",
+  label: "Plants & plots",
   field: "scientific_object",
   type: "scientific_object",
   url: (id) => `/core/scientific_objects?experiment=${encodeURIComponent(id)}&page_size=500`,
@@ -291,9 +291,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     putUrl: "/core/facilities",
     deleteUrl: (id) => `/core/facilities/${encodeURIComponent(id)}`,
     relationGroups: [
-      { label: "Organizations", field: "organizations", type: "organization" },
+      { label: "Institutes & groups", field: "organizations", type: "organization" },
       { label: "Sites", field: "sites", type: "site" },
-      { label: "Devices", field: "devices", type: "device" },
+      { label: "Instruments & sensors", field: "devices", type: "device" },
     ],
     updateLinkFields: ["organizations", "sites"],
   },
@@ -302,8 +302,8 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     putUrl: "/core/organisations",
     deleteUrl: (id) => `/core/organisations/${encodeURIComponent(id)}`,
     relationGroups: [
-      { label: "Parent organizations", field: "parents", type: "organization" },
-      { label: "Child organizations", field: "children", type: "organization" },
+      { label: "Belongs to", field: "parents", type: "organization" },
+      { label: "Includes", field: "children", type: "organization" },
       { label: "Facilities", field: "facilities", type: "facility" },
       { label: "Sites", field: "sites", type: "site" },
       { label: "Experiments", field: "experiments", type: "experiment" },
@@ -321,7 +321,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     putUrl: "/core/experiments",
     deleteUrl: (id) => `/core/experiments/${encodeURIComponent(id)}`,
     relationGroups: [
-      { label: "Organizations", field: "organisations", type: "organization" },
+      { label: "Institutes & groups", field: "organisations", type: "organization" },
       { label: "Facilities", field: "facilities", type: "facility" },
       { label: "Projects", field: "projects", type: "project" },
       { label: "Scientific supervisors", field: "scientific_supervisors", type: "person" },
@@ -332,7 +332,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteRemovesLinks: true,
     queryRelations: [
       EXPERIMENT_SOS,
-      { label: "Factors", type: "factor", url: (id) => `/core/experiments/${encodeURIComponent(id)}/factors` },
+      { label: "Treatments", type: "factor", url: (id) => `/core/experiments/${encodeURIComponent(id)}/factors` },
       // Derived by OpenSILEX from its objects' germplasm (not settable on the experiment).
       { label: "Species", type: "germplasm", url: (id) => `/core/experiments/${encodeURIComponent(id)}/species`, compactIds: true },
     ],
@@ -450,7 +450,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     putUrl: "/core/sites",
     deleteUrl: (id) => `/core/sites/${encodeURIComponent(id)}`,
     relationGroups: [
-      { label: "Organizations", field: "organizations", type: "organization" },
+      { label: "Institutes & groups", field: "organizations", type: "organization" },
       { label: "Facilities", field: "facilities", type: "facility" },
     ],
     // Unlike an organization's derived `sites`, both of these are real SiteUpdateDTO fields —
