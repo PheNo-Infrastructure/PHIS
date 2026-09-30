@@ -1732,7 +1732,7 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     await page.route("**/api/import/run**", (route) => {
       runUrl = route.request().url();
       imported = true;
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ experiment: exp, created: { germplasm: 1, factors: 1, objects: 3 } }) });
+      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
     });
     await page.route("**/api/node-detail**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: exp.id, actions: [], relations: [] }) }));
     await page.goto(base);

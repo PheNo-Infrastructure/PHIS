@@ -9,7 +9,9 @@ const enc = encodeURIComponent;
 const firstUri = (r: { result: unknown }) => String([r.result].flat()[0]);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export async function runImport(files: Files, choices: { species?: string }) {
+// `progress` is called after each write (never before the checks pass), so a caller can show it.
+export type Progress = { step: string; done: number; total: number };
+export async function runImport(files: Files, choices: { species?: string }, progress: (p: Progress) => void = () => {}) {
   const { trial, plan } = await prepare(files);
 
   // Everything that would stop the import is checked before the first write.
@@ -20,12 +22,16 @@ export async function runImport(files: Files, choices: { species?: string }) {
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
   const done = { experiment: "", germplasm: 0, factors: 0, objects: 0 };
+  const total = 1 + plan.germplasm.missing.length + plan.factors.length + trial.objects.length;
+  let steps = 0;
+  const tick = (step: string) => progress({ step, done: ++steps, total });
   try {
     done.experiment = firstUri(await authedPost("/core/experiments", {
       name: plan.experiment.name,
       start_date: plan.experiment.startDate,
       objective: `Imported from a ${plan.instrument} export.`,
     }));
+    tick("Created the experiment");
 
     const germplasm = new Map(plan.germplasm.existing.map((g) => [g.name, g.id]));
     for (const name of plan.germplasm.missing) {
@@ -33,12 +39,14 @@ export async function runImport(files: Files, choices: { species?: string }) {
       // brings accessions or lines.
       germplasm.set(name, firstUri(await authedPost("/core/germplasm", { name, rdf_type: "vocabulary:Variety", species: choices.species })));
       done.germplasm++;
+      tick(`Creating germplasm: ${done.germplasm} of ${plan.germplasm.missing.length}`);
     }
 
     const levels = new Map<string, string>(); // "factor|level" -> uri
     for (const f of plan.factors) {
       const id = firstUri(await authedPost("/core/experiments/factors", { name: f.name, experiment: done.experiment, levels: f.levels.map((name) => ({ name })) }));
       done.factors++;
+      tick(`Creating factors: ${done.factors} of ${plan.factors.length}`);
       for (const l of (await authedGet(`/core/experiments/factors/${enc(id)}/levels`)).result) levels.set(`${f.name}|${l.name}`, l.uri);
     }
 
@@ -50,6 +58,7 @@ export async function runImport(files: Files, choices: { species?: string }) {
       ];
       await authedPost("/core/scientific_objects", { name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations });
       done.objects++;
+      tick(`Creating scientific objects: ${done.objects} of ${trial.objects.length}`);
     }
   } catch (err) {
     const what = done.experiment

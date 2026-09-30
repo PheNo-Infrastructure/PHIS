@@ -155,6 +155,8 @@ button { font-family: inherit; }
 .import-names { color: var(--ink-faint); font-size: 12px; }
 .import-warning { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn-ink); border-radius: var(--radius); padding: 8px; font-size: 12.5px; }
 .import-footer { display: flex; justify-content: flex-end; gap: 8px; align-items: center; font-size: 12px; color: var(--ink-faint); }
+.import-progress { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.import-progress progress { width: 100%; accent-color: var(--accent); }
 
 /* ---------- top bar: search + breadcrumb ---------- */
 .topbar {
@@ -2994,14 +2996,34 @@ function wireImportRun(file, plan, close) {
   btn.addEventListener("click", async () => {
     const footer = document.getElementById("importFooter");
     if (species) species.disabled = true;
-    // ponytail: an estimate, not progress — OpenSILEX takes ~0.7 s per object or germplasm (measured
-    // 2026-09-30). Real progress, or its bulk CSV import, if waiting becomes a problem.
-    const secs = Math.round(0.7 * (plan.objects.count + plan.germplasm.missing.length)) + 3;
-    footer.innerHTML = `<span>Writing to PHIS… about ${secs < 90 ? `${secs} seconds` : `${Math.round(secs / 60)} minutes`} for this file. Keep this window open.</span>`;
+    // The server streams one line per write (NDJSON), so the bar shows real progress; closing the
+    // dialog or the page doesn't stop the import on the server.
+    footer.innerHTML = `<div class="import-progress"><span id="importStep">Starting…</span><progress id="importBar" max="1" value="0"></progress><span class="import-names">It keeps going on the server even if you close this.</span></div>`;
     try {
       const res = await fetch(`/api/import/run${species ? `?species=${encodeURIComponent(species.value)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
-      const body = await res.json();
-      if (!res.ok) { footer.innerHTML = `<div class="import-warning">${escapeHtml(body.error || `The import failed (${res.status}).`)}</div>`; return; }
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        footer.innerHTML = `<div class="import-warning">${escapeHtml(b.error || `The import failed (${res.status}).`)}</div>`;
+        return;
+      }
+      let body = null, failed = null, buf = "";
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        for (let i; (i = buf.indexOf("\n")) >= 0; buf = buf.slice(i + 1)) {
+          const msg = JSON.parse(buf.slice(0, i));
+          if (msg.progress) {
+            const bar = document.getElementById("importBar");
+            if (bar) { bar.max = msg.progress.total; bar.value = msg.progress.done; }
+            const step = document.getElementById("importStep");
+            if (step) step.textContent = `${msg.progress.step} (${Math.round(100 * msg.progress.done / msg.progress.total)}%)`;
+          } else if (msg.result) body = msg.result;
+          else if (msg.error) failed = msg.error;
+        }
+      }
+      if (failed || !body) { footer.innerHTML = `<div class="import-warning">${escapeHtml(failed || "The import ended without an answer.")}</div>`; return; }
       await reloadCategories(["cat-experiments", "cat-germplasm", "cat-scientificobjects", "cat-factors"]);
       const c = body.created;
       footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;

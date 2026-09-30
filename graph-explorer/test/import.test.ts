@@ -169,7 +169,12 @@ test("POST /api/import/run writes in order: experiment, new germplasm (variety o
     mockPhisForRun(writes);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, factors: 2, objects: 3 } });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`), [
+      "1/7 Created the experiment", "2/7 Creating germplasm: 1 of 1", "3/7 Creating factors: 1 of 2", "4/7 Creating factors: 2 of 2",
+      "5/7 Creating scientific objects: 1 of 3", "6/7 Creating scientific objects: 2 of 3", "7/7 Creating scientific objects: 3 of 3",
+    ], "one progress line per write");
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, factors: 2, objects: 3 } } });
     assert.deepEqual(writes.map((w) => `${w.path} ${w.body.name}`), [
       "/core/experiments PBar1x4 – TraitFinder – 2025-10-22",
       "/core/germplasm Tiril",
@@ -197,8 +202,8 @@ test("POST /api/import/run that fails part-way says what it created and how to s
     const writes: any[] = [];
     mockPhisForRun(writes, "PB002");
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
-    assert.equal(res.status, 400);
-    const { error } = await res.json();
+    assert.equal(res.status, 200, "already streaming when it failed");
+    const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
     assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 1 of 3 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
     assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 2, "stops at the failure");
   });
