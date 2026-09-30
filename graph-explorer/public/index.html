@@ -2880,14 +2880,18 @@ const BACKED_CATEGORIES = {
   "cat-factors": "/api/factors",
 };
 
-Promise.all(
-  Object.entries(BACKED_CATEGORIES).map(([categoryId, url]) =>
-    fetch(url)
-      .then(r => r.json())
-      .then(items => { CATEGORY_ITEMS[categoryId] = items; })
-      .catch(err => console.error(`Failed to load ${categoryId} from backend:`, err))
-  )
-).finally(render);
+// Loads (or reloads, after an import) category lists from the backend.
+function reloadCategories(ids = Object.keys(BACKED_CATEGORIES)) {
+  return Promise.all(
+    ids.map((categoryId) =>
+      fetch(BACKED_CATEGORIES[categoryId])
+        .then(r => r.json())
+        .then(items => { CATEGORY_ITEMS[categoryId] = items; })
+        .catch(err => console.error(`Failed to load ${categoryId} from backend:`, err))
+    )
+  ).finally(render);
+}
+reloadCategories();
 
 /* ---------- instrument import (step 2: the plan; nothing is written yet) ----------
    The ZIP goes to /api/import/plan unchanged; the server's instrument plugins read it and answer
@@ -2915,6 +2919,7 @@ function openImport() {
       const res = await fetch("/api/import/plan", { method: "POST", headers: { "Content-Type": "application/zip" }, body: f });
       const body = await res.json();
       out.innerHTML = res.ok ? importPlanHtml(body) : `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
+      if (res.ok) wireImportRun(f, body, close);
     } catch (err) {
       out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>`;
     }
@@ -2950,6 +2955,50 @@ function importPlanHtml(p) {
       <h3>${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></h3>
       <p>New: ${p.objects.count}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`)].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
     </div>
-    <div class="import-footer">Nothing has been written to PHIS.</div>`;
+    <div class="import-footer" id="importFooter">${importFooterHtml(p)}</div>`;
+}
+
+// What stops the import is said up front; otherwise the button says exactly what it will create.
+function importFooterHtml(p) {
+  const stops = [
+    ...(p.experiment.exists ? ["an experiment with this name already exists"] : []),
+    ...(p.germplasm.ambiguous.length ? ["some germplasm names match more than one in PHIS"] : []),
+  ];
+  if (stops.length) return `<span>Can't import this yet: ${escapeHtml(stops.join("; "))}. Nothing has been written to PHIS.</span>`;
+  const parts = [
+    "1 experiment",
+    ...(p.germplasm.missing.length ? [`${p.germplasm.missing.length} germplasm`] : []),
+    ...(p.factors.length ? [`${p.factors.length} ${p.factors.length === 1 ? "factor" : "factors"}`] : []),
+    `${p.objects.count} ${typeName("scientific_object", p.objects.count)}`,
+  ];
+  return `<span>Nothing has been written to PHIS yet.</span><button class="btn primary" id="importRunBtn">Create ${escapeHtml(andList(parts))}</button>`;
+}
+
+function wireImportRun(file, plan, close) {
+  const btn = document.getElementById("importRunBtn");
+  if (!btn) return;
+  const species = document.getElementById("importSpecies");
+  const sync = () => { btn.disabled = !!species && !species.value; btn.title = btn.disabled ? "Choose the species for the new germplasm first" : ""; };
+  species?.addEventListener("change", sync);
+  sync();
+  btn.addEventListener("click", async () => {
+    const footer = document.getElementById("importFooter");
+    if (species) species.disabled = true;
+    // ponytail: an estimate, not progress — OpenSILEX takes ~0.7 s per object or germplasm (measured
+    // 2026-09-30). Real progress, or its bulk CSV import, if waiting becomes a problem.
+    const secs = Math.round(0.7 * (plan.objects.count + plan.germplasm.missing.length)) + 3;
+    footer.innerHTML = `<span>Writing to PHIS… about ${secs < 90 ? `${secs} seconds` : `${Math.round(secs / 60)} minutes`} for this file. Keep this window open.</span>`;
+    try {
+      const res = await fetch(`/api/import/run${species ? `?species=${encodeURIComponent(species.value)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
+      const body = await res.json();
+      if (!res.ok) { footer.innerHTML = `<div class="import-warning">${escapeHtml(body.error || `The import failed (${res.status}).`)}</div>`; return; }
+      await reloadCategories(["cat-experiments", "cat-germplasm", "cat-scientificobjects", "cat-factors"]);
+      const c = body.created;
+      footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
+    } catch (err) {
+      footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;
+    }
+  });
 }
 </script>

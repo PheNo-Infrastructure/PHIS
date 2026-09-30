@@ -7,7 +7,8 @@ import { instrumentPlugins, type Files } from "./plugins.ts";
 const enc = encodeURIComponent;
 const byNumberThenText = (a: string, b: string) => (Number(a) - Number(b)) || a.localeCompare(b);
 
-export async function buildPlan(files: Files) {
+// Plan and run both start here, so what is written is exactly what was shown.
+export async function prepare(files: Files) {
   const plugins = await instrumentPlugins();
   const plugin = plugins.find((p) => p.detect(files));
   if (!plugin) {
@@ -43,7 +44,7 @@ export async function buildPlan(files: Files) {
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
 
-  return {
+  const plan = {
     instrument: plugin.label,
     experiment: { ...trial.experiment, exists: experimentExists },
     germplasm: {
@@ -56,4 +57,9 @@ export async function buildPlan(files: Files) {
     objects: { count: trial.objects.length, sample: trial.objects.slice(0, 5) },
     warnings: trial.warnings,
   };
+  return { trial, plan };
+}
+
+export async function buildPlan(files: Files) {
+  return (await prepare(files)).plan;
 }

@@ -984,6 +984,37 @@ one is later. Steps: 1 plan (built) -> 2 page shows it -> 3 confirm writes -> 4 
 Seen in the real PBar1x4 export: the sheet names other varieties than the manifest for block 33 on
 2025-10-29 — shown as a warning, the manifest wins. Idea for later (user, 2026-09-30): EXPORT an
 existing experiment in the same shape, fix its links in a spreadsheet, re-import as an update.
+Step 3 built 2026-09-30 (`POST /api/import/run?species=`, `src/import/run.ts`): blockers (name taken,
+ambiguous germplasm, no species) are checked before the first write; writes experiment -> new
+germplasm (Variety of the chosen species) -> factors + levels -> each object WITH its germplasm and
+factor levels in the creation POST; a failure part-way reports what exists and how to start over.
+Live on phis-test: PBar1x4 (100 plants, 20 varieties, 2 factors) in 85 s; PB009 = Pernilla (the
+manifest's), Replicate 1, GroupID 1. Parallel POSTs don't help (~0.5 s each, OpenSILEX serialises),
+so the page states an estimate; OpenSILEX's bulk CSV import is the real fix (later).
+
+**What the import teaches the rest of the app (running list — review when the import is done).**
+1. *Scientists' unit of work is the trial table*, not the node: one row per plant with its germplasm,
+   factor levels and position — exactly what they keep in Excel. The app shows one node at a time; an
+   experiment "table view" (rows = objects, columns = germplasm / factor levels / part of) would match
+   how they think, and is the same shape as TrialData (so import, export and the table share it).
+2. *Plan -> confirm -> write -> report* worked well: every blocker named before the first write, the
+   button says what it will create, a part-way failure says what exists. The app's own multi-writes
+   (link/unlink several, clear an experiment, carry-over) still write item by item with a toast; they
+   could use the same shape.
+3. *Set relations at creation.* An object's germplasm and factor levels can go in its creation POST;
+   the app creates first and links after (two steps, two failure points).
+4. *OpenSILEX writes are slow and serial* (~0.5 s each). Any bulk action needs an estimate or
+   progress, and bulk endpoints where they exist.
+5. *Exact name matching.* OpenSILEX's `name=` filter matches substrings ("Olve" finds "Olve 2"); any
+   place the app matches by name must compare exactly.
+6. *Imports are what fill PHIS.* Prod had none of these 20 varieties: "link existing…" flows assume
+   data exists, so for adoption the import path matters more than hand creation.
+7. *Data problems need a home.* The block-33 clash is shown once, then lost. PHIS could keep it (an
+   annotation or document on the experiment), and so could a future data-quality view.
+8. *Some file facts have no PHIS place yet*: plant position (Block/Column/Row) and G_alias were not
+   stored. Decide where (object metadata, geometry, a factor?) before stage 2.
+9. *Small plugin interface.* Two functions (detect, parse) instead of 17 kept the TraitFinder plugin
+   about 100 lines; the same "config, not code paths" idea as NODE_TYPES.
 **TODO (decided 2026-09-30, after the demo):** edit factor levels by hand — "+ Add", Unlink,
 carry-over and child offers like germplasm, and creating factors/levels in the app. For the demo
 the TraitFinder import writes them.

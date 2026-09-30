@@ -1706,9 +1706,51 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
     assert.match(text, /Already in PHIS, reused: 1 \(Olve\) New: 2 \(Tiril, <b>Bad<\/b>\)/, "names from the file are shown as text");
     assert.match(text, /Replicate: 2 levels \(1, 2\)/);
     assert.match(text, /Scientific objects.* New: 3 \(e\.g\. PB001: Olve, Replicate 1\)/);
-    assert.match(text, /Nothing has been written to PHIS\./);
+    assert.match(text, /Nothing has been written to PHIS yet\./);
     assert.equal(await page.locator("#importSpecies").inputValue(), "", "no species chosen for the user");
     await page.locator("#importClose").click();
     assert.equal(await page.locator("#importOverlay.open").count(), 0);
+  });
+});
+
+test("e2e: import confirm — the button names what it creates, waits for a species, then reports and opens the new experiment on its own path", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let runUrl = "";
+    let imported = false;
+    const exp = { id: "phis:id/experiment/new-import", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" };
+    await page.route("**/api/experiments", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(imported ? [exp] : []) }));
+    await page.route("**/api/import/plan", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      instrument: "TraitFinder (PlantEye)",
+      experiment: { name: exp.label, startDate: "2025-10-22", exists: false },
+      germplasm: { existing: [], missing: ["Tiril"], ambiguous: [] },
+      speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
+      factors: [{ name: "Replicate", levels: ["1"] }],
+      objects: { count: 3, sample: [] },
+      warnings: [],
+    }) }));
+    await page.route("**/api/import/run**", (route) => {
+      runUrl = route.request().url();
+      imported = true;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ experiment: exp, created: { germplasm: 1, factors: 1, objects: 3 } }) });
+    });
+    await page.route("**/api/node-detail**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: exp.id, actions: [], relations: [] }) }));
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
+    const btn = page.locator("#importRunBtn");
+    await btn.waitFor();
+    assert.equal((await btn.innerText()).trim(), "Create 1 experiment, 1 germplasm, 1 factor and 3 scientific objects");
+    assert.equal(await btn.isDisabled(), true, "no species yet");
+    await page.locator("#importSpecies").selectOption("agrovoc:barley");
+    await btn.click();
+    await page.locator("#importOpenBtn").waitFor();
+    assert.match(runUrl, /\/api\/import\/run\?species=agrovoc%3Abarley$/);
+    assert.match((await page.locator("#importFooter").innerText()).replace(/\s+/g, " "), /Created PBar1x4 – TraitFinder – 2025-10-22 with 3 scientific objects, 1 factor and 1 new germplasm\./);
+    await page.locator("#importOpenBtn").click();
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("#importOverlay.open").count(), 0);
+    const crumbs = (await page.locator(".crumb").allTextContents()).map((c) => c.trim());
+    assert.deepEqual(crumbs, ["Graph", "Trials", "Experiments", exp.label], "lands on its canonical path, the list reloaded");
   });
 });

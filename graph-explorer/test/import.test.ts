@@ -118,3 +118,88 @@ test("POST /api/import/plan refuses what it can't import, saying why", async () 
     assert.match(unknown.error, /None of the known instruments recognises these files \(TraitFinder \(PlantEye\)\)/);
   });
 });
+
+// PHIS for the run: records every write; `failOnObject` makes that object's POST fail.
+function mockPhisForRun(writes: { method: string; path: string; body: any }[], failOnObject?: string) {
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    const method = init?.method ?? "GET";
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (method !== "GET") {
+      writes.push({ method, path, body });
+      if (path === "/core/experiments") return jsonResponse(201, { result: "exp:new" });
+      if (path === "/core/germplasm") return jsonResponse(201, { result: [`g:${body.name}`] });
+      if (path === "/core/experiments/factors") return jsonResponse(201, { result: `f:${body.name}` });
+      if (path === "/core/scientific_objects") {
+        if (body.name === failOnObject) return jsonResponse(400, { result: { title: "Bad request", message: "name clash" } });
+        return jsonResponse(201, { result: `so:${body.name}` });
+      }
+    }
+    const levels = path.match(/^\/core\/experiments\/factors\/f%3A(\w+)\/levels$/);
+    if (levels) {
+      const names = levels[1] === "Replicate" ? ["1", "2"] : ["9", "10"];
+      return jsonResponse(200, { result: names.map((n) => ({ uri: `lvl:${levels[1]}.${n}`, name: n })) });
+    }
+    if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [] });
+    if (url.includes("rdf_type=")) return jsonResponse(200, { result: [{ uri: "agrovoc:barley", name: "barley" }] });
+    if (url.includes("/core/germplasm?name=Olve")) return jsonResponse(200, { result: [{ uri: "g:olve", name: "Olve" }] });
+    if (url.includes("/core/germplasm?name=Tiril")) return jsonResponse(200, { result: [] });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+const EXPORT = () => makeZip({ "PBar1x4_Metadata.csv": MANIFEST, "Sheets/PBar1x4_TraitFinder_20260107_PHIS.csv": SHEET });
+
+test("POST /api/import/run refuses before writing anything when a choice is missing", async () => {
+  await withServer(async (base) => {
+    const writes: any[] = [];
+    mockPhisForRun(writes);
+    const res = await realFetch(`${base}/api/import/run`, { method: "POST", body: EXPORT() });
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error, "Choose the species for the new germplasm.");
+    const bad = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("not:a-species")}`, { method: "POST", body: EXPORT() });
+    assert.equal(bad.status, 409, "only one of PHIS's species");
+    assert.deepEqual(writes, []);
+  });
+});
+
+test("POST /api/import/run writes in order: experiment, new germplasm (variety of the species), factors with levels, then each object with its germplasm and factor levels", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, factors: 2, objects: 3 } });
+    assert.deepEqual(writes.map((w) => `${w.path} ${w.body.name}`), [
+      "/core/experiments PBar1x4 – TraitFinder – 2025-10-22",
+      "/core/germplasm Tiril",
+      "/core/experiments/factors Replicate",
+      "/core/experiments/factors GroupID",
+      "/core/scientific_objects PB001", "/core/scientific_objects PB002", "/core/scientific_objects PB003",
+    ]);
+    assert.deepEqual(writes[0].body, { name: "PBar1x4 – TraitFinder – 2025-10-22", start_date: "2025-10-22", objective: "Imported from a TraitFinder (PlantEye) export." });
+    assert.deepEqual(writes[1].body, { name: "Tiril", rdf_type: "vocabulary:Variety", species: "agrovoc:barley" });
+    assert.deepEqual(writes[2].body, { name: "Replicate", experiment: "exp:new", levels: [{ name: "1" }, { name: "2" }] });
+    assert.deepEqual(writes[5].body, {
+      name: "PB002", rdf_type: "vocabulary:Plant", experiment: "exp:new",
+      relations: [
+        { property: "vocabulary:hasGermplasm", value: "g:Tiril", inverse: false },
+        { property: "vocabulary:hasFactorLevel", value: "lvl:Replicate.1", inverse: false },
+        { property: "vocabulary:hasFactorLevel", value: "lvl:GroupID.10", inverse: false },
+      ],
+    }, "new germplasm by its new uri, existing by PHIS's, levels by name");
+    assert.equal(writes[4].body.relations[0].value, "g:olve");
+  });
+});
+
+test("POST /api/import/run that fails part-way says what it created and how to start over", async () => {
+  await withServer(async (base) => {
+    const writes: any[] = [];
+    mockPhisForRun(writes, "PB002");
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
+    assert.equal(res.status, 400);
+    const { error } = await res.json();
+    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 1 of 3 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
+    assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 2, "stops at the failure");
+  });
+});
