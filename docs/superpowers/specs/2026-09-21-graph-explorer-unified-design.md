@@ -971,6 +971,19 @@ Remaining wording debt, after the demo: "Link selection"/"Unlink" verbs, the ran
 "anchor", raw OpenSILEX errors in toasts, the URI line in the detail pane, a selection hint, the
 "Graph" root crumb, and the two "do it in PHIS" messages (location history, sites with an address)
 — each needs the missing feature, not a rewording.
+**Instrument import (started 2026-09-30).** Plugins: one file per instrument in
+`src/import/instruments/`, found automatically; a plugin is only `detect(files)` + `parse(files) ->
+TrialData` (PHIS concepts by NAME: experiment, objects with germplasm and factor levels, warnings) —
+down from the Streamlit portal's 17 methods. The shared engine (`src/import/plan.ts`) matches names
+against PHIS (exact, case-insensitive; OpenSILEX's name filter matches substrings) and returns the
+reviewable plan; `POST /api/import/plan` takes the ZIP as-is (own small ZIP/CSV readers on zlib,
+50 MB cap, no ZIP64). Stage 1 = design manifest only (experiment, germplasm, factors, objects);
+observations (variables, provenance, ~57k values for one TraitFinder run) are stage 2. Decided: the
+import always creates a NEW experiment named from the file ("rename new"); importing into an existing
+one is later. Steps: 1 plan (built) -> 2 page shows it -> 3 confirm writes -> 4 verify in PHIS.
+Seen in the real PBar1x4 export: the sheet names other varieties than the manifest for block 33 on
+2025-10-29 — shown as a warning, the manifest wins. Idea for later (user, 2026-09-30): EXPORT an
+existing experiment in the same shape, fix its links in a spreadsheet, re-import as an update.
 **TODO (decided 2026-09-30, after the demo):** edit factor levels by hand — "+ Add", Unlink,
 carry-over and child offers like germplasm, and creating factors/levels in the app. For the demo
 the TraitFinder import writes them.
