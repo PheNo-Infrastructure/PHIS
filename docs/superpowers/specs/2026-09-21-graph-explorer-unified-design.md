@@ -801,7 +801,17 @@ demands it.
   `hasGermplasm` sits only on the experiment copy. Barley exists twice as a species (AGROVOC
   "barley", unused; local "Hordeum vulgare", 20 varieties) — a user-practice question left for a
   PHIS meeting, not for the app to enforce. Annotations/documents (0 of each in PHIS) would be
-  one queryRelation shared by every type; later. Groups (access control) are out of scope.
+  one queryRelation shared by every type; later. Groups (access control) are out of scope
+  for now, BUT see the next item.
+  **Experiment sharing needed (noted 2026-09-30, not built).** A non-admin (Feide) user sees
+  no experiment unless it is public, shared with a group they belong to, or they are a listed
+  contact; the PHIS "Add experiment" step 2 has these fields: scientific supervisors,
+  technical supervisors, projects, organizations, facilities, groups, funding, and a
+  "Public experiment" checkbox (`isPublic`). The app's experiment form must offer at least
+  groups and the public checkbox, and imports must set one of them, or an imported trial is
+  invisible to everyone but admin. Same for germplasm (`isPublic`; admin-created germplasm
+  was hidden from Feide users until set true). The online demo needs this before it is shown
+  to non-admin users.
   Names from PHIS are user-typed and the page acts as the server's account, so they must be
   escaped before going into HTML (`escapeHtml`, 2026-09-29) — done everywhere a PHIS value
   reaches innerHTML (rows, tree, title, uri, chips, boxes, banners, picker, ranking modal, create
