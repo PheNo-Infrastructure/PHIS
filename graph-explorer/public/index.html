@@ -734,7 +734,7 @@ button { font-family: inherit; }
   <div class="topbar">
     <div class="searchrow">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/><path d="M11 11L14.2 14.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-      <input type="text" placeholder="Search experiments, plants, plant material&hellip;" aria-label="Search">
+      <input type="text" placeholder="Search experiments, scientific objects, germplasm&hellip;" aria-label="Search">
     </div>
     <div class="crumbs" id="crumbs"></div>
   </div>
@@ -788,25 +788,25 @@ button { font-family: inherit; }
 
 <script>
 /* ---------------- mock graph data ---------------- */
-// `name` = what a plant scientist calls one of these — the ONLY word the page shows for a type
-// (goal: usable without PHIS training, so no PHIS/ontology terms). Read it through typeName().
+// `name` = PHIS's own word for the type, so what users learn here carries over to PHIS; the plain
+// explanation lives in the menu hints. Every type name on the page goes through typeName().
 const TYPES = {
   category:   { color: "var(--ink-faint)" },
-  organization:{ color: "var(--type-org)", soft: "var(--type-org-soft)", name: "institute or group", plural: "institutes or groups" },
+  organization:{ color: "var(--type-org)", soft: "var(--type-org-soft)", name: "organization" },
   facility:   { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "facility", plural: "facilities" },
   experiment: { color: "var(--type-research)", soft: "var(--type-research-soft)", name: "experiment" },
   project:    { color: "var(--type-research)", soft: "var(--type-research-soft)", name: "project" },
-  scientific_object: { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "plant or plot", plural: "plants or plots" },
-  germplasm:  { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "plant material", plural: "plant material" },
-  variable:   { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "trait" },
-  factor:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "treatment" },
-  factor_level: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "treatment level" },
-  device:     { color: "var(--type-device)", soft: "var(--type-device-soft)", name: "instrument" },
+  scientific_object: { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "scientific object" },
+  germplasm:  { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "germplasm", plural: "germplasm" },
+  variable:   { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "variable" },
+  factor:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "factor" },
+  factor_level: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "factor level" },
+  device:     { color: "var(--type-device)", soft: "var(--type-device-soft)", name: "device" },
   site:       { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "site" },
-  person:     { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "person", plural: "people" },
-  data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "file" },
-  provenance: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "collection method" },
-  event:      { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "logbook entry", plural: "logbook entries" },
+  person:     { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "person", plural: "persons" },
+  data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "data file" },
+  provenance: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "provenance" },
+  event:      { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "event" },
   document:   { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "document" },
 };
 // n given and not 1 = the plural (own `plural`, else name + "s").
@@ -815,41 +815,41 @@ const typeName = (t, n = 1) => {
   return n === 1 ? one : TYPES[t]?.plural ?? `${one}s`;
 };
 
-/* The menu, grouped the way a plant scientist looks for things (trial first) and in their words —
-   the goal is that nobody needs PHIS training to find anything. Designed 2026-09-30 by simulating a
-   trial scientist; to be checked with real users (first-click tasks). `hint` = plain examples under
-   each item. PHIS's own grouping (Scientific Organization / Scientific Information / Data) is gone
-   on purpose. Admin surfaces (accounts, groups, vocabulary) stay out of this app. */
+/* A higher-level PHIS: PHIS's own names (so learning carries over), grouped the way a plant
+   scientist looks for things (trial first), each with a plain-words `hint` underneath. Designed
+   2026-09-30 by simulating a trial scientist; to be checked with real users (first-click tasks).
+   PHIS's grouping (Scientific Organization / Scientific Information / Data) is replaced on purpose.
+   Admin surfaces (accounts, groups, vocabulary) stay out of this app. */
 const ROOT = [
-  { id: "cat-trials", type: "category", label: "Trials", hint: "experiments, plants, plant material, treatments" },
-  { id: "cat-data", type: "category", label: "Data", hint: "traits, measurements, images, how data was collected" },
-  { id: "cat-setup", type: "category", label: "Setup", hint: "sites, facilities, instruments, logbook" },
-  { id: "cat-people", type: "category", label: "People", hint: "people, institutes, projects" },
+  { id: "cat-trials", type: "category", label: "Trials", hint: "experiments, scientific objects, germplasm, factors" },
+  { id: "cat-data", type: "category", label: "Data", hint: "variables, measurements, data files, provenances" },
+  { id: "cat-setup", type: "category", label: "Setup", hint: "sites, facilities, devices, events" },
+  { id: "cat-people", type: "category", label: "People", hint: "persons, organizations, projects" },
 ];
 
 const CATEGORY_ITEMS = {
   "cat-trials": [
-    { id: "cat-experiments", type: "category", label: "Experiments", hint: "trials in greenhouse or field" },
-    { id: "cat-scientificobjects", type: "category", label: "Plants & plots", hint: "plants, plots, pots, samples" },
-    { id: "cat-germplasm", type: "category", label: "Plant material", hint: "species, varieties, lines" },
-    { id: "cat-factors", type: "category", label: "Treatments", hint: "e.g. drought, nitrogen, replicate" },
+    { id: "cat-experiments", type: "category", label: "Experiments", hint: "your trials, in greenhouse or field" },
+    { id: "cat-scientificobjects", type: "category", label: "Scientific Objects", hint: "what you measure: plants, plots, pots, samples" },
+    { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
+    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought, replicate" },
   ],
   "cat-data": [
-    { id: "cat-variables", type: "category", label: "Traits", hint: "what is measured, e.g. plant height" },
-    { id: "cat-tabular", type: "category", label: "Measurements", hint: "the measured values" },
-    { id: "cat-datafiles", type: "category", label: "Images & files", hint: "images and raw files" },
-    { id: "cat-provenances", type: "category", label: "How data was collected", hint: "instrument, software, who" },
-    { id: "cat-documents", type: "category", label: "Documents & protocols", hint: "protocols, papers, notes" },
+    { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
+    { id: "cat-tabular", type: "category", label: "Tabular Data", hint: "the measured values" },
+    { id: "cat-datafiles", type: "category", label: "Data files", hint: "images and raw files" },
+    { id: "cat-provenances", type: "category", label: "Provenances", hint: "how data was collected: device, software, who" },
+    { id: "cat-documents", type: "category", label: "Documents", hint: "protocols, papers, notes" },
   ],
   "cat-setup": [
-    { id: "cat-sites", type: "category", label: "Sites", hint: "e.g. Holt, Ås" },
+    { id: "cat-sites", type: "category", label: "Sites", hint: "places, e.g. Holt, Ås" },
     { id: "cat-facilities", type: "category", label: "Facilities", hint: "greenhouses, growth rooms, fields" },
-    { id: "cat-devices", type: "category", label: "Instruments & sensors", hint: "cameras, scanners, sensors" },
-    { id: "cat-events", type: "category", label: "Logbook", hint: "sowing, moves, watering, calibration" },
+    { id: "cat-devices", type: "category", label: "Devices", hint: "instruments: cameras, scanners, sensors" },
+    { id: "cat-events", type: "category", label: "Events", hint: "logbook: sowing, moves, watering, calibration" },
   ],
   "cat-people": [
-    { id: "cat-persons", type: "category", label: "People", hint: "scientists, technicians" },
-    { id: "cat-organizations", type: "category", label: "Institutes & groups", hint: "institutes, research groups" },
+    { id: "cat-persons", type: "category", label: "Persons", hint: "people: scientists, technicians" },
+    { id: "cat-organizations", type: "category", label: "Organizations", hint: "institutes, research groups" },
     { id: "cat-projects", type: "category", label: "Projects", hint: "funded projects" },
   ],
 
@@ -1707,15 +1707,15 @@ function renderDetailMembers(categoryId) {
 // box on that type's category page and on each node of it. Open/closed is remembered per viewer.
 const TYPE_INFO = {
   scientific_object: {
-    title: "How plants and plots work",
+    title: "How scientific objects work",
     points: [
-      "A plant or plot can be in several experiments. What it is in each one — its plant material, treatments, and what it is inside — is kept separately, so a change in one experiment never alters another.",
+      "A scientific object can be in several experiments. What it is in each one — its germplasm, factor levels and what it is part of — is kept separately, so a change in one experiment never alters another.",
       "Creating one with several experiments selected creates it in all of them.",
       "Adding it to another experiment keeps everything else as it was; removing it (×) takes it out of that experiment only.",
-      "One experiment can't have two plants or plots with the same name. Renaming isn't offered here yet for that reason.",
-      "Each experiment has its own box showing what it is there. When it joins a new experiment it starts empty there, and you're offered to copy its plant material over.",
+      "One experiment can't have two scientific objects with the same name. Renaming isn't offered here yet for that reason.",
+      "Each experiment has its own box showing what it is there. When it joins a new experiment it starts empty there, and you're offered to copy its germplasm over.",
       "Deleting it removes it from every experiment. Removing it from its last experiment keeps it, just not in any experiment.",
-      "An experiment can't be deleted while plants or plots are still in it. Clearing them deletes the ones only in that experiment and just removes the ones shared with other experiments.",
+      "An experiment can't be deleted while scientific objects are still in it. Clearing them deletes the ones only in that experiment and just removes the ones shared with other experiments.",
     ],
   },
 };
@@ -1831,7 +1831,7 @@ function linkSelectionLabel() {
   if (types.length !== 2 || !inExperimentOnly(types[0], types[1])) return "Link selection";
   const objects = items.filter(v => v.type === "scientific_object");
   const values = items.filter(v => v.type !== "scientific_object");
-  const what = values.length <= 2 ? andList(values.map(v => v.label)) : `${values.length} kinds of plant material`;
+  const what = values.length <= 2 ? andList(values.map(v => v.label)) : `${values.length} germplasm`;
   return `Set ${what} on ${objects.length === 1 ? objects[0].label : `${objects.length} ${typeName("scientific_object", objects.length)}`}…`;
 }
 
@@ -1880,7 +1880,7 @@ async function linkItems(items, experiments) {
     if (!res.ok) { showToast(`Failed to link: ${body.error || res.status}`); return; }
     if (body.needsExperiment) {
       const n = body.needsExperiment;
-      experimentChoice = { what: "plant material", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
+      experimentChoice = { what: "germplasm", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
       renderActionbar();
       return;
     }
@@ -1944,7 +1944,7 @@ async function linkParents(type, pairs, experiments) {
       body: JSON.stringify({ type, pairs, ...(experiments ? { experiments } : {}) }),
     });
     const body = await res.json();
-    if (!res.ok) { showToast(`Couldn't set what it is inside: ${body.error || res.status}`); return; }
+    if (!res.ok) { showToast(`Couldn't set what it is part of: ${body.error || res.status}`); return; }
     const retry = (exps) => linkParents(type, pairs, exps);
     if (body.needsExperiment?.noShared) {
       const ns = body.needsExperiment.noShared;
@@ -1954,15 +1954,15 @@ async function linkParents(type, pairs, experiments) {
         what: "part of", retry, placeOptions: [...options.values()],
         lone: ns.map(n => ({ id: n.id, label: n.label })),
         lonePrompt: ns.length === 1
-          ? `${strong(ns[0].label)} and ${strong(ns[0].parentLabel)} aren't in the same experiment, and what something is inside is set per experiment. Add ${strong(ns[0].label)} to one of ${strong(ns[0].parentLabel)}'s experiments first?`
-          : `${ns.length} ${typeName("scientific_object", ns.length)} aren't in an experiment with what they'd be inside, and that is set per experiment. Add them to one of its experiments first?`,
+          ? `${strong(ns[0].label)} and ${strong(ns[0].parentLabel)} aren't in the same experiment, and “part of” is set per experiment. Add ${strong(ns[0].label)} to one of ${strong(ns[0].parentLabel)}'s experiments first?`
+          : `${ns.length} ${typeName("scientific_object", ns.length)} aren't in an experiment with their parent, and “part of” is set per experiment. Add them to one of their parent's experiments first?`,
       };
       renderActionbar();
       return;
     }
     if (body.needsExperiment) {
       const n = body.needsExperiment;
-      experimentChoice = { what: "what it is inside", lone: [], experiments: n.experiments, objects: n.objects, retry };
+      experimentChoice = { what: "part of", lone: [], experiments: n.experiments, objects: n.objects, retry };
       renderActionbar();
       return;
     }
@@ -1973,10 +1973,10 @@ async function linkParents(type, pairs, experiments) {
     const skippedNote = body.skipped ? `; ${body.skipped} not in the picked experiment(s) — left as they were` : "";
     const w = body.written || [];
     showToast(w.length === 1
-      ? `${labelOf(w[0].child)} is now inside ${labelOf(w[0].parent)} in ${andList(w[0].experiments)}${w[0].only ? " — the only experiment both are in" : ""}${skippedNote}`
-      : `Set what ${w.length} ${typeName("scientific_object", w.length)} are inside: ${w.map(x => `${labelOf(x.child)} in ${labelOf(x.parent)} (${andList(x.experiments)})`).join("; ")}${skippedNote}`);
+      ? `${labelOf(w[0].child)} is now part of ${labelOf(w[0].parent)} in ${andList(w[0].experiments)}${w[0].only ? " — the only experiment both are in" : ""}${skippedNote}`
+      : `Set what ${w.length} ${typeName("scientific_object", w.length)} are part of: ${w.map(x => `${labelOf(x.child)} in ${labelOf(x.parent)} (${andList(x.experiments)})`).join("; ")}${skippedNote}`);
   } catch (err) {
-    showToast(`Couldn't set what it is inside: ${err}`);
+    showToast(`Couldn't set what it is part of: ${err}`);
   }
 }
 
@@ -2046,13 +2046,13 @@ function renderLinkRankingModal() {
     <div class="ranking-backdrop" id="rankingBackdrop"></div>
     <div class="ranking-modal">
       <div class="ranking-header">
-        <span>What is ${escapeHtml(anchor.label)} inside, and what is inside it?</span>
+        <span>What is ${escapeHtml(anchor.label)} part of, and what is part of it?</span>
         <button class="ranking-close" id="rankingClose" title="Cancel">&times;</button>
       </div>
-      <p class="ranking-hint">Drag a row <b>above</b> the line if ${escapeHtml(anchor.label)} is inside it, or leave/drop it <b>below</b> if it is inside ${escapeHtml(anchor.label)}.${oneParent ? " A plant or plot is inside one thing at most: dropping another above swaps it out. It is set within an experiment both are in." : ""} Any row can be the anchor: drag it onto the middle, or use “make anchor”. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
-      ${zoneHtml(parents, "parents", `${escapeHtml(anchor.label)} is inside`)}
+      <p class="ranking-hint">Drag a row <b>above</b> the line if ${escapeHtml(anchor.label)} is part of it (its parent), or leave/drop it <b>below</b> if it is part of ${escapeHtml(anchor.label)}.${oneParent ? " A scientific object has one parent at most: dropping another above swaps it out. It is set within an experiment both are in." : ""} Any row can be the anchor: drag it onto the middle, or use “make anchor”. Click, ctrl-click, or shift-click to select several first and drag them together.</p>
+      ${zoneHtml(parents, "parents", `${escapeHtml(anchor.label)} is part of`)}
       <div class="ranking-anchor" data-zone="anchor"><span class="swatch"></span>${escapeHtml(anchor.label)}<span class="ranking-anchor-tag">anchor</span></div>
-      ${zoneHtml(children, "children", `Inside ${escapeHtml(anchor.label)}`)}
+      ${zoneHtml(children, "children", `Part of ${escapeHtml(anchor.label)}`)}
       <div class="ranking-footer">
         <button class="btn ghost" id="rankingCancel">Cancel</button>
         <button class="btn primary" id="rankingConfirm">Confirm ${allIds.length} relation${allIds.length === 1 ? "" : "s"}</button>
@@ -2389,7 +2389,7 @@ function renderActionbar() {
     const x = experimentChoice;
     const strong = t => `<span style="color:var(--ink); font-weight:600;">${escapeHtml(t)}</span>`;
     const lone = x.lone.length;
-    const What = `${x.what[0].toUpperCase()}${x.what.slice(1)}`;
+    const What = x.what === "germplasm" ? "Germplasm" : `“${x.what[0].toUpperCase()}${x.what.slice(1)}”`;
     bar.className = "actionbar";
     bar.innerHTML = `
       <div class="selection-summary"><span>${lone
@@ -2433,11 +2433,11 @@ function renderActionbar() {
     bar.className = "actionbar";
     bar.innerHTML = `
       <div class="selection-summary"><span>${kids
-        ? `${strong(names(c.map(x => x.from)))} ${new Set(c.map(x => x.parent)).size === 1 ? "has" : "have"} ${nKids} ${typeName("scientific_object", nKids)} inside it in ${strong(exps)}, without this plant material. Also set it on ${nKids === 1 ? "it" : "them"}?`
+        ? `${strong(names(c.map(x => x.from)))} ${new Set(c.map(x => x.parent)).size === 1 ? "has" : "have"} ${nKids} ${typeName("scientific_object", nKids)} that ${nKids === 1 ? "is" : "are"} part of it in ${strong(exps)}, without this germplasm. Also set it on ${nKids === 1 ? "it" : "them"}?`
         : mixed
-        ? "Some plants or plots are missing plant material they have in other experiments, or that what they're inside now has. Set any of it?"
-        : `${strong(exps)} now ${new Set(c.map(x => x.experimentLabel)).size === 1 ? "has" : "have"} ${strong(objs)}${objs.match(/^\d+$/) ? ` ${typeName("scientific_object", 2)}` : ""}, without ${new Set(c.map(x => x.id)).size === 1 ? "its" : "their"} plant material from other experiments. Copy any over?`}</span></div>
-      ${linkMenuHtml(`<button class="btn primary" id="carryOverBtn">Choose…</button>`, kids ? "Also set on what's inside it" : "Copy over to the new experiment")}
+        ? "Some scientific objects are missing germplasm they have in other experiments, or that their parent now has. Set any of it?"
+        : `${strong(exps)} now ${new Set(c.map(x => x.experimentLabel)).size === 1 ? "has" : "have"} ${strong(objs)}${objs.match(/^\d+$/) ? ` ${typeName("scientific_object", 2)}` : ""}, without ${new Set(c.map(x => x.id)).size === 1 ? "its" : "their"} germplasm from other experiments. Copy any over?`}</span></div>
+      ${linkMenuHtml(`<button class="btn primary" id="carryOverBtn">Choose…</button>`, kids ? "Also set on what is part of it" : "Copy over to the new experiment")}
       <button class="btn ghost" id="carryOverSkipBtn">Skip</button>
     `;
     wireLinkMenu("carryOverBtn", () => {

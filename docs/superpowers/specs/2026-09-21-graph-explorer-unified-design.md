@@ -955,15 +955,18 @@ in-experiment read-modify-write already carries it — the 409 guard is gone. Ea
 "Replicate: 2" (named from `/experiments/{uri}/factors`, one call). An experiment lists its Factors
 by name (the `factors` field stays in the PUT). A factor opens read-only: its experiment and levels.
 Factor ids stay FULL uris — the factor endpoints 404 a prefixed one.
-**Plain words everywhere (decided 2026-09-30).** The app's purpose is to lower PHIS's barrier of
-entry: scientists should never need PHIS training, nor (except for minor things) the PHIS UI. So
-the page shows no PHIS/ontology terms. Menu regrouped trial-first from a simulated plant scientist,
-each item with a plain-examples hint: Trials (Experiments, Plants & plots, Plant material,
-Treatments) · Data (Traits, Measurements, Images & files, How data was collected, Documents &
-protocols) · Setup (Sites, Facilities, Instruments & sensors, Logbook) · People (People, Institutes
-& groups, Projects). Every type name on the page comes from `TYPES[t].name`/`plural` via
-`typeName()`; pane rows say Plant material / Inside / Contains / Treatments; the scientific-object
-help box explains behaviour, not OpenSILEX copies. To validate with real users (first-click tasks).
+**A higher-level PHIS (decided 2026-09-30).** The app's purpose is to lower PHIS's barrier of
+entry without training — like a high-level language over a low-level one. It keeps PHIS's CONCEPT
+NAMES (scientific object, germplasm, factor, variable, provenance, device, event…) so what users
+learn carries over to PHIS, the API and colleagues; hides PHIS's MECHANICS (global vs experiment
+copies, URIs, named graphs, move events); and owns the ERGONOMICS. (A first pass that replaced the
+PHIS names with plain words was reverted the same day: it disconnected the app from PHIS.) Menu
+regrouped trial-first from a simulated plant scientist, PHIS name first with a plain hint under it:
+Trials (Experiments, Scientific Objects, Germplasm, Factors) · Data (Variables, Tabular Data, Data
+files, Provenances, Documents) · Setup (Sites, Facilities, Devices, Events) · People (Persons,
+Organizations, Projects). Every type name on the page comes from `TYPES[t].name`/`plural` via
+`typeName()`. The scientific-object help box explains behaviour, not OpenSILEX copies; the ranking
+modal says "part of" instead of parent/child. To validate with real users (first-click tasks).
 Remaining wording debt, after the demo: "Link selection"/"Unlink" verbs, the ranking modal's
 "anchor", raw OpenSILEX errors in toasts, the URI line in the detail pane, a selection hint, the
 "Graph" root crumb, and the two "do it in PHIS" messages (location history, sites with an address)

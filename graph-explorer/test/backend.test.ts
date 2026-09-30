@@ -397,7 +397,7 @@ test("DELETE experiment: refused (409, nothing deleted) while it holds scientifi
 
     const blocked = await realFetch(`${base}/api/node?type=experiment&id=exp-1`, { method: "DELETE" });
     assert.equal(blocked.status, 409);
-    assert.match((await blocked.json()).error, /Plant 1 is still in it \(plants & plots\)\. Remove it first/);
+    assert.match((await blocked.json()).error, /Plant 1 is still in it \(scientific objects\)\. Remove it first/);
     assert.deepEqual(deletes, [], "a blocked delete must never reach OpenSILEX");
 
     sos = [];
@@ -424,7 +424,7 @@ test("experiment node-detail appends a 'Scientific objects' group from the SO-by
     }) as typeof fetch;
     const detail = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-1`)).json();
     assert.match(queried, /experiment=exp-1/);
-    assert.deepEqual(detail.relations, [{ label: "Plants & plots", field: "scientific_object", blocksDelete: true, items: [{ id: "so-1", type: "scientific_object", label: "Plant 1" }] }]);
+    assert.deepEqual(detail.relations, [{ label: "Scientific objects", field: "scientific_object", blocksDelete: true, items: [{ id: "so-1", type: "scientific_object", label: "Plant 1" }] }]);
   });
 });
 
@@ -558,7 +558,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
       typeName: "plant",
       actions: ["delete", "link"],
       deleteRemovesLinks: true,
-      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Plant material", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Inside", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Treatments", items: [] }] }] }],
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", items: [] }] }] }],
     });
     const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", name: "X" }) });
     assert.equal(put.status, 400);
@@ -608,12 +608,12 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const g = (id: string, label: string) => ({ id, type: "germplasm", label });
     assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", items: [
-      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Plant material", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Inside", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Treatments", items: [] }] },
+      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", items: [] }] },
       { id: "exp-b", type: "experiment", label: "Barley 2026", groups: [
-        { label: "Plant material", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
-        { label: "Inside", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
+        { label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
+        { label: "Part of", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
         { label: "Contains", field: "contains", type: "scientific_object", items: [] },
-        { label: "Treatments", items: [] },
+        { label: "Factor levels", items: [] },
       ] },
     ] }]);
     assert.deepEqual(named.sort(), ["germplasm:phis:id/annika", "germplasm:phis:id/arild,phis:id/annika", "so:phis:id/block-a"]);
@@ -688,8 +688,8 @@ test("scientific object: factor levels show per experiment as their factor ('Rep
     }) as typeof fetch;
 
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
-    const row = detail.relations[0].items[0].groups.find((g: any) => g.label === "Treatments");
-    assert.deepEqual(row, { label: "Treatments", items: [{ id: "https://phis.pheno.no/id/factor/rep", type: "factor", label: "Replicate: 2" }] }, "read-only: no field, so no × or + Add");
+    const row = detail.relations[0].items[0].groups.find((g: any) => g.label === "Factor levels");
+    assert.deepEqual(row, { label: "Factor levels", items: [{ id: "https://phis.pheno.no/id/factor/rep", type: "factor", label: "Replicate: 2" }] }, "read-only: no field, so no × or + Add");
 
     const res = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["phis:id/g"] } }) });
     assert.equal(res.status, 200);
@@ -712,7 +712,7 @@ test("scientific object in no experiment says why nothing can be set; an experim
     }) as typeof fetch;
 
     const so = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-lone`)).json();
-    assert.deepEqual(so.relations, [{ label: "In experiments", field: "experiment", items: [], emptyText: "Not in any experiment yet. Its plant material, treatments and what it is inside are set per experiment — add it to one first." }]);
+    assert.deepEqual(so.relations, [{ label: "In experiments", field: "experiment", items: [], emptyText: "Not in any experiment. Germplasm and parent can only be set inside an experiment." }]);
     const exp = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-1`)).json();
     assert.deepEqual(exp.relations, [{ label: "Species", items: [{ id: "phis:id/barley", type: "germplasm", label: "Hordeum vulgare" }] }]);
   });
@@ -1050,8 +1050,8 @@ test("GET /api/node-detail maps a FacilityGetDTO into relation groups", async ()
       relations: [
         // "field" present = unlinkable from the detail pane (see updateLinkFields); Devices
         // isn't settable on FacilityUpdateDTO at all, so it has no field.
-        { label: "Institutes & groups", field: "organizations", items: [{ id: "org-1", type: "organization", label: "UiT" }] },
-        { label: "Instruments & sensors", items: [{ id: "dev-1", type: "device", label: "Camera A" }] },
+        { label: "Organizations", field: "organizations", items: [{ id: "org-1", type: "organization", label: "UiT" }] },
+        { label: "Devices", items: [{ id: "dev-1", type: "device", label: "Camera A" }] },
       ],
     });
   });
@@ -1084,7 +1084,7 @@ test("GET /api/node-detail maps an OrganizationGetDTO into relation groups, skip
       actions: ["rename", "delete", "link"],
       relations: [
         // children isn't settable on OrganizationUpdateDTO — no field. facilities is.
-        { label: "Includes", items: [{ id: "org-2", type: "organization", label: "BFE" }] },
+        { label: "Child organizations", items: [{ id: "org-2", type: "organization", label: "BFE" }] },
         { label: "Facilities", field: "facilities", items: [{ id: "fac-1", type: "facility", label: "Greenhouse 1" }] },
       ],
     });
@@ -1163,7 +1163,7 @@ test("PUT /api/node with `unlink` drops just that one uri from its field, keeps 
     assert.deepEqual(putBody, { uri: "fac-1", name: "Greenhouse 1", organizations: ["org-2"], sites: [] });
     const body = await res.json();
     assert.deepEqual(body.relations, [
-      { label: "Institutes & groups", field: "organizations", items: [{ id: "org-2", type: "organization", label: "NMBU" }] },
+      { label: "Organizations", field: "organizations", items: [{ id: "org-2", type: "organization", label: "NMBU" }] },
     ]);
   });
 });
