@@ -165,6 +165,35 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
   });
 });
 
+test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Make public' PUTs isPublic per item", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const puts: any[] = [];
+    await page.route("**/api/node", (r) => { puts.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Trials");
+    await openRow(page, "Experiments");
+    await page.locator("#rowlist .row").first().click();
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("#visBtn").count(), 1);
+
+    await page.locator("#visBtn").click();
+    await page.locator("#visMenu [data-public=true]").click();
+    await page.waitForTimeout(300);
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].type, "experiment");
+    assert.equal(puts[0].isPublic, true);
+    assert.match(await page.locator("#toast").textContent() ?? "", /Made 1 public/);
+
+    // A project has no visibility flag, so a mixed selection hides the button.
+    await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "People");
+    await openRow(page, "Projects");
+    await page.locator("#rowlist .row").first().click({ modifiers: ["Control"] });
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("#visBtn").count(), 0);
+  });
+});
+
 test("e2e: '+ New' menu shows the honest empty state when a multi-selection shares no adjacent type", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);

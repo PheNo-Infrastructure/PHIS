@@ -23,6 +23,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       ...(typeof dto.rdf_type_name === "string" && dto.rdf_type_name ? { typeName: dto.rdf_type_name } : {}),
       actions: (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
       ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
+      ...(config.visibility ? { isPublic: dto.is_public === true } : {}),
       ...(config.deleteBlockedBy?.(dto) ? { deleteBlocked: config.deleteBlockedBy(dto) } : {}),
       relations: await relationsFor(id, dto, config),
     });
@@ -42,12 +43,14 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       name?: string;
       unlink?: { field: string; uri: string };
       link?: { field: string; uris: string[] };
+      isPublic?: boolean;
     };
-    const { type, id, name, unlink, link } = body;
+    const { type, id, name, unlink, link, isPublic } = body;
     const config = type ? NODE_TYPES[type] : undefined;
-    if (!config || !id || (!name && !unlink && !link) || (name && !allows(config, "rename")) || ((unlink || link) && !allows(config, "link"))) {
+    if (!config || !id || (!name && !unlink && !link && isPublic === undefined) || (name && !allows(config, "rename")) || ((unlink || link) && !allows(config, "link"))
+        || (isPublic !== undefined && (typeof isPublic !== "boolean" || !config.visibility))) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "edit not implemented for this type, or id/name/unlink/link missing" }));
+      res.end(JSON.stringify({ error: "edit not implemented for this type, or id/name/unlink/link/isPublic missing" }));
       return true;
     }
     const experiment = (body as { experiment?: string }).experiment;
@@ -83,7 +86,7 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     await respondOpenSilexErrors(res, async () => {
-      const current = await updateNode(config, id, { name, unlink, link });
+      const current = await updateNode(config, id, { name, unlink, link, isPublic });
       const finalName = name ?? String(current.name ?? "");
       // Unlink responses include the refreshed relations so the frontend can update its
       // detail-pane cache directly, instead of firing a second GET right after this PUT.

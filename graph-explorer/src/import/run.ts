@@ -31,6 +31,8 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       name: plan.experiment.name,
       start_date: plan.experiment.startDate,
       objective: `Imported from a ${plan.instrument} export.`,
+      // Public, or nobody but this app's account sees it in PHIS (OpenSILEX defaults to private).
+      is_public: true,
     }));
     tick("Created the experiment");
 
@@ -38,7 +40,7 @@ export async function runImport(files: Files, choices: { species?: string }, pro
     for (const name of plan.germplasm.missing) {
       // ponytail: new germplasm are always varieties; let the plugin say so per instrument once one
       // brings accessions or lines.
-      germplasm.set(name, firstUri(await authedPost("/core/germplasm", { name, rdf_type: "vocabulary:Variety", species: choices.species })));
+      germplasm.set(name, firstUri(await authedPost("/core/germplasm", { name, rdf_type: "vocabulary:Variety", species: choices.species, is_public: true })));
       done.germplasm++;
       tick(`Creating germplasm: ${done.germplasm} of ${plan.germplasm.missing.length}`);
     }

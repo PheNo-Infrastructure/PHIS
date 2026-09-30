@@ -35,6 +35,9 @@ export type NodeConfig = {
   // DELETE calls to make before deleteUrl — e.g. a scientific object's per-experiment copies
   // (OpenSILEX refuses deleting the global copy while any experiment copy exists — probed).
   deleteFirst?: (id: string) => Promise<string[]>;
+  // Has an is_public flag the app can set (experiments, germplasm): shown in the detail pane and
+  // changed from the selection pane. Other types have no visibility flag in OpenSILEX.
+  visibility?: true;
   // Links that are an OPERATION, not a field on either DTO — keyed by the relation-group field
   // name the detail pane uses for them. A scientific object "in" an experiment is its own copy
   // in that experiment's graph (probed live): linking POSTs a copy there, unlinking deletes
@@ -330,6 +333,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     // `factors` stays in the PUT (or it'd be wiped) but is shown by name through the query below.
     updateLinkFields: ["organisations", "facilities", "projects", "scientific_supervisors", "technical_supervisors", "factors"],
     deleteRemovesLinks: true,
+    visibility: true,
     queryRelations: [
       EXPERIMENT_SOS,
       { label: "Factors", type: "factor", url: (id) => `/core/experiments/${encodeURIComponent(id)}/factors` },
@@ -426,6 +430,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     // "link" only for scientific objects (their side holds it — /api/link's in-experiment pairs);
     // the germplasm record itself still isn't edited here.
     actions: ["link"],
+    visibility: true,
     queryRelations: [
       { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true },
       { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
@@ -533,7 +538,7 @@ export function updatePayloadFromDto(
   name: string,
   dto: Record<string, unknown>,
   config: NodeConfig,
-  mod?: { unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] } }
+  mod?: { unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] }; isPublic?: boolean }
 ) {
   // OpenSILEX (1.5.4.7) bug, found live: a PUT carrying `address` creates a NEW location
   // ObservationCollection instead of reusing the node's existing one, and the duplicate then
@@ -544,7 +549,8 @@ export function updatePayloadFromDto(
   if (dto.address) {
     throw new OpenSilexError(409, "Editing a node with an address is disabled: OpenSILEX's update endpoint either wipes the address or corrupts the node. Edit it in PHIS directly.");
   }
-  const derived = new Set(config.relationGroups.map((rg) => rg.field).filter((f) => !config.updateLinkFields.includes(f)));
+  // A single-uri group (nameField: a germplasm's species) is the node's own field, not derived.
+  const derived = new Set(config.relationGroups.filter((rg) => !rg.nameField).map((rg) => rg.field).filter((f) => !config.updateLinkFields.includes(f)));
   const payload: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(dto)) {
     if (derived.has(k)) continue;
@@ -553,6 +559,7 @@ export function updatePayloadFromDto(
   }
   payload.uri = id;
   payload.name = name;
+  if (mod?.isPublic !== undefined) payload.is_public = mod.isPublic;
   for (const field of config.updateLinkFields) {
     let uris = (Array.isArray(dto[field]) ? (dto[field] as (NamedRef | string)[]) : []).map(refUri);
     if (mod?.unlink && mod.unlink.field === field) uris = uris.filter((u) => u !== mod.unlink!.uri);
@@ -568,7 +575,7 @@ export function updatePayloadFromDto(
 export async function updateNode(
   config: NodeConfig,
   id: string,
-  mod: { name?: string; unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] } }
+  mod: { name?: string; unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] }; isPublic?: boolean }
 ) {
   const current = (await authedGetOne(config.getUrl(id))).result;
   await authedPut(config.putUrl, updatePayloadFromDto(id, mod.name ?? String(current.name ?? ""), current, config, mod));

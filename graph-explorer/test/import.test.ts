@@ -182,8 +182,8 @@ test("POST /api/import/run writes in order: experiment, new germplasm (variety o
       "/core/experiments/factors GroupID",
       "/core/scientific_objects PB001", "/core/scientific_objects PB002", "/core/scientific_objects PB003",
     ]);
-    assert.deepEqual(writes[0].body, { name: "PBar1x4 – TraitFinder – 2025-10-22", start_date: "2025-10-22", objective: "Imported from a TraitFinder (PlantEye) export." });
-    assert.deepEqual(writes[1].body, { name: "Tiril", rdf_type: "vocabulary:Variety", species: "agrovoc:barley" });
+    assert.deepEqual(writes[0].body, { name: "PBar1x4 – TraitFinder – 2025-10-22", start_date: "2025-10-22", objective: "Imported from a TraitFinder (PlantEye) export.", is_public: true });
+    assert.deepEqual(writes[1].body, { name: "Tiril", rdf_type: "vocabulary:Variety", species: "agrovoc:barley", is_public: true });
     assert.deepEqual(writes[2].body, { name: "Replicate", experiment: "exp:new", levels: [{ name: "1" }, { name: "2" }] });
     assert.deepEqual(writes[5].body, {
       name: "PB002", rdf_type: "vocabulary:Plant", experiment: "exp:new",

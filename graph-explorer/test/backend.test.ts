@@ -452,6 +452,32 @@ test("germplasm node-detail: single-uri species labelled from species_name, memb
   });
 });
 
+test("visibility: node-detail says isPublic for germplasm; PUT isPublic keeps the germplasm's own species/variety; refused for types without the flag", async () => {
+  await withServer(async (base) => {
+    let putBody: any = null;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.endsWith("/core/germplasm") && init?.method === "PUT") { putBody = JSON.parse(String(init.body)); return jsonResponse(200, { result: "g-1" }); }
+      if (url.includes("/core/germplasm?species=") || url.includes("/experiments?")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/germplasm/")) {
+        return jsonResponse(200, { result: { uri: "g-1", name: "Tiril", rdf_type: "vocabulary:Variety", species: "sp-1", species_name: "Barley", variety: null, is_public: false, groups: [] } });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const detail = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=g-1`)).json();
+    assert.equal(detail.isPublic, false);
+
+    const put = (body: unknown) => realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal((await put({ type: "germplasm", id: "g-1", isPublic: true })).status, 200);
+    assert.deepEqual(putBody, { uri: "g-1", name: "Tiril", rdf_type: "vocabulary:Variety", species: "sp-1", species_name: "Barley", variety: null, is_public: true, groups: [] });
+
+    putBody = null;
+    assert.equal((await put({ type: "facility", id: "f-1", isPublic: true })).status, 400);
+    assert.equal((await put({ type: "germplasm", id: "g-1", isPublic: "yes" })).status, 400);
+    assert.equal(putBody, null);
+  });
+});
+
 test("GET /api/germplasm: ids and species parents compacted to one form; an unknown parent is dropped, not hidden under", async () => {
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string) => {

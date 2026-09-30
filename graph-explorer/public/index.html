@@ -396,6 +396,7 @@ button { font-family: inherit; }
   color: var(--ink-faint);
   word-break: break-all;
 }
+.node-visibility { font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
 
 .rel-group { display: flex; flex-direction: column; gap: 8px; }
 .unlink-intro {
@@ -1179,6 +1180,25 @@ function invalidateNodeDetail(id) {
   if (p && p.id === id) loadNodeDetail(p);
 }
 
+// Public or private, one PUT per item (experiments and germplasm only — VISIBILITY_TYPES).
+async function setVisibility(items, isPublic) {
+  let done = 0;
+  const failed = [];
+  for (const item of items) {
+    const res = await fetch("/api/node", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: item.type, id: item.id, isPublic }),
+    }).catch(err => ({ ok: false, json: async () => ({ error: String(err) }) }));
+    if (res.ok) {
+      done++;
+      if (NODE_DETAIL[item.id]) NODE_DETAIL[item.id] = { ...NODE_DETAIL[item.id], isPublic };
+    } else failed.push(`${item.label} (${(await res.json().catch(() => ({}))).error || res.status})`);
+  }
+  renderDetail();
+  showToast(`Made ${done} ${isPublic ? "public" : "private"}${failed.length ? `. Failed: ${failed.join(", ")}` : ""}`, failed.length ? 6000 : 1600);
+}
+
 async function renameNode(item) {
   const label = prompt(`New name for ${item.label}?`, item.label);
   if (!label || label === item.label) return;
@@ -1535,6 +1555,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         ${canDelete ? `<button class="btn ${deleteRedirects ? "warn" : "ghost"} small" id="deleteNodeBtn">${deleteLabel}</button>` : ""}
       </div>
       ${node ? `<div class="node-uri">${escapeHtml(node.uri)}</div>` : ""}
+      ${node && "isPublic" in node ? `<div class="node-visibility">${node.isPublic ? "Public: every PHIS user can see it." : "Private: in PHIS, only admins and the people it's shared with see it."}</div>` : ""}
     </div>
   `;
   if (!isCategoryMembers) html += typeInfoHtml(type);
@@ -2546,7 +2567,24 @@ function renderActionbar() {
       <button class="btn primary" id="newBtn">+ New</button>
       <div class="newmenu-list" id="newList"></div>
     </div>
+    ${[...selection.values()].every(v => VISIBILITY_TYPES.has(v.type)) ? `
+    <div class="newmenu" id="visMenu">
+      <button class="btn ghost small" id="visBtn">Visibility…</button>
+      <div class="newmenu-list">
+        <button class="newmenu-item" data-public="true">Make public (every PHIS user can see it)</button>
+        <button class="newmenu-item" data-public="false">Make private</button>
+      </div>
+    </div>` : ""}
   `;
+  const visMenu = document.getElementById("visMenu");
+  if (visMenu) {
+    document.getElementById("visBtn").addEventListener("click", (e) => { e.stopPropagation(); visMenu.classList.toggle("open"); });
+    visMenu.querySelectorAll("[data-public]").forEach(b => b.addEventListener("click", () => {
+      visMenu.classList.remove("open");
+      setVisibility([...selection.values()], b.dataset.public === "true");
+    }));
+    document.addEventListener("click", () => visMenu.classList.remove("open"), { once: true });
+  }
   if (canLink) {
     document.getElementById("linkSelectionBtn").addEventListener("click", () => {
       const items = [...selection.values()];
@@ -2842,6 +2880,8 @@ function findItemById(id) {
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
 const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm"]);
+// Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
+const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —
 // "Link selection" handles them by asking which experiment, but "+ New" can't (a brand-new
 // object isn't in any yet), so they're never offered there. Same drift check as LINKABLE_TYPES.
@@ -2983,7 +3023,7 @@ function importFooterHtml(p) {
     ...(p.factors.length ? [`${p.factors.length} ${p.factors.length === 1 ? "factor" : "factors"}`] : []),
     `${p.objects.count} ${typeName("scientific_object", p.objects.count)}`,
   ];
-  return `<span>Nothing has been written to PHIS yet.</span><button class="btn primary" id="importRunBtn">Create ${escapeHtml(andList(parts))}</button>`;
+  return `<span>Nothing has been written to PHIS yet. What it creates will be public: every PHIS user can see it.</span><button class="btn primary" id="importRunBtn">Create ${escapeHtml(andList(parts))}</button>`;
 }
 
 function wireImportRun(file, plan, close) {
