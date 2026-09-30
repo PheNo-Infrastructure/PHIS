@@ -1010,6 +1010,7 @@ test("e2e: deleting an experiment that holds scientific objects: banner explains
       ] });
       return json({ uri: id, actions: ["rename", "delete", "link"], deleteRemovesLinks: true, relations });
     });
+    await page.route("**/api/elsewhere*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ "so-shared": [{ id: "exp-other", label: "Other Exp" }] }) }));
     await page.route("**/api/node*", (r) => {
       const req = r.request();
       if (req.url().includes("node-detail")) return r.fallback();

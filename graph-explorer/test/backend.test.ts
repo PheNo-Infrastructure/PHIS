@@ -1494,3 +1494,28 @@ test("POST /api/link with an organization and a site PUTs to the SITE (org's `si
     assert.deepEqual(putBody, { uri: "site-1", name: "Holt", organizations: ["org-1"], facilities: [] });
   });
 });
+
+test("GET /api/elsewhere: for an experiment's objects, the OTHER experiments each is in — one list per experiment, not one call per object", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (url.includes("/core/experiments?page_size=")) return jsonResponse(200, { result: [
+        { uri: "https://phis.pheno.no/id/exp-a", name: "Trial A" }, { uri: "https://phis.pheno.no/id/exp-b", name: "Trial B" }, { uri: "https://phis.pheno.no/id/exp-c", name: "Trial C" },
+      ] });
+      const lists: Record<string, string[]> = { "exp-a": ["so-1", "so-2", "so-3"], "exp-b": ["so-2", "so-9"], "exp-c": ["so-2", "so-3"] };
+      const m = url.match(/scientific_objects\?experiment=([^&]+)/);
+      if (m) return jsonResponse(200, { result: (lists[decodeURIComponent(m[1]).split("/").pop()!] ?? []).map((uri) => ({ uri })) });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await realFetch(`${base}/api/elsewhere?experiment=${encodeURIComponent("phis:id/exp-a")}`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      "so-2": [{ id: "https://phis.pheno.no/id/exp-b", label: "Trial B" }, { id: "https://phis.pheno.no/id/exp-c", label: "Trial C" }],
+      "so-3": [{ id: "https://phis.pheno.no/id/exp-c", label: "Trial C" }],
+    }, "so-1 is only here; itself (prefixed vs full uri) is skipped");
+    assert.equal(calls.filter((c) => c.includes("scientific_objects?experiment=")).length, 3, "one list per experiment");
+  });
+});

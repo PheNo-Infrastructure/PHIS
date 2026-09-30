@@ -1005,11 +1005,11 @@ function isCategoryFullySelected(id) {
   return members.length > 0 && members.every(m => selection.has(m.id));
 }
 
-function showToast(msg) {
+function showToast(msg, ms = 1600) {
   els.toast.textContent = msg;
   els.toast.classList.add("show");
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => els.toast.classList.remove("show"), 1600);
+  showToast._t = setTimeout(() => els.toast.classList.remove("show"), ms);
 }
 
 /* ---------------- rendering ---------------- */
@@ -1280,17 +1280,27 @@ async function deleteBlockers(item) {
   const groups = (NODE_DETAIL[item.id]?.relations ?? []).filter(rel => rel.blocksDelete);
   const entries = groups.flatMap(rel => rel.items.map(it => ({ it, field: rel.field })));
   const niceType = typeName(item.type);
-  // Where else does each one live? Its own detail lists its links back (e.g. an SO's Experiments).
-  for (const e of entries) {
-    await loadNodeDetail(e.it);
-    e.elsewhere = (NODE_DETAIL[e.it.id]?.relations ?? []).flatMap(rel => rel.items).filter(o => o.type === item.type && o.id !== item.id);
+  // Where else does each one live? One backend call that asks the experiments' side (/api/elsewhere);
+  // asking each object was minutes of silence for a 100-plant trial (found 2026-09-30).
+  if (entries.length > 10) showToast(`Checking where each of the ${entries.length} is used, before asking…`, 30000);
+  let elsewhere = {};
+  try {
+    const res = await fetch(`/api/elsewhere?experiment=${encodeURIComponent(item.id)}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
+    elsewhere = await res.json();
+  } catch (err) {
+    showToast(`Couldn't check where they are used: ${err}`);
+    return;
   }
+  for (const e of entries) e.elsewhere = elsewhere[e.it.id] ?? [];
+  els.toast.classList.remove("show");
   const what = countOf(entries.length, groups.map(rel => rel.label));
   const lines = entries.map(e => e.elsewhere.length
     ? `• ${e.it.label} — also in ${e.elsewhere.map(o => o.label).join(", ")}: removed from ${item.label} only, kept there`
     : `• ${e.it.label} — only here: deleted from PHIS entirely`);
   if (!confirm(`${item.label} holds ${what}. To delete the ${niceType}:\n\n${lines.join("\n")}\n\nThis cannot be undone.`)) return;
-  for (const e of entries) {
+  for (const [i, e] of entries.entries()) {
+    if (entries.length > 10) showToast(`Removing ${i + 1} of ${entries.length}…`, 10000);
     try {
       const res = e.elsewhere.length
         ? await fetch("/api/node", {

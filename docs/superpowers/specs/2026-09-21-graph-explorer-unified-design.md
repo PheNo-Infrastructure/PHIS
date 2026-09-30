@@ -1003,8 +1003,14 @@ so the page states an estimate; OpenSILEX's bulk CSV import is the real fix (lat
    could use the same shape.
 3. *Set relations at creation.* An object's germplasm and factor levels can go in its creation POST;
    the app creates first and links after (two steps, two failure points).
-4. *OpenSILEX writes are slow and serial* (~0.5 s each). Any bulk action needs an estimate or
-   progress, and bulk endpoints where they exist.
+4. *OpenSILEX writes are slow and serial* (~0.5 s each in the morning, 1.5-2 s by the afternoon of
+   2026-09-30 on phis-test — not the JVM heap (restart didn't help), not GraphDB (0.15 s queries);
+   cause unknown). A 100-plant import took 86 s, later 267 s; clearing it ~2.5 min. Any bulk action
+   needs an estimate or progress, and bulk endpoints where they exist (next: OpenSILEX's own CSV
+   import for scientific objects). Reads DO run in parallel (~2.5x at 10 at a time).
+10. *Ask from the side with fewer items.* Clearing an experiment asked each of 100 objects where
+   else it lives (1-3 min of silence before the confirm); asking each other experiment for its list
+   (`/api/elsewhere`) takes 0.3 s. Same idea wherever the app loops over many nodes.
 5. *Exact name matching.* OpenSILEX's `name=` filter matches substrings ("Olve" finds "Olve 2"); any
    place the app matches by name must compare exactly.
 6. *Imports are what fill PHIS.* Prod had none of these 20 varieties: "link existing…" flows assume
