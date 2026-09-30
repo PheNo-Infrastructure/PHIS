@@ -803,7 +803,29 @@ demands it.
   PHIS meeting, not for the app to enforce. Annotations/documents (0 of each in PHIS) would be
   one queryRelation shared by every type; later. Groups (access control) are out of scope
   for now, BUT see the next item.
-  **Experiment sharing needed (noted 2026-09-30, not built).** A non-admin (Feide) user sees
+  **A–Z audit (2026-09-30, live on phis-test through the app's own API, ZZ nodes, all cleaned up).**
+  Works end to end: create organization (alone / under a parent), facility, site (needs an
+  organization), project, experiment (with organization/facility/project), scientific object (in an
+  experiment or global); link facility–site, organization–site, organization–facility,
+  experiment–project, experiment–organization, object into a 2nd experiment, object–germplasm
+  (asks which experiment when in several), object part of object; rename all five DTO types (links
+  survive); visibility (experiment, germplasm); unlink every one of those; delete all (experiment
+  refused while it holds objects). Gaps, in the order to knock them down:
+  1. Fake or wrong answers: "+ New" offers types it can't create (person, factor, ...) and answers
+     with a "Would create ..." toast; types without a detail view (device, person, event) say "No
+     connections found"; Tabular Data leads nowhere.
+  2. Factors: can't be created, renamed or deleted, and a factor level can't be set on an object —
+     only the import makes them. Create-with-levels from an experiment is the next step (run.ts has
+     the POST).
+  3. Germplasm: no create/rename/delete, species/variety not editable (import only).
+  4. Persons (supervisors, project contacts): no detail, no linking.
+  5. Devices, events: listed only. Variables, data files, provenances, documents: listed only
+     (empty on test) — stage 2, observations.
+  6. The 2 Holt sites with an address stay uneditable (OpenSILEX PUT bug), so linking a facility or
+     organization to them is refused with "Edit it in PHIS directly".
+  **Experiment sharing — built 2026-09-30 (1005a8c):** Public/Private line in the detail pane,
+  "Visibility…" in the selection pane (experiments, germplasm), imports create public. Group
+  sharing not built. Original note: A non-admin (Feide) user sees
   no experiment unless it is public, shared with a group they belong to, or they are a listed
   contact; the PHIS "Add experiment" step 2 has these fields: scientific supervisors,
   technical supervisors, projects, organizations, facilities, groups, funding, and a
