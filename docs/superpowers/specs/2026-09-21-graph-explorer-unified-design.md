@@ -1003,11 +1003,14 @@ so the page states an estimate; OpenSILEX's bulk CSV import is the real fix (lat
    could use the same shape.
 3. *Set relations at creation.* An object's germplasm and factor levels can go in its creation POST;
    the app creates first and links after (two steps, two failure points).
-4. *OpenSILEX writes are slow and serial* (~0.5 s each in the morning, 1.5-2 s by the afternoon of
-   2026-09-30 on phis-test — not the JVM heap (restart didn't help), not GraphDB (0.15 s queries);
-   cause unknown). A 100-plant import took 86 s, later 267 s; clearing it ~2.5 min. Any bulk action
-   needs an estimate or progress, and bulk endpoints where they exist (next: OpenSILEX's own CSV
-   import for scientific objects). Reads DO run in parallel (~2.5x at 10 at a time).
+4. *OpenSILEX writes are CPU-bound* (measured on phis-test 2026-09-30). Creating one scientific
+   object = 24 GraphDB calls (3 ms each — GraphDB, MongoDB, network all fast) and ~0.5-1 CPU-seconds
+   of Java work in OpenSILEX. With its 1-core limit (same in prod) writes run ~0.7 s one at a time and
+   parallel writes gain nothing; concurrent jobs (an import + deletes) share the throttled core, which
+   is what looked like "slower during the day" (2-4 s per write). With a 2-core limit, 5 writes at a
+   time were 1.7x faster; one at a time stayed ~0.7 s. So: bulk work needs progress feedback, can go
+   parallel only if OpenSILEX gets more CPU, and OpenSILEX's own bulk CSV import may be the real fix.
+   Reads DO run in parallel (~2.5x at 10 at a time) even on 1 core.
 10. *Ask from the side with fewer items.* Clearing an experiment asked each of 100 objects where
    else it lives (1-3 min of silence before the confirm); asking each other experiment for its list
    (`/api/elsewhere`) takes 0.3 s. Same idea wherever the app loops over many nodes.
