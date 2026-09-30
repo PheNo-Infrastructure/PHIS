@@ -194,8 +194,10 @@ spec:
             requests:
               cpu: "200m"
               memory: "512Mi"
+            # No CPU limit on purpose (cluster-wide, 2026-09-30): the node averages ~18% CPU and OpenSILEX
+            # writes are CPU-bound (~0.5-1 CPU-s per object) — a 1-core limit throttled them. Requests still
+            # decide each pod's share under contention. Memory stays limited: it is the scarce resource.
             limits:
-              cpu: "1000m"
               memory: "2Gi"
           volumeMounts:
             - name: config-gen
