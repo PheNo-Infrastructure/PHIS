@@ -528,6 +528,7 @@ button { font-family: inherit; }
   color: var(--ink);
 }
 .newmenu-item:hover { background: var(--surface-2); }
+.newmenu-item:disabled { color: var(--ink-faint); cursor: default; background: none; }
 .newmenu-item.selected { background: var(--accent-soft); }
 .newmenu-item.selected:hover { background: var(--accent-soft); filter: brightness(1.05); }
 .newmenu-item .swatch { width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-faint)); flex: none; }
@@ -1611,7 +1612,11 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   } else {
     // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely
     // no relations" (node.relations is empty) — same honest message either way.
-    html += `<div class="rel-group"><div class="rel-label">Relations</div><span style="color:var(--ink-faint); font-size:12.5px;">No connections found.</span></div>`;
+    // ...except a type the backend has no detail view for (NODE_TYPES): say that, not "none".
+    const msg = LINKABLE_TYPES.has(type) || type === "factor"
+      ? "No connections found."
+      : `This app can't show a ${typeName(type)}'s connections yet. Look it up in PHIS for now.`;
+    html += `<div class="rel-group"><div class="rel-label">Relations</div><span style="color:var(--ink-faint); font-size:12.5px;">${msg}</span></div>`;
   }
 
   els.detailBody.innerHTML = html;
@@ -2614,21 +2619,18 @@ function renderActionbar() {
     const item = document.createElement("button");
     item.className = "newmenu-item";
     item.setAttribute("style", typeStyle(t));
-    item.innerHTML = `<span class="swatch"></span>${typeName(t)}`;
+    // CREATABLE (from creation.js) only has entries for types with a real backend wired up so
+    // far, and a wired type may still not take a link to every selected type (e.g. a scientific
+    // object from another one) — /api/create would refuse it. Those stay listed (so the menu
+    // shows what belongs here) but greyed, saying where to do it instead.
+    // A link the new node's own DTO can't hold is linked right after, like "Link selection";
+    // that works for any distinct pair of LINKABLE_TYPES (checked against the backend by a test).
+    const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type) && !inExperimentOnly(t, v.type));
+    const can = t in CREATABLE && [...selection.values()].every(canLink);
+    item.innerHTML = `<span class="swatch"></span>${typeName(t)}${can ? "" : `<span class="newmenu-item-type">in PHIS for now</span>`}`;
+    if (!can) { item.disabled = true; item.title = `This app can't create a ${typeName(t)} here yet. Create it in PHIS, then link it here.`; }
     item.addEventListener("click", async () => {
       menu.classList.remove("open");
-      // CREATABLE (from creation.js) only has entries for types with a real backend wired up
-      // so far — everything else still shows the placeholder toast, honestly, rather than
-      // pretending to create something.
-      // Also a placeholder when the type is wired but can't take a link to every selected type
-      // yet (e.g. a scientific object from another one) — /api/create would refuse it anyway.
-      // A link the new node's own DTO can't hold is linked right after, like "Link selection";
-      // that works for any distinct pair of LINKABLE_TYPES (checked against the backend by a test).
-      const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type) && !inExperimentOnly(t, v.type));
-      if (!(t in CREATABLE) || ![...selection.values()].every(canLink)) {
-        showToast(`Would create a ${typeName(t)}, linked to ${names}`);
-        return;
-      }
       const v = await askCreateValues(t);
       if (!v) return;
       const links = [...selection.values()].map(s => ({ type: s.type, id: s.id }));

@@ -143,9 +143,13 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     const soloItems = await page.locator("#newList .newmenu-item").allTextContents();
     // ADJACENT.experiment in full — 6 types, proving the solo case is unconstrained.
     assert.deepEqual(
-      new Set(soloItems.map((s) => s.trim())),
+      new Set(soloItems.map((s) => s.replace("in PHIS for now", "").trim())),
       new Set(["organization", "facility", "project", "person", "factor", "scientific object"])
     );
+    // Types the app can't create yet stay listed, but greyed and saying where to do it.
+    assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), true);
+    assert.match(await page.locator("#newList .newmenu-item", { hasText: "factor" }).textContent() ?? "", /in PHIS for now/);
+    assert.equal(await page.locator("#newList .newmenu-item", { hasText: "project" }).isDisabled(), false);
     await page.locator("#newBtn").click(); // close
 
     // Ctrl-click a real Project into the selection too
@@ -161,7 +165,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment ∩ ADJACENT.project = {project, person} — strictly smaller than
     // either operand alone, which is what proves this is really an intersection and not,
     // say, "whichever set happens to come from the first selected item."
-    assert.deepEqual(new Set(comboItems.map((s) => s.trim())), new Set(["project", "person"]));
+    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").trim())), new Set(["project", "person"]));
   });
 });
 
