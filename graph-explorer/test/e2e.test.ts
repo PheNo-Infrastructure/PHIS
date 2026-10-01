@@ -1885,3 +1885,97 @@ test("e2e: with something selected, search says what each result is to it — ca
     assert.doesNotMatch(await typeLine("Annika"), /link/);
   });
 });
+
+// ---------- factors ----------
+const FL = "https://phis.pheno.no/id/factor/exp.rep";
+const levelDetail = (label = "Replicate") => ({
+  uri: FL, actions: ["rename", "delete"], deleteRemovesLinks: true, deleteWarning: "It also removes its level from 100 scientific objects in PBar1x4.",
+  relations: [
+    { label: "Experiment", items: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] },
+    { label: "Levels", items: [1, 2].map((n) => ({ id: `${FL}.${n}`, type: "factor_level", label: `${label}: ${n}`, factor: FL })) },
+  ],
+});
+
+test("e2e: level chips select with ctrl; plant + level reads 'Set Replicate: 2 on PB001…'; two levels of one factor give a why, not a button; HTML names stay text", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const evil = `<img src=x onerror="window.__pwned=1">Rep`;
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail(evil)) }));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => { selection = new Map([["so-1", { id: "so-1", type: "scientific_object", label: "PB001" }]]); });
+    await page.evaluate(() => openNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(400);
+    await page.locator(`.chip[data-openid="${FL}.2"]`).click({ modifiers: ["Control"] });
+    await page.waitForTimeout(200);
+    assert.match(await page.locator("#linkSelectionBtn").innerText(), /^Set .*Rep: 2 on PB001…$/);
+    await page.locator(`.chip[data-openid="${FL}.1"]`).click({ modifiers: ["Control"] });
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
+    assert.match(await page.locator("#actionbar").innerText(), /Two levels of one factor can't both be on a scientific object/);
+    assert.equal(await page.locator("img").count(), 0);
+    assert.equal(await page.evaluate(() => (window as any).__pwned), undefined);
+  });
+});
+
+test("e2e: set a level on a plant not in its experiment — asked to add it there first, then the level is set", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const links: any[] = [];
+    await page.route("**/api/link", (r) => {
+      const b = r.request().postDataJSON();
+      links.push(b);
+      const asks = links.length === 1;
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(asks
+        ? { needsExperiment: { notInAny: [{ id: "so-1", label: "PB001" }], placeOptions: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] } }
+        : { ok: true, linkedPairs: 1, alreadyLinked: 0, written: [{ id: "so-1", values: [`${FL}.2`], experiments: ["PBar1x4"], only: false }] }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate((fl) => linkItems([{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${fl}.2` }]), FL);
+    await page.waitForTimeout(400);
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /PB001 isn't in PBar1x4, where this factor level belongs\. Add it there first\?/);
+    await page.locator("#linkList .newmenu-item", { hasText: "PBar1x4" }).click();
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(500);
+    assert.deepEqual(links[1].items, [{ type: "scientific_object", id: "so-1" }, { type: "experiment", id: "exp-1" }], "the plant is added to the experiment");
+    assert.deepEqual(links[2].items, [{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${FL}.2` }], "then the level is set");
+  });
+});
+
+test("e2e: + New factor asks for levels (one per line) and posts them; with two experiments it is greyed", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: FL, type: "factor", label: "Replicate" }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => { selection = new Map([["exp-1", { id: "exp-1", type: "experiment", label: "PBar1x4" }]]); renderActionbar(); });
+    await page.locator("#newBtn").click();
+    await page.locator("#newList .newmenu-item", { hasText: "factor" }).click();
+    await page.locator("dialog input[name=name]").fill("Replicate");
+    await page.locator("dialog textarea[name=levels]").fill("1\n2");
+    await page.locator("dialog button[value=ok]").click();
+    await page.waitForTimeout(400);
+    // A form may send a textarea's line breaks as \r\n — the server splits on both.
+    assert.deepEqual({ ...posted, fields: { levels: posted.fields.levels.replace(/\r/g, "") } }, { type: "factor", name: "Replicate", links: [{ type: "experiment", id: "exp-1" }], fields: { levels: "1\n2" } });
+
+    await page.evaluate(() => { selection = new Map([["exp-1", { id: "exp-1", type: "experiment", label: "A" }], ["exp-2", { id: "exp-2", type: "experiment", label: "B" }]]); renderActionbar(); });
+    await page.locator("#newBtn").click();
+    const item = page.locator("#newList .newmenu-item", { hasText: "factor" });
+    assert.equal(await item.isDisabled(), true);
+    assert.match(await item.textContent() ?? "", /one experiment only/);
+  });
+});
+
+test("e2e: deleting a factor confirms with the counted cascade", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail()) }));
+    let msg = "";
+    page.on("dialog", (d) => { msg = d.message(); return d.dismiss(); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(400);
+    await page.evaluate(() => deleteNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(200);
+    assert.equal(msg, "Delete Replicate? It also removes its level from 100 scientific objects in PBar1x4. This cannot be undone.");
+  });
+});

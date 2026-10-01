@@ -715,11 +715,11 @@ button { font-family: inherit; }
 .create-dialog::backdrop { background: rgba(0,0,0,0.35); }
 .create-dialog form { display: flex; flex-direction: column; gap: 10px; }
 .create-dialog label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); }
-.create-dialog input, .create-dialog select {
+.create-dialog input, .create-dialog select, .create-dialog textarea {
   font: inherit; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0;
   color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px;
 }
-.create-dialog input:focus, .create-dialog select:focus { outline: none; border-color: var(--accent); }
+.create-dialog input:focus, .create-dialog select:focus, .create-dialog textarea:focus { outline: none; border-color: var(--accent); }
 .ranking-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
 @media (max-width: 760px) {
@@ -1402,7 +1402,10 @@ async function deleteNode(item, force = false) {
     render();
     return;
   }
-  const alsoUnlinks = related.length ? ` It will also be unlinked from: ${related.map(it => it.label).join(", ")}.` : "";
+  // A type whose delete cascades where the relations don't show says so itself (a factor's levels
+  // vanish from the objects using them — counted by the server).
+  const alsoUnlinks = node?.deleteWarning ? ` ${node.deleteWarning}`
+    : related.length ? ` It will also be unlinked from: ${related.map(it => it.label).join(", ")}.` : "";
   if (!confirm(`Delete ${item.label}?${alsoUnlinks} This cannot be undone.`)) return;
   try {
     const res = await fetch(`api/node?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, {
@@ -1615,7 +1618,7 @@ const escapeHtml = v => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;
 
 function chipHtml(it, unlinkField, expId) {
   const e = escapeHtml;
-  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"><span class="swatch"></span>${e(it.label)}${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
+  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"${it.factor ? ` data-factor="${e(it.factor)}"` : ""}><span class="swatch"></span>${e(it.label)}${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
     + (unlinkField ? `<button class="chip-unlink" data-field="${e(unlinkField)}" data-uri="${e(it.id)}"${expId ? ` data-exp="${e(expId)}"` : ""} title="Unlink">&times;</button>` : "")
     + `</span>`;
 }
@@ -1811,7 +1814,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => {
     chip.addEventListener("click", (e) => {
       const id = chip.dataset.openid;
-      const found = findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim() };
+      const found = findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim(), ...(chip.dataset.factor ? { factor: chip.dataset.factor } : {}) };
       if (e.ctrlKey || e.metaKey) {
         toggleChipSelection(found);
         return;
@@ -1819,12 +1822,16 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       // Plain click still just navigates — but not while unlinking, where the point is to
       // stay put and manage links, not wander off (the × button is the only action there).
       if (unlinking) return;
+      // A level has no page of its own: plain click opens its factor.
+      const target = found.type === "factor_level"
+        ? (findItemById(found.factor) || { id: found.factor, type: "factor", label: found.label.split(":")[0] })
+        : found;
       if (local) {
-        detailPath = [...detailPath, found];
+        detailPath = [...detailPath, target];
         renderDetail();
-        loadNodeDetail(found);
+        loadNodeDetail(target);
       } else {
-        openRelatedNode(found);
+        openRelatedNode(target);
       }
     });
   });
@@ -1945,7 +1952,9 @@ async function askCreateValues(type) {
   }
   const input = (fd) => fd.input === "select"
     ? `<select name="${fd.key}"${fd.required ? " required" : ""}><option value="">Choose…</option>${options[fd.key].map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}</select>`
-    : `<input name="${fd.key}" type="${fd.input || "text"}"${fd.required ? " required" : ""}>`;
+    : fd.input === "lines"
+      ? `<textarea name="${fd.key}" rows="4"${fd.required ? " required" : ""}></textarea>`
+      : `<input name="${fd.key}" type="${fd.input || "text"}"${fd.required ? " required" : ""}>`;
   return new Promise((resolve) => {
     const dlg = document.createElement("dialog");
     dlg.className = "create-dialog";
@@ -2018,7 +2027,7 @@ function linkSelectionLabel() {
   if (types.length !== 2 || !inExperimentOnly(types[0], types[1])) return "Link selection";
   const objects = items.filter(v => v.type === "scientific_object");
   const values = items.filter(v => v.type !== "scientific_object");
-  const what = values.length <= 2 ? andList(values.map(v => v.label)) : `${values.length} germplasm`;
+  const what = values.length <= 2 ? andList(values.map(v => v.label)) : `${values.length} ${typeName(values[0].type, values.length)}`;
   return `Set ${what} on ${objects.length === 1 ? objects[0].label : `${objects.length} ${typeName("scientific_object", objects.length)}`}…`;
 }
 
@@ -2034,7 +2043,10 @@ function linkPlan() {
   if (types.length === 1) {
     return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${typeName(types[0], 2)} can't be linked to each other.` };
   }
-  const pairOk = (a, b) => a !== b && LINKABLE_TYPES.has(a) && LINKABLE_TYPES.has(b) && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a));
+  // An object holds one level per factor.
+  const levels = items.filter(v => v.type === "factor_level");
+  if (new Set(levels.map(l => l.factor)).size < levels.length) return { kind: "none", why: "Two levels of one factor can't both be on a scientific object — keep one." };
+  const pairOk = (a, b) => a !== b && LINKABLE_TYPES.has(a) && LINKABLE_TYPES.has(b) && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a) || inExperimentOnly(a, b));
   const misfit = items.find(v => !items.some(w => w !== v && pairOk(v.type, w.type)));
   return misfit
     ? { kind: "none", why: `${misfit.label} (${nice(misfit.type)}) can't be linked to anything else selected — remove it to link the rest.` }
@@ -2067,7 +2079,11 @@ async function linkItems(items, experiments) {
     if (!res.ok) { showToast(`Failed to link: ${body.error || res.status}`); return; }
     if (body.needsExperiment) {
       const n = body.needsExperiment;
-      experimentChoice = { what: "germplasm", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
+      const names = andList((n.notInAny || []).map(o => escapeHtml(o.label)));
+      experimentChoice = n.placeOptions
+        ? { what: "factor level", lone: n.notInAny, placeOptions: n.placeOptions, retry: () => linkItems(items),
+            lonePrompt: `${names} ${n.notInAny.length === 1 ? "isn't" : "aren't"} in ${escapeHtml(n.placeOptions[0].label)}, where this factor level belongs. Add ${n.notInAny.length === 1 ? "it" : "them"} there first?` }
+        : { what: "germplasm", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
       renderActionbar();
       return;
     }
@@ -2694,9 +2710,14 @@ function renderActionbar() {
     // A link the new node's own DTO can't hold is linked right after, like "Link selection";
     // that works for any distinct pair of LINKABLE_TYPES (checked against the backend by a test).
     const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type) && !inExperimentOnly(t, v.type));
-    const can = t in CREATABLE && [...selection.values()].every(canLink);
-    item.innerHTML = `<span class="swatch"></span>${typeName(t)}${can ? "" : `<span class="newmenu-item-type">in PHIS for now</span>`}`;
-    if (!can) { item.disabled = true; item.title = `This app can't create a ${typeName(t)} here yet. Create it in PHIS, then link it here.`; }
+    const one = CREATABLE[t]?.onlyOne;
+    const tooMany = one && [...selection.values()].filter(v => v.type === one).length > 1;
+    const can = t in CREATABLE && !tooMany && [...selection.values()].every(canLink);
+    item.innerHTML = `<span class="swatch"></span>${typeName(t)}${can ? "" : `<span class="newmenu-item-type">${tooMany ? `one ${typeName(one)} only` : "in PHIS for now"}</span>`}`;
+    if (!can) {
+      item.disabled = true;
+      item.title = tooMany ? `A ${typeName(t)} belongs to one ${typeName(one)} — select just one.` : `This app can't create a ${typeName(t)} here yet. Create it in PHIS, then link it here.`;
+    }
     item.addEventListener("click", async () => {
       menu.classList.remove("open");
       const v = await askCreateValues(t);
