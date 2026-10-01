@@ -75,8 +75,10 @@ async function authedFetch(urlPath: string, init?: RequestInit): Promise<unknown
   return text ? JSON.parse(text) : null;
 }
 
-export async function authedGet(urlPath: string): Promise<{ result: RawItem[] }> {
-  return authedFetch(urlPath) as Promise<{ result: RawItem[] }>;
+// List answers carry pagination metadata (search reads totalCount from it).
+export type ListPage = { result: RawItem[]; metadata?: { pagination?: { totalCount?: number } } };
+export async function authedGet(urlPath: string): Promise<ListPage> {
+  return authedFetch(urlPath) as Promise<ListPage>;
 }
 
 export async function authedGetOne(urlPath: string): Promise<{ result: Record<string, unknown> }> {

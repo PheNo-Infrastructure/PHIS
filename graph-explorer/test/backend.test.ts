@@ -1545,3 +1545,84 @@ test("GET /api/elsewhere: for an experiment's objects, the OTHER experiments eac
     assert.equal(calls.filter((c) => c.includes("scientific_objects?experiment=")).length, 3, "one list per experiment");
   });
 });
+
+// ---------- /api/search ----------
+const SEARCH_NS = { result: { phis: "https://phis.pheno.no/" } };
+function searchStub(calls: string[], overrides: Record<string, () => Response> = {}) {
+  return (async (url: string) => {
+    calls.push(url);
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, SEARCH_NS);
+    for (const [part, make] of Object.entries(overrides)) if (url.includes(part)) return make();
+    if (url.includes("/core/germplasm?")) return jsonResponse(200, {
+      result: [{ uri: "https://phis.pheno.no/id/germplasm/annika", name: "Annika", species: "phis:id/germplasm/barley" }],
+      metadata: { pagination: { totalCount: 182 } },
+    });
+    if (url.includes("/core/experiments/factors?")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+    if (url.includes("/core/experiments?")) return jsonResponse(200, { result: [{ uri: "e1", name: "Annika trial" }], metadata: { pagination: { totalCount: 1 } } });
+    if (url.includes("/core/organisations")) return jsonResponse(200, { result: [{ uri: "o1", name: "Annika Institute" }, { uri: "o2", name: "Other" }] });
+    if (url.includes("/core/facilities?")) return jsonResponse(200, { result: [{ uri: "f1", name: "Greenhouse" }] });
+    if (url.includes("/core/sites?")) return jsonResponse(200, { result: [] });
+    return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+  }) as typeof fetch;
+}
+
+test("GET /api/search fans out with OpenSILEX's name filter (20 a type), totals from pagination, rows like the list route's; types that ignore name= are filtered here", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = searchStub(calls);
+    const res = await realFetch(`${base}/api/search?q=ann`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), [
+      { type: "experiment", total: 1, items: [{ id: "e1", type: "experiment", label: "Annika trial" }] },
+      { type: "germplasm", total: 182, items: [{ id: "phis:id/germplasm/annika", type: "germplasm", label: "Annika", parent: "phis:id/germplasm/barley" }] },
+      { type: "organization", total: 1, items: [{ id: "o1", type: "organization", label: "Annika Institute" }] },
+    ]);
+    assert.ok(calls.some((u) => u.includes("/core/germplasm?name=ann&page_size=20&page=0")));
+    assert.ok(!calls.some((u) => u.includes("/core/organisations?name=")), "organisations ignores name= — never sent");
+    assert.ok(!calls.some((u) => /\/core\/(facilities|sites)\?name=/.test(u)), "facilities/sites ignore name= — never sent");
+  });
+});
+
+test("GET /api/search: one failing type is reported, the others still answer", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = searchStub([], { "/core/germplasm?": () => jsonResponse(500, { result: { message: "boom" } }) });
+    const body = await (await realFetch(`${base}/api/search?q=ann`)).json();
+    const g = body.find((x: any) => x.type === "germplasm");
+    assert.equal(g.total, 0);
+    assert.deepEqual(g.items, []);
+    assert.match(g.error, /boom/);
+    assert.ok(body.some((x: any) => x.type === "experiment" && x.total === 1));
+  });
+});
+
+test("GET /api/search?type=&page= asks only that type, at that page (Show more)", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = searchStub(calls);
+    const body = await (await realFetch(`${base}/api/search?q=ann&type=germplasm&page=2`)).json();
+    assert.equal(body.length, 1);
+    assert.equal(body[0].type, "germplasm");
+    const opensilex = calls.filter((u) => u.includes("/core/") || u.includes("/security/persons"));
+    assert.deepEqual(opensilex.map((u) => u.replace(/^.*\/rest/, "")), ["/core/germplasm?name=ann&page_size=20&page=2"]);
+  });
+});
+
+test("GET /api/search with an empty query answers [] without asking OpenSILEX", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = searchStub(calls);
+    assert.deepEqual(await (await realFetch(`${base}/api/search?q=%20`)).json(), []);
+    assert.equal(calls.length, 0);
+  });
+});
+
+test("GET /api/search: regex characters are escaped (OpenSILEX's name= is a regex) and local filtering stays literal", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = searchStub(calls);
+    await realFetch(`${base}/api/search?q=${encodeURIComponent("Plant 1) a.b")}`);
+    const sent = calls.find((u) => u.includes("/core/germplasm?"))!;
+    assert.equal(decodeURIComponent(sent.split("name=")[1].split("&")[0]), "Plant 1\\) a\\.b");
+  });
+});

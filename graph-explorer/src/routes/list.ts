@@ -6,12 +6,12 @@ const byName = (i: RawItem) => String(i.name ?? i.uri);
 // parent: the one node an item sits under in the category browser (a germplasm's species) —
 // the page lists only parentless items at the category level and an opened node's children
 // under it. Only for strictly single-parent relations; many-to-many ones stay relation chips.
-type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown };
+export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
 // `name`, but persons, datafiles, events and documents don't.
-const listRoutes: Record<string, ListRoute> = {
+export const listRoutes: Record<string, ListRoute> = {
   "/api/organizations": { url: "/core/organisations", type: "organization", label: byName },
   "/api/experiments": { url: "/core/experiments?page_size=500", type: "experiment", label: byName },
   "/api/projects": { url: "/core/projects?page_size=500", type: "project", label: byName },
@@ -36,6 +36,23 @@ const listRoutes: Record<string, ListRoute> = {
   "/api/scientific-object-types": { url: "/core/scientific_objects/used_types", type: "rdf_type", label: byName },
 };
 
+export type Row = { id: string; type: string; label: string; parent?: string };
+
+// One row per OpenSILEX item — shared by the list and search routes so a browsed row and a
+// search hit are the same item (same id form). A germplasm's own uri comes back full
+// (https://phis.pheno.no/id/...) while its species field is often prefixed (phis:id/...), same as
+// the detail pane's chips — so ids and parents are compacted to one form.
+export async function toRows(route: ListRoute, items: RawItem[]): Promise<Row[]> {
+  const rows: Row[] = items.map((i) => ({ id: String(i.uri), type: route.type, label: route.label(i) }));
+  if (!route.parent) return rows;
+  return Promise.all(
+    items.map(async (i, n) => {
+      const p = route.parent!(i);
+      return { ...rows[n], id: await compactUri(String(i.uri)), ...(typeof p === "string" && p ? { parent: await compactUri(p) } : {}) };
+    })
+  );
+}
+
 export const handleList: RouteHandler = async (req, res, { pathname }) => {
   const route = req.method === "GET" ? listRoutes[pathname] : undefined;
   if (!route) return false;
@@ -45,21 +62,12 @@ export const handleList: RouteHandler = async (req, res, { pathname }) => {
   // Body is fully built BEFORE writeHead so a bad shape here still lands in the catch block
   // below instead of sending a 200 header and then failing mid-response (which would hang
   // the connection open forever — a real bug this ordering fix caught during testing).
-  let rows: { id: string; type: string; label: string; parent?: string }[] = items.map((i) => ({ id: String(i.uri), type: route.type, label: route.label(i) }));
+  let rows = await toRows(route, items);
   if (route.parent) {
-    // A germplasm's own uri comes back full (https://phis.pheno.no/id/...) while its species
-    // field is often prefixed (phis:id/...), same as the detail pane's chips — so ids and
-    // parents are compacted to one form. A parent not in the list is dropped: the item then
-    // shows at the category level instead of being hidden under nothing.
-    const ids = await Promise.all(items.map((i) => compactUri(String(i.uri))));
-    const known = new Set(ids);
-    rows = await Promise.all(
-      items.map(async (i, n) => {
-        const p = route.parent!(i);
-        const parent = typeof p === "string" && p ? await compactUri(p) : undefined;
-        return { ...rows[n], id: ids[n], ...(parent && known.has(parent) ? { parent } : {}) };
-      })
-    );
+    // A parent not in the list is dropped: the item then shows at the category level instead of
+    // being hidden under nothing.
+    const known = new Set(rows.map((r) => r.id));
+    rows = rows.map(({ parent, ...r }) => (parent && known.has(parent) ? { ...r, parent } : r));
   }
   const payload = JSON.stringify(rows);
   res.writeHead(200, { "Content-Type": "application/json" });

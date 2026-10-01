@@ -20,6 +20,21 @@ async function withServer(fn: (base: string) => Promise<void>) {
   }
 }
 
+test("live: GET /api/search reaches the real PHIS instance and answers well-shaped groups", async () => {
+  await withServer(async (base) => {
+    const res = await fetch(`${base}/api/search?q=a`);
+    assert.equal(res.status, 200);
+    const groups = (await res.json()) as Array<{ type: string; total: number; items: unknown[]; error?: string }>;
+    assert.ok(Array.isArray(groups));
+    for (const g of groups) {
+      assert.equal(g.error, undefined, `${g.type} failed: ${g.error}`);
+      assert.equal(typeof g.total, "number");
+      assert.ok(g.items.length <= 20);
+      assertWellShapedList(g.items, g.type);
+    }
+  });
+});
+
 function assertWellShapedList(body: unknown, expectedType: string) {
   assert.ok(Array.isArray(body), "response should be an array");
   for (const item of body as Array<Record<string, unknown>>) {

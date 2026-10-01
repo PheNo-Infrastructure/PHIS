@@ -10,6 +10,7 @@ import { handleParent } from "./routes/parent.ts";
 import { handleUnlink } from "./routes/unlink.ts";
 import { handleImport } from "./routes/import.ts";
 import { handleElsewhere } from "./routes/elsewhere.ts";
+import { handleSearch } from "./routes/search.ts";
 
 export { _resetAuthCacheForTests } from "./opensilex.ts";
 
@@ -19,6 +20,7 @@ export { _resetAuthCacheForTests } from "./opensilex.ts";
 const routeHandlers: RouteHandler[] = [
   handleStatic,
   handleList,
+  handleSearch,
   handleCreate,
   handleNodeDetail,
   handleNodeMutation,
