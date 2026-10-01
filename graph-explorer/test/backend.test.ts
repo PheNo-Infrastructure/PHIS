@@ -1683,3 +1683,61 @@ test("factor rename sends the levels back with their uris (OpenSILEX keeps them 
     assert.deepEqual(puts[0], { uri: FAC, name: "Block", experiment: facDto.experiment, levels: facDto.levels });
   });
 });
+
+function levelLinkStub(calls: string[], puts: any[], soExps: Record<string, { experiment: string; experiment_name: string }[]>, rels: any[] = []) {
+  return (async (url: string, init?: RequestInit) => {
+    calls.push(url);
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "ok" }); }
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`)) return jsonResponse(200, { result: facDto });
+    if (url.includes(`/core/experiments/${encodeURIComponent(facDto.experiment)}`)) return jsonResponse(200, { result: { uri: facDto.experiment, name: "PBar1x4" } });
+    const m = url.match(/scientific_objects\/([^/?]+)\/experiments/);
+    if (m) return jsonResponse(200, { result: soExps[decodeURIComponent(m[1])] ?? [] });
+    if (url.includes("?experiment=")) return jsonResponse(200, { result: { uri: "so-1", name: "PB001", rdf_type: "vocabulary:Plant", relations: rels } });
+    if (url.includes("/core/scientific_objects/")) return jsonResponse(200, { result: { uri: "so-x", name: url.includes("so-2") ? "PB002" : "PB001" } });
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+const linkPost = (base: string, items: any[]) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
+const inPbar = [{ experiment: facDto.experiment, experiment_name: "PBar1x4" }, { experiment: "https://phis.pheno.no/id/experiment/other", experiment_name: "Other" }];
+
+test("link object + level: written on the level's own experiment (no question, even when the object is in two), replacing the same factor's old level and keeping the rest", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    const rels = [
+      { property: "vocabulary:hasFactorLevel", value: `${FAC}.1`, inverse: false },
+      { property: "vocabulary:hasFactorLevel", value: "https://phis.pheno.no/id/factor/exp.group.a", inverse: false },
+      { property: "vocabulary:hasGermplasm", value: "https://phis.pheno.no/id/germplasm/annika", inverse: false },
+    ];
+    globalThis.fetch = levelLinkStub([], puts, { "so-1": inPbar }, rels);
+    const res = await linkPost(base, [{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${FAC}.2` }]);
+    const body = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.needsExperiment, undefined);
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].experiment, facDto.experiment);
+    assert.deepEqual(puts[0].relations.map((r: any) => r.value).sort(), [`${FAC}.2`, "https://phis.pheno.no/id/factor/exp.group.a", "https://phis.pheno.no/id/germplasm/annika"].sort());
+  });
+});
+
+test("link object + level: an object not in the level's experiment is asked to be added there first (nothing written)", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = levelLinkStub([], puts, { "so-1": inPbar, "so-2": [{ experiment: "https://phis.pheno.no/id/experiment/other", experiment_name: "Other" }] });
+    const body = await (await linkPost(base, [{ type: "scientific_object", id: "so-1" }, { type: "scientific_object", id: "so-2" }, { type: "factor_level", id: `${FAC}.2` }])).json();
+    assert.deepEqual(body.needsExperiment, { notInAny: [{ id: "so-2", label: "PB002" }], placeOptions: [{ id: facDto.experiment, type: "experiment", label: "PBar1x4" }] });
+    assert.equal(puts.length, 0);
+  });
+});
+
+test("link object + level: two levels of one factor are refused", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = levelLinkStub([], puts, { "so-1": inPbar });
+    const res = await linkPost(base, [{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${FAC}.1` }, { type: "factor_level", id: `${FAC}.2` }]);
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /Two levels of Replicate/);
+    assert.equal(puts.length, 0);
+  });
+});

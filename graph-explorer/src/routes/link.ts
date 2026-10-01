@@ -33,14 +33,14 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // same as clicking "+ New" with a single-type selection that shares no adjacency: honest 400.
   const ops: { r: ResolvedLink; ownerIds: string[]; otherIds: string[] }[] = [];
   // Pairs that can only be linked INSIDE an experiment (a scientific object's germplasm).
-  const inExp: { ownerType: string; field: string; ownerIds: string[]; otherIds: string[] }[] = [];
+  const inExp: { ownerType: string; otherType: string; field: string; ownerIds: string[]; otherIds: string[] }[] = [];
   for (let i = 0; i < types.length; i++) {
     for (let j = i + 1; j < types.length; j++) {
       const r = resolveLink(types[i], types[j]);
       if (!r) {
         for (const [owner, other] of [[types[i], types[j]], [types[j], types[i]]]) {
           const field = NODE_TYPES[owner]?.inExperiment?.byType[other];
-          if (field) inExp.push({ ownerType: owner, field, ownerIds: idsByType.get(owner)!, otherIds: idsByType.get(other)! });
+          if (field) inExp.push({ ownerType: owner, otherType: other, field, ownerIds: idsByType.get(owner)!, otherIds: idsByType.get(other)! });
         }
         continue;
       }
@@ -58,15 +58,31 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     // In-experiment pairs are checked BEFORE anything is written: an object in no experiment
     // can't hold the link at all, and one in several needs the user's pick (nothing ticked by
     // default) — either way the answer is `needsExperiment` and nothing changes yet.
-    const targets: { ownerType: string; field: string; id: string; exps: { id: string; label: string }[]; otherIds: string[] }[] = [];
+    const targets: { ownerType: string; field: string; id: string; exps: { id: string; label: string }[]; otherIds: string[]; fixed?: true }[] = [];
     const chosen = body.experiments ? new Set(await Promise.all(body.experiments.map(compactUri))) : null;
     const notInAny: { id: string; label: string }[] = [];
     const choices = new Map<string, { id: string; label: string; objects: number }>();
     let needsChoice = false;
+    const notInFixed: { id: string; label: string }[] = [];
+    let placeOptions: { id: string; type: string; label: string }[] | null = null;
     for (const p of inExp) {
       const cfg = NODE_TYPES[p.ownerType].inExperiment!;
+      const fixed = cfg.fixedExperiment?.[p.otherType] ? await cfg.fixedExperiment[p.otherType](p.otherIds) : null;
       for (const id of p.ownerIds) {
         const exps = await cfg.experimentsOf(id);
+        if (fixed) {
+          // The value belongs to one experiment: write there only; an object not in it is asked
+          // to be added there first (the page's lone-object question), never silently skipped.
+          const key = await compactUri(fixed.id);
+          const there = (await Promise.all(exps.map(async (e) => ((await compactUri(e.id)) === key ? e : null)))).filter((e) => e !== null);
+          if (!there.length) {
+            notInFixed.push({ id, label: String((await authedGetOne(NODE_TYPES[p.ownerType].getUrl(id))).result.name ?? id) });
+            placeOptions = [{ id: fixed.id, type: "experiment", label: fixed.label }];
+            continue;
+          }
+          targets.push({ ownerType: p.ownerType, field: p.field, id, exps: there, otherIds: p.otherIds, fixed: true });
+          continue;
+        }
         if (!exps.length) {
           notInAny.push({ id, label: String((await authedGetOne(NODE_TYPES[p.ownerType].getUrl(id))).result.name ?? id) });
           continue;
@@ -80,6 +96,12 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
         const keep = chosen ? (await Promise.all(exps.map(async (e) => (chosen.has(await compactUri(e.id)) ? e : null)))).filter((e) => e !== null) : exps;
         targets.push({ ownerType: p.ownerType, field: p.field, id, exps: keep, otherIds: p.otherIds });
       }
+    }
+    if (notInFixed.length) {
+      const out = JSON.stringify({ needsExperiment: { notInAny: notInFixed, placeOptions } });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(out);
+      return;
     }
     if (notInAny.length || needsChoice) {
       const out = JSON.stringify({ needsExperiment: { notInAny, ...(needsChoice && !notInAny.length ? { experiments: [...choices.values()], objects: targets.length } : {}) } });
@@ -99,13 +121,13 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     const written: { id: string; values: string[]; experiments: string[]; only: boolean }[] = [];
     for (const t of targets) {
       if (!t.exps.length) skipped++;
-      else written.push({ id: t.id, values: t.otherIds, experiments: t.exps.map((e) => e.label), only: !chosen });
+      else written.push({ id: t.id, values: t.otherIds, experiments: t.exps.map((e) => e.label), only: !chosen && !t.fixed });
       const cfg = NODE_TYPES[t.ownerType].inExperiment!;
       for (const e of t.exps) {
         await cfg.update(t.id, e.id, { field: t.field, add: t.otherIds });
         linkedPairs += t.otherIds.length;
         touched.add(e.id);
-        if (cfg.childOffer) childOffer.push(...(await cfg.childOffer(t.id, e.id, t.field, t.otherIds)));
+        if (cfg.childOffer && !t.fixed) childOffer.push(...(await cfg.childOffer(t.id, e.id, t.field, t.otherIds)));
       }
     }
     for (const op of ops) {
