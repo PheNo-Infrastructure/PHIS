@@ -1268,6 +1268,31 @@ experiment?" count includes level targets; `factorOfLevel` runs once per object 
 request); PUT /api/node with type factor_level reaches an empty putUrl (API only); level labels
 stale after a factor rename until refetched; /api/create doesn't enforce requiresLink (API only).
 
+## A factor's level list (built 2026-10-01)
+
+**Probed on the ZZ experiment (phis-test).** Every change is a PUT of the whole factor: a level
+sent with its uri and a new name keeps the uri (its objects keep it); a level sent without a uri
+gets `<factor>.<name>` (`/1` appended when taken — a renamed level keeps its old uri, so the name
+can come back); a level left out is accepted and silently dropped from its objects (like a factor
+delete); no levels at all and two levels of one name are accepted too.
+
+**In the app** (same buttons as every other type; the level lives inside its factor, so the
+backend saves the factor — `NodeConfig.rename/remove/create`):
+- **Add:** one factor selected -> + New -> factor level, a name prompt (one level per create, like
+  every type). Two factors selected -> greyed "one factor only". Levels aren't a browsable
+  category, so there is no standalone "+ New".
+- **Rename** on the level's page; "Replicate: 3" and "3" both mean level 3. The level's
+  connections (its factor's Levels list, the plants' chips) are fetched again.
+- **Delete** on the level's page; the confirm counts at delete time: "Delete Replicate: 2? It also
+  removes it from 20 scientific objects in PBar1x4."
+- **Refused:** a name the factor already has (any case); deleting the last level ("A factor needs at
+  least one level — delete the factor instead.").
+- Also fixed: a breadcrumb click now reloads a page whose cached detail was dropped (it showed
+  "No connections found").
+
+Live round trip on the ZZ experiment through the app's API (create, add, duplicate refused, set on
+the plant, rename, counted delete, last level refused), cleaned up.
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only

@@ -2,7 +2,7 @@ import { creatableTypesFor } from "../adjacency.js";
 import { CREATABLE } from "../creation.js";
 import { authedPost, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { applyLink, resolveLink, type ResolvedLink } from "../node-types.ts";
+import { NODE_TYPES, applyLink, resolveLink, type ResolvedLink } from "../node-types.ts";
 
 export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
   if (pathname !== "/api/create" || req.method !== "POST") return false;
@@ -84,6 +84,16 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
     }
     (payload[field] as string[] | undefined) ??= [];
     (payload[field] as string[]).push(link.id);
+  }
+  const hook = NODE_TYPES[type]?.create;
+  if (hook) {
+    // Saved inside another record (a factor level in its factor) — no POST, no follow-up links.
+    await respondOpenSilexErrors(res, async () => {
+      const item = await hook(payload);
+      res.writeHead(201, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ...item, type }));
+    });
+    return true;
   }
   await respondOpenSilexErrors(res, async () => {
     const created = String((await authedPost(config.url, payload)).result);

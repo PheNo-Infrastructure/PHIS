@@ -2044,3 +2044,71 @@ test("e2e: deleting a factor confirms with the counted cascade", async () => {
     assert.equal(msg, "Delete Replicate? It also removes its level from 100 scientific objects in PBar1x4. This cannot be undone.");
   });
 });
+
+// ---------- a factor's level list ----------
+test("e2e: + New factor level with one factor selected asks its name and posts it under that factor; two factors grey it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: `${FL}.3`, type: "factor_level", label: "Replicate: 3", factor: FL }) }); });
+    let asked = "";
+    page.on("dialog", (d) => { asked = d.message(); return d.accept("3"); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate((fl) => { selection = new Map([[fl, { id: fl, type: "factor", label: "Replicate" }]]); renderActionbar(); }, FL);
+    await page.locator("#newBtn").click();
+    await page.locator("#newList .newmenu-item", { hasText: "factor level" }).click();
+    await page.waitForTimeout(400);
+    assert.equal(asked, "Name for the new factor level?");
+    assert.deepEqual(posted, { type: "factor_level", name: "3", links: [{ type: "factor", id: FL }], fields: {} });
+    assert.match(await page.locator("#toast").textContent() ?? "", /Created Replicate: 3/);
+
+    await page.evaluate((fl) => { selection = new Map([[fl, { id: fl, type: "factor", label: "A" }], ["f2", { id: "f2", type: "factor", label: "B" }]]); renderActionbar(); }, FL);
+    await page.locator("#newBtn").click();
+    const item = page.locator("#newList .newmenu-item", { hasText: "factor level" });
+    assert.equal(await item.isDisabled(), true);
+    assert.match(await item.textContent() ?? "", /one factor only/);
+  });
+});
+
+test("e2e: a level's page renames it (the factor's list is fetched again) and its delete confirm counts the objects that lose it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let renamedTo: any = null;
+    const loads: string[] = [];
+    // The factor as the server has it: level 2 is "3" once the rename went through.
+    const renamedLevels = () => { const d = levelDetail(); if (renamedTo) d.relations[1].items[1].label = "Replicate: 3"; return d; };
+    await page.route("**/api/node-detail*", (r) => {
+      const type = new URL(r.request().url()).searchParams.get("type")!;
+      loads.push(type);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(type === "factor_level"
+        ? { uri: `${FL}.2`, actions: ["rename", "delete", "link"], deleteRemovesLinks: true, deleteWarning: "It also removes it from 20 scientific objects in PBar1x4.", relations: [
+            { label: "Factor", items: [{ id: FL, type: "factor", label: "Replicate" }] },
+            { label: "Experiment", items: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] },
+          ] }
+        : renamedLevels()) });
+    });
+    await page.route("**/api/node", (r) => { renamedTo = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: `${FL}.2`, type: "factor_level", label: "Replicate: 3" }) }); });
+    const dialogs: string[] = [];
+    page.on("dialog", (d) => { dialogs.push(`${d.type()}: ${d.message()} [${d.defaultValue()}]`); return d.type() === "prompt" ? d.accept("Replicate: 3") : d.dismiss(); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openRelatedNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(400);
+    await page.locator(`.chip[data-openid="${FL}.2"]`).click();
+    await page.waitForTimeout(400);
+    await page.locator("#renameNodeBtn").click();
+    await page.waitForTimeout(400);
+    assert.equal(dialogs[0], "prompt: New name for Replicate: 2? [Replicate: 2]");
+    assert.deepEqual(renamedTo, { type: "factor_level", id: `${FL}.2`, name: "Replicate: 3" });
+    assert.match(await page.locator(".node-title").innerText(), /Replicate: 3/);
+    const factorLoads = loads.filter((t) => t === "factor").length;
+    await page.locator(".crumb", { hasText: /^Replicate$/ }).click();
+    await page.waitForTimeout(400);
+    assert.equal(loads.filter((t) => t === "factor").length, factorLoads + 1, "the factor's levels are fetched again after the rename");
+
+    await page.locator(`.chip[data-openid="${FL}.2"]`).click();
+    await page.waitForTimeout(400);
+    await page.locator("#deleteNodeBtn").click();
+    await page.waitForTimeout(400);
+    assert.equal(dialogs.at(-1), "confirm: Delete Replicate: 3? It also removes it from 20 scientific objects in PBar1x4. This cannot be undone. []");
+  });
+});

@@ -1044,7 +1044,7 @@ function renderCrumbs() {
     btn.className = "crumb" + (isLast ? " current" : "");
     btn.textContent = seg.label;
     if (!isLast) {
-      btn.addEventListener("click", () => { clearSearch(); path = path.slice(0, i + 1); render(); });
+      btn.addEventListener("click", () => navigateTo(path.slice(0, i + 1))); // loads it again if its cached detail was dropped
     }
     els.crumbs.appendChild(btn);
   });
@@ -1356,6 +1356,8 @@ async function renameNode(item) {
     // item is the same object referenced from selection/CATEGORY_ITEMS/path (see how "+ New"
     // auto-attach relies on the same sharing) — mutating it in place keeps everywhere in sync.
     item.label = body.label;
+    // Its connections still show the old name (a factor's Levels list, a plant's level chip).
+    (NODE_DETAIL[item.id]?.relations ?? []).flatMap(rel => rel.items).forEach(it => delete NODE_DETAIL[it.id]);
     render();
     showToast(`Renamed to ${body.label}`);
   } catch (err) {

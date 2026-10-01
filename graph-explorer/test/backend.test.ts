@@ -1795,3 +1795,95 @@ test("link object + level: two levels of one factor are refused", async () => {
     assert.equal(puts.length, 0);
   });
 });
+
+// ---------- a factor's level list (every change is a PUT of the whole factor) ----------
+// A stateful factor: the PUT replaces its levels, minting `<factor>.<name>` for a level sent
+// without a uri (as OpenSILEX does — probed 2026-10-01).
+function levelListStub(puts: any[], calls: string[] = [], levels = facDto.levels) {
+  let dto = { ...facDto, levels };
+  return (async (url: string, init?: RequestInit) => {
+    calls.push(`${init?.method ?? "GET"} ${url}`);
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    if (init?.method === "PUT") {
+      const body = JSON.parse(String(init.body));
+      puts.push(body);
+      dto = { ...dto, levels: body.levels.map((l: any) => ({ uri: l.uri ?? `${FAC}.${l.name}`, name: l.name, description: null })) };
+      return jsonResponse(200, { result: FAC });
+    }
+    const lv = url.match(/\/core\/experiments\/factors\/levels\/([^?]+)/);
+    if (lv) {
+      const l = dto.levels.find((x) => x.uri === decodeURIComponent(lv[1]));
+      return l ? jsonResponse(200, { result: l }) : jsonResponse(404, { result: { message: "not found" } });
+    }
+    if (url.includes("/core/scientific_objects?") && url.includes("factor_levels=")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 20 } } });
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`)) return jsonResponse(200, { result: dto });
+    if (url.includes(`/core/experiments/${encodeURIComponent(facDto.experiment)}`)) return jsonResponse(200, { result: { uri: facDto.experiment, name: "PBar1x4" } });
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+const nodePut = (base: string, body: unknown) => realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+test("factor level rename: saves its factor with that level renamed (uri kept), the 'Replicate: ' prefix may be typed; a name the factor has is refused", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = levelListStub(puts);
+    const res = await nodePut(base, { type: "factor_level", id: `${FAC}.2`, name: "Replicate: 3" });
+    const body = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.label, "Replicate: 3");
+    assert.equal(puts[0].name, "Replicate");
+    assert.deepEqual(puts[0].levels, [{ uri: `${FAC}.1`, name: "1", description: null }, { uri: `${FAC}.2`, name: "3", description: null }]);
+
+    const dup = await nodePut(base, { type: "factor_level", id: `${FAC}.2`, name: "1" });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /Replicate already has a level named "1"/);
+    assert.equal(puts.length, 1);
+  });
+});
+
+test("factor level delete: rename/delete allowed, the confirm counts its objects, delete saves the factor without it; the last level is refused", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    const calls: string[] = [];
+    globalThis.fetch = levelListStub(puts, calls);
+    const d = await (await realFetch(`${base}/api/node-detail?type=factor_level&id=${encodeURIComponent(`${FAC}.2`)}`)).json();
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    assert.equal(d.deleteRemovesLinks, true);
+    assert.equal(d.deleteWarning, "It also removes it from 20 scientific objects in PBar1x4.");
+
+    const res = await realFetch(`${base}/api/node?type=factor_level&id=${encodeURIComponent(`${FAC}.2`)}`, { method: "DELETE" });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.deepEqual(puts[0].levels, [{ uri: `${FAC}.1`, name: "1", description: null }]);
+    assert.ok(!calls.some((c) => c.startsWith("DELETE")));
+
+    const last = await realFetch(`${base}/api/node?type=factor_level&id=${encodeURIComponent(`${FAC}.1`)}`, { method: "DELETE" });
+    assert.equal(last.status, 400);
+    assert.match((await last.json()).error, /at least one level — delete the factor instead/);
+    assert.equal(puts.length, 1);
+  });
+});
+
+test("create factor level: one factor selected, saved with the level added, answered as 'Replicate: 3'; a name it has or two factors refused", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = levelListStub(puts);
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const fac = { type: "factor", id: FAC };
+
+    const ok = await create({ type: "factor_level", name: " 3 ", links: [fac] });
+    const body = await ok.json();
+    assert.equal(ok.status, 201, JSON.stringify(body));
+    assert.deepEqual(body, { id: `${FAC}.3`, type: "factor_level", label: "Replicate: 3", factor: FAC });
+    assert.deepEqual(puts[0].levels.at(-1), { name: "3", description: null });
+    assert.equal(puts[0].levels.length, 3);
+
+    const dup = await create({ type: "factor_level", name: "REPLICATE: 2", links: [fac] });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /already has a level named "2"/);
+
+    const two = await create({ type: "factor_level", name: "4", links: [fac, { type: "factor", id: "f2" }] });
+    assert.equal(two.status, 400);
+    assert.equal(puts.length, 1);
+  });
+});

@@ -79,4 +79,13 @@ export const CREATABLE = {
     scalarLinkFields: ["experiment"],
     fields: [{ key: "levels", label: "Levels (one per line)", input: "lines", required: true }],
   },
+  // One more level of one factor: no POST of its own — the backend saves the factor with the
+  // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
+  // a selected factor reaches it.
+  factor_level: {
+    requiresLink: "factor",
+    onlyOne: "factor",
+    linkFields: { factor: "factor" },
+    scalarLinkFields: ["factor"],
+  },
 };

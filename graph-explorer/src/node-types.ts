@@ -41,6 +41,12 @@ export type NodeConfig = {
   // A sentence for the delete confirm when OpenSILEX's delete cascades somewhere the relations
   // don't show (a factor's levels vanish from the objects using them — probed). Counted, never guessed.
   deleteWarning?: (id: string, dto: Record<string, unknown>) => Promise<string>;
+  // For a node that lives inside another one's record (a factor level inside its factor): rename,
+  // delete and create save that record instead of putUrl/deleteUrl/CREATABLE.url. rename answers
+  // the new label, create the new item.
+  rename?: (id: string, name: string) => Promise<string>;
+  remove?: (id: string) => Promise<void>;
+  create?: (payload: Record<string, unknown>) => Promise<{ id: string; label: string; [k: string]: unknown }>;
   // Has an is_public flag the app can set (experiments, germplasm): shown in the detail pane and
   // changed from the selection pane. Other types have no visibility flag in OpenSILEX.
   visibility?: true;
@@ -185,9 +191,44 @@ async function factorLevelChips(expId: string, uris: string[]) {
   for (const f of factors) for (const l of f.levels ?? []) byLevel.set(await compactUri(l.uri), levelItem(f, l));
   return Promise.all(uris.map(async (u) => byLevel.get(await compactUri(u)) ?? { id: u, type: "factor_level", label: u, factor: "" }));
 }
+const getFactor = async (id: string) => (await authedGetOne(`/core/experiments/factors/${encodeURIComponent(id)}`)).result as unknown as FactorDto;
 async function factorLevelItems(factorId: string) {
-  const f = (await authedGetOne(`/core/experiments/factors/${encodeURIComponent(factorId)}`)).result as unknown as FactorDto;
+  const f = await getFactor(factorId);
   return (f.levels ?? []).map((l) => levelItem(f, l));
+}
+
+// How many objects in the factor's experiment have any of these levels (OpenSILEX's factor_levels filter).
+async function levelUsers(f: FactorDto, levelUris: string[]) {
+  if (!levelUris.length || !f.experiment) return { n: 0, expName: "" };
+  const filter = levelUris.map((u) => `factor_levels=${encodeURIComponent(u)}`).join("&");
+  const n = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(f.experiment)}&${filter}&page_size=1`)).metadata?.pagination?.totalCount ?? 0;
+  const expName = n ? String((await authedGetOne(`/core/experiments/${encodeURIComponent(f.experiment)}`)).result.name ?? f.experiment) : "";
+  return { n, expName };
+}
+const objectsIn = (n: number, expName: string) => `${n} scientific object${n === 1 ? "" : "s"} in ${expName}`;
+
+// A level's name as typed: "Replicate: 3" and "3" both mean level "3" of Replicate (the app's
+// label carries the factor's name, so a rename prompt starts with it).
+function levelName(f: FactorDto, typed: string) {
+  const t = typed.trim();
+  const prefix = `${f.name}:`;
+  const n = (t.toLowerCase().startsWith(prefix.toLowerCase()) ? t.slice(prefix.length) : t).trim();
+  if (!n) throw new OpenSilexError(400, "A level needs a name.");
+  return n;
+}
+
+// Every change to a factor's level list is a PUT of the whole factor (probed 2026-10-01: a kept
+// uri keeps its objects, a level sent without one gets a new uri, a missing one is dropped from
+// its objects). OpenSILEX would also take two levels of one name ("b", "b/1") and no levels at
+// all — both refused here.
+async function saveLevels(f: FactorDto, levels: { uri?: string; name: string; description?: string | null }[]) {
+  if (!levels.length) throw new OpenSilexError(400, "A factor needs at least one level — delete the factor instead.");
+  const seen = new Set<string>();
+  for (const l of levels) {
+    if (seen.has(l.name.toLowerCase())) throw new OpenSilexError(400, `${f.name} already has a level named "${l.name}".`);
+    seen.add(l.name.toLowerCase());
+  }
+  await authedPut("/core/experiments/factors", NODE_TYPES.factor.putPayload!({ ...f, levels }, f.name));
 }
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
 
@@ -502,14 +543,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     }),
     deleteRemovesLinks: true,
     deleteWarning: async (_id, dto) => {
-      const levels = (dto.levels as { uri: string }[] | undefined) ?? [];
-      const exp = String(dto.experiment ?? "");
-      if (!levels.length || !exp) return "No scientific object uses it.";
-      const filter = levels.map((l) => `factor_levels=${encodeURIComponent(l.uri)}`).join("&");
-      const n = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(exp)}&${filter}&page_size=1`)).metadata?.pagination?.totalCount ?? 0;
-      if (!n) return "No scientific object uses it.";
-      const expName = String((await authedGetOne(`/core/experiments/${encodeURIComponent(exp)}`)).result.name ?? exp);
-      return `It also removes its level from ${n} scientific object${n === 1 ? "" : "s"} in ${expName}.`;
+      const f = dto as unknown as FactorDto;
+      const { n, expName } = await levelUsers(f, (f.levels ?? []).map((l) => l.uri));
+      return n ? `It also removes its level from ${objectsIn(n, expName)}.` : "No scientific object uses it.";
     },
     queryRelations: [
       { label: "Experiment", type: "experiment", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/experiments` },
@@ -518,14 +554,39 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
   },
   // A factor's level: only uri + name in OpenSILEX. A type of its own so it can be opened (its
   // factor, experiment and the objects that have it) and set on scientific objects (their
-  // inExperiment.byType); its factor/experiment come from factorOfLevel.
+  // inExperiment.byType); its factor/experiment come from factorOfLevel. It lives inside its
+  // factor, so rename/delete/create save the factor (saveLevels).
   factor_level: {
     getUrl: (id) => `/core/experiments/factors/levels/${encodeURIComponent(id)}`,
     putUrl: "",
     deleteUrl: () => "",
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["link"],
+    actions: ["rename", "delete", "link"],
+    rename: async (id, typed) => {
+      const f = await factorOfLevel(id);
+      const name = levelName(f, typed);
+      await saveLevels(f, f.levels.map((l) => (l.uri === id ? { ...l, name } : l)));
+      return `${f.name}: ${name}`;
+    },
+    remove: async (id) => {
+      const f = await factorOfLevel(id);
+      await saveLevels(f, f.levels.filter((l) => l.uri !== id));
+    },
+    create: async (payload) => {
+      const f = await getFactor(String(payload.factor));
+      const name = levelName(f, String(payload.name));
+      await saveLevels(f, [...f.levels, { name }]);
+      const after = await getFactor(f.uri);
+      const made = after.levels.find((l) => l.name === name && !f.levels.some((o) => o.uri === l.uri));
+      if (!made) throw new OpenSilexError(502, `Saved, but ${f.name} doesn't list level "${name}".`);
+      return levelItem(after, made);
+    },
+    deleteRemovesLinks: true,
+    deleteWarning: async (id) => {
+      const { n, expName } = await levelUsers(await factorOfLevel(id), [id]);
+      return n ? `It also removes it from ${objectsIn(n, expName)}.` : "No scientific object has it.";
+    },
     queryRelations: [
       { label: "Factor", type: "factor", url: () => "", load: async (id) => { const f = await factorOfLevel(id); return [{ id: f.uri, label: f.name }]; } },
       { label: "Experiment", type: "experiment", url: () => "", load: async (id) => {

@@ -37,7 +37,7 @@ export const ADJACENT = {
   scientific_object: ["experiment", "scientific_object", "germplasm", "factor"],
   germplasm: ["scientific_object", "germplasm"],
   variable: ["entity", "entity_of_interest", "characteristic", "method", "unit"],
-  factor: ["experiment"],
+  factor: ["experiment", "factor_level"],
   device: ["facility", "person"],
   provenance: ["device", "person"],
   event: ["scientific_object", "device", "facility"],

@@ -86,6 +86,14 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       });
       return true;
     }
+    if (name && config.rename) {
+      await respondOpenSilexErrors(res, async () => {
+        const label = await config.rename!(id, name);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id, type, label }));
+      });
+      return true;
+    }
     await respondOpenSilexErrors(res, async () => {
       const current = await updateNode(config, id, { name, unlink, link, isPublic });
       const finalName = name ?? String(current.name ?? "");
@@ -142,7 +150,8 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
         }
       }
       for (const url of (await config.deleteFirst?.(id)) ?? []) await authedDelete(url);
-      await authedDelete(config.deleteUrl(id));
+      if (config.remove) await config.remove(id);
+      else await authedDelete(config.deleteUrl(id));
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     });
