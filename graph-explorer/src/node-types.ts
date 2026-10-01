@@ -265,17 +265,54 @@ export const germplasmKind = (rdfType: unknown) => {
   return k in GERMPLASM_RANK ? k : undefined;
 };
 
-// OpenSILEX takes two germplasm of one name (the second gets "/1" — probed); the app refuses it
-// within one type (a species and a variety may share a name).
-async function refuseTakenGermplasmName(name: string, rdfType: string, self?: string) {
+// OpenSILEX takes two germplasm (or devices) of one name — the second gets "/1" (probed); the app
+// refuses it. `list` is the list endpoint with any filter already on it (`?` or `&` follows).
+async function refuseTakenName(list: string, name: string, what: string, self?: string) {
   const want = name.trim().toLowerCase();
   if (!want) throw new OpenSilexError(400, "A name is required.");
-  const rows = (await authedGet(`/core/germplasm?name=${encodeURIComponent(`^${escapeRegex(name.trim())}$`)}&rdf_type=${encodeURIComponent(rdfType)}&page_size=50`)).result;
+  const rows = (await authedGet(`${list}${list.includes("?") ? "&" : "?"}name=${encodeURIComponent(`^${escapeRegex(name.trim())}$`)}&page_size=50`)).result;
   const selfKey = self ? await compactUri(self) : null;
   for (const r of rows) {
     if (String(r.name).toLowerCase() !== want || (selfKey && (await compactUri(String(r.uri))) === selfKey)) continue;
-    throw new OpenSilexError(400, `There is already a ${germplasmKind(rdfType)} named "${r.name}".`);
+    throw new OpenSilexError(400, `There is already a ${what} named "${r.name}".`);
   }
+}
+// Within one germplasm type: a species and a variety may share a name.
+const refuseTakenGermplasmName = (name: string, rdfType: string, self?: string) =>
+  refuseTakenName(`/core/germplasm?rdf_type=${encodeURIComponent(rdfType)}`, name, germplasmKind(rdfType) ?? "germplasm", self);
+
+// A device's place is the `to` of its latest move (probed 2026-10-01: OpenSILEX's own
+// /devices?facility= answers the same way). Newest first.
+const dateOf = (iso: unknown) => String(iso ?? "").slice(0, 10);
+async function movesOf(deviceId: string) {
+  const evs = (await authedGet(`/core/events?target=${encodeURIComponent(deviceId)}&page_size=500`)).result
+    .filter((e) => /move/i.test(String(e.rdf_type_name ?? e.rdf_type)));
+  const full = await Promise.all(evs.map(async (e) => (await authedGetOne(`/core/events/moves/${encodeURIComponent(e.uri)}`)).result as Record<string, any>));
+  return full.sort((a, b) => String(b.end ?? b.start ?? "").localeCompare(String(a.end ?? a.start ?? "")));
+}
+const facilityName = async (id: unknown) => String((await authedGetOne(`/core/facilities/${encodeURIComponent(String(id))}`)).result.name ?? id);
+// One move per device. A past day is stamped at noon UTC (reads the same date in every time zone);
+// today gets the actual time, so two moves on one day keep their order (latest = where it is). A
+// move needs targets_positions, even empty, or OpenSILEX fails (probed).
+const today = () => new Date().toISOString().slice(0, 10);
+const postMove = (deviceId: string, facilityId: string, date: string) =>
+  authedPost("/core/events/moves", [{ rdf_type: "oeev:Move", is_instant: true, end: date === today() ? new Date().toISOString() : `${date}T12:00:00Z`, targets: [deviceId], to: facilityId, targets_positions: [] }]);
+
+// Link selection with devices and one facility: each device not already there gets a move.
+export async function moveDevices(deviceIds: string[], facilityIds: string[], date?: string) {
+  if (facilityIds.length !== 1) throw new OpenSilexError(400, "A device is in one facility at a time — select one facility.");
+  const day = date ?? today();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new OpenSilexError(400, "The date must look like 2026-10-01.");
+  const to = await compactUri(facilityIds[0]);
+  let linked = 0;
+  let already = 0;
+  for (const id of deviceIds) {
+    const here = (await movesOf(id))[0]?.location?.to;
+    if (here && (await compactUri(String(here))) === to) { already++; continue; }
+    await postMove(id, facilityIds[0], day);
+    linked++;
+  }
+  return { linked, already };
 }
 
 // Link selection with germplasm only: the one highest-ranked item (a species or a variety) is set
@@ -456,6 +493,88 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Devices", field: "devices", type: "device" },
     ],
     updateLinkFields: ["organizations", "sites"],
+    queryRelations: [
+      { label: "Devices located here", type: "device", url: (id) => `/core/devices?facility=${encodeURIComponent(id)}&page_size=500` },
+    ],
+    // OpenSILEX deletes a facility devices were moved to and leaves their moves pointing nowhere (probed).
+    deleteBlockedBy: async (_dto, id) => {
+      const devs = (await authedGet(`/core/devices?facility=${encodeURIComponent(id)}&page_size=500`)).result;
+      return devs.length ? `has devices located here: ${devs.map((d) => String(d.name ?? d.uri)).join(", ")}. Move them to another facility first.` : null;
+    },
+  },
+  // A device's place and history are its moves (events). Deleting a device leaves its moves
+  // pointing at nothing (probed), so they go first and the confirm says so.
+  device: {
+    getUrl: (id) => `/core/devices/${encodeURIComponent(id)}`,
+    putUrl: "/core/devices",
+    deleteUrl: (id) => `/core/devices/${encodeURIComponent(id)}`,
+    relationGroups: [],
+    updateLinkFields: [],
+    facts: (d) => factsOf([["Type", d.rdf_type_name], ["Brand", d.brand], ["Model", d.constructor_model], ["Serial number", d.serial_number], ["In use since", d.start_up], ["Removed", d.removal]]),
+    rename: async (id, name) => {
+      await refuseTakenName("/core/devices", name, "device", id);
+      await updateNode(NODE_TYPES.device, id, { name: name.trim() });
+      return name.trim();
+    },
+    // From a selected facility: created, then moved there today.
+    create: async (p) => {
+      const { facility, ...fields } = p;
+      const name = String(fields.name ?? "").trim();
+      await refuseTakenName("/core/devices", name, "device");
+      const made = (await authedPost("/core/devices", { ...fields, name })).result as unknown;
+      const uri = String(Array.isArray(made) ? made[0] : made);
+      if (facility) await postMove(uri, String(facility), today());
+      return { id: uri, label: name };
+    },
+    // Device -> facility is a move (today, unless /api/link's date says otherwise) — so a new
+    // facility made from a selected device, or "Link existing", moves it there too.
+    contextLinks: {
+      location: {
+        otherType: "facility",
+        current: async (id) => { const to = (await movesOf(id))[0]?.location?.to; return to ? [String(to)] : []; },
+        link: async (id, facilityId) => { await moveDevices([id], [facilityId]); },
+        unlink: async () => { throw new OpenSilexError(400, "A device leaves a facility by moving to another one — select it with the new facility and Link selection."); },
+      },
+    },
+    deleteRemovesLinks: true,
+    deleteFirst: async (id) => (await movesOf(id)).map((m) => `/core/events/moves/${encodeURIComponent(m.uri)}`),
+    deleteWarning: async (id) => {
+      const n = (await movesOf(id)).length;
+      return n ? `Its ${n} move${n === 1 ? " is" : "s are"} deleted with it.` : "";
+    },
+    queryRelations: [
+      { label: "Location", type: "facility", url: () => "", load: async (id) => {
+        const to = (await movesOf(id))[0]?.location?.to;
+        return to ? [{ id: String(to), label: await facilityName(to) }] : [];
+      } },
+      { label: "Person in charge", type: "person", url: () => "", load: async (id) => {
+        const p = (await authedGetOne(`/core/devices/${encodeURIComponent(id)}`)).result.person_in_charge;
+        return p ? [{ id: String(p), label: personName((await authedGetOne(`/security/persons/${encodeURIComponent(String(p))}`)).result) }] : [];
+      } },
+      { label: "History", type: "event", url: () => "", load: async (id) =>
+        Promise.all((await movesOf(id)).map(async (m) => ({ id: String(m.uri), label: `${dateOf(m.end ?? m.start)} · moved to ${m.location?.to ? await facilityName(m.location.to) : "?"}` }))) },
+    ],
+  },
+  // ponytail: every event is read as a move — the only kind in PHIS today; another kind needs its own getUrl.
+  event: {
+    getUrl: (id) => `/core/events/moves/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: (id) => `/core/events/moves/${encodeURIComponent(id)}`,
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: ["delete"],
+    deleteRemovesLinks: true,
+    facts: (e) => factsOf([["Date", dateOf(e.end ?? e.start)], ["Description", e.description]]),
+    queryRelations: [
+      { label: "Device", type: "device", url: () => "", load: async (id) => {
+        const targets = ((await authedGetOne(`/core/events/moves/${encodeURIComponent(id)}`)).result.targets ?? []) as string[];
+        return Promise.all(targets.map(async (t) => ({ id: t, label: String((await authedGetOne(`/core/devices/${encodeURIComponent(t)}`)).result.name ?? t) })));
+      } },
+      ...(["to", "from"] as const).map((end) => ({ label: end === "to" ? "To" : "From", type: "facility", url: () => "", load: async (id: string) => {
+        const f = ((await authedGetOne(`/core/events/moves/${encodeURIComponent(id)}`)).result.location as Record<string, unknown> | null)?.[end];
+        return f ? [{ id: String(f), label: await facilityName(f) }] : [];
+      } })),
+    ],
   },
   organization: {
     getUrl: (id) => `/core/organisations/${encodeURIComponent(id)}`,

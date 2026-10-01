@@ -1409,3 +1409,35 @@ Probed on phis-test (ZZ throwaways, cleaned):
   experiments, scientific objects, organizations, sites, factors (one read per record).
 - Hand-over (PUT with another `publisher`): germplasm ignores it; facility / scientific object /
   project accept `publisher: {uri}` but the read-back was inconclusive. Re-probe before building.
+
+## Devices and moves (built 2026-10-01, A–Z gap 5)
+
+**Scope (user-approved):** devices and their moves. Variables, data files, provenances and documents
+are empty in PHIS and belong to stage 2 (observations), designed with the measurement import.
+
+**Probed on phis-test (ZZ throwaways, cleaned):** 64 device classes (a tree under
+vocabulary:Device). A device's place is the `to` of its latest move (an oeev:Move event; POST
+/core/events/moves takes an array and needs `targets_positions: []`); `/devices?facility=X` answers
+the same way; `/devices/{uri}/facility` returns nothing. History: `/events?target=device`. Duplicate
+device names are accepted ("/1"). OpenSILEX accepts deleting a device that has moves and a facility
+devices were moved to — both leave moves pointing at nothing.
+
+**In the app:**
+- **Device page:** facts (type, brand, model, serial number, in use since, removed) · Location (its
+  latest move) · Person in charge · History (moves, newest first, "2023-05-01 · moved to HOLT_BR_1").
+- **Move page:** date, description · Device · To · From. Delete only.
+- **Facility page:** "Devices located here"; its delete is blocked while any are ("Move them to
+  another facility first").
+- **+ New device** (Devices list, or from a selected facility — then moved there today): name, type
+  (device classes), optional brand, model, serial number. A taken name is refused.
+- **Rename** (taken name refused); **delete** takes its moves first, and the confirm says how many.
+- **Move:** devices + one facility -> Link selection "Move Specim FX10e to HOLT_BR_1…" asks the date
+  (today by default) and adds a move per device; one already there is counted, not moved. Two
+  facilities -> the why line. No Unlink selection (a device leaves by moving elsewhere). A past date
+  is stamped at noon UTC; today gets the real time, so same-day moves keep their order.
+- Device <-> facility is also a contextLink (a move today), so "Link existing" and + New facility
+  from a selected device work too.
+
+**Deferred minors:** the events list labels a move by its description while chips say
+"date · moved to X"; the old facility's "Devices located here" stays cached after a move until
+reopened; every event is read as a move (the only kind in PHIS today).

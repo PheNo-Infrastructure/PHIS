@@ -2196,3 +2196,49 @@ test("e2e: People lists Accounts, Groups and Profiles; a supervisor chip opens t
     assert.deepEqual(crumbs.slice(-2), ["Persons", "Anna Berg"]);
   });
 });
+
+// ---------- devices ----------
+test("e2e: devices + a facility read 'Move Specim FX10e to HOLT_BR_1…', ask the date (today) and post it; two facilities give a why; no Unlink selection", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let linked: any = null;
+    await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
+    let asked = "";
+    page.on("dialog", (d) => { asked = `${d.message()} [${d.defaultValue()}]`; return d.accept("2026-09-30"); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const dev = { id: "dev-1", type: "device", label: "Specim FX10e" };
+    const fac = { id: "fac-1", type: "facility", label: "HOLT_BR_1" };
+    const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
+    await set([dev, fac]);
+    assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Move Specim FX10e to HOLT_BR_1…");
+    assert.equal(await page.locator("#unlinkSelectionBtn").count(), 0);
+    await page.locator("#linkSelectionBtn").click();
+    await page.waitForTimeout(400);
+    assert.equal(asked, `Moved to HOLT_BR_1 on which date? (YYYY-MM-DD) [${new Date().toISOString().slice(0, 10)}]`);
+    assert.deepEqual(linked, { items: [{ type: "device", id: "dev-1" }, { type: "facility", id: "fac-1" }], date: "2026-09-30" });
+
+    await set([dev, fac, { id: "fac-2", type: "facility", label: "HOLT_PT" }]);
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
+    assert.match(await page.locator("#actionbar").innerText(), /A device is in one facility at a time — select one facility/);
+  });
+});
+
+test("e2e: + New device from the Devices list asks name, type (OpenSILEX's device classes) and optional brand, model, serial number", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/device-types", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "vocabulary:RGBCamera", type: "rdf_type", label: "RGB camera" }]) }));
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "dev-new", type: "device", label: "ZZ cam" }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Setup");
+    await openRow(page, "Devices");
+    await page.locator("#newStandaloneBtn").click();
+    await page.waitForTimeout(300);
+    await page.locator("dialog input[name=name]").fill("ZZ cam");
+    await page.locator("dialog select[name=rdf_type]").selectOption("vocabulary:RGBCamera");
+    await page.locator("dialog input[name=brand]").fill("Nikon");
+    await page.locator("dialog button[value=ok]").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posted, { type: "device", name: "ZZ cam", links: [], fields: { rdf_type: "vocabulary:RGBCamera", brand: "Nikon" } }); // empty optional fields are left out
+  });
+});

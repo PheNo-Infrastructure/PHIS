@@ -167,7 +167,7 @@ test("POST /api/create rejects a type with no creation config", async () => {
     const res = await realFetch(`${base}/api/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "device", name: "x", links: [] }),
+      body: JSON.stringify({ type: "variable", name: "x", links: [] }),
     });
     assert.equal(res.status, 400);
     const body = await res.json();
@@ -1054,6 +1054,7 @@ test("GET /api/node-detail maps a FacilityGetDTO into relation groups", async ()
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/devices?facility=")) return jsonResponse(200, { result: [] }); // no devices located there
       if (url.includes("/core/facilities/fac-1")) {
         return jsonResponse(200, {
           result: {
@@ -1158,6 +1159,7 @@ test("PUT /api/node with `unlink` drops just that one uri from its field, keeps 
     let putBody: unknown = null;
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/devices?facility=")) return jsonResponse(200, { result: [] }); // no devices located there
       if (url.includes("/core/facilities/fac-1") && init?.method === undefined) {
         return jsonResponse(200, {
           result: {
@@ -1274,6 +1276,8 @@ test("DELETE /api/node surfaces an OpenSILEX 409 (referential-integrity conflict
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/facilities/fac-1") && !init?.method) return jsonResponse(200, { result: { uri: "fac-1", name: "F" } });
+      if (url.includes("/core/devices?facility=")) return jsonResponse(200, { result: [] }); // no devices located there
       if (url.includes("/core/facilities/fac-1") && init?.method === "DELETE") {
         return jsonResponse(409, { result: { message: "The facility cannot be deleted because it is used in 1 Triples" } });
       }
@@ -1291,6 +1295,8 @@ test("DELETE /api/node succeeds when OpenSILEX allows it", async () => {
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/facilities/fac-1") && !init?.method) return jsonResponse(200, { result: { uri: "fac-1", name: "F" } });
+      if (url.includes("/core/devices?facility=")) return jsonResponse(200, { result: [] }); // no devices located there
       if (url.includes("/core/facilities/fac-1") && init?.method === "DELETE") {
         return jsonResponse(200, { result: "fac-1" });
       }
@@ -2124,5 +2130,125 @@ test("profile page: its rights as a fact; the groups that use it", async () => {
     assert.deepEqual(groupItems(d, "Used in groups"), [["group", "Researchers"]]);
     assert.deepEqual((await (await realFetch(`${base}/api/groups`)).json()).map((r: any) => r.label), ["Researchers"]);
     assert.deepEqual((await (await realFetch(`${base}/api/profiles`)).json()).map((r: any) => r.label), ["Researcher profile"]);
+  });
+});
+
+// ---------- devices and moves (probed on phis-test 2026-10-01) ----------
+const DEV = "https://phis.pheno.no/id/device/specim_fx10e";
+const DEV2 = "https://phis.pheno.no/id/device/nikon_z6iii";
+const FAC1 = "https://phis.pheno.no/id/organization/facility.holt_br_1";
+const FAC2 = "https://phis.pheno.no/id/organization/facility.holt_pt";
+const MV_OLD = "https://phis.pheno.no/set/event/m-old";
+const MV_NEW = "https://phis.pheno.no/set/event/m-new";
+function deviceStub(log: { puts: any[]; posts: { url: string; body: any }[]; deletes: string[] }) {
+  const devices: Record<string, any> = {
+    [DEV]: { uri: DEV, name: "Specim FX10e", rdf_type: "vocabulary:HyperspectralCamera", rdf_type_name: "hyperspectral camera", brand: "Specim", constructor_model: "FX10e", serial_number: "S-1", person_in_charge: "https://orcid.org/1", start_up: "2022-09-01", removal: null, relations: [] },
+    [DEV2]: { uri: DEV2, name: "Nikon Z6III", rdf_type: "vocabulary:RGBCamera", rdf_type_name: "RGB camera", brand: "Nikon", relations: [] },
+  };
+  const moves: Record<string, any> = {
+    [MV_OLD]: { uri: MV_OLD, rdf_type_name: "Move", end: "2022-09-12T22:00Z", description: "Installed", targets: [DEV], location: { from: null, to: FAC2 } },
+    [MV_NEW]: { uri: MV_NEW, rdf_type_name: "Move", end: "2023-05-01T10:00Z", description: "Moved to the lab", targets: [DEV], location: { from: FAC2, to: FAC1 } },
+  };
+  const facilities: Record<string, any> = { [FAC1]: { uri: FAC1, name: "HOLT_BR_1", organizations: [], sites: [], devices: [] }, [FAC2]: { uri: FAC2, name: "HOLT_PT", organizations: [], sites: [], devices: [] } };
+  return (async (url: string, init?: RequestInit) => {
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    const u = new URL(url);
+    const path = decodeURIComponent(u.pathname.replace(/^.*\/rest/, ""));
+    if (init?.method === "PUT") { log.puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "ok" }); }
+    if (init?.method === "POST") { const body = JSON.parse(String(init.body)); log.posts.push({ url: path, body }); return jsonResponse(201, { result: path.includes("moves") ? ["https://phis.pheno.no/set/event/m-made"] : "https://phis.pheno.no/id/device/zz_made" }); }
+    if (init?.method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+    const list = (rows: unknown[]) => jsonResponse(200, { result: rows, metadata: { pagination: { totalCount: rows.length } } });
+    let m;
+    if (path === "/core/events") { const t = u.searchParams.get("target"); return list(Object.values(moves).filter((mv) => !t || mv.targets.includes(t)).map(({ location, ...rest }) => rest)); }
+    if ((m = path.match(/^\/core\/events\/moves\/(.+)$/))) return moves[m[1]] ? jsonResponse(200, { result: moves[m[1]] }) : jsonResponse(404, { result: { message: "nope" } });
+    if (path === "/core/devices") {
+      const f = u.searchParams.get("facility"), name = u.searchParams.get("name");
+      return list(Object.values(devices).filter((d) => (!f || (f === FAC1 && d.uri === DEV)) && (!name || new RegExp(name, "i").test(d.name))));
+    }
+    if ((m = path.match(/^\/core\/devices\/(.+)$/))) return jsonResponse(200, { result: devices[m[1]] });
+    if ((m = path.match(/^\/core\/facilities\/(.+)$/))) return jsonResponse(200, { result: facilities[m[1]] });
+    if ((m = path.match(/^\/security\/persons\/(.+)$/))) return jsonResponse(200, { result: { uri: m[1], first_name: "Marius", last_name: "Klemetsen" } });
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+const devLog = () => ({ puts: [] as any[], posts: [] as { url: string; body: any }[], deletes: [] as string[] });
+
+test("device page: facts; location from its latest move; person in charge; history newest first; deleting it takes its moves (said in the confirm)", async () => {
+  await withServer(async (base) => {
+    const log = devLog();
+    globalThis.fetch = deviceStub(log);
+    const d = await detailOf(base, "device", DEV);
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    assert.deepEqual(d.facts, [{ label: "Type", value: "hyperspectral camera" }, { label: "Brand", value: "Specim" }, { label: "Model", value: "FX10e" }, { label: "Serial number", value: "S-1" }, { label: "In use since", value: "2022-09-01" }]);
+    assert.deepEqual(groupItems(d, "Location"), [["facility", "HOLT_BR_1"]]);
+    assert.deepEqual(groupItems(d, "Person in charge"), [["person", "Marius Klemetsen"]]);
+    assert.deepEqual(groupItems(d, "History"), [["event", "2023-05-01 · moved to HOLT_BR_1"], ["event", "2022-09-12 · moved to HOLT_PT"]]);
+    assert.equal(d.deleteWarning, "Its 2 moves are deleted with it.");
+    assert.equal((await realFetch(`${base}/api/node?type=device&id=${encodeURIComponent(DEV)}`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(log.deletes, [`/core/events/moves/${MV_OLD}`, `/core/events/moves/${MV_NEW}`, `/core/devices/${DEV}`].sort().filter((x) => x.includes("moves")).concat([`/core/devices/${DEV}`]));
+  });
+});
+
+test("move page: date and description; its device, from and to; delete only", async () => {
+  await withServer(async (base) => {
+    const log = devLog();
+    globalThis.fetch = deviceStub(log);
+    const d = await detailOf(base, "event", MV_NEW);
+    assert.deepEqual(d.actions, ["delete"]);
+    assert.deepEqual(d.facts, [{ label: "Date", value: "2023-05-01" }, { label: "Description", value: "Moved to the lab" }]);
+    assert.deepEqual(groupItems(d, "Device"), [["device", "Specim FX10e"]]);
+    assert.deepEqual(groupItems(d, "To"), [["facility", "HOLT_BR_1"]]);
+    assert.deepEqual(groupItems(d, "From"), [["facility", "HOLT_PT"]]);
+    assert.equal((await realFetch(`${base}/api/node?type=event&id=${encodeURIComponent(MV_NEW)}`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(log.deletes, [`/core/events/moves/${MV_NEW}`]);
+  });
+});
+
+test("facility page lists the devices located there, and its delete is blocked while any are", async () => {
+  await withServer(async (base) => {
+    const log = devLog();
+    globalThis.fetch = deviceStub(log);
+    const d = await detailOf(base, "facility", FAC1);
+    assert.deepEqual(groupItems(d, "Devices located here"), [["device", "Specim FX10e"]]);
+    assert.equal(d.deleteBlocked, "has devices located here: Specim FX10e. Move them to another facility first.");
+    assert.equal((await realFetch(`${base}/api/node?type=facility&id=${encodeURIComponent(FAC1)}`, { method: "DELETE" })).status, 409);
+    assert.equal((await detailOf(base, "facility", FAC2)).deleteBlocked, undefined);
+  });
+});
+
+test("create device: type + optional brand/model/serial; a taken name is refused; from a selected facility it is moved there today", async () => {
+  await withServer(async (base) => {
+    const log = devLog();
+    globalThis.fetch = deviceStub(log);
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const ok = await create({ type: "device", name: "ZZ cam", links: [], fields: { rdf_type: "vocabulary:RGBCamera", brand: "Nikon" } });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts[0], { url: "/core/devices", body: { name: "ZZ cam", rdf_type: "vocabulary:RGBCamera", brand: "Nikon" } });
+    const dup = await create({ type: "device", name: "specim fx10E", links: [], fields: { rdf_type: "vocabulary:RGBCamera" } });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /There is already a device named "Specim FX10e"/);
+    const inFac = await create({ type: "device", name: "ZZ cam 2", links: [{ type: "facility", id: FAC2 }], fields: { rdf_type: "vocabulary:RGBCamera" } });
+    assert.equal(inFac.status, 201, await inFac.clone().text());
+    const mv = log.posts.find((p) => p.url === "/core/events/moves")!;
+    assert.deepEqual({ ...mv.body[0], end: mv.body[0].end.slice(0, 10) }, { rdf_type: "oeev:Move", is_instant: true, end: new Date().toISOString().slice(0, 10), targets: ["https://phis.pheno.no/id/device/zz_made"], to: FAC2, targets_positions: [] });
+  });
+});
+
+test("link device + facility = a move on the given date; a device already there is counted, not moved; two facilities refused", async () => {
+  await withServer(async (base) => {
+    const log = devLog();
+    globalThis.fetch = deviceStub(log);
+    const post = (items: any[], date?: string) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, ...(date ? { date } : {}) }) });
+    const r = await post([{ type: "device", id: DEV2 }, { type: "device", id: DEV }, { type: "facility", id: FAC2 }], "2026-09-01");
+    assert.deepEqual(await r.json(), { ok: true, linkedPairs: 2, alreadyLinked: 0 });
+    assert.deepEqual(log.posts.map((p) => [p.url, p.body[0].targets, p.body[0].to, p.body[0].end]), [["/core/events/moves", [DEV2], FAC2, "2026-09-01T12:00:00Z"], ["/core/events/moves", [DEV], FAC2, "2026-09-01T12:00:00Z"]]);
+    log.posts.length = 0;
+    const same = await post([{ type: "device", id: DEV }, { type: "facility", id: FAC1 }], "2026-10-01");
+    assert.deepEqual(await same.json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
+    assert.equal(log.posts.length, 0);
+    const two = await post([{ type: "device", id: DEV }, { type: "facility", id: FAC1 }, { type: "facility", id: FAC2 }], "2026-09-01");
+    assert.equal(two.status, 400);
+    assert.match((await two.json()).error, /one facility/);
   });
 });

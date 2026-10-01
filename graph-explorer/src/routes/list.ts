@@ -3,12 +3,20 @@ import type { RouteHandler } from "../http.ts";
 import { accountItem, germplasmKind, personName } from "../node-types.ts";
 
 const byName = (i: RawItem) => String(i.name ?? i.uri);
+// A class tree ({uri, name, children}) as one list, by name.
+const flattenClasses = (tree: RawItem[]): RawItem[] => {
+  const out: RawItem[] = [];
+  const walk = (n: RawItem) => { out.push(n); ((n.children as RawItem[] | undefined) ?? []).forEach(walk); };
+  tree.forEach(walk);
+  return out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+};
 
 // parent: the one node an item sits under in the category browser (a germplasm's species) —
 // the page lists only parentless items at the category level and an opened node's children
 // under it. Only for strictly single-parent relations; many-to-many ones stay relation chips.
 // kind: what the item is within its type (a germplasm's species/variety/accession).
-export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined };
+// rows: reshapes the answer first (a class tree flattened to a list).
+export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; rows?: (result: RawItem[]) => RawItem[] };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
@@ -36,6 +44,8 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/factors": { url: "/core/experiments/factors?page_size=500", type: "factor", label: byName },
   // Not a browsable category: the scientific-object classes (Plant, Plot, Sample, ...) that
   // feed the create form's Type dropdown (CREATABLE.scientific_object.fields).
+  // Not a browsable category: the device classes (camera, RGB camera, …) for the create form.
+  "/api/device-types": { url: "/ontology/subclasses_of?parent_type=vocabulary%3ADevice&ignoreRootClasses=true", type: "rdf_type", label: byName, rows: flattenClasses },
   "/api/scientific-object-types": { url: "/core/scientific_objects/used_types", type: "rdf_type", label: byName },
 };
 
@@ -63,7 +73,8 @@ export const handleList: RouteHandler = async (req, res, { pathname }) => {
   const route = req.method === "GET" ? listRoutes[pathname] : undefined;
   if (!route) return false;
 
-  const items = (await authedGet(route.url)).result;
+  const raw = (await authedGet(route.url)).result;
+  const items = route.rows && Array.isArray(raw) ? route.rows(raw) : raw;
   if (!Array.isArray(items)) throw new Error(`OpenSILEX response for ${req.url} did not contain a result list`);
   // Body is fully built BEFORE writeHead so a bad shape here still lands in the catch block
   // below instead of sending a 200 header and then failing mid-response (which would hang

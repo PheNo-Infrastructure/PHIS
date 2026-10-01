@@ -1,6 +1,6 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, applyLink, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
+import { NODE_TYPES, applyLink, moveDevices, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
 
 // Links a whole selection of EXISTING nodes directly (no third node created) — the counterpart
 // to the unlink flow in routes/node.ts, and to /api/create's `links` (which links a NEW node to
@@ -12,7 +12,8 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   if (pathname !== "/api/link" || req.method !== "POST") return false;
 
   // `experiments`: the user's pick for links that live inside an experiment (see below).
-  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[] };
+  // `date`: the day of the move, for devices + a facility.
+  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string };
   const items = (body.items ?? []).filter((it) => it?.type && it?.id);
   if (items.length < 2) {
     res.writeHead(400, { "Content-Type": "application/json" });
@@ -27,6 +28,16 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     else idsByType.set(it.type, [it.id]);
   }
   const types = [...idsByType.keys()];
+
+  // Devices + one facility: each device is moved there (a Move event — its history is kept).
+  if (types.length === 2 && idsByType.has("device") && idsByType.has("facility")) {
+    await respondOpenSilexErrors(res, async () => {
+      const r = await moveDevices(idsByType.get("device")!, idsByType.get("facility")!, body.date);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+    });
+    return true;
+  }
 
   // Germplasm only: a species or variety set on the others (their own record's field).
   if (types.length === 1 && types[0] === "germplasm") {

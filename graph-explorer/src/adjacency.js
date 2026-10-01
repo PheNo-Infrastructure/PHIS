@@ -30,7 +30,7 @@ export const ADJACENT = {
   // not the org/facility — but creatableTypesFor only reads the SELECTED type's list, so they
   // have to be listed here too to be offered from an org or facility.
   organization: ["facility", "organization", "site", "experiment"],
-  facility: ["organization", "site", "experiment"],
+  facility: ["organization", "site", "experiment", "device"],
   site: ["organization", "facility"],
   experiment: ["organization", "facility", "project", "person", "factor", "scientific_object"],
   project: ["experiment", "project", "person"],

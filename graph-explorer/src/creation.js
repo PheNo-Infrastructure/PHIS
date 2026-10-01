@@ -94,6 +94,19 @@ export const CREATABLE = {
       { key: "species", label: "Species (for a variety or accession)", input: "select", options: "api/germplasm-species" },
     ],
   },
+  // A device: its type from OpenSILEX's device classes; from a selected facility it is moved
+  // there today (NODE_TYPES.device.create). A taken name is refused.
+  device: {
+    url: "/core/devices",
+    linkFields: { facility: "facility" },
+    scalarLinkFields: ["facility"],
+    fields: [
+      { key: "rdf_type", label: "Type", input: "select", options: "api/device-types", required: true },
+      { key: "brand", label: "Brand" },
+      { key: "constructor_model", label: "Model" },
+      { key: "serial_number", label: "Serial number" },
+    ],
+  },
   // One more level of one factor: no POST of its own — the backend saves the factor with the
   // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
   // a selected factor reaches it.
