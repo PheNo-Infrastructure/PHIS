@@ -1,6 +1,6 @@
 import { authedGet, compactUri, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
-import { germplasmKind } from "../node-types.ts";
+import { accountItem, germplasmKind, personName } from "../node-types.ts";
 
 const byName = (i: RawItem) => String(i.name ?? i.uri);
 
@@ -20,11 +20,10 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/facilities": { url: "/core/facilities?page_size=500", type: "facility", label: byName },
   "/api/devices": { url: "/core/devices?page_size=500", type: "device", label: byName },
   "/api/sites": { url: "/core/sites?page_size=500", type: "site", label: byName },
-  "/api/persons": {
-    url: "/security/persons?page_size=500",
-    type: "person",
-    label: (i) => `${String(i.first_name ?? "")} ${String(i.last_name ?? "")}`.trim() || String(i.email ?? i.uri),
-  },
+  "/api/persons": { url: "/security/persons?page_size=500", type: "person", label: personName },
+  "/api/accounts": { url: "/security/accounts?page_size=500", type: "account", label: (i) => accountItem(i).label },
+  "/api/groups": { url: "/security/groups?page_size=500", type: "group", label: byName },
+  "/api/profiles": { url: "/security/profiles?page_size=500", type: "profile", label: byName },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
   "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species, kind: (i) => germplasmKind(i.rdf_type) },

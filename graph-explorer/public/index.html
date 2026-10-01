@@ -401,6 +401,8 @@ button { font-family: inherit; }
   word-break: break-all;
 }
 .node-visibility { font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
+.node-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-muted); margin-top: 6px; }
+.node-facts b { font-weight: 600; color: var(--ink); margin-right: 4px; }
 
 .rel-group { display: flex; flex-direction: column; gap: 8px; }
 .unlink-intro {
@@ -826,6 +828,9 @@ const TYPES = {
   device:     { color: "var(--type-device)", soft: "var(--type-device-soft)", name: "device" },
   site:       { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "site" },
   person:     { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "person", plural: "persons" },
+  account:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "account" },
+  group:      { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "group" },
+  profile:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "profile" },
   data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "data file" },
   provenance: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "provenance" },
   event:      { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "event" },
@@ -841,12 +846,12 @@ const typeName = (t, n = 1) => {
    scientist looks for things (trial first), each with a plain-words `hint` underneath. Designed
    2026-09-30 by simulating a trial scientist; to be checked with real users (first-click tasks).
    PHIS's grouping (Scientific Organization / Scientific Information / Data) is replaced on purpose.
-   Admin surfaces (accounts, groups, vocabulary) stay out of this app. */
+   Accounts, groups and profiles are in People (user, 2026-10-01: "the whole PHIS stack"); read-only for now. */
 const ROOT = [
   { id: "cat-trials", type: "category", label: "Trials", hint: "experiments, scientific objects, germplasm, factors" },
   { id: "cat-data", type: "category", label: "Data", hint: "variables, measurements, data files, provenances" },
   { id: "cat-setup", type: "category", label: "Setup", hint: "sites, facilities, devices, events" },
-  { id: "cat-people", type: "category", label: "People", hint: "persons, organizations, projects" },
+  { id: "cat-people", type: "category", label: "People", hint: "persons, accounts, groups, organizations, projects" },
 ];
 
 const CATEGORY_ITEMS = {
@@ -871,6 +876,9 @@ const CATEGORY_ITEMS = {
   ],
   "cat-people": [
     { id: "cat-persons", type: "category", label: "Persons", hint: "people: scientists, technicians" },
+    { id: "cat-accounts", type: "category", label: "Accounts", hint: "who can log in to PHIS" },
+    { id: "cat-groups", type: "category", label: "Groups", hint: "who an experiment is shared with, and their rights" },
+    { id: "cat-profiles", type: "category", label: "Profiles", hint: "bundles of rights a group member gets" },
     { id: "cat-organizations", type: "category", label: "Organizations", hint: "institutes, research groups" },
     { id: "cat-projects", type: "category", label: "Projects", hint: "funded projects" },
   ],
@@ -885,6 +893,9 @@ const CATEGORY_ITEMS = {
   "cat-devices": [],
   "cat-sites": [],
   "cat-persons": [],
+  "cat-accounts": [],
+  "cat-groups": [],
+  "cat-profiles": [],
   "cat-scientificobjects": [],
   "cat-variables": [],
   "cat-germplasm": [],
@@ -1709,6 +1720,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         ${canDelete ? `<button class="btn ${deleteRedirects ? "warn" : "ghost"} small" id="deleteNodeBtn">${deleteLabel}</button>` : ""}
       </div>
       ${node ? `<div class="node-uri">${escapeHtml(node.uri)}</div>` : ""}
+      ${node?.facts?.length ? `<div class="node-facts">${node.facts.map(f => `<span><b>${escapeHtml(f.label)}</b> ${escapeHtml(f.value)}</span>`).join("")}</div>` : ""}
       ${node && "isPublic" in node ? `<div class="node-visibility">${node.isPublic ? "Public: every PHIS user can see it." : "Private: in PHIS, only admins and the people it's shared with see it."}</div>` : ""}
     </div>
   `;
@@ -3023,6 +3035,9 @@ const CATEGORY_FOR_TYPE = {
   device: "cat-devices",
   site: "cat-sites",
   person: "cat-persons",
+  account: "cat-accounts",
+  group: "cat-groups",
+  profile: "cat-profiles",
   scientific_object: "cat-scientificobjects",
   variable: "cat-variables",
   germplasm: "cat-germplasm",
@@ -3046,6 +3061,9 @@ const BACKED_CATEGORIES = {
   "cat-devices": "api/devices",
   "cat-sites": "api/sites",
   "cat-persons": "api/persons",
+  "cat-accounts": "api/accounts",
+  "cat-groups": "api/groups",
+  "cat-profiles": "api/profiles",
   "cat-scientificobjects": "api/scientific-objects",
   "cat-variables": "api/variables",
   "cat-germplasm": "api/germplasm",

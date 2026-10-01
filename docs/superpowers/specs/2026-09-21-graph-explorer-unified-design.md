@@ -1358,3 +1358,33 @@ design — it must not be reachable from outside until real auth exists.
   user directly — "I like the plugin design, I don't care what language
   it is in." Rebuilt in TypeScript as part of the new backend, not
   imported from `utils/instrument_registry.py`.
+
+## People: persons, accounts, groups, profiles (step 1 built 2026-10-01)
+
+**Why.** The user wants the whole PHIS stack, people included; persons only make sense next to
+their accounts (user, 2026-10-01). Login to the explorer itself is a separate, later discussion.
+
+**OpenSILEX (probed on phis-test, read-only).** Account: email, admin, enabled, language, at most
+one `linked_person`; its groups from `/security/accounts/{uri}/groups`. Person: name, email,
+affiliation, ORCID, at most one `account`. Group: name, description, `user_profiles` = members, each
+an account with a profile. Profile: name + `credentials` (rights). Groups are what experiments,
+germplasm, organizations and sites are shared with (`groups` field). Persons are experiment
+supervisors, project coordinators/contacts, a device's person in charge. No list endpoint filters
+by person or group, and the experiment list carries neither supervisors nor groups.
+
+**Steps (user-approved order):** 1 browse read-only; 2 linking (supervisor/contact, group sharing,
+account-person); 3 editing (persons, groups, members with a profile); 4 accounts (create,
+enable/disable, admin) last — never touch the explorer's own admin account.
+
+**Step 1, built:** People has Persons, Accounts, Groups, Profiles (accounts and groups searchable).
+Pages, read-only, with a new **facts line** (plain values under the title):
+- Person: Email, Affiliation, ORCID · Account · Scientific/Technical supervisor of (experiments) ·
+  Coordinator / Scientific contact / Administrative contact of (projects).
+- Account (labelled with its person's name, else its email): Email, Admin, Enabled · Person ·
+  Groups, each "Researchers · Researcher profile".
+- Group: Description · Members, each with their profile · Shared experiments · Shared germplasm.
+- Profile: Rights · Used in groups.
+Supervisor/contact chips on experiments and projects now open the person.
+Scans: a person's or group's experiments read every experiment (7 on test; ponytail note with the
+ceiling). Not yet: organizations/sites shared with a group (one read each), device person in charge
+(devices have no page yet).

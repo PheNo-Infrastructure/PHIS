@@ -2026,3 +2026,103 @@ test("germplasm rows and chips carry their kind (species / variety / accession) 
     assert.equal(d.relations.find((r: any) => r.label === "Species").items[0].kind, "species");
   });
 });
+
+// ---------- people: persons, accounts, groups, profiles (read-only pages, probed on phis-test 2026-10-01) ----------
+const SEC = "https://phis.pheno.no/id/";
+const P_ANNA = "https://orcid.org/0000-0001";
+const A_ANNA = `${SEC}user/account.anna`;
+const A_BOB = `${SEC}user/account.bob`;
+const G_RES = `${SEC}group/researchers`;
+const PR_RES = `${SEC}profile/researcher_profile`;
+const people = {
+  persons: [{ uri: P_ANNA, first_name: "Anna", last_name: "Berg", email: "anna@uit.no", affiliation: "UiT", orcid: P_ANNA, account: A_ANNA }],
+  accounts: [
+    { uri: A_ANNA, email: "anna@uit.no", admin: false, enable: true, linked_person: P_ANNA, person_first_name: "Anna", person_last_name: "Berg" },
+    { uri: A_BOB, email: "bob@nmbu.no", admin: true, enable: false, linked_person: null, person_first_name: null, person_last_name: null },
+  ],
+  groups: [{ uri: G_RES, name: "Researchers", description: "Authenticated users", user_profiles: [
+    { user_uri: A_ANNA, user_name: "anna@uit.no", profile_uri: PR_RES, profile_name: "Researcher profile" },
+    { user_uri: A_BOB, user_name: "bob@nmbu.no", profile_uri: PR_RES, profile_name: "Researcher profile" },
+  ] }],
+  profiles: [{ uri: PR_RES, name: "Researcher profile", credentials: ["germplasm-access", "data-modification"] }],
+  experiments: [
+    { uri: "exp-1", name: "PBar1x4", scientific_supervisors: [P_ANNA], technical_supervisors: [], groups: [{ uri: G_RES, name: "Researchers" }] },
+    { uri: "exp-2", name: "Other", scientific_supervisors: [], technical_supervisors: [P_ANNA], groups: [] },
+  ],
+  projects: [{ uri: "proj-1", name: "TraitFinder", coordinators: [{ uri: P_ANNA, name: "Anna Berg" }], scientific_contacts: [], administrative_contacts: [] }],
+  germplasm: [{ uri: "g-1", name: "Annika", groups: [{ uri: G_RES, name: "Researchers" }] }],
+};
+function peopleStub() {
+  return (async (url: string) => {
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    const u = new URL(url);
+    const path = decodeURIComponent(u.pathname.replace(/^.*\/rest/, ""));
+    const list = (rows: unknown[]) => jsonResponse(200, { result: rows, metadata: { pagination: { totalCount: rows.length } } });
+    const one = (rows: any[], id: string) => { const r = rows.find((x) => x.uri === id); return r ? jsonResponse(200, { result: r }) : jsonResponse(404, { result: { message: "nope" } }); };
+    let m;
+    if ((m = path.match(/^\/security\/accounts\/(.+)\/groups$/))) return list(people.groups.filter((g) => g.user_profiles.some((p) => p.user_uri === m[1])).map(({ uri, name }) => ({ uri, name })));
+    for (const kind of ["persons", "accounts", "groups", "profiles"] as const) {
+      if (path === `/security/${kind}`) return list(people[kind]);
+      if ((m = path.match(new RegExp(`^/security/${kind}/(.+)$`)))) return one(people[kind], m[1]);
+    }
+    if (path === "/core/experiments") return list(people.experiments.map(({ uri, name }) => ({ uri, name })));
+    if ((m = path.match(/^\/core\/experiments\/(.+)$/))) return one(people.experiments, m[1]);
+    if (path === "/core/projects") return list(people.projects);
+    if (path === "/core/germplasm") return list(people.germplasm);
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+const detailOf = async (base: string, type: string, id: string) => (await realFetch(`${base}/api/node-detail?type=${type}&id=${encodeURIComponent(id)}`)).json();
+const groupItems = (d: any, label: string) => d.relations.find((r: any) => r.label === label)?.items.map((i: any) => [i.type, i.label]);
+
+test("person page: read-only; facts (email, affiliation, ORCID); its account, the experiments it supervises (both kinds) and its projects (by role)", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = peopleStub();
+    const d = await detailOf(base, "person", P_ANNA);
+    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.facts, [{ label: "Email", value: "anna@uit.no" }, { label: "Affiliation", value: "UiT" }, { label: "ORCID", value: P_ANNA }]);
+    assert.deepEqual(groupItems(d, "Account"), [["account", "Anna Berg"]]);
+    assert.deepEqual(groupItems(d, "Scientific supervisor of"), [["experiment", "PBar1x4"]]);
+    assert.deepEqual(groupItems(d, "Technical supervisor of"), [["experiment", "Other"]]);
+    assert.deepEqual(groupItems(d, "Coordinator of"), [["project", "TraitFinder"]]);
+    assert.equal(groupItems(d, "Scientific contact of"), undefined, "empty roles are left out");
+  });
+});
+
+test("account page: facts (email, admin, enabled); its person and its groups with the role in each; the label falls back to the email", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = peopleStub();
+    const d = await detailOf(base, "account", A_ANNA);
+    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.facts, [{ label: "Email", value: "anna@uit.no" }, { label: "Admin", value: "no" }, { label: "Enabled", value: "yes" }]);
+    assert.deepEqual(groupItems(d, "Person"), [["person", "Anna Berg"]]);
+    assert.deepEqual(groupItems(d, "Groups"), [["group", "Researchers · Researcher profile"]]);
+    const rows = await (await realFetch(`${base}/api/accounts`)).json();
+    assert.deepEqual(rows.map((r: any) => [r.type, r.label]), [["account", "Anna Berg"], ["account", "bob@nmbu.no"]]);
+  });
+});
+
+test("group page: members with their profile; the experiments and germplasm shared with it", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = peopleStub();
+    const d = await detailOf(base, "group", G_RES);
+    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.facts, [{ label: "Description", value: "Authenticated users" }]);
+    assert.deepEqual(groupItems(d, "Members"), [["account", "Anna Berg · Researcher profile"], ["account", "bob@nmbu.no · Researcher profile"]]);
+    assert.deepEqual(groupItems(d, "Shared experiments"), [["experiment", "PBar1x4"]]);
+    assert.deepEqual(groupItems(d, "Shared germplasm"), [["germplasm", "Annika"]]);
+  });
+});
+
+test("profile page: its rights as a fact; the groups that use it", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = peopleStub();
+    const d = await detailOf(base, "profile", PR_RES);
+    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.facts, [{ label: "Rights", value: "germplasm-access, data-modification" }]);
+    assert.deepEqual(groupItems(d, "Used in groups"), [["group", "Researchers"]]);
+    assert.deepEqual((await (await realFetch(`${base}/api/groups`)).json()).map((r: any) => r.label), ["Researchers"]);
+    assert.deepEqual((await (await realFetch(`${base}/api/profiles`)).json()).map((r: any) => r.label), ["Researcher profile"]);
+  });
+});

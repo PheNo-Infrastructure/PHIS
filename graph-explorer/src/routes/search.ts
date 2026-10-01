@@ -11,6 +11,7 @@ const SEARCH_TYPES: Record<string, string> = {
   variable: "/api/variables", provenance: "/api/provenances",
   facility: "/api/facilities", device: "/api/devices", site: "/api/sites",
   organization: "/api/organizations", project: "/api/projects", person: "/api/persons",
+  account: "/api/accounts", group: "/api/groups",
 };
 // These endpoints ignore `name=` and return everything (probed live 2026-10-01), so they are
 // fetched whole through their list route and filtered here.

@@ -48,6 +48,8 @@ export type NodeConfig = {
   rename?: (id: string, name: string) => Promise<string>;
   remove?: (id: string) => Promise<void>;
   create?: (payload: Record<string, unknown>) => Promise<{ id: string; label: string; [k: string]: unknown }>;
+  // A few plain values shown under the title (an account's email/admin/enabled) — not resources.
+  facts?: (dto: Record<string, unknown>) => { label: string; value: string }[];
   // Has an is_public flag the app can set (experiments, germplasm): shown in the detail pane and
   // changed from the selection pane. Other types have no visibility flag in OpenSILEX.
   visibility?: true;
@@ -232,6 +234,28 @@ async function saveLevels(f: FactorDto, levels: { uri?: string; name: string; de
   await authedPut("/core/experiments/factors", NODE_TYPES.factor.putPayload!({ ...f, levels }, f.name));
 }
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
+
+// People labels: a person by name; an account by its person's name, else its email.
+export const personName = (p: Record<string, unknown>) => `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() || String(p.email ?? p.uri);
+export const accountItem = (a: Record<string, unknown>) => ({ id: String(a.uri), label: `${a.person_first_name ?? ""} ${a.person_last_name ?? ""}`.trim() || String(a.email ?? a.uri) });
+const factsOf = (pairs: [string, unknown][]) => pairs.filter(([, v]) => v !== null && v !== undefined && v !== "").map(([label, v]) => ({ label, value: String(v) }));
+
+// The rows whose `field` (a list of uris or {uri, name} refs) holds `id`.
+async function listedIn(rows: Record<string, unknown>[], field: string, id: string) {
+  const key = await compactUri(id);
+  const out: { id: string; label: string }[] = [];
+  for (const r of rows) {
+    const refs = Array.isArray(r[field]) ? (r[field] as (NamedRef | string)[]) : [];
+    for (const ref of refs) if ((await compactUri(refUri(ref))) === key) { out.push({ id: String(r.uri), label: String(r.name ?? r.uri) }); break; }
+  }
+  return out;
+}
+// Every experiment's full record: the list has no supervisors or groups and no filter for them.
+// ponytail: one GET per experiment (7 on phis-test); needs a server-side query past a few hundred.
+async function experimentDetails() {
+  const list = (await authedGet("/core/experiments?page_size=500")).result;
+  return Promise.all(list.map(async (e) => (await authedGetOne(`/core/experiments/${encodeURIComponent(e.uri)}`)).result));
+}
 
 // A germplasm's kind, from its rdf_type (vocabulary:Variety or the full oeso#Variety); rank says
 // which can be set on which: a species on varieties/accessions, a variety on accessions.
@@ -672,6 +696,95 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         const f = await factorOfLevel(id);
         const rows = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(f.experiment)}&factor_levels=${encodeURIComponent(id)}&page_size=500`)).result;
         return rows.map((r) => ({ id: String(r.uri), label: String(r.name ?? r.uri) }));
+      } },
+    ],
+  },
+  // People (read-only for now): who is who, and what links them — a person to an account, an
+  // account to groups (each membership with a profile = its rights), a group to what is shared
+  // with it. Probed on phis-test 2026-10-01. Linking and editing come in later steps.
+  person: {
+    getUrl: (id) => `/security/persons/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    facts: (p) => factsOf([["Email", p.email], ["Affiliation", p.affiliation], ["ORCID", p.orcid]]),
+    queryRelations: [
+      { label: "Account", type: "account", url: () => "", load: async (id) => {
+        const acc = (await authedGetOne(`/security/persons/${encodeURIComponent(id)}`)).result.account;
+        return acc ? [accountItem((await authedGetOne(`/security/accounts/${encodeURIComponent(String(acc))}`)).result)] : [];
+      } },
+      { label: "Scientific supervisor of", type: "experiment", url: () => "", load: async (id) => listedIn(await experimentDetails(), "scientific_supervisors", id) },
+      { label: "Technical supervisor of", type: "experiment", url: () => "", load: async (id) => listedIn(await experimentDetails(), "technical_supervisors", id) },
+      ...([["Coordinator of", "coordinators"], ["Scientific contact of", "scientific_contacts"], ["Administrative contact of", "administrative_contacts"]] as const).map(([label, field]) => ({
+        label, type: "project", url: () => "", load: async (id: string) => listedIn((await authedGet("/core/projects?page_size=500")).result, field, id),
+      })),
+    ],
+  },
+  account: {
+    getUrl: (id) => `/security/accounts/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    facts: (a) => factsOf([["Email", a.email], ["Admin", a.admin ? "yes" : "no"], ["Enabled", a.enable ? "yes" : "no"]]),
+    queryRelations: [
+      { label: "Person", type: "person", url: () => "", load: async (id) => {
+        const p = (await authedGetOne(`/security/accounts/${encodeURIComponent(id)}`)).result.linked_person;
+        if (!p) return [];
+        const person = (await authedGetOne(`/security/persons/${encodeURIComponent(String(p))}`)).result;
+        return [{ id: String(person.uri), label: personName(person) }];
+      } },
+      // The account's groups, each with the profile (role) it has there.
+      { label: "Groups", type: "group", url: () => "", load: async (id) => {
+        const key = await compactUri(id);
+        return Promise.all((await authedGet(`/security/accounts/${encodeURIComponent(id)}/groups`)).result.map(async (g) => {
+          const ups = ((await authedGetOne(`/security/groups/${encodeURIComponent(g.uri)}`)).result.user_profiles ?? []) as { user_uri: string; profile_name?: string }[];
+          let role = "";
+          for (const up of ups) if ((await compactUri(up.user_uri)) === key) role = up.profile_name ?? "";
+          return { id: String(g.uri), label: role ? `${g.name} · ${role}` : String(g.name) };
+        }));
+      } },
+    ],
+  },
+  group: {
+    getUrl: (id) => `/security/groups/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    facts: (g) => factsOf([["Description", typeof g.description === "string" ? g.description.trim() : null]]),
+    queryRelations: [
+      { label: "Members", type: "account", url: () => "", load: async (id) => {
+        const ups = ((await authedGetOne(`/security/groups/${encodeURIComponent(id)}`)).result.user_profiles ?? []) as { user_uri: string; user_name?: string; profile_name?: string }[];
+        const names = new Map((await authedGet("/security/accounts?page_size=500")).result.map((a) => [String(a.uri), accountItem(a).label]));
+        return ups.map((up) => ({ id: up.user_uri, label: `${names.get(up.user_uri) ?? up.user_name ?? up.user_uri}${up.profile_name ? ` · ${up.profile_name}` : ""}` }));
+      } },
+      { label: "Shared experiments", type: "experiment", url: () => "", load: async (id) => listedIn(await experimentDetails(), "groups", id) },
+      { label: "Shared germplasm", type: "germplasm", url: () => "", load: async (id) => listedIn((await authedGet("/core/germplasm?page_size=500")).result, "groups", id) },
+    ],
+  },
+  profile: {
+    getUrl: (id) => `/security/profiles/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    // Rights are names (germplasm-access, …), not resources — a fact, not chips.
+    facts: (p) => factsOf([["Rights", Array.isArray(p.credentials) ? p.credentials.join(", ") : null]]),
+    queryRelations: [
+      { label: "Used in groups", type: "group", url: () => "", load: async (id) => {
+        const key = await compactUri(id);
+        const out: { id: string; label: string }[] = [];
+        for (const g of (await authedGet("/security/groups?page_size=500")).result) {
+          const ups = (g.user_profiles ?? []) as { profile_uri: string }[];
+          for (const up of ups) if ((await compactUri(up.profile_uri)) === key) { out.push({ id: String(g.uri), label: String(g.name ?? g.uri) }); break; }
+        }
+        return out;
       } },
     ],
   },

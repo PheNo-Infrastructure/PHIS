@@ -2165,3 +2165,34 @@ test("e2e: a species and a variety selected read 'Set Oat as species of Annikaâ€
     assert.equal(germplasmLoads, before + 1);
   });
 });
+
+// ---------- people ----------
+test("e2e: People lists Accounts, Groups and Profiles; a supervisor chip opens the person's page with its facts and connections, read-only", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/node-detail*", (r) => {
+      const type = new URL(r.request().url()).searchParams.get("type");
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(type === "person"
+        ? { uri: "https://orcid.org/1", actions: [], facts: [{ label: "Email", value: "<b>anna</b>@uit.no" }, { label: "Affiliation", value: "UiT" }],
+            relations: [{ label: "Account", items: [{ id: "acc-1", type: "account", label: "Anna Berg" }] }, { label: "Scientific supervisor of", items: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] }] }
+        : { uri: "exp-1", actions: ["rename", "delete", "link"], relations: [{ label: "Scientific supervisors", field: "scientific_supervisors", items: [{ id: "https://orcid.org/1", type: "person", label: "Anna Berg" }] }] }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "People");
+    const labels = (await page.locator("#rowlist .row .row-label").allTextContents()).map((t) => t.trim());
+    for (const l of ["Persons", "Accounts", "Groups", "Profiles"]) assert.ok(labels.includes(l), `${l} in ${labels}`);
+
+    await page.evaluate(() => openRelatedNode({ id: "exp-1", type: "experiment", label: "PBar1x4" }));
+    await page.waitForTimeout(400);
+    await page.locator(`.chip[data-openid="https://orcid.org/1"]`).click();
+    await page.waitForTimeout(400);
+    const body = await page.locator("#detailBody").innerText();
+    assert.match(body, /Email\s+<b>anna<\/b>@uit\.no/, "facts shown, as text");
+    assert.match(body, /Affiliation\s+UiT/);
+    assert.match(body, /Anna Berg/);
+    assert.match(body, /PBar1x4/);
+    assert.equal(await page.locator("#renameNodeBtn, #deleteNodeBtn").count(), 0, "read-only");
+    const crumbs = (await page.locator(".crumb").allTextContents()).map((c) => c.trim());
+    assert.deepEqual(crumbs.slice(-2), ["Persons", "Anna Berg"]);
+  });
+});
