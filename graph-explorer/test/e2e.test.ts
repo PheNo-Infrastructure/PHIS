@@ -2005,6 +2005,31 @@ test("e2e: + New factor from the Factors list with two experiments picked says t
   });
 });
 
+test("e2e: plain click on a level opens the level's own page (Factors › Replicate › Replicate: 2) with its connections", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/node-detail*", (r) => {
+      const isLevel = new URL(r.request().url()).searchParams.get("type") === "factor_level";
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(isLevel
+        ? { uri: `${FL}.2`, actions: ["link"], relations: [
+            { label: "Factor", items: [{ id: FL, type: "factor", label: "Replicate" }] },
+            { label: "Experiment", items: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] },
+            { label: "Scientific objects", items: [{ id: "so-1", type: "scientific_object", label: "PB001" }] },
+          ] }
+        : levelDetail()) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openRelatedNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(400);
+    await page.locator(`.chip[data-openid="${FL}.2"]`).click();
+    await page.waitForTimeout(400);
+    const crumbs = (await page.locator(".crumb").allTextContents()).map((c) => c.trim());
+    assert.deepEqual(crumbs.slice(-3), ["Factors", "Replicate", "Replicate: 2"]);
+    assert.match(await page.locator("#detailBody").innerText(), /PB001/);
+    assert.equal(await page.locator("#selList .sel-item").count(), 0, "a plain click opens, it doesn't select");
+  });
+});
+
 test("e2e: deleting a factor confirms with the counted cascade", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail()) }));

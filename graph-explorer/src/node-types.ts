@@ -516,8 +516,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Levels", type: "factor_level", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/levels`, load: factorLevelItems },
     ],
   },
-  // A factor's level: only uri + name in OpenSILEX. Exists as a type so it can be selected and set
-  // on scientific objects (their inExperiment.byType); its factor/experiment come from factorOfLevel.
+  // A factor's level: only uri + name in OpenSILEX. A type of its own so it can be opened (its
+  // factor, experiment and the objects that have it) and set on scientific objects (their
+  // inExperiment.byType); its factor/experiment come from factorOfLevel.
   factor_level: {
     getUrl: (id) => `/core/experiments/factors/levels/${encodeURIComponent(id)}`,
     putUrl: "",
@@ -525,6 +526,19 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     relationGroups: [],
     updateLinkFields: [],
     actions: ["link"],
+    queryRelations: [
+      { label: "Factor", type: "factor", url: () => "", load: async (id) => { const f = await factorOfLevel(id); return [{ id: f.uri, label: f.name }]; } },
+      { label: "Experiment", type: "experiment", url: () => "", load: async (id) => {
+        const f = await factorOfLevel(id);
+        return [{ id: f.experiment, label: String((await authedGetOne(`/core/experiments/${encodeURIComponent(f.experiment)}`)).result.name ?? f.experiment) }];
+      } },
+      // The objects that have this level, through OpenSILEX's own factor_levels filter (probed).
+      { label: "Scientific objects", type: "scientific_object", url: () => "", load: async (id) => {
+        const f = await factorOfLevel(id);
+        const rows = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(f.experiment)}&factor_levels=${encodeURIComponent(id)}&page_size=500`)).result;
+        return rows.map((r) => ({ id: String(r.uri), label: String(r.name ?? r.uri) }));
+      } },
+    ],
   },
   site: {
     getUrl: (id) => `/core/sites/${encodeURIComponent(id)}`,

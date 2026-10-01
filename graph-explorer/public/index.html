@@ -1273,6 +1273,11 @@ function navigateTo(newPath) {
 // The category tree is exactly two levels deep before real nodes (see ROOT/CATEGORY_ITEMS'
 // header comment) — walk it to find which two category crumbs a given type lives under.
 function canonicalPathFor(item) {
+  // A factor level lives under its factor: Trials › Factors › Replicate › Replicate: 2.
+  if (item.type === "factor_level" && item.factor) {
+    const factor = findItemById(item.factor) || { id: item.factor, type: "factor", label: item.label.split(":")[0] };
+    return [...canonicalPathFor(factor), item];
+  }
   const categoryId = CATEGORY_FOR_TYPE[item.type];
   // Its parents too (an accession's species), outermost first; the length cap guards a cycle.
   const ancestors = [];
@@ -1828,16 +1833,12 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       // Plain click still just navigates — but not while unlinking, where the point is to
       // stay put and manage links, not wander off (the × button is the only action there).
       if (unlinking) return;
-      // A level has no page of its own: plain click opens its factor.
-      const target = found.type === "factor_level"
-        ? (findItemById(found.factor) || { id: found.factor, type: "factor", label: found.label.split(":")[0] })
-        : found;
       if (local) {
-        detailPath = [...detailPath, target];
+        detailPath = [...detailPath, found];
         renderDetail();
-        loadNodeDetail(target);
+        loadNodeDetail(found);
       } else {
-        openRelatedNode(target);
+        openRelatedNode(found);
       }
     });
   });

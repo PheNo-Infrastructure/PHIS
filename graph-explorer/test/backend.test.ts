@@ -1691,6 +1691,25 @@ test("factor rename sends the levels back with their uris and keeps category, de
   });
 });
 
+test("factor level detail: its factor, its experiment and the scientific objects that have it", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    const stub = factorStub(calls);
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes(`/core/experiments/factors/levels/${encodeURIComponent(`${FAC}.2`)}`)) return jsonResponse(200, { result: { uri: `${FAC}.2`, name: "2" } });
+      if (url.includes("/core/scientific_objects?") && url.includes(`factor_levels=${encodeURIComponent(`${FAC}.2`)}`) && url.includes("page_size=500")) {
+        return jsonResponse(200, { result: [{ uri: "https://phis.pheno.no/id/scientific-object/so-pb001", name: "PB001" }] });
+      }
+      return stub(url, init);
+    }) as typeof fetch;
+    const d = await (await realFetch(`${base}/api/node-detail?type=factor_level&id=${encodeURIComponent(`${FAC}.2`)}`)).json();
+    const group = (label: string) => d.relations.find((r: any) => r.label === label)?.items;
+    assert.deepEqual(group("Factor"), [{ id: FAC, type: "factor", label: "Replicate" }]);
+    assert.deepEqual(group("Experiment"), [{ id: facDto.experiment, type: "experiment", label: "PBar1x4" }]);
+    assert.deepEqual(group("Scientific objects"), [{ id: "https://phis.pheno.no/id/scientific-object/so-pb001", type: "scientific_object", label: "PB001" }]);
+  });
+});
+
 function levelLinkStub(calls: string[], puts: any[], soExps: Record<string, { experiment: string; experiment_name: string }[]>, rels: any[] = []) {
   return (async (url: string, init?: RequestInit) => {
     calls.push(url);
