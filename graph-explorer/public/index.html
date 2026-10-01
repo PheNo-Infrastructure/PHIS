@@ -247,6 +247,9 @@ button { font-family: inherit; }
   font-weight: 600;
 }
 .pane-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); }
+.search-group { padding: 10px 14px 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
+.search-more { margin: 2px 14px 8px; }
+.pane-count .btn { margin-left: 8px; }
 
 /* explorer rows */
 .rowlist {
@@ -749,7 +752,7 @@ button { font-family: inherit; }
   <div class="topbar">
     <div class="searchrow">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/><path d="M11 11L14.2 14.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-      <input type="text" placeholder="Search experiments, scientific objects, germplasm&hellip;" aria-label="Search">
+      <input type="text" id="searchInput" placeholder="Search experiments, scientific objects, germplasm&hellip;" aria-label="Search">
     </div>
     <div class="crumbs" id="crumbs"></div>
   </div>
@@ -954,6 +957,12 @@ let experimentChoice = null;
 // id of the node whose Delete was refused up front (node.deleteBlocked) — shows the reason in
 // the detail pane instead of a confirm or a bare error toast. Cleared on navigation.
 let deleteBlockedShown = null;
+// Non-null while the top bar holds text: the list pane shows these results instead of `path`'s
+// list — search is a view over the pane, not a place in the breadcrumb (spec "Search as a way to
+// select"). groups = api/search's [{type, total, items, error?}], null while waiting.
+let search = null;
+let searchSeq = 0;   // bumped per query; an answer for an older seq is dropped
+let searchTimer = null;
 
 /* Every item currently clickable ANYWHERE on screen (left rowlist, tree,
    or the local member-list in the detail pane when it's showing a
@@ -966,6 +975,7 @@ const els = {
   crumbs: document.getElementById("crumbs"),
   paneTitle: document.getElementById("paneTitle"),
   paneCount: document.getElementById("paneCount"),
+  searchInput: document.getElementById("searchInput"),
   rowlist: document.getElementById("rowlist"),
   detailBody: document.getElementById("detailBody"),
   actionbar: document.getElementById("actionbar"),
@@ -1034,13 +1044,42 @@ function renderCrumbs() {
     btn.className = "crumb" + (isLast ? " current" : "");
     btn.textContent = seg.label;
     if (!isLast) {
-      btn.addEventListener("click", () => { path = path.slice(0, i + 1); render(); });
+      btn.addEventListener("click", () => { clearSearch(); path = path.slice(0, i + 1); render(); });
     }
     els.crumbs.appendChild(btn);
   });
 }
 
+// One list row. `note` (search only) is appended to the type line, e.g. "can link".
+function rowEl(item, note) {
+  const isSelected = item.type === "category" ? isCategoryFullySelected(item.id) : selection.has(item.id);
+  const row = document.createElement("div");
+  row.className = "row" + (isSelected ? " selected" : "") + (note === "can't link" ? " row-cant" : "");
+  row.setAttribute("style", typeStyle(item.type));
+  row.dataset.id = item.id;
+  const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (note ? ` · ${note}` : "");
+  row.innerHTML = `
+    <span class="row-dot"></span>
+    <span class="row-main${item.type === "category" ? " stacked" : ""}">
+      <span class="row-label">${escapeHtml(item.label)}</span>
+      <span class="row-type">${typeLine}</span>
+    </span>
+    <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
+  `;
+  // A search hit opens at its real place (its canonical path); navigateTo ends the search.
+  row.querySelector(".row-nav").addEventListener("click", (e) => { e.stopPropagation(); search ? openRelatedNode(item) : openNode(item); });
+  return row;
+}
+
+function emptyHint(text) {
+  const div = document.createElement("div");
+  div.className = "empty-hint";
+  div.textContent = text;
+  els.rowlist.appendChild(div);
+}
+
 function renderRows() {
+  if (search) return renderSearchRows();
   const items = itemsForPane();
   const p = currentPane();
   els.paneTitle.textContent = p.label;
@@ -1048,37 +1087,105 @@ function renderRows() {
   els.rowlist.innerHTML = "";
   rowOrder = items.map(it => it.id);
   addressableItems = new Map(items.map(it => [it.id, it]));
+  if (!items.length) return emptyHint("Nothing here yet.");
+  items.forEach(item => els.rowlist.appendChild(rowEl(item)));
+}
 
-  if (!items.length) {
-    const div = document.createElement("div");
-    div.className = "empty-hint";
-    div.textContent = "Nothing here yet.";
-    els.rowlist.appendChild(div);
-    return;
+/* ---------------- search (spec "Search as a way to select") ----------------
+   The top bar asks api/search (OpenSILEX's own name filters, 20 a type with totals) ~250 ms after
+   typing stops. Results are an ordinary list: same click rules, Select all, Show more per type. */
+function searchGroupsInOrder() { return search.groups || []; }
+
+function renderSearchRows() {
+  const groups = searchGroupsInOrder();
+  const items = groups.flatMap(g => g.items);
+  els.paneTitle.textContent = `Search: “${search.q}”`;
+  els.paneCount.textContent = "";
+  els.rowlist.innerHTML = "";
+  rowOrder = items.map(it => it.id);
+  addressableItems = new Map(items.map(it => [it.id, it]));
+  if (search.failed) return emptyHint(`Search failed: ${search.failed}`);
+  if (!search.groups) return emptyHint("Searching…");
+  if (!groups.length) return emptyHint(`No matches for “${search.q}”.`);
+
+  const total = groups.reduce((n, g) => n + g.total, 0);
+  if (items.length) {
+    // Selects what is shown, never thousands by accident; says so when more match.
+    if (items.length < total) els.paneCount.textContent = `${total} match — type more to narrow`;
+    const all = document.createElement("button");
+    all.className = "btn ghost small";
+    all.id = "searchSelectAll";
+    all.textContent = items.length < total ? `Select all ${items.length} shown` : `Select all ${items.length}`;
+    all.addEventListener("click", () => {
+      selection = new Map(items.map(it => [it.id, it]));
+      anchorId = null;
+      refreshLeftPane(); renderDetail(); renderActionbar();
+    });
+    els.paneCount.appendChild(all);
   }
-
-  items.forEach(item => {
-    const isSelected = item.type === "category" ? isCategoryFullySelected(item.id) : selection.has(item.id);
-    const row = document.createElement("div");
-    row.className = "row" + (isSelected ? " selected" : "");
-    row.setAttribute("style", typeStyle(item.type));
-    row.dataset.id = item.id;
-
-    row.innerHTML = `
-      <span class="row-dot"></span>
-      <span class="row-main${item.type === "category" ? " stacked" : ""}">
-        <span class="row-label">${escapeHtml(item.label)}</span>
-        <span class="row-type">${item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type)}</span>
-      </span>
-      <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
-    `;
-
-    const navBtn = row.querySelector(".row-nav");
-    if (navBtn) navBtn.addEventListener("click", (e) => { e.stopPropagation(); openNode(item); });
-
-    els.rowlist.appendChild(row);
+  groups.forEach(g => {
+    const head = document.createElement("div");
+    head.className = "search-group";
+    head.textContent = `${typeName(g.type, 2)} · ${g.error ? "couldn't be searched" : g.items.length < g.total ? `${g.items.length} of ${g.total}` : g.total}`;
+    els.rowlist.appendChild(head);
+    g.items.forEach(item => els.rowlist.appendChild(rowEl(item)));
+    if (!g.error && g.items.length < g.total) {
+      const more = document.createElement("button");
+      more.className = "btn ghost small search-more";
+      more.textContent = "Show more";
+      more.addEventListener("click", () => showMoreResults(g));
+      els.rowlist.appendChild(more);
+    }
   });
 }
+
+async function runSearch(q) {
+  const seq = ++searchSeq;
+  search = { q, groups: null };
+  renderRows();
+  try {
+    const res = await fetch(`api/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const groups = await res.json();
+    if (seq !== searchSeq) return; // an older query answering late
+    search = { q, groups };
+  } catch (err) {
+    if (seq !== searchSeq) return;
+    search = { q, groups: [], failed: err.message };
+  }
+  renderRows();
+}
+
+async function showMoreResults(group) {
+  const seq = searchSeq;
+  const page = (group.page ?? 0) + 1; // the next api/search page of this type
+  const res = await fetch(`api/search?q=${encodeURIComponent(search.q)}&type=${encodeURIComponent(group.type)}&page=${page}`);
+  const [next] = res.ok ? await res.json() : [];
+  if (seq !== searchSeq || !search) return;
+  if (next) {
+    group.page = page;
+    group.items = group.items.concat(next.items.filter(it => !group.items.some(x => x.id === it.id)));
+  }
+  else showToast("Couldn't load more.");
+  renderRows();
+}
+
+// Ends the search without rendering (callers that navigate render anyway).
+function clearSearch() {
+  clearTimeout(searchTimer);
+  searchSeq++;
+  search = null;
+  els.searchInput.value = "";
+}
+function endSearch() { clearSearch(); renderRows(); }
+
+els.searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = els.searchInput.value.trim();
+  if (!q) return endSearch();
+  searchTimer = setTimeout(() => runSearch(q), 250);
+});
+els.searchInput.addEventListener("keydown", (e) => { if (e.key === "Escape") endSearch(); });
 
 // `order` = the visible order of the area the click came from (the list, or the tree), so a
 // shift-range never spans two areas.
@@ -1126,6 +1233,7 @@ function openRelatedNode(item) {
 }
 
 function navigateTo(newPath) {
+  clearSearch();
   path = newPath;
   detailPath = []; // a real navigation ends any local detail opened from the tree
   unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink

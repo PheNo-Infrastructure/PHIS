@@ -1788,3 +1788,131 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     assert.deepEqual(crumbs, ["Graph", "Trials", "Experiments", exp.label], "lands on its canonical path, the list reloaded");
   });
 });
+
+// ---------- search ----------
+async function stubSearch(page: import("playwright").Page, answer: (u: URL) => unknown, delayMs: (u: URL) => number = () => 0) {
+  await page.route("**/api/search*", async (r) => {
+    const u = new URL(r.request().url());
+    const wait = delayMs(u);
+    if (wait) await new Promise((res) => setTimeout(res, wait));
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer(u)) });
+  });
+}
+async function typeSearch(page: import("playwright").Page, q: string) {
+  await page.locator("#searchInput").fill(q);
+  await page.waitForTimeout(500); // 250 ms debounce + the stubbed answer
+}
+const ANN = [
+  { type: "experiment", total: 1, items: [{ id: "e1", type: "experiment", label: "Annika trial" }] },
+  { type: "germplasm", total: 182, items: [{ id: "g1", type: "germplasm", label: "Annika" }, { id: "g2", type: "germplasm", label: "Annikki" }] },
+];
+
+test("e2e: search shows matches per type with honest counts; click selects, ctrl adds, Select all takes what is shown; Esc goes back", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, () => ANN);
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "ann");
+    assert.equal(await page.locator("#paneTitle").textContent(), "Search: “ann”");
+    const heads = await page.locator("#rowlist .search-group").allInnerTexts();
+    assert.equal(heads.length, 2);
+    assert.match(heads[1], /2 of 182/i);
+
+    await page.locator("#rowlist .row", { hasText: "Annika trial" }).click();
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#selList .sel-item").count(), 1);
+    await page.locator("#rowlist .row[data-id='g1']").click({ modifiers: ["Control"] }); // by id: "Annika" is also in "Annika trial"
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#selList .sel-item").count(), 2);
+
+    assert.match(await page.locator("#searchSelectAll").innerText(), /Select all 3 shown/);
+    assert.match(await page.locator("#paneCount").innerText(), /183 match/);
+    await page.locator("#searchSelectAll").click();
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#selList .sel-item").count(), 3);
+
+    await page.locator("#searchInput").press("Escape");
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#paneTitle").textContent(), "Graph");
+    assert.equal(await page.locator("#searchInput").inputValue(), "");
+    assert.equal(await page.locator("#selList .sel-item").count(), 3, "leaving the search keeps the selection");
+  });
+});
+
+test("e2e: Show more asks for the next page of that one type and appends it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const urls: string[] = [];
+    await stubSearch(page, (u) => {
+      urls.push(u.search);
+      return u.searchParams.get("type") === "germplasm"
+        ? [{ type: "germplasm", total: 182, items: [{ id: "g21", type: "germplasm", label: "Annette" }] }]
+        : ANN;
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "ann");
+    await page.locator("#rowlist .search-more").click();
+    await page.waitForTimeout(300);
+    assert.ok(urls.some((s) => s.includes("type=germplasm") && s.includes("page=1")));
+    assert.equal(await page.locator("#rowlist .row", { hasText: "Annette" }).count(), 1);
+    assert.match((await page.locator("#rowlist .search-group").allInnerTexts())[1], /3 of 182/i);
+  });
+});
+
+test("e2e: a late answer to an older query is dropped", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(
+      page,
+      (u) => (u.searchParams.get("q") === "a" ? [{ type: "germplasm", total: 1, items: [{ id: "gs", type: "germplasm", label: "Stale" }] }] : ANN),
+      (u) => (u.searchParams.get("q") === "a" ? 800 : 0)
+    );
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.locator("#searchInput").fill("a");
+    await page.waitForTimeout(350); // the "a" request is now in flight (800 ms)
+    await page.locator("#searchInput").fill("ann");
+    await page.waitForTimeout(1200);
+    assert.equal(await page.locator("#rowlist .row", { hasText: "Stale" }).count(), 0);
+    assert.equal(await page.locator("#paneTitle").textContent(), "Search: “ann”");
+  });
+});
+
+test("e2e: search states — nothing found, a type that couldn't be searched, HTML in a name shown as text", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const evil = `<img src=x onerror="window.__pwned=1">Evil`;
+    await stubSearch(page, (u) => u.searchParams.get("q") === "zzz" ? [] : [
+      { type: "germplasm", total: 0, items: [], error: "boom" },
+      { type: "experiment", total: 1, items: [{ id: "e-evil", type: "experiment", label: evil }] },
+    ]);
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "zzz");
+    assert.match(await page.locator("#rowlist").innerText(), /No matches for “zzz”\./);
+    await typeSearch(page, "ev");
+    assert.match(await page.locator("#rowlist").innerText(), /couldn't be searched/i);
+    assert.match(await page.locator("#rowlist").innerText(), /<img src=x/);
+    assert.equal(await page.locator("#rowlist img").count(), 0);
+    assert.equal(await page.evaluate(() => (window as any).__pwned), undefined);
+  });
+});
+
+test("e2e: `›` on a result opens it at its real place and ends the search; a crumb also ends it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, () => ANN);
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", relations: [] }) }));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "ann");
+    await page.locator("#rowlist .row", { hasText: "Annika trial" }).locator(".row-nav").click();
+    await page.waitForTimeout(300);
+    assert.match((await page.locator(".crumb").allInnerTexts()).join(" "), /Experiments.*Annika trial/);
+    assert.equal(await page.locator("#searchInput").inputValue(), "");
+    assert.doesNotMatch(await page.locator("#paneTitle").textContent(), /^Search/);
+
+    await typeSearch(page, "ann");
+    await page.locator(".crumb").first().click();
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("#searchInput").inputValue(), "");
+    assert.equal(await page.locator("#paneTitle").textContent(), "Graph");
+  });
+});
