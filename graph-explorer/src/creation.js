@@ -49,7 +49,7 @@ export const CREATABLE = {
     url: "/core/scientific_objects",
     linkFields: { experiment: "experiment" },
     scalarLinkFields: ["experiment"],
-    fields: [{ key: "rdf_type", label: "Type", input: "select", options: "/api/scientific-object-types", required: true }],
+    fields: [{ key: "rdf_type", label: "Type", input: "select", options: "api/scientific-object-types", required: true }],
   },
   // No linkFields: a project's links are all held by the other side (each experiment's
   // `projects`), so /api/create links them right after the POST, like /api/link would.
@@ -91,7 +91,7 @@ export const CREATABLE = {
         { id: "vocabulary:Variety", label: "Variety" },
         { id: "vocabulary:Accession", label: "Accession" },
       ] },
-      { key: "species", label: "Species (for a variety or accession)", input: "select", options: "/api/germplasm-species" },
+      { key: "species", label: "Species (for a variety or accession)", input: "select", options: "api/germplasm-species" },
     ],
   },
   // One more level of one factor: no POST of its own — the backend saves the factor with the

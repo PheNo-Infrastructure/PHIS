@@ -36,3 +36,14 @@ test("validation direction: checking one target type against a selection is just
   assert.ok(valid.has("person"));
   assert.ok(!valid.has("facility"));
 });
+
+// The page is served under a sub-path in the cluster (BASE_PATH=/portal): a form's option list
+// fetched as "/api/..." skips it and 404s (+ New scientific object/germplasm broke live, 2026-10-01).
+test("every create form's option list is a relative URL (works under /portal)", async () => {
+  const { CREATABLE } = await import("../src/creation.js");
+  for (const [type, cfg] of Object.entries(CREATABLE as Record<string, { fields?: { key: string; options?: unknown }[] }>)) {
+    for (const f of cfg.fields ?? []) {
+      if (typeof f.options === "string") assert.doesNotMatch(f.options, /^\//, `${type}.${f.key}: ${f.options}`);
+    }
+  }
+});
