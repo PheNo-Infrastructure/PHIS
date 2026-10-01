@@ -13,7 +13,6 @@ This branch (`main`) contains the Kubernetes manifests and tooling for deploying
 - **Prometheus + Grafana** — cluster and app metrics (`kube-prometheus-stack`)
 - **Nightly backups + disk snapshots** — MongoDB dumps, GraphDB RDF exports, Azure disk snapshots
 - **Kyverno** — blocks accidental `kubectl delete pvc` on research data
-- **PhisWebPortal** — a separate app (Azure Container App, *not* in this repo) that reads from OpenSILEX/GraphDB; this repo only contains the one-time job that creates its read-only GraphDB user
 
 New here and don't know Kubernetes/Azure yet? Start with [docs/ONBOARDING.md](docs/ONBOARDING.md) — it explains the jargon and what access you need before touching anything.
 
@@ -37,7 +36,6 @@ k8s/                  # Kubernetes manifests (deployed by FluxCD)
   monitoring/         # Prometheus + Grafana
   backup/             # Nightly backup + disk-snapshot CronJobs
   kyverno/            # PVC delete-protection policy
-  portal/             # One-off job: creates PhisWebPortal's GraphDB read-only user
   test/               # Templates for on-demand test environments (see scripts/test-env.ps1)
 clusters/phis-cluster/ # FluxCD bootstrap config — what Flux watches and installs
 tools/
