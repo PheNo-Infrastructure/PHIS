@@ -1256,6 +1256,17 @@ phis-test through the app's own API (create factor, set level, rename, delete), 
 
 **Built 2026-10-01:** all of the above, deployed to phis.pheno.no/portal; live round trip on the
 ZZ throwaway (create, set, replace, rename, counted delete). Next: editing a factor's level list.
+Review fixes (07c89e6): delete re-counts its cascade at delete time; rename keeps category,
+description and matches (the PUT replaces the whole factor); the standalone + New factor asks for
+one experiment before the form. **A level has its own page** (272b4d1, user: "we should be able to
+go to any resource and view which resource is connected"): its factor, experiment and the objects
+that have it (`factor_levels` filter); plain click opens it, breadcrumb Factors › factor › level.
+Deferred minors: Unlink selection names a level "2" not "Replicate: 2"; no tests for removing a
+level (× / Unlink selection); the success toast shows the level's uri; a level ctrl-clicked in
+unlink mode gets "×" in its label; an unresolvable level chip has `factor: ""`; the "which
+experiment?" count includes level targets; `factorOfLevel` runs once per object (memoise per
+request); PUT /api/node with type factor_level reaches an empty putUrl (API only); level labels
+stale after a factor rename until refetched; /api/create doesn't enforce requiresLink (API only).
 
 ## Access during development
 
