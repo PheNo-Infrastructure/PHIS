@@ -1194,6 +1194,11 @@ the full suite, then a look on the deployed URL.
 
 **Order.** 1 + 2 + 4 first (the foundation), then 3, each tested and committed; 5 after the demo.
 
+**Built 2026-10-01:** 1+2+4 (api/search, the search view, "Add to selection…" retired) and 3
+(selection-aware notes), deployed to phis.pheno.no/portal. Also: the server now redirects the
+bare `/portal` to `/portal/` (the page's script used to fire its first `api/` calls at OpenSILEX
+before a client-side redirect). Next: 5 (no match -> "+ New").
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only
