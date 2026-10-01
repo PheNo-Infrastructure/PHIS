@@ -1824,6 +1824,22 @@ test("e2e: tree rows stay clickable while search answers arrive (searching again
   });
 });
 
+test("e2e: Select all adds the shown results to what is already selected", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, (u) => (u.searchParams.get("q") === "plot"
+      ? [{ type: "scientific_object", total: 1, items: [{ id: "so-1", type: "scientific_object", label: "Plot 1" }] }]
+      : ANN));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "plot");
+    await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
+    await typeSearch(page, "ann");
+    await page.locator("#searchSelectAll").click();
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#selList .sel-item").count(), 4, "Plot 1 stays, the 3 shown join it");
+  });
+});
+
 test("e2e: clicking a search result never reorders the groups under the cursor", async () => {
   await withServerAndBrowser(async (base, page) => {
     await stubSearch(page, () => [

@@ -1202,8 +1202,8 @@ Review fixes (c0ccf45): search updates keep tree/detail rows clickable; group or
 answer arrives, never on a click; a live test proves escaped characters fail no type. Deferred
 minors: `/portal?x=1` isn't redirected (only the bare path); Show more has no network-error toast;
 rows aren't alphabetical within a type; a node deleted/renamed while its hit is shown stays stale;
-two stale comments about the removed type list. Open question: should Select all *add* to an
-existing selection instead of replacing it (plain click replaces, so it matches today)?
+two stale comments about the removed type list. Select all *adds* to an
+existing selection (user, 2026-10-01: gathering, like ctrl-click).
 
 ## Access during development
 

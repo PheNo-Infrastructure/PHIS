@@ -1135,14 +1135,15 @@ function renderSearchRows() {
 
   const total = groups.reduce((n, g) => n + g.total, 0);
   if (items.length) {
-    // Selects what is shown, never thousands by accident; says so when more match.
+    // Adds what is shown to the selection (gathering, like ctrl-click), never thousands by
+    // accident; says so when more match.
     if (items.length < total) els.paneCount.textContent = `${total} match — type more to narrow`;
     const all = document.createElement("button");
     all.className = "btn ghost small";
     all.id = "searchSelectAll";
     all.textContent = items.length < total ? `Select all ${items.length} shown` : `Select all ${items.length}`;
     all.addEventListener("click", () => {
-      selection = new Map(items.map(it => [it.id, it]));
+      items.forEach(it => selection.set(it.id, it));
       anchorId = null;
       refreshLeftPane(); renderDetail(); renderActionbar();
     });
