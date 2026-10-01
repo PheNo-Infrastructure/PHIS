@@ -24,6 +24,8 @@ spec:
           env:
             - name: PHIS_HOST
               value: http://opensilex.phis-test.svc.cluster.local
+            - name: BASE_PATH
+              value: /portal
           resources:
             requests:
               cpu: 50m

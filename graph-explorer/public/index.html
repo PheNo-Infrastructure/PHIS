@@ -803,6 +803,9 @@ button { font-family: inherit; }
 <div class="ranking-overlay" id="importOverlay"></div>
 
 <script>
+// API calls are relative ("api/...") so the page also works under a sub-path such as
+// phis.pheno.no/portal/ — which needs the trailing slash for them to resolve there.
+if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search + location.hash);
 /* ---------------- mock graph data ---------------- */
 // `name` = PHIS's own word for the type, so what users learn here carries over to PHIS; the plain
 // explanation lives in the menu hints. Every type name on the page goes through typeName().
@@ -1161,7 +1164,7 @@ function canonicalPathFor(item) {
 async function loadNodeDetail(item) {
   if (item.type === "category" || item.id in NODE_DETAIL) return;
   try {
-    const res = await fetch(`/api/node-detail?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`);
+    const res = await fetch(`api/node-detail?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`);
     if (!res.ok) return;
     NODE_DETAIL[item.id] = await res.json();
     renderDetail();
@@ -1186,7 +1189,7 @@ async function setVisibility(items, isPublic) {
   let done = 0;
   const failed = [];
   for (const item of items) {
-    const res = await fetch("/api/node", {
+    const res = await fetch("api/node", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: item.type, id: item.id, isPublic }),
@@ -1204,7 +1207,7 @@ async function renameNode(item) {
   const label = prompt(`New name for ${item.label}?`, item.label);
   if (!label || label === item.label) return;
   try {
-    const res = await fetch("/api/node", {
+    const res = await fetch("api/node", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: item.type, id: item.id, name: label }),
@@ -1268,7 +1271,7 @@ async function deleteNode(item, force = false) {
   const alsoUnlinks = related.length ? ` It will also be unlinked from: ${related.map(it => it.label).join(", ")}.` : "";
   if (!confirm(`Delete ${item.label}?${alsoUnlinks} This cannot be undone.`)) return;
   try {
-    const res = await fetch(`/api/node?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, {
+    const res = await fetch(`api/node?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, {
       method: "DELETE",
     });
     if (!res.ok) {
@@ -1308,7 +1311,7 @@ async function deleteBlockers(item) {
   if (entries.length > 10) showToast(`Checking where each of the ${entries.length} is used, before asking…`, 30000);
   let elsewhere = {};
   try {
-    const res = await fetch(`/api/elsewhere?experiment=${encodeURIComponent(item.id)}`);
+    const res = await fetch(`api/elsewhere?experiment=${encodeURIComponent(item.id)}`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
     elsewhere = await res.json();
   } catch (err) {
@@ -1326,12 +1329,12 @@ async function deleteBlockers(item) {
     if (entries.length > 10) showToast(`Removing ${i + 1} of ${entries.length}…`, 10000);
     try {
       const res = e.elsewhere.length
-        ? await fetch("/api/node", {
+        ? await fetch("api/node", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ type: item.type, id: item.id, unlink: { field: e.field, uri: e.it.id } }),
           })
-        : await fetch(`/api/node?type=${encodeURIComponent(e.it.type)}&id=${encodeURIComponent(e.it.id)}`, { method: "DELETE" });
+        : await fetch(`api/node?type=${encodeURIComponent(e.it.type)}&id=${encodeURIComponent(e.it.id)}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         showToast(`Failed on ${e.it.label}: ${body.error || res.status}`);
@@ -1355,7 +1358,7 @@ async function deleteBlockers(item) {
 
 async function unlinkOne(item, field, uri, experiment) {
   try {
-    const res = await fetch("/api/node", {
+    const res = await fetch("api/node", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: item.type, id: item.id, unlink: { field, uri }, ...(experiment ? { experiment } : {}) }),
@@ -1386,7 +1389,7 @@ async function applyCarryOver(picked) {
   let done = 0;
   for (const b of batches.values()) {
     try {
-      const res = await fetch("/api/node", {
+      const res = await fetch("api/node", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: b.type, id: b.id, experiment: b.experiment, link: { field: b.field, uris: b.uris } }),
@@ -1419,7 +1422,7 @@ async function unlinkAll(item) {
   for (const { field, uri } of targets.filter(t => t !== keep)) {
     const t = { field, uri };
     try {
-      const res = await fetch("/api/node", {
+      const res = await fetch("api/node", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: item.type, id: item.id, unlink: t }),
@@ -1836,7 +1839,7 @@ async function askCreateValues(type) {
 
 async function createNode(type, name, links, toastSuffix, fields = {}) {
   try {
-    const res = await fetch("/api/create", {
+    const res = await fetch("api/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, name, links, fields }),
@@ -1921,7 +1924,7 @@ function selectionHasLinkablePair() {
 // doesn't require first navigating away to select it manually).
 async function linkItems(items, experiments) {
   try {
-    const res = await fetch("/api/link", {
+    const res = await fetch("api/link", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items, ...(experiments ? { experiments } : {}) }),
@@ -1962,7 +1965,7 @@ async function linkItems(items, experiments) {
 // "Unlink selection": asks the backend which links exist between the selected items, names
 // every one in a confirm, and only then removes them (stopping at the first failure).
 async function unlinkSelection(items) {
-  const post = (confirm) => fetch("/api/unlink", {
+  const post = (confirm) => fetch("api/unlink", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items: items.map(v => ({ type: v.type, id: v.id })), ...(confirm ? { confirm: true } : {}) }),
@@ -1988,7 +1991,7 @@ async function unlinkSelection(items) {
 
 async function linkParents(type, pairs, experiments) {
   try {
-    const res = await fetch("/api/parent", {
+    const res = await fetch("api/parent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, pairs, ...(experiments ? { experiments } : {}) }),
@@ -2207,7 +2210,7 @@ async function confirmLinkRanking() {
     if (parentIds.length) {
       // Every dragged-to-Parents org goes into ONE PUT on the anchor (batched, same as
       // /api/link already does for same-field items — not one call per parent).
-      const res = await fetch("/api/node", {
+      const res = await fetch("api/node", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "organization", id: anchor.id, link: { field: "parents", uris: parentIds } }),
@@ -2219,7 +2222,7 @@ async function confirmLinkRanking() {
     // Each dragged-to-Children org owns its OWN "parents" field — can't batch across
     // different owners into one PUT, so this is one call per child.
     for (const child of childItems) {
-      const res = await fetch("/api/node", {
+      const res = await fetch("api/node", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "organization", id: child.id, link: { field: "parents", uris: [anchor.id] } }),
@@ -2917,21 +2920,21 @@ const CATEGORY_FOR_TYPE = {
 const TYPE_FOR_CATEGORY = Object.fromEntries(Object.entries(CATEGORY_FOR_TYPE).map(([type, catId]) => [catId, type]));
 
 const BACKED_CATEGORIES = {
-  "cat-organizations": "/api/organizations",
-  "cat-experiments": "/api/experiments",
-  "cat-projects": "/api/projects",
-  "cat-facilities": "/api/facilities",
-  "cat-devices": "/api/devices",
-  "cat-sites": "/api/sites",
-  "cat-persons": "/api/persons",
-  "cat-scientificobjects": "/api/scientific-objects",
-  "cat-variables": "/api/variables",
-  "cat-germplasm": "/api/germplasm",
-  "cat-datafiles": "/api/datafiles",
-  "cat-provenances": "/api/provenances",
-  "cat-events": "/api/events",
-  "cat-documents": "/api/documents",
-  "cat-factors": "/api/factors",
+  "cat-organizations": "api/organizations",
+  "cat-experiments": "api/experiments",
+  "cat-projects": "api/projects",
+  "cat-facilities": "api/facilities",
+  "cat-devices": "api/devices",
+  "cat-sites": "api/sites",
+  "cat-persons": "api/persons",
+  "cat-scientificobjects": "api/scientific-objects",
+  "cat-variables": "api/variables",
+  "cat-germplasm": "api/germplasm",
+  "cat-datafiles": "api/datafiles",
+  "cat-provenances": "api/provenances",
+  "cat-events": "api/events",
+  "cat-documents": "api/documents",
+  "cat-factors": "api/factors",
 };
 
 // Loads (or reloads, after an import) category lists from the backend.
@@ -2970,7 +2973,7 @@ function openImport() {
     if (!f) { out.innerHTML = ""; return; }
     out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>`;
     try {
-      const res = await fetch("/api/import/plan", { method: "POST", headers: { "Content-Type": "application/zip" }, body: f });
+      const res = await fetch("api/import/plan", { method: "POST", headers: { "Content-Type": "application/zip" }, body: f });
       const body = await res.json();
       out.innerHTML = res.ok ? importPlanHtml(body) : `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
       if (res.ok) wireImportRun(f, body, close);
@@ -3042,7 +3045,7 @@ function wireImportRun(file, plan, close) {
     // dialog or the page doesn't stop the import on the server.
     footer.innerHTML = `<div class="import-progress"><span id="importStep">Starting…</span><progress id="importBar" max="1" value="0"></progress><span class="import-names">It keeps going on the server even if you close this.</span></div>`;
     try {
-      const res = await fetch(`/api/import/run${species ? `?species=${encodeURIComponent(species.value)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
+      const res = await fetch(`api/import/run${species ? `?species=${encodeURIComponent(species.value)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
         footer.innerHTML = `<div class="import-warning">${escapeHtml(b.error || `The import failed (${res.status}).`)}</div>`;
