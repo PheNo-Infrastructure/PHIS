@@ -1138,18 +1138,20 @@ they wanted and chose to try this and judge it in use.
 
 **The model.**
 1. **One search, global.** Typing in the top bar turns the list pane into "Search: <text>" with
-   every match across all cached categories (case-insensitive part-of-name match). Clearing the
-   bar or Esc returns to the list you were on — search is a view over the list pane, not a place
-   in the breadcrumb. `›` on a result opens it at its canonical place (`canonicalPathFor`, the
-   same jump relation chips use) and ends the search.
-2. **Results behave like any list.** Same click/ctrl/shift/marquee rules as every other list
-  : plain click replaces the selection, ctrl adds — so
-   gathering from different corners is "search, ctrl-click, search again, ctrl-click". The pane
-   head has **Select all** (every match), the way selecting a category selects its members.
+   matches across every type (case-insensitive part-of-name match, done by the server — see
+   Data). Clearing the bar or Esc returns to the list you were on — search is a view over the list
+   pane, not a place in the breadcrumb. `›` on a result opens it at its canonical place
+   (`canonicalPathFor`, the same jump relation chips use) and ends the search.
+2. **Results behave like any list.** Same click/ctrl/shift/marquee rules as every other list:
+   plain click replaces the selection, ctrl adds — so gathering from different corners is
+   "search, ctrl-click, search again, ctrl-click". Each type shows its first matches with an
+   honest count ("Germplasm · 20 of 182") and **Show more** for the next page of that type. The
+   pane head has **Select all**, which selects what is shown and says so when more match ("Select
+   all 20 shown — 182 match, type more to narrow") — never thousands by accident.
 3. **Search knows what's selected.** With something selected, each result says what it is to
    that selection, using the rule that already drives "+ New" and the picker
    (`linkableExistingTypes`, i.e. `creatableTypesFor` + `LINKABLE_TYPES`):
-   *can link* — sorted first; *already linked* — only when known (a single selected item whose
+   *can link* — linkability is per type, so those type groups come first; *already linked* — only when known (a single selected item whose
    detail is cached, the same limit the picker had; never guessed); *can't link* — still listed,
    sorted last, greyed type line. Selected items themselves are marked as selected, as anywhere.
    With nothing selected, results are grouped by type in menu order, then alphabetical.
@@ -1160,20 +1162,34 @@ they wanted and chose to try this and judge it in use.
    by the intersection rule — search-before-create, the manual twin of the import's entity
    resolution, and no dead end. Not in this step: it touches creation.
 
-**Data.** No server change: every category is already loaded into `CATEGORY_ITEMS` at start
-(2026-10-01 counts on phis-test: largest germplasm 182, scientific objects 103). Ceiling: each
-list is fetched with `page_size=500`; past that a type's search misses items and needs a server
-search. Marked with a `ponytail:` comment at the match function.
+**Data — server-side, so it scales (decided 2026-10-01 over searching the cached lists).**
+Searching `CATEGORY_ITEMS` would have needed no server code, but every list is cut at
+`page_size=500` and loaded whole at start, so search would silently miss items after one season
+of trials. Instead `GET api/search?q=<text>[&type=<t>&page=<n>]` asks OpenSILEX per type in
+parallel with its own `name=` filter (probed 2026-10-01: part-match, case-insensitive, returns
+`pagination.totalCount`, 60–110 ms per type) and answers `[{ type, total, items: [row…] }]`,
+20 rows per type (`type` + `page` = Show more for one type). Types searched: every browsable type
+that has a name (not events, data files, documents — their labels are a description, filename,
+title; add when needed). Rows are built exactly like the list
+route's (same `id` form, incl. germplasm's compacted uri and `parent`), so selection, chips and
+`canonicalPathFor` treat a search hit and a browsed row as the same item — list.ts and search
+share that row builder. Types whose endpoint ignores `name=` (organizations, found by the probe;
+the route's tests pin which) are fetched whole and filtered in the route. The page sends a
+query ~250 ms after typing stops and drops answers to older queries. Browsing keeps its own
+500 cap — a separate, known limit.
 
-**Empty and edge states.** No matches: "No matches for '<text>'." Lists still loading: search
-over what has arrived (they load in well under a second). Names are user-typed: escaped like every
-row (`escapeHtml`).
+**Empty and edge states.** While waiting: "Searching…". No matches: "No matches for '<text>'."
+OpenSILEX error for one type: the other types still show, that type says it couldn't be searched
+(no silent gap). Names are user-typed: escaped like every row (`escapeHtml`).
 
-**Tests.** Playwright e2e (stubbed lists): typing a part-name shows matches from two types;
-plain click selects one, ctrl-click adds a second, both in the selection pane; Select all selects
-every match; with a scientific object selected, a germplasm result reads "can link" and sorts
-above a person result; `›` opens the canonical path and clears the bar; Esc restores the previous
-list. Then the full suite, then a look on the deployed URL.
+**Tests.** Backend unit (stubbed OpenSILEX): fan-out per type with `name=`, totals, row shape
+equal to the list route's, organization filtered locally, `type`+`page` paging, one failing type
+reported without failing the rest. Playwright e2e (stubbed `api/search`): typing shows matches
+from two types with counts; plain click selects, ctrl-click adds, both in the selection pane;
+Select all selects what is shown; Show more appends; with a scientific object selected a
+germplasm result reads "can link" and sorts above a person; `›` opens the canonical path and
+clears the bar; Esc restores the previous list. Live smoke: `api/search?q=` reaches PHIS. Then
+the full suite, then a look on the deployed URL.
 
 **Order.** 1 + 2 + 4 first (the foundation), then 3, each tested and committed; 5 after the demo.
 
