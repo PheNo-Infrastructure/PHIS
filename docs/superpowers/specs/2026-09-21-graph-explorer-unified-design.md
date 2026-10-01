@@ -1388,3 +1388,24 @@ Supervisor/contact chips on experiments and projects now open the person.
 Scans: a person's or group's experiments read every experiment (7 on test; ponytail note with the
 ceiling). Not yet: organizations/sites shared with a group (one read each), device person in charge
 (devices have no page yet).
+
+**People: ON HOLD (user, 2026-10-01) — TODO after the rest of A–Z.** Step 1 (read-only pages) is
+built. Remaining, in order: 2 linking (supervisor/contact with a role question, group sharing,
+account–person, "Created by" on every page); 3 editing (persons, groups, members with a profile);
+5 accounts (a "what still ties this account" checklist; delete; hand-over). Accounts go last
+because the checklist must link to every resource type (A–Z gap 5 first). Explorer stays
+API-only (works on any instance) — no direct GraphDB writes in the app (user, 2026-10-01).
+Probed on phis-test (ZZ throwaways, cleaned):
+- Experiment supervisors and `groups` (experiment, germplasm) link through a normal PUT.
+- Person -> account link: set from the person's side (password kept); clearing it is ignored on
+  either side. Persons have no DELETE (405).
+- Account delete is refused while ANY of: a group membership (every account that logs in is
+  auto-added to "Users"), or a resource it created (`dc:publisher`). The person link does NOT
+  block, and deleting the account removes it. Memberships can be removed by a group PUT
+  (other members kept — checked).
+- A resource whose publisher account no longer exists: lists work (publisher null), but GET and
+  PUT of that resource fail with 500 — so accounts must never be removed behind OpenSILEX's back.
+- Lists that carry `publisher`: germplasm, projects, facilities, devices, events. Without:
+  experiments, scientific objects, organizations, sites, factors (one read per record).
+- Hand-over (PUT with another `publisher`): germplasm ignores it; facility / scientific object /
+  project accept `publisher: {uri}` but the read-back was inconclusive. Re-probe before building.
