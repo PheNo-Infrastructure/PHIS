@@ -1205,6 +1205,55 @@ rows aren't alphabetical within a type; a node deleted/renamed while its hit is 
 two stale comments about the removed type list. Select all *adds* to an
 existing selection (user, 2026-10-01: gathering, like ctrl-click).
 
+## Factors (designed 2026-10-01)
+
+**Why.** A–Z gap 2: factors exist only through the import — a scientist can't add a factor, fix
+its name, delete it, or change a plant's level without re-importing (the user hit "can't delete
+the factors" during the 2026-10-01 dry run). Editing a factor's level LIST (add / rename / remove
+a level) is the next step after this one (user's choice).
+
+**Probed 2026-10-01 on the "ZZ factor probe" throwaway (phis-test):**
+- A factor belongs to one experiment (`experiment` on the DTO); its levels come with it, full
+  uris (`…/factor/<exp>.<factor>.<level>`). A plant's level is `vocabulary:hasFactorLevel` in its
+  relations on the experiment copy (`factor_level` stays null).
+- **Rename** = `PUT /core/experiments/factors` with `uri, name, experiment` and the levels sent
+  back with their uris: name changes, level uris and the plants' links survive.
+- **Delete** of a factor whose level a plant uses is **accepted and cascades**: the factor goes and
+  the plant silently loses its level. (Deleting an experiment also takes its factors.)
+
+**The model — selection-first, like germplasm on plants.**
+1. **Levels become selectable.** A level is an item of its own type `factor_level` (id = its full
+   uri, label "Replicate: 2"). Its chips — in the factor's "Levels" row and in a plant's "Factor
+   levels" row — select with the usual click/ctrl rules. Not a browsable category and not in search
+   (it is reached through its factor).
+2. **Set a level on plants:** plants + one level selected -> **Link selection** reads "Set
+   Replicate: 2 on 20 plants…". The experiment is the level's own (a factor has one), so there is no
+   "which experiment?" question; a plant not in that experiment is offered "add it there first"
+   (the existing lone-object question, with that one experiment). A plant holds one level per
+   factor: setting a level replaces the plant's previous level of the same factor. Two levels of
+   one factor selected together -> no button, the why line says so.
+3. **Remove a level from a plant:** × on the plant's "Factor levels" chip (unlink mode), or
+   **Unlink selection** with the plant and the level selected — same as germplasm.
+4. **Create:** **+ New -> factor** with one experiment selected; browsing Factors with nothing
+   selected asks "in which experiment?" first (requiresLink, like a site's organization). The form
+   asks the name and the levels (one per line, at least one). Several experiments selected -> the
+   type is greyed (a factor belongs to one).
+5. **Rename** like every other type (the server sends the levels back, as probed).
+6. **Delete** like every other type, but the confirm names the cascade: "Delete factor Replicate?
+   It removes its level from 100 plants in PBar1x4…" (counted, never guessed). Nothing used -> a
+   plain confirm.
+
+**Not in this step:** editing a factor's level list; factors outside experiments (OpenSILEX has
+none); bulk "set levels from a file" (that is the import).
+
+**Tests.** Backend (stubbed OpenSILEX): create posts name + experiment + levels; rename sends the
+levels back with their uris; delete's detail reports how many plants use its levels; link
+plant + level writes `hasFactorLevel` on the level's experiment copy and replaces the same
+factor's old level; unlink removes it. e2e: level chips select; Link selection label and the
+"two levels of one factor" why; + New factor form (levels required) and its greying with two
+experiments; delete confirm names the plant count. Live: one throwaway "ZZ" experiment on
+phis-test through the app's own API (create factor, set level, rename, delete), cleaned up.
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only
