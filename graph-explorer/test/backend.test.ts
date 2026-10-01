@@ -1731,6 +1731,34 @@ test("link object + level: an object not in the level's experiment is asked to b
   });
 });
 
+test("create factor: name + experiment + levels (one per line -> [{name}]); no levels or two experiments refused", async () => {
+  await withServer(async (base) => {
+    const posts: any[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "POST") { posts.push({ url, body: JSON.parse(String(init.body)) }); return jsonResponse(201, { result: [FAC] }); }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const exp = { type: "experiment", id: facDto.experiment };
+
+    const ok = await create({ type: "factor", name: "Replicate", links: [exp], fields: { levels: "1\n 2 \n\n3" } });
+    assert.equal(ok.status, 201);
+    assert.deepEqual(posts[0].body, { name: "Replicate", experiment: facDto.experiment, levels: [{ name: "1" }, { name: "2" }, { name: "3" }] });
+    assert.match(posts[0].url, /\/core\/experiments\/factors$/);
+
+    const none = await create({ type: "factor", name: "X", links: [exp], fields: { levels: " \n " } });
+    assert.equal(none.status, 400);
+    assert.match((await none.json()).error, /Levels/);
+
+    const two = await create({ type: "factor", name: "X", links: [exp, { type: "experiment", id: "e2" }], fields: { levels: "1" } });
+    assert.equal(two.status, 400);
+    assert.match((await two.json()).error, /belongs to one experiment/);
+    assert.equal(posts.length, 1);
+  });
+});
+
 test("link object + level: two levels of one factor are refused", async () => {
   await withServer(async (base) => {
     const puts: any[] = [];

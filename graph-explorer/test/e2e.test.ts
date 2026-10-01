@@ -147,8 +147,9 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
       new Set(["organization", "facility", "project", "person", "factor", "scientific object"])
     );
     // Types the app can't create yet stay listed, but greyed and saying where to do it.
-    assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), true);
-    assert.match(await page.locator("#newList .newmenu-item", { hasText: "factor" }).textContent() ?? "", /in PHIS for now/);
+    assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), false, "a factor can be created for one experiment");
+    assert.equal(await page.locator("#newList .newmenu-item", { hasText: "person" }).isDisabled(), true);
+    assert.match(await page.locator("#newList .newmenu-item", { hasText: "person" }).textContent() ?? "", /in PHIS for now/);
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "project" }).isDisabled(), false);
     await page.locator("#newBtn").click(); // close
 

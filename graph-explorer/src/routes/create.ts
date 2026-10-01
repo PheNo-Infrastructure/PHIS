@@ -39,6 +39,11 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
     res.end(JSON.stringify({ error: `${type} is not a valid link target for the given selection` }));
     return true;
   }
+  if (config.onlyOne && links.filter((l) => l.type === config.onlyOne).length > 1) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `a ${type} belongs to one ${config.onlyOne}` }));
+    return true;
+  }
   const payload: Record<string, unknown> = { name };
   // Links the new node's own DTO can't carry in the POST — no field for that type (a project's
   // experiments live on each experiment), or a scalar field already used (a scientific object's
@@ -47,13 +52,15 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
   // Only the keys the type declares — never an arbitrary client-supplied DTO field.
   for (const f of config.fields ?? []) {
     const value = body.fields?.[f.key];
-    if (value === undefined || value === "") {
+    // "lines": one value per line -> [{name}] (a factor's levels); blank lines don't count.
+    const lines = f.input === "lines" ? String(value ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : null;
+    if (value === undefined || value === "" || (lines && !lines.length)) {
       if (!f.required) continue;
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: `${f.label} is required` }));
       return true;
     }
-    payload[f.key] = String(value);
+    payload[f.key] = lines ? lines.map((name) => ({ name })) : String(value);
   }
   for (const link of links) {
     const field = config.linkFields[link.type];
