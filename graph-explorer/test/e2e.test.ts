@@ -1810,6 +1810,37 @@ test("e2e: `›` on a result opens it at its real place and ends the search; a c
   });
 });
 
+test("e2e: tree rows stay clickable while search answers arrive (searching again keeps the gathered selection editable)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, (u) => (u.searchParams.get("q") === "ann" ? ANN : []));
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "ann");
+    await page.locator("#rowlist .row", { hasText: "Annika trial" }).click();
+    await typeSearch(page, "zzz"); // a new answer (without e1) re-renders the list pane on its own
+    await page.locator("#treeArea .row[data-id='e1']").click({ modifiers: ["Control"] });
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator("#selList .sel-item").count(), 0, "ctrl-click on the tree row toggled it out");
+  });
+});
+
+test("e2e: clicking a search result never reorders the groups under the cursor", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, () => [
+      { type: "person", total: 1, items: [{ id: "p1", type: "person", label: "Ann Smith" }] },
+      { type: "scientific_object", total: 1, items: [{ id: "so-a", type: "scientific_object", label: "Ann plot" }] },
+      { type: "germplasm", total: 1, items: [{ id: "g1", type: "germplasm", label: "Annika" }] },
+    ]);
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "ann");
+    const before = await page.locator("#rowlist .search-group").allTextContents();
+    await page.locator("#rowlist .row[data-id='g1']").click();
+    await page.waitForTimeout(150);
+    assert.deepEqual(await page.locator("#rowlist .search-group").allTextContents(), before);
+  });
+});
+
 test("e2e: with something selected, search says what each result is to it — can link first, already linked when known, can't link last", async () => {
   await withServerAndBrowser(async (base, page) => {
     await stubSearch(page, (u) => u.searchParams.get("q") === "plot"

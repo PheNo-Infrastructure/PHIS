@@ -1107,13 +1107,19 @@ function searchNote(item) {
 }
 
 // Linkability is per type, so with something selected the types that can link come first
-// (a stable sort keeps menu order within each half).
-function searchGroupsInOrder() {
-  const groups = search.groups || [];
+// (a stable sort keeps menu order within each half). Applied once when an answer arrives — never
+// on a click, or the group just clicked in would jump away under the cursor.
+function orderSearchGroups(groups) {
   if (!selection.size) return groups;
   const linkable = linkableExistingTypes();
   return [...groups].sort((a, b) => (linkable.has(a.type) ? 0 : 1) - (linkable.has(b.type) ? 0 : 1));
 }
+function searchGroupsInOrder() { return search.groups || []; }
+
+// renderRows rebuilds addressableItems from the list alone; the tree and the detail pane's member
+// rows re-add theirs when they render — so a search update re-renders them too, or they stop
+// taking clicks.
+function renderSearchUpdate() { refreshLeftPane(); renderDetail(); }
 
 function renderSearchRows() {
   const groups = searchGroupsInOrder();
@@ -1161,18 +1167,18 @@ function renderSearchRows() {
 async function runSearch(q) {
   const seq = ++searchSeq;
   search = { q, groups: null };
-  renderRows();
+  renderSearchUpdate();
   try {
     const res = await fetch(`api/search?q=${encodeURIComponent(q)}`);
     if (!res.ok) throw new Error(`${res.status}`);
     const groups = await res.json();
     if (seq !== searchSeq) return; // an older query answering late
-    search = { q, groups };
+    search = { q, groups: orderSearchGroups(groups) };
   } catch (err) {
     if (seq !== searchSeq) return;
     search = { q, groups: [], failed: err.message };
   }
-  renderRows();
+  renderSearchUpdate();
 }
 
 async function showMoreResults(group) {
@@ -1186,7 +1192,7 @@ async function showMoreResults(group) {
     group.items = group.items.concat(next.items.filter(it => !group.items.some(x => x.id === it.id)));
   }
   else showToast("Couldn't load more.");
-  renderRows();
+  renderSearchUpdate();
 }
 
 // Ends the search without rendering (callers that navigate render anyway).
@@ -1196,7 +1202,7 @@ function clearSearch() {
   search = null;
   els.searchInput.value = "";
 }
-function endSearch() { clearSearch(); renderRows(); }
+function endSearch() { clearSearch(); renderSearchUpdate(); }
 
 els.searchInput.addEventListener("input", () => {
   clearTimeout(searchTimer);

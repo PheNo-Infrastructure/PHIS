@@ -35,6 +35,14 @@ test("live: GET /api/search reaches the real PHIS instance and answers well-shap
   });
 });
 
+test("live: GET /api/search with regex and quote characters makes no type fail (escaping holds on every OpenSILEX backend)", async () => {
+  await withServer(async (base) => {
+    const q = 'a( . " \\ – Ø';
+    const groups = (await (await fetch(`${base}/api/search?q=${encodeURIComponent(q)}`)).json()) as Array<{ type: string; error?: string }>;
+    assert.deepEqual(groups.filter((g) => g.error).map((g) => `${g.type}: ${g.error}`), []);
+  });
+});
+
 function assertWellShapedList(body: unknown, expectedType: string) {
   assert.ok(Array.isArray(body), "response should be an array");
   for (const item of body as Array<Record<string, unknown>>) {
