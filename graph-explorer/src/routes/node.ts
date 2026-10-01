@@ -25,6 +25,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
       ...(config.visibility ? { isPublic: dto.is_public === true } : {}),
       ...(config.deleteBlockedBy?.(dto) ? { deleteBlocked: config.deleteBlockedBy(dto) } : {}),
+      ...(config.deleteWarning ? { deleteWarning: await config.deleteWarning(id, dto) } : {}),
       relations: await relationsFor(id, dto, config),
     });
     res.writeHead(200, { "Content-Type": "application/json" });

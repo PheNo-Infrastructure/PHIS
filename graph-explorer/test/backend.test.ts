@@ -584,7 +584,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
       typeName: "plant",
       actions: ["delete", "link"],
       deleteRemovesLinks: true,
-      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", items: [] }] }] }],
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] }] }] }],
     });
     const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", name: "X" }) });
     assert.equal(put.status, 400);
@@ -634,12 +634,12 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const g = (id: string, label: string) => ({ id, type: "germplasm", label });
     assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", items: [
-      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", items: [] }] },
+      { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] }] },
       { id: "exp-b", type: "experiment", label: "Barley 2026", groups: [
         { label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
         { label: "Part of", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
         { label: "Contains", field: "contains", type: "scientific_object", items: [] },
-        { label: "Factor levels", items: [] },
+        { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] },
       ] },
     ] }]);
     assert.deepEqual(named.sort(), ["germplasm:phis:id/annika", "germplasm:phis:id/arild,phis:id/annika", "so:phis:id/block-a"]);
@@ -688,13 +688,13 @@ test("PUT /api/node with an experiment: germplasm add/remove rewrites ONLY that 
     assert.equal(partOf.status, 200);
     assert.deepEqual(puts[2].relations.map((r: any) => r.value), ["phis:id/arild", "phis:id/block-b"], "one parent: block-a replaced, germplasm kept");
 
-    const bad = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasFactorLevel", uris: ["x"] } });
+    const bad = await put({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasNothing", uris: ["x"] } });
     assert.equal(bad.status, 400, "only the per-experiment rows can be written");
     assert.equal(puts.length, 3);
   });
 });
 
-test("scientific object: factor levels show per experiment as their factor ('Replicate: 2'), and a germplasm edit sends them back", async () => {
+test("scientific object: factor levels show per experiment as selectable levels ('Replicate: 2'), removable, and a germplasm edit sends them back", async () => {
   await withServer(async (base) => {
     const puts: any[] = [];
     const rels = [{ property: "vocabulary:hasFactorLevel", value: "https://phis.pheno.no/id/factor/rep.2", inverse: false }];
@@ -715,7 +715,7 @@ test("scientific object: factor levels show per experiment as their factor ('Rep
 
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const row = detail.relations[0].items[0].groups.find((g: any) => g.label === "Factor levels");
-    assert.deepEqual(row, { label: "Factor levels", items: [{ id: "https://phis.pheno.no/id/factor/rep", type: "factor", label: "Replicate: 2" }] }, "read-only: no field, so no × or + Add");
+    assert.deepEqual(row, { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [{ id: "https://phis.pheno.no/id/factor/rep.2", type: "factor_level", label: "Replicate: 2", factor: "https://phis.pheno.no/id/factor/rep" }] });
 
     const res = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", experiment: "exp-b", link: { field: "hasGermplasm", uris: ["phis:id/g"] } }) });
     assert.equal(res.status, 200);
@@ -1639,5 +1639,47 @@ test("GET /api/search: regex characters are escaped (OpenSILEX's name= is a rege
     await realFetch(`${base}/api/search?q=${encodeURIComponent("Plant 1) a.b")}`);
     const sent = calls.find((u) => u.includes("/core/germplasm?"))!;
     assert.equal(decodeURIComponent(sent.split("name=")[1].split("&")[0]), "Plant 1\\) a\\.b");
+  });
+});
+
+// ---------- factors ----------
+const FAC = "https://phis.pheno.no/id/factor/exp.rep";
+const facDto = { uri: FAC, name: "Replicate", experiment: "https://phis.pheno.no/id/experiment/exp", levels: [{ uri: `${FAC}.1`, name: "1", description: null }, { uri: `${FAC}.2`, name: "2", description: null }] };
+function factorStub(calls: string[], puts: any[] = []) {
+  return (async (url: string, init?: RequestInit) => {
+    calls.push(url);
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: FAC }); }
+    if (url.includes("/core/scientific_objects?") && url.includes("factor_levels=")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 100 } } });
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}/experiments`)) return jsonResponse(200, { result: [{ uri: facDto.experiment, name: "PBar1x4" }] });
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`)) return jsonResponse(200, { result: facDto });
+    if (url.includes(`/core/experiments/${encodeURIComponent(facDto.experiment)}`)) return jsonResponse(200, { result: { uri: facDto.experiment, name: "PBar1x4" } });
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+
+test("factor detail: rename and delete allowed, levels are selectable 'Replicate: 1' items, delete warns with the counted cascade", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = factorStub([]);
+    const d = await (await realFetch(`${base}/api/node-detail?type=factor&id=${encodeURIComponent(FAC)}`)).json();
+    assert.deepEqual(d.actions, ["rename", "delete"]);
+    assert.equal(d.deleteRemovesLinks, true);
+    assert.equal(d.deleteWarning, "It also removes its level from 100 scientific objects in PBar1x4.");
+    const levels = d.relations.find((r: any) => r.label === "Levels");
+    assert.deepEqual(levels.items, [
+      { id: `${FAC}.1`, type: "factor_level", label: "Replicate: 1", factor: FAC },
+      { id: `${FAC}.2`, type: "factor_level", label: "Replicate: 2", factor: FAC },
+    ]);
+  });
+});
+
+test("factor rename sends the levels back with their uris (OpenSILEX keeps them and the objects' links — probed)", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = factorStub([], puts);
+    const res = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "factor", id: FAC, name: "Block" }) });
+    assert.equal(res.status, 200);
+    assert.deepEqual(puts[0], { uri: FAC, name: "Block", experiment: facDto.experiment, levels: facDto.levels });
   });
 });

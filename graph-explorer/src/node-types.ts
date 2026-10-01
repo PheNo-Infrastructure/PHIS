@@ -35,6 +35,12 @@ export type NodeConfig = {
   // DELETE calls to make before deleteUrl — e.g. a scientific object's per-experiment copies
   // (OpenSILEX refuses deleting the global copy while any experiment copy exists — probed).
   deleteFirst?: (id: string) => Promise<string[]>;
+  // The whole UpdateDTO, when copying the GetDTO back would mangle it (a factor's levels are
+  // {uri, name} objects that must go back as objects — probed).
+  putPayload?: (dto: Record<string, unknown>, name: string) => Record<string, unknown>;
+  // A sentence for the delete confirm when OpenSILEX's delete cascades somewhere the relations
+  // don't show (a factor's levels vanish from the objects using them — probed). Counted, never guessed.
+  deleteWarning?: (id: string, dto: Record<string, unknown>) => Promise<string>;
   // Has an is_public flag the app can set (experiments, germplasm): shown in the detail pane and
   // changed from the selection pane. Other types have no visibility flag in OpenSILEX.
   visibility?: true;
@@ -70,6 +76,8 @@ export type NodeConfig = {
     type: string;
     url: (id: string) => string;
     item?: (row: Record<string, unknown>) => { id: string; label: string } | null;
+    // Builds the items itself instead of mapping `url`'s rows (labels that need the parent node).
+    load?: (id: string) => Promise<{ id: string; label: string; [k: string]: unknown }[]>;
     // Makes the group's chips unlinkable (×), through contextLinks[field].
     field?: string;
     // Deleting the node is refused while this group is non-empty — e.g. an experiment that still
@@ -133,22 +141,35 @@ const SO_ROWS_PER_EXPERIMENT = [
   // this one there, via the per-experiment parent filter (probed). Removing one clears ITS
   // isPartOf. Shown so a relation is visible and removable from both sides.
   { label: "Contains", property: "contains", inverseOf: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: false },
-  // Read-only for now (editing is a later step). A level has no node of its own, so its chip is
-  // its FACTOR, labelled "Replicate: 2". Stored in `relations` like the rest (probed 2026-09-30).
-  { label: "Factor levels", property: "hasFactorLevel", type: "factor", names: factorLevelChips, addable: false, removable: false, single: false },
+  // A level has no node of its own beyond uri + name; its chip is "Replicate: 2" (type
+  // factor_level, selectable). Removable here; set through Link selection (byType below), never
+  // carried over or offered to children — levels belong to ONE experiment's factors.
+  { label: "Factor levels", property: "hasFactorLevel", type: "factor_level", names: factorLevelChips, addable: false, removable: true, single: false },
 ];
+type FactorDto = { uri: string; name: string; experiment: string; levels: { uri: string; name: string; description?: string | null }[] };
+const levelItem = (f: FactorDto, l: { uri: string; name: string }) => ({ id: l.uri, type: "factor_level", label: `${f.name}: ${l.name}`, factor: f.uri });
+
+// A level's uri is its factor's uri + "." + the level (probed: …/factor/<exp>.<factor>.<level>);
+// the factor's own record confirms the level and names the experiment. Ids stay FULL: the factor
+// endpoints 404 a prefixed uri (probed).
+// ponytail: derives the factor from the uri shape; a level that doesn't match is refused (400), never guessed.
+export async function factorOfLevel(levelId: string): Promise<FactorDto> {
+  const cut = levelId.lastIndexOf(".");
+  const f = cut > 0 ? ((await authedGetOne(`/core/experiments/factors/${encodeURIComponent(levelId.slice(0, cut))}`).catch(() => null))?.result as FactorDto | undefined) : undefined;
+  if (!f?.levels?.some((l) => l.uri === levelId)) throw new OpenSilexError(400, `Not a factor level this app can resolve: ${levelId}`);
+  return f;
+}
+
 // Every factor of the experiment with its levels comes back in one call — enough to name them all.
 async function factorLevelChips(expId: string, uris: string[]) {
-  const factors = (await authedGet(`/core/experiments/${encodeURIComponent(expId)}/factors`)).result as { uri: string; name?: string; levels?: { uri: string; name?: string }[] }[];
-  const byLevel = new Map<string, { id: string; label: string }>();
-  for (const f of factors) {
-    const id = f.uri; // full: the factor endpoints 404 a prefixed uri (probed)
-    for (const l of f.levels ?? []) byLevel.set(await compactUri(l.uri), { id, label: `${f.name ?? id}: ${l.name ?? l.uri}` });
-  }
-  return Promise.all(uris.map(async (u) => {
-    const key = await compactUri(u);
-    return { ...(byLevel.get(key) ?? { id: u, label: key }), type: "factor" };
-  }));
+  const factors = (await authedGet(`/core/experiments/${encodeURIComponent(expId)}/factors`)).result as unknown as FactorDto[];
+  const byLevel = new Map<string, ReturnType<typeof levelItem>>();
+  for (const f of factors) for (const l of f.levels ?? []) byLevel.set(await compactUri(l.uri), levelItem(f, l));
+  return Promise.all(uris.map(async (u) => byLevel.get(await compactUri(u)) ?? { id: u, type: "factor_level", label: u, factor: "" }));
+}
+async function factorLevelItems(factorId: string) {
+  const f = (await authedGetOne(`/core/experiments/factors/${encodeURIComponent(factorId)}`)).result as unknown as FactorDto;
+  return (f.levels ?? []).map((l) => levelItem(f, l));
 }
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
 
@@ -384,7 +405,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       : null),
     inExperiment: {
       fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.removable).map((r) => r.property),
-      byType: Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.addable).map((r) => [r.type, r.property])),
+      byType: { ...Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.addable).map((r) => [r.type, r.property])), factor_level: "hasFactorLevel" },
       parentField: "isPartOf",
       experimentsOf: (id) => queryItems(SO_EXPERIMENTS, id),
       update: updateSoInExperiment,
@@ -436,19 +457,45 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
     ],
   },
-  // Read-only for now. A factor belongs to one experiment; its levels have no node of their own,
-  // so they're listed as plain chips.
+  // A factor belongs to one experiment; its levels are listed as selectable items. Rename sends
+  // the levels back as objects (putPayload); delete cascades to the objects using its levels,
+  // so the confirm says how many (deleteWarning).
   factor: {
     getUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
     putUrl: "/core/experiments/factors",
     deleteUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: [],
+    actions: ["rename", "delete"],
+    putPayload: (dto, name) => ({
+      uri: dto.uri, name, experiment: dto.experiment,
+      levels: ((dto.levels as FactorDto["levels"] | undefined) ?? []).map((l) => ({ uri: l.uri, name: l.name, description: l.description ?? null })),
+    }),
+    deleteRemovesLinks: true,
+    deleteWarning: async (_id, dto) => {
+      const levels = (dto.levels as { uri: string }[] | undefined) ?? [];
+      const exp = String(dto.experiment ?? "");
+      if (!levels.length || !exp) return "No scientific object uses it.";
+      const filter = levels.map((l) => `factor_levels=${encodeURIComponent(l.uri)}`).join("&");
+      const n = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(exp)}&${filter}&page_size=1`)).metadata?.pagination?.totalCount ?? 0;
+      if (!n) return "No scientific object uses it.";
+      const expName = String((await authedGetOne(`/core/experiments/${encodeURIComponent(exp)}`)).result.name ?? exp);
+      return `It also removes its level from ${n} scientific object${n === 1 ? "" : "s"} in ${expName}.`;
+    },
     queryRelations: [
       { label: "Experiment", type: "experiment", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/experiments` },
-      { label: "Levels", type: "factor_level", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/levels` },
+      { label: "Levels", type: "factor_level", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/levels`, load: factorLevelItems },
     ],
+  },
+  // A factor's level: only uri + name in OpenSILEX. Exists as a type so it can be selected and set
+  // on scientific objects (their inExperiment.byType); its factor/experiment come from factorOfLevel.
+  factor_level: {
+    getUrl: (id) => `/core/experiments/factors/levels/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: ["link"],
   },
   site: {
     getUrl: (id) => `/core/sites/${encodeURIComponent(id)}`,
@@ -495,6 +542,7 @@ export function relationsFromDto(dto: Record<string, unknown>, config: NodeConfi
 export type QueryRelation = NonNullable<NodeConfig["queryRelations"]>[number];
 
 export async function queryItems(q: QueryRelation, id: string) {
+  if (q.load) return (await q.load(id)).map((it) => ({ ...it, type: q.type }));
   let rows = (await authedGet(q.url(id))).result;
   // Uris come back full or prefixed (phis:id/...) depending on the endpoint, so compare compacted.
   if (q.compactIds || q.skipSelf) rows = await Promise.all(rows.map(async (r) => ({ ...r, uri: await compactUri(String(r.uri)) })));
@@ -578,7 +626,8 @@ export async function updateNode(
   mod: { name?: string; unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] }; isPublic?: boolean }
 ) {
   const current = (await authedGetOne(config.getUrl(id))).result;
-  await authedPut(config.putUrl, updatePayloadFromDto(id, mod.name ?? String(current.name ?? ""), current, config, mod));
+  const name = mod.name ?? String(current.name ?? "");
+  await authedPut(config.putUrl, config.putPayload ? config.putPayload(current, name) : updatePayloadFromDto(id, name, current, config, mod));
   return current;
 }
 

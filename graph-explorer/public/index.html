@@ -2949,13 +2949,13 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —
 // "Link selection" handles them by asking which experiment, but "+ New" can't (a brand-new
 // object isn't in any yet), so they're never offered there. Same drift check as LINKABLE_TYPES.
-const IN_EXPERIMENT_PAIRS = new Set(["scientific_object:germplasm"]);
+const IN_EXPERIMENT_PAIRS = new Set(["scientific_object:germplasm", "scientific_object:factor_level"]);
 const inExperimentOnly = (a, b) => IN_EXPERIMENT_PAIRS.has(`${a}:${b}`) || IN_EXPERIMENT_PAIRS.has(`${b}:${a}`);
 
 // Reverse of BACKED_CATEGORIES, keyed by node type instead of category id — lets a freshly
