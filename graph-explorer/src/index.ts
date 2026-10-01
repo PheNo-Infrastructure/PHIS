@@ -31,16 +31,22 @@ const routeHandlers: RouteHandler[] = [
   handleElsewhere,
 ];
 
-// The sub-path the shared ingress serves the app under (e.g. "/portal" on phis.pheno.no). It is
-// stripped before routing, so every route below stays written as if served at "/". Unset locally.
-const BASE_PATH = process.env.BASE_PATH ?? "";
-
 // Exported for tests. Every branch is wrapped so a failure anywhere (a bad
 // OpenSILEX response, a missing file, a network error) always produces a
 // clean HTTP response instead of an unhandled rejection that kills the process.
 export async function handleRequest(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  if (BASE_PATH && req.url?.startsWith(BASE_PATH)) req.url = req.url.slice(BASE_PATH.length) || "/";
+  // The sub-path the shared ingress serves the app under (e.g. "/portal" on phis.pheno.no). It is
+  // stripped before routing, so every route below stays written as if served at "/". Unset locally.
+  // The bare sub-path redirects to its slash form first: the page's relative "api/..." calls only
+  // resolve under "/portal/", and its script would otherwise fire them before any client redirect.
+  const basePath = process.env.BASE_PATH ?? "";
+  if (basePath && req.url === basePath) {
+    res.writeHead(301, { Location: `${basePath}/` });
+    res.end();
+    return;
+  }
+  if (basePath && req.url?.startsWith(basePath)) req.url = req.url.slice(basePath.length) || "/";
   const { pathname, searchParams } = new URL(req.url ?? "/", "http://internal");
 
   try {

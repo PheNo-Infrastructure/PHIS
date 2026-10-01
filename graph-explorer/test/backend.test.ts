@@ -1546,6 +1546,21 @@ test("GET /api/elsewhere: for an experiment's objects, the OTHER experiments eac
   });
 });
 
+test("under a BASE_PATH, the bare sub-path redirects to its trailing-slash form before any page script runs", async () => {
+  process.env.BASE_PATH = "/portal";
+  try {
+    await withServer(async (base) => {
+      const res = await realFetch(`${base}/portal`, { redirect: "manual" });
+      assert.equal(res.status, 301);
+      assert.equal(res.headers.get("location"), "/portal/");
+      const page = await realFetch(`${base}/portal/`, { redirect: "manual" });
+      assert.equal(page.status, 200, "the slash form is served as before");
+    });
+  } finally {
+    delete process.env.BASE_PATH;
+  }
+});
+
 // ---------- /api/search ----------
 const SEARCH_NS = { result: { phis: "https://phis.pheno.no/" } };
 function searchStub(calls: string[], overrides: Record<string, () => Response> = {}) {

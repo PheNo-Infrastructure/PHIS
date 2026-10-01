@@ -808,8 +808,7 @@ button { font-family: inherit; }
 
 <script>
 // API calls are relative ("api/...") so the page also works under a sub-path such as
-// phis.pheno.no/portal/ — which needs the trailing slash for them to resolve there.
-if (!location.pathname.endsWith("/")) location.replace(location.pathname + "/" + location.search + location.hash);
+// phis.pheno.no/portal/ (the server redirects the bare /portal to it).
 /* ---------------- mock graph data ---------------- */
 // `name` = PHIS's own word for the type, so what users learn here carries over to PHIS; the plain
 // explanation lives in the menu hints. Every type name on the page goes through typeName().
