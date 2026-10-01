@@ -2346,39 +2346,19 @@ async function confirmLinkRanking() {
   }
 }
 
-// Real candidates for "Link existing…", grouped by type — every item in CATEGORY_ITEMS for
-// each linkable candidate type, minus whatever's already selected. Grouped (not flat) so the
-// popover can browse type-by-type instead of dumping everything into one long list.
+// The picker only answers the app's questions now (linkPickerMode set): which experiment,
+// carry-over, the anchor of a requiresLink create. Gathering a selection is the search bar's job.
 function linkPickerCandidatesByType() {
-  if (linkPickerMode) return new Map([[linkPickerMode.type, (linkPickerMode.items || CATEGORY_ITEMS[CATEGORY_FOR_TYPE[linkPickerMode.type]] || []).filter(it => !linkPickerMode.exclude?.has(it.id))]]);
-  const selectedIds = new Set(selection.keys());
-  // When there's exactly one selected node and its detail is cached, also drop anything already
-  // related to it — otherwise "Link existing…" happily re-offers an org's own parent/child/
-  // facility, and confirming does nothing but claim success (the backend dedupes the relation
-  // silently). Skipped for multi-item selections: "already linked to item A" shouldn't hide a
-  // candidate that still needs linking to item B.
-  const anchorIds = selection.size === 1 ? [...selection.keys()] : [];
-  const alreadyRelated = new Set();
-  anchorIds.forEach(id => {
-    (NODE_DETAIL[id]?.relations ?? []).forEach(rel => rel.items.forEach(it => alreadyRelated.add(it.id)));
-  });
-  const byType = new Map();
-  linkableExistingTypes().forEach(type => {
-    const categoryId = CATEGORY_FOR_TYPE[type];
-    const items = (CATEGORY_ITEMS[categoryId] || []).filter(item => !selectedIds.has(item.id) && !alreadyRelated.has(item.id));
-    if (items.length) byType.set(type, items);
-  });
-  return byType;
+  if (!linkPickerMode) return new Map();
+  return new Map([[linkPickerMode.type, (linkPickerMode.items || CATEGORY_ITEMS[CATEGORY_FOR_TYPE[linkPickerMode.type]] || []).filter(it => !linkPickerMode.exclude?.has(it.id))]]);
 }
 
-// Renders the "Link existing…" popover body in place, without touching the rest of the action
-// bar — called on open and on every pick/search/navigate inside it. Two levels: pick a type
-// (like a tiny category list), then pick one or more real items of that type using the SAME
-// click/ctrl/shift rules as the main rowlist's applyClick: plain click replaces the pick set
-// with just that row, ctrl toggles one row in/out without touching the rest, shift range-
-// selects between the last-picked row and this one (also replacing, not adding to, the prior
-// pick) — scoped to the currently visible (filtered) list, same idea as the main rowlist's
-// shift-range but local to this popover.
+// Renders the picker popover body in place, without touching the rest of the action bar —
+// called on open and on every pick/filter inside it. Every question locks it to one type
+// (linkPickerType); items are picked with the SAME click/ctrl/shift rules as the main rowlist's
+// applyClick: plain click replaces the pick set with just that row, ctrl toggles one row in/out
+// without touching the rest, shift range-selects between the last-picked row and this one —
+// scoped to the currently visible (filtered) list.
 function renderLinkPicker() {
   const body = document.getElementById("linkPickerBody");
   const footer = document.getElementById("linkPickerFooter");
@@ -2386,85 +2366,61 @@ function renderLinkPicker() {
   const byType = linkPickerCandidatesByType();
   body.innerHTML = "";
 
-  if (!linkPickerType) {
-    if (!byType.size) {
-      body.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">Nothing linkable found.</span>`;
-    } else {
-      [...byType.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([type, items]) => {
-        const btn = document.createElement("button");
-        btn.className = "newmenu-item";
-        btn.setAttribute("style", typeStyle(type));
-        btn.innerHTML = `<span class="swatch"></span>${typeName(type)}<span class="newmenu-item-type">${items.length}</span>`;
-        btn.addEventListener("click", () => { linkPickerType = type; renderLinkPicker(); });
-        body.appendChild(btn);
-      });
+  const filterInput = document.createElement("input");
+  filterInput.className = "linkmenu-search";
+  filterInput.type = "text";
+  filterInput.placeholder = `Search ${typeName(linkPickerType)}…`;
+  filterInput.addEventListener("click", (e) => e.stopPropagation());
+  body.appendChild(filterInput);
+
+  const listEl = document.createElement("div");
+  listEl.className = "linkmenu-items";
+  body.appendChild(listEl);
+
+  const items = byType.get(linkPickerType) || [];
+  const paintRows = (filterText) => {
+    const q = filterText.trim().toLowerCase();
+    const visible = q ? items.filter((it) => it.label.toLowerCase().includes(q)) : items;
+    const visibleIds = visible.map((it) => it.id);
+    listEl.innerHTML = "";
+    if (!visible.length) {
+      listEl.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">No matches.</span>`;
+      return;
     }
-  } else {
-    // Locked to one type = no type list to go back to.
-    if (!linkPickerMode) {
-      const crumb = document.createElement("div");
-      crumb.className = "linkmenu-crumb";
-      crumb.innerHTML = `<button class="linkmenu-back">&lsaquo; Types</button><span>${typeName(linkPickerType)}</span>`;
-      crumb.querySelector(".linkmenu-back").addEventListener("click", () => { linkPickerType = null; renderLinkPicker(); });
-      body.appendChild(crumb);
-    }
-
-    const search = document.createElement("input");
-    search.className = "linkmenu-search";
-    search.type = "text";
-    search.placeholder = `Search ${typeName(linkPickerType)}…`;
-    search.addEventListener("click", (e) => e.stopPropagation());
-    body.appendChild(search);
-
-    const listEl = document.createElement("div");
-    listEl.className = "linkmenu-items";
-    body.appendChild(listEl);
-
-    const items = byType.get(linkPickerType) || [];
-    const paintRows = (filterText) => {
-      const q = filterText.trim().toLowerCase();
-      const visible = q ? items.filter((it) => it.label.toLowerCase().includes(q)) : items;
-      const visibleIds = visible.map((it) => it.id);
-      listEl.innerHTML = "";
-      if (!visible.length) {
-        listEl.innerHTML = `<span style="padding:8px; font-size:12.5px; color:var(--ink-faint);">No matches.</span>`;
-        return;
-      }
-      // Same click/ctrl/shift rules as every other list; picks only join the selection.
-      visible.slice(0, 200).forEach((it) => {
-        const row = document.createElement("button");
-        row.className = "newmenu-item" + (linkPickerPicked.has(it.id) ? " selected" : "");
-        row.setAttribute("style", typeStyle(it.type));
-        row.innerHTML = `<span class="swatch"></span>${escapeHtml(it.label)}`;
-        row.addEventListener("click", (e) => {
-          // Same click/ctrl/shift rules as the main rowlist's applyClick: plain click REPLACES
-          // the pick set with just this one, ctrl toggles it in/out without touching the rest,
-          // shift range-selects between the last-picked anchor and this row (also replacing,
-          // not adding to, whatever was picked before — matching the main list's shift branch).
-          if (e.shiftKey && linkPickerShiftAnchor && visibleIds.includes(linkPickerShiftAnchor)) {
-            const lo = Math.min(visibleIds.indexOf(linkPickerShiftAnchor), visibleIds.indexOf(it.id));
-            const hi = Math.max(visibleIds.indexOf(linkPickerShiftAnchor), visibleIds.indexOf(it.id));
-            linkPickerPicked = new Map();
-            visibleIds.slice(lo, hi + 1).forEach((id) => {
-              const found = visible.find((x) => x.id === id);
-              if (found) linkPickerPicked.set(id, found);
-            });
-          } else if (e.ctrlKey || e.metaKey) {
-            if (linkPickerPicked.has(it.id)) linkPickerPicked.delete(it.id);
-            else linkPickerPicked.set(it.id, it);
-          } else {
-            linkPickerPicked = new Map([[it.id, it]]);
-          }
-          linkPickerShiftAnchor = it.id;
-          paintRows(search.value);
-          renderLinkPickerFooter();
-        });
-        listEl.appendChild(row);
+    // Same click/ctrl/shift rules as every other list; picks only join the selection.
+    visible.slice(0, 200).forEach((it) => {
+      const row = document.createElement("button");
+      row.className = "newmenu-item" + (linkPickerPicked.has(it.id) ? " selected" : "");
+      row.setAttribute("style", typeStyle(it.type));
+      row.innerHTML = `<span class="swatch"></span>${escapeHtml(it.label)}`;
+      row.addEventListener("click", (e) => {
+        // Same click/ctrl/shift rules as the main rowlist's applyClick: plain click REPLACES
+        // the pick set with just this one, ctrl toggles it in/out without touching the rest,
+        // shift range-selects between the last-picked anchor and this row (also replacing,
+        // not adding to, whatever was picked before — matching the main list's shift branch).
+        if (e.shiftKey && linkPickerShiftAnchor && visibleIds.includes(linkPickerShiftAnchor)) {
+          const lo = Math.min(visibleIds.indexOf(linkPickerShiftAnchor), visibleIds.indexOf(it.id));
+          const hi = Math.max(visibleIds.indexOf(linkPickerShiftAnchor), visibleIds.indexOf(it.id));
+          linkPickerPicked = new Map();
+          visibleIds.slice(lo, hi + 1).forEach((id) => {
+            const found = visible.find((x) => x.id === id);
+            if (found) linkPickerPicked.set(id, found);
+          });
+        } else if (e.ctrlKey || e.metaKey) {
+          if (linkPickerPicked.has(it.id)) linkPickerPicked.delete(it.id);
+          else linkPickerPicked.set(it.id, it);
+        } else {
+          linkPickerPicked = new Map([[it.id, it]]);
+        }
+        linkPickerShiftAnchor = it.id;
+        paintRows(filterInput.value);
+        renderLinkPickerFooter();
       });
-    };
-    paintRows("");
-    search.addEventListener("input", () => paintRows(search.value));
-  }
+      listEl.appendChild(row);
+    });
+  };
+  paintRows("");
+  filterInput.addEventListener("input", () => paintRows(filterInput.value));
 
   renderLinkPickerFooter();
 }
@@ -2476,34 +2432,22 @@ function renderLinkPickerFooter() {
   if (!linkPickerPicked.size) return;
   const btn = document.createElement("button");
   btn.className = "btn primary linkmenu-confirm";
-  btn.textContent = linkPickerMode ? linkPickerMode.confirmLabel(linkPickerPicked.size) : `Add ${linkPickerPicked.size} to selection`;
+  btn.textContent = linkPickerMode.confirmLabel(linkPickerPicked.size);
   btn.addEventListener("click", () => {
-    if (linkPickerMode) {
-      const { onConfirm } = linkPickerMode;
-      const picked = [...linkPickerPicked.values()];
-      document.getElementById("linkMenu")?.classList.remove("open");
-      linkPickerMode = null;
-      linkPickerType = null;
-      linkPickerPicked = new Map();
-      linkPickerShiftAnchor = null;
-      onConfirm(picked);
-      return;
-    }
-    // "Add to selection…" only SELECTS (selection-first design) — linking is always the
-    // selection pane's "Link selection", which then decides link / rank / why-not.
+    const { onConfirm } = linkPickerMode;
     const picked = [...linkPickerPicked.values()];
     document.getElementById("linkMenu")?.classList.remove("open");
+    linkPickerMode = null;
     linkPickerType = null;
     linkPickerPicked = new Map();
     linkPickerShiftAnchor = null;
-    picked.forEach((it) => selection.set(it.id, it));
-    refreshLeftPane(); renderDetail(); renderActionbar();
+    onConfirm(picked);
   });
   footer.appendChild(btn);
 }
 
-// The picker popover's markup + open/close wiring, shared by "Link existing…" and the
-// requiresLink standalone create. `onOpen` runs on each open, after the pick state is reset.
+// The picker popover's markup + open/close wiring, used by the app's questions (experiment
+// choice, carry-over, requiresLink create). `onOpen` runs on each open, after the pick state is reset.
 function linkMenuHtml(buttonHtml, title) {
   return `
     <div class="newmenu" id="linkMenu">
@@ -2667,7 +2611,6 @@ function renderActionbar() {
   const creatable = creatableTypesFor([...selection.values()].map(v => v.type));
   const plan = linkPlan();
   const canLink = plan.kind !== "none";
-  const hasExistingCandidates = linkPickerCandidatesByType().size > 0;
 
   bar.innerHTML = `
     <div class="selection-summary sel-count-summary">
@@ -2678,7 +2621,6 @@ function renderActionbar() {
     ${plan.why ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${canLink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
-    ${hasExistingCandidates ? linkMenuHtml(`<button class="btn ghost" id="addToSelectionBtn">Add to selection…</button>`, "Add to selection") : ""}
     <div class="newmenu" id="newMenu">
       <button class="btn primary" id="newBtn">+ New</button>
       <div class="newmenu-list" id="newList"></div>
@@ -2709,17 +2651,6 @@ function renderActionbar() {
       else linkItems(items.map(v => ({ type: v.type, id: v.id })));
     });
     document.getElementById("unlinkSelectionBtn").addEventListener("click", () => unlinkSelection([...selection.values()]));
-  }
-  if (hasExistingCandidates) {
-    // linkPickerCandidatesByType only filters out already-related items when the anchor's
-    // relations are cached — usually true if the node was opened first, but a plain click-
-    // to-select never loads NODE_DETAIL. Fetch it (if needed) BEFORE the one render,
-    // rather than rendering then re-rendering after — a second render mid-interaction would
-    // reset which rows exist out from under a pick already in progress.
-    wireLinkMenu("addToSelectionBtn", async () => {
-      const anchor = selection.size === 1 ? [...selection.values()][0] : null;
-      if (anchor && !(anchor.id in NODE_DETAIL)) await loadNodeDetail(anchor);
-    });
   }
   document.getElementById("clearSel").addEventListener("click", () => {
     selection = new Map(); anchorId = null; refreshLeftPane(); renderDetail(); renderActionbar();
