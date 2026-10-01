@@ -1173,7 +1173,8 @@ that has a name (not events, data files, documents — their labels are a descri
 title; add when needed). Rows are built exactly like the list
 route's (same `id` form, incl. germplasm's compacted uri and `parent`), so selection, chips and
 `canonicalPathFor` treat a search hit and a browsed row as the same item — list.ts and search
-share that row builder. Types whose endpoint ignores `name=` (organizations, found by the probe;
+share that row builder. `name=` is a Java regex, so queries are regex-escaped. Types whose endpoint
+ignores `name=` (facilities, sites, organizations — probed 2026-10-01;
 the route's tests pin which) are fetched whole and filtered in the route. The page sends a
 query ~250 ms after typing stops and drops answers to older queries. Browsing keeps its own
 500 cap — a separate, known limit.
