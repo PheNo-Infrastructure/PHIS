@@ -1198,6 +1198,12 @@ the full suite, then a look on the deployed URL.
 (selection-aware notes), deployed to phis.pheno.no/portal. Also: the server now redirects the
 bare `/portal` to `/portal/` (the page's script used to fire its first `api/` calls at OpenSILEX
 before a client-side redirect). Next: 5 (no match -> "+ New").
+Review fixes (c0ccf45): search updates keep tree/detail rows clickable; group order is set when an
+answer arrives, never on a click; a live test proves escaped characters fail no type. Deferred
+minors: `/portal?x=1` isn't redirected (only the bare path); Show more has no network-error toast;
+rows aren't alphabetical within a type; a node deleted/renamed while its hit is shown stays stale;
+two stale comments about the removed type list. Open question: should Select all *add* to an
+existing selection instead of replacing it (plain click replaces, so it matches today)?
 
 ## Access during development
 
