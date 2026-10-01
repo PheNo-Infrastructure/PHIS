@@ -57,7 +57,8 @@ work and the Graph Explorer. Read `MEMORY.md` there at session start.
 
 The new web portal: one page (`public/index.html`) plus a small Node/TypeScript server
 (`src/`), no framework, no build step. It was moved here from the PhisWebPortal repo
-(`PhisWebPortal@f740511`). The Streamlit portal still lives there and is out of scope.
+(`PhisWebPortal@f740511`). It replaced the Streamlit portal, which was removed from the
+cluster on 2026-10-01.
 
 - Setup: copy `.env.example` to `.env` and fill in `PHIS_PASS`. Never commit `.env`.
 - Run: `cd graph-explorer && npm install && npm run dev`, then open http://localhost:4000.
@@ -69,8 +70,12 @@ The new web portal: one page (`public/index.html`) plus a small Node/TypeScript 
 - **Live runs hit production PHIS** (`PHIS_HOST` in `.env`). Use a throwaway node for each
   experiment, and never PUT a node that has an `address` (OpenSILEX 1.5.4.7 duplicates the
   location, and the whole list starts returning 500).
-- Not deployed to the cluster yet. The deploy project must first solve login, since the
-  server acts with the `.env` account.
+- Deployed at https://phis.pheno.no/portal (namespace `graph-explorer`, applied by hand from
+  `graph-explorer/k8s/`, not Flux; build and secret steps are in its `kustomization.yaml`).
+  `PHIS_HOST` in `deployment.yaml` picks the OpenSILEX (now `phis-test`). Basic auth is only
+  an interim gate: the server still acts as one account. Real login is still to be discussed.
+- `BASE_PATH` (`/portal` in the cluster, unset locally) is stripped before routing; the page
+  uses relative `api/...` URLs. Keep new fetches relative.
 
 ## Branches
 
