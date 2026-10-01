@@ -250,6 +250,7 @@ button { font-family: inherit; }
 .search-group { padding: 10px 14px 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 600; }
 .search-more { margin: 2px 14px 8px; }
 .pane-count .btn { margin-left: 8px; }
+.row.row-cant .row-type { opacity: 0.55; }
 
 /* explorer rows */
 .rowlist {
@@ -1094,7 +1095,26 @@ function renderRows() {
 /* ---------------- search (spec "Search as a way to select") ----------------
    The top bar asks api/search (OpenSILEX's own name filters, 20 a type with totals) ~250 ms after
    typing stops. Results are an ordinary list: same click rules, Select all, Show more per type. */
-function searchGroupsInOrder() { return search.groups || []; }
+// What a result is to the current selection (null when nothing is selected or it is selected):
+// "can link" — its type can link to everything selected (the rule behind + New); "already linked"
+// — only when known: one selected item whose detail is cached, never guessed; else "can't link".
+function searchNote(item) {
+  if (!selection.size || selection.has(item.id)) return null;
+  if (selection.size === 1) {
+    const rel = NODE_DETAIL[[...selection.keys()][0]]?.relations ?? [];
+    if (rel.some(r => r.items.some(it => it.id === item.id))) return "already linked";
+  }
+  return linkableExistingTypes().has(item.type) ? "can link" : "can't link";
+}
+
+// Linkability is per type, so with something selected the types that can link come first
+// (a stable sort keeps menu order within each half).
+function searchGroupsInOrder() {
+  const groups = search.groups || [];
+  if (!selection.size) return groups;
+  const linkable = linkableExistingTypes();
+  return [...groups].sort((a, b) => (linkable.has(a.type) ? 0 : 1) - (linkable.has(b.type) ? 0 : 1));
+}
 
 function renderSearchRows() {
   const groups = searchGroupsInOrder();
@@ -1128,7 +1148,7 @@ function renderSearchRows() {
     head.className = "search-group";
     head.textContent = `${typeName(g.type, 2)} · ${g.error ? "couldn't be searched" : g.items.length < g.total ? `${g.items.length} of ${g.total}` : g.total}`;
     els.rowlist.appendChild(head);
-    g.items.forEach(item => els.rowlist.appendChild(rowEl(item)));
+    g.items.forEach(item => els.rowlist.appendChild(rowEl(item, searchNote(item))));
     if (!g.error && g.items.length < g.total) {
       const more = document.createElement("button");
       more.className = "btn ghost small search-more";

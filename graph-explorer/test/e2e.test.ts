@@ -1809,3 +1809,31 @@ test("e2e: `›` on a result opens it at its real place and ends the search; a c
     assert.equal(await page.locator("#paneTitle").textContent(), "Graph");
   });
 });
+
+test("e2e: with something selected, search says what each result is to it — can link first, already linked when known, can't link last", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, (u) => u.searchParams.get("q") === "plot"
+      ? [{ type: "scientific_object", total: 1, items: [{ id: "so-1", type: "scientific_object", label: "Plot 1" }] }]
+      : [
+          { type: "person", total: 1, items: [{ id: "p1", type: "person", label: "Ann Smith" }] },
+          { type: "germplasm", total: 2, items: [{ id: "g1", type: "germplasm", label: "Annika" }, { id: "g2", type: "germplasm", label: "Annikki" }] },
+        ]);
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await typeSearch(page, "plot");
+    await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
+    await page.evaluate(() => { NODE_DETAIL["so-1"] = { relations: [{ label: "Germplasm", items: [{ id: "g2", type: "germplasm", label: "Annikki" }] }] }; });
+    await typeSearch(page, "ann");
+
+    const heads = await page.locator("#rowlist .search-group").allInnerTexts();
+    assert.match(heads[0], /germplasm/i, "the type that can link comes first");
+    const typeLine = (label: string) => page.locator("#rowlist .row", { hasText: label }).first().locator(".row-type").innerText();
+    assert.match(await typeLine("Annika"), /can link/);
+    assert.match(await typeLine("Annikki"), /already linked/);
+    assert.match(await typeLine("Ann Smith"), /can't link/);
+
+    // Nothing selected: no notes.
+    await page.evaluate(() => { selection = new Map(); refreshLeftPane(); });
+    assert.doesNotMatch(await typeLine("Annika"), /link/);
+  });
+});
