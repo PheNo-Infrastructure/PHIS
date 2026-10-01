@@ -1128,6 +1128,55 @@ one-item ranking route are gone. **Step 4 built**: "Contains" row (`inverseOf: i
 parent filter); removing a child there clears the child's isPartOf. Guided test after step 4 on the wheat demo data (kept until then; tasks 4 and 6
 of the second test exercise steps 2 and 4).
 
+## Search as a way to select (designed 2026-10-01)
+
+**Why.** The top search bar was a mockup leftover with no code behind it (found by the user
+trying it, 2026-10-01). Rather than adding search as one more mechanic, it should remove one:
+the selection-first model says everything is "a way to select" or "a question the app asks",
+and search is the most direct way to select. Exploratory — the user wasn't sure exactly what
+they wanted and chose to try this and judge it in use.
+
+**The model.**
+1. **One search, global.** Typing in the top bar turns the list pane into "Search: <text>" with
+   every match across all cached categories (case-insensitive part-of-name match). Clearing the
+   bar or Esc returns to the list you were on — search is a view over the list pane, not a place
+   in the breadcrumb. `›` on a result opens it at its canonical place (`canonicalPathFor`, the
+   same jump relation chips use) and ends the search.
+2. **Results behave like any list.** Same click/ctrl/shift/marquee rules as every other list
+  : plain click replaces the selection, ctrl adds — so
+   gathering from different corners is "search, ctrl-click, search again, ctrl-click". The pane
+   head has **Select all** (every match), the way selecting a category selects its members.
+3. **Search knows what's selected.** With something selected, each result says what it is to
+   that selection, using the rule that already drives "+ New" and the picker
+   (`linkableExistingTypes`, i.e. `creatableTypesFor` + `LINKABLE_TYPES`):
+   *can link* — sorted first; *already linked* — only when known (a single selected item whose
+   detail is cached, the same limit the picker had; never guessed); *can't link* — still listed,
+   sorted last, greyed type line. Selected items themselves are marked as selected, as anywhere.
+   With nothing selected, results are grouped by type in menu order, then alphabetical.
+4. **"Add to selection…" retires** (its job is now the search bar). The picker popover itself
+   stays: it is how the app asks its questions (which experiment, carry-over, the anchor of a
+   requiresLink standalone create).
+5. **Later (after the demo): no match leads to "+ New <type> '<text>'"**, linked to the selection
+   by the intersection rule — search-before-create, the manual twin of the import's entity
+   resolution, and no dead end. Not in this step: it touches creation.
+
+**Data.** No server change: every category is already loaded into `CATEGORY_ITEMS` at start
+(2026-10-01 counts on phis-test: largest germplasm 182, scientific objects 103). Ceiling: each
+list is fetched with `page_size=500`; past that a type's search misses items and needs a server
+search. Marked with a `ponytail:` comment at the match function.
+
+**Empty and edge states.** No matches: "No matches for '<text>'." Lists still loading: search
+over what has arrived (they load in well under a second). Names are user-typed: escaped like every
+row (`escapeHtml`).
+
+**Tests.** Playwright e2e (stubbed lists): typing a part-name shows matches from two types;
+plain click selects one, ctrl-click adds a second, both in the selection pane; Select all selects
+every match; with a scientific object selected, a germplasm result reads "can link" and sorts
+above a person result; `›` opens the canonical path and clears the bar; Esc restores the previous
+list. Then the full suite, then a look on the deployed URL.
+
+**Order.** 1 + 2 + 4 first (the foundation), then 3, each tested and committed; 5 after the demo.
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only
