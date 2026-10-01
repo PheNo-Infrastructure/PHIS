@@ -1674,13 +1674,20 @@ test("factor detail: rename and delete allowed, levels are selectable 'Replicate
   });
 });
 
-test("factor rename sends the levels back with their uris (OpenSILEX keeps them and the objects' links — probed)", async () => {
+test("factor rename sends the levels back with their uris and keeps category, description and matches (the PUT replaces the whole factor)", async () => {
   await withServer(async (base) => {
     const puts: any[] = [];
-    globalThis.fetch = factorStub([], puts);
+    const extra = { category: "http://aims.fao.org/aos/agrovoc/c_1234", description: "Irrigation regime", exact_match: ["http://x/e"], close_match: [], broad_match: ["http://x/b"], narrow_match: [] };
+    const stub = factorStub([], puts);
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`) && !url.includes("/experiments?") && !url.endsWith("/experiments")) {
+        return jsonResponse(200, { result: { ...facDto, ...extra, publisher: { uri: "u" }, publication_date: "2026-10-01" } });
+      }
+      return stub(url, init);
+    }) as typeof fetch;
     const res = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "factor", id: FAC, name: "Block" }) });
     assert.equal(res.status, 200);
-    assert.deepEqual(puts[0], { uri: FAC, name: "Block", experiment: facDto.experiment, levels: facDto.levels });
+    assert.deepEqual(puts[0], { uri: FAC, name: "Block", experiment: facDto.experiment, ...extra, levels: facDto.levels });
   });
 });
 

@@ -1965,6 +1965,46 @@ test("e2e: + New factor asks for levels (one per line) and posts them; with two 
   });
 });
 
+test("e2e: the delete confirm counts again at delete time — a level set since the factor was opened is not missed", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let loads = 0;
+    await page.route("**/api/node-detail*", (r) => {
+      loads++;
+      const d = levelDetail();
+      d.deleteWarning = loads === 1 ? "No scientific object uses it." : "It also removes its level from 20 scientific objects in PBar1x4.";
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(d) });
+    });
+    let msg = "";
+    page.on("dialog", (d) => { msg = d.message(); return d.dismiss(); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(400);
+    await page.evaluate(() => deleteNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
+    await page.waitForTimeout(400);
+    assert.match(msg, /removes its level from 20 scientific objects/);
+  });
+});
+
+test("e2e: + New factor from the Factors list with two experiments picked says to pick one — before the form, nothing typed is lost", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Trials");
+    await openRow(page, "Factors");
+    await page.locator("#newStandaloneBtn").click();
+    await page.waitForTimeout(200);
+    assert.match(await page.locator("#linkList .linkmenu-title").textContent() ?? "", /in which experiment\?$/); // CSS-uppercased: read the text
+    const rows = page.locator("#linkList .linkmenu-items .newmenu-item");
+    await rows.nth(0).click();
+    await rows.nth(1).click({ modifiers: ["Control"] });
+    await page.locator(".linkmenu-confirm").click();
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("dialog[open]").count(), 0, "no form opened");
+    assert.match(await page.locator("#toast").textContent() ?? "", /A factor belongs to one experiment — pick just one/);
+  });
+});
+
 test("e2e: deleting a factor confirms with the counted cascade", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail()) }));

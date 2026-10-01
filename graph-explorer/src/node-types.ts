@@ -493,8 +493,11 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     relationGroups: [],
     updateLinkFields: [],
     actions: ["rename", "delete"],
+    // The PUT replaces the whole factor (FactorUpdateDTO), so everything it holds goes back.
     putPayload: (dto, name) => ({
       uri: dto.uri, name, experiment: dto.experiment,
+      category: dto.category, description: dto.description,
+      exact_match: dto.exact_match, close_match: dto.close_match, broad_match: dto.broad_match, narrow_match: dto.narrow_match,
       levels: ((dto.levels as FactorDto["levels"] | undefined) ?? []).map((l) => ({ uri: l.uri, name: l.name, description: l.description ?? null })),
     }),
     deleteRemovesLinks: true,

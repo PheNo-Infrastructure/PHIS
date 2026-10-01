@@ -1389,6 +1389,12 @@ async function deleteNode(item, force = false) {
   // e.g. experiment) goes straight to a confirm naming them; and a group that BLOCKS delete
   // (rel.blocksDelete — an experiment's scientific objects) always routes to unlink mode,
   // where the banner explains why and offers to delete those first.
+  // A counted cascade warning is counted again right now: a level set on objects since the
+  // factor was opened (here or by someone else) must not be missing from the confirm.
+  if (NODE_DETAIL[item.id]?.deleteWarning !== undefined) {
+    delete NODE_DETAIL[item.id];
+    await loadNodeDetail(item);
+  }
   const node = NODE_DETAIL[item.id];
   if (node?.deleteBlocked) {
     deleteBlockedShown = item.id;
@@ -2615,9 +2621,10 @@ function renderActionbar() {
         // Can't exist alone (e.g. a site needs an organization) — pick the anchor(s) first,
         // with the same picker/click rules as "Link existing…", then create linked to all.
         const niceReq = typeName(required);
+        const one = CREATABLE[standaloneType].onlyOne === required;
         bar.innerHTML = `
           <div class="selection-summary" style="color:var(--ink-faint);">Nothing selected</div>
-          ${linkMenuHtml(`<button class="btn primary" id="newStandaloneBtn">+ New ${niceType}…</button>`, `New ${niceType} in which ${niceReq}(s)?`)}
+          ${linkMenuHtml(`<button class="btn primary" id="newStandaloneBtn">+ New ${niceType}…</button>`, `New ${niceType} in which ${niceReq}${one ? "" : "(s)"}?`)}
         `;
         wireLinkMenu("newStandaloneBtn", () => {
           linkPickerType = required;
@@ -2625,6 +2632,8 @@ function renderActionbar() {
             type: required,
             confirmLabel: (n) => `Create ${niceType} in ${n} ${typeName(required, n)}`,
             onConfirm: async (picked) => {
+              // Said before the form, so nothing typed is lost (a factor belongs to one experiment).
+              if (one && picked.length > 1) { showToast(`A ${niceType} belongs to one ${niceReq} — pick just one.`, 3000); return; }
               const v = await askCreateValues(standaloneType);
               if (v) createNode(standaloneType, v.name, picked.map((p) => ({ type: p.type, id: p.id })), `in ${picked.map((p) => p.label).join(", ")}`, v.fields);
             },
