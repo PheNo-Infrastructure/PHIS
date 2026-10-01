@@ -1953,6 +1953,7 @@ async function askCreateValues(type) {
   }
   const options = {};
   for (const fd of extra.filter(fd => fd.input === "select")) {
+    if (Array.isArray(fd.options)) { options[fd.key] = fd.options; continue; } // the choices themselves
     try {
       const res = await fetch(fd.options);
       options[fd.key] = res.ok ? await res.json() : [];
@@ -2004,6 +2005,7 @@ async function createNode(type, name, links, toastSuffix, fields = {}) {
     selection.set(body.id, body);
     const categoryId = CATEGORY_FOR_TYPE[type];
     if (categoryId) (CATEGORY_ITEMS[categoryId] ||= []).push(body);
+    if (type === "germplasm") reloadCategories(["cat-germplasm"]); // to sit under its species
     // Every linked-to node's cached relations are now stale too — same reasoning as linkItems,
     // just for /api/create's own `links` instead of /api/link's `items`. Without this, creating
     // e.g. a facility linked to an open organization left that organization's pane showing the
@@ -2032,6 +2034,8 @@ async function createNode(type, name, links, toastSuffix, fields = {}) {
 // says what it will write ("Set Annika on 2 objects…"), so a leftover pick shows before clicking.
 function linkSelectionLabel() {
   const items = [...selection.values()];
+  const germplasm = items.every(v => v.type === "germplasm") && germplasmPlan(items).label;
+  if (germplasm) return germplasm;
   const types = [...new Set(items.map(v => v.type))];
   if (types.length !== 2 || !inExperimentOnly(types[0], types[1])) return "Link selection";
   const objects = items.filter(v => v.type === "scientific_object");
@@ -2049,6 +2053,7 @@ function linkPlan() {
   if (items.length < 2) return { kind: "none" };
   const types = [...new Set(items.map(v => v.type))];
   const nice = t => typeName(t);
+  if (types.length === 1 && types[0] === "germplasm") return germplasmPlan(items);
   if (types.length === 1) {
     return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${typeName(types[0], 2)} can't be linked to each other.` };
   }
@@ -2060,6 +2065,20 @@ function linkPlan() {
   return misfit
     ? { kind: "none", why: `${misfit.label} (${nice(misfit.type)}) can't be linked to anything else selected — remove it to link the rest.` }
     : { kind: "link" };
+}
+
+// Germplasm only: the one species (or variety) is set on the others — a species on varieties and
+// accessions, a variety on accessions. Not unlinkable: a variety can't be without a species. A
+// chip whose kind isn't known (from a plant's row) leaves the check to the server.
+const GERMPLASM_RANK = { species: 3, variety: 2, accession: 1 };
+function germplasmPlan(items) {
+  const rank = v => GERMPLASM_RANK[v.kind] ?? 0;
+  if (items.some(v => !v.kind)) return { kind: "link", noUnlink: true };
+  const top = Math.max(...items.map(rank));
+  const tops = items.filter(v => rank(v) === top);
+  if (top < 2 || tops.length !== 1) return { kind: "none", why: "Select one species or variety, and the germplasm to set it on." };
+  const rest = items.filter(v => v !== tops[0]);
+  return { kind: "link", noUnlink: true, label: `Set ${tops[0].label} as ${tops[0].kind} of ${rest.length <= 2 ? andList(rest.map(v => v.label)) : `${rest.length} germplasm`}…` };
 }
 
 function selectionHasLinkablePair() {
@@ -2098,6 +2117,8 @@ async function linkItems(items, experiments) {
     }
     experimentChoice = null;
     (body.touched || []).forEach(id => invalidateNodeDetail(id));
+    // A germplasm's species decides where it sits in the Germplasm list.
+    if (items.every(it => it.type === "germplasm")) reloadCategories(["cat-germplasm"]);
     // Every involved node's cached relations are now potentially stale — drop them rather than
     // guess how the response maps onto each one. If one of them is the node currently open in
     // the detail pane, invalidateNodeDetail refetches it right away instead of leaving that
@@ -2674,7 +2695,7 @@ function renderActionbar() {
     <button class="btn ghost" id="clearSel">Clear</button>
     ${plan.why ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
-    ${canLink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
+    ${canLink && !plan.noUnlink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
     <div class="newmenu" id="newMenu">
       <button class="btn primary" id="newBtn">+ New</button>
       <div class="newmenu-list" id="newList"></div>
@@ -2704,7 +2725,7 @@ function renderActionbar() {
       if (plan.kind === "rank") enterLinkRanking(items[0], items.slice(1));
       else linkItems(items.map(v => ({ type: v.type, id: v.id })));
     });
-    document.getElementById("unlinkSelectionBtn").addEventListener("click", () => unlinkSelection([...selection.values()]));
+    document.getElementById("unlinkSelectionBtn")?.addEventListener("click", () => unlinkSelection([...selection.values()]));
   }
   document.getElementById("clearSel").addEventListener("click", () => {
     selection = new Map(); anchorId = null; refreshLeftPane(); renderDetail(); renderActionbar();

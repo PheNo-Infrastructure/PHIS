@@ -2112,3 +2112,56 @@ test("e2e: a level's page renames it (the factor's list is fetched again) and it
     assert.equal(dialogs.at(-1), "confirm: Delete Replicate: 3? It also removes it from 20 scientific objects in PBar1x4. This cannot be undone. []");
   });
 });
+
+// ---------- germplasm ----------
+test("e2e: + New germplasm from the Germplasm list asks name, type and species (PHIS's species list) and posts them", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/germplasm-species", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "sp-barley", type: "germplasm", label: "Barley" }]) }));
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "g-new", type: "germplasm", label: "Fager", kind: "variety" }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Trials");
+    await openRow(page, "Germplasm");
+    await page.locator("#newStandaloneBtn").click();
+    await page.waitForTimeout(300);
+    assert.deepEqual(await page.locator("dialog select[name=rdf_type] option").allTextContents(), ["Choose…", "Species", "Variety", "Accession"]);
+    await page.locator("dialog input[name=name]").fill("Fager");
+    await page.locator("dialog select[name=rdf_type]").selectOption("vocabulary:Variety");
+    await page.locator("dialog select[name=species]").selectOption("sp-barley");
+    await page.locator("dialog button[value=ok]").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posted, { type: "germplasm", name: "Fager", links: [], fields: { rdf_type: "vocabulary:Variety", species: "sp-barley" } });
+  });
+});
+
+test("e2e: a species and a variety selected read 'Set Oat as species of Annika…' and link; two species give a why; the germplasm list is reloaded after", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let linked: any = null;
+    await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
+    let germplasmLoads = 0;
+    await page.route("**/api/germplasm", (r) => { germplasmLoads++; return r.fulfill({ status: 200, contentType: "application/json", body: "[]" }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const oat = { id: "sp-oat", type: "germplasm", label: "Oat", kind: "species" };
+    const annika = { id: "v-annika", type: "germplasm", label: "Annika", kind: "variety" };
+    const a1 = { id: "a-1", type: "germplasm", label: "A1", kind: "accession" };
+    await page.evaluate((s) => { selection = new Map(s.map((x: any) => [x.id, x])); renderActionbar(); }, [annika, oat]);
+    assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Set Oat as species of Annika…");
+    assert.equal(await page.locator("#unlinkSelectionBtn").count(), 0, "a species can't be unlinked from a variety");
+
+    await page.evaluate((s) => { selection = new Map(s.map((x: any) => [x.id, x])); renderActionbar(); }, [annika, a1]);
+    assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Set Annika as variety of A1…");
+
+    await page.evaluate((s) => { selection = new Map(s.map((x: any) => [x.id, x])); renderActionbar(); }, [oat, { ...oat, id: "sp-2", label: "Rye" }, annika]);
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
+    assert.match(await page.locator("#actionbar").innerText(), /Select one species or variety, and the germplasm to set it on/);
+
+    await page.evaluate((s) => { selection = new Map(s.map((x: any) => [x.id, x])); renderActionbar(); }, [annika, oat]);
+    const before = germplasmLoads;
+    await page.locator("#linkSelectionBtn").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(linked, { items: [{ type: "germplasm", id: "v-annika" }, { type: "germplasm", id: "sp-oat" }] });
+    assert.equal(germplasmLoads, before + 1);
+  });
+});

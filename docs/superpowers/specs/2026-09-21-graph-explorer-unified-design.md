@@ -1293,6 +1293,35 @@ backend saves the factor — `NodeConfig.rename/remove/create`):
 Live round trip on the ZZ experiment through the app's API (create, add, duplicate refused, set on
 the plant, rename, counted delete, last level refused), cleaned up.
 
+## Germplasm (built 2026-10-01, A–Z gap 3)
+
+**Probed on ZZ germplasm (phis-test).** Three kinds in use: species, variety, accession. A variety
+must have a species (400); an accession takes a species and/or variety (species filled from the
+variety). Two germplasm of one name are accepted ("/1"). Rename through the app's read-modify-write
+keeps species, visibility and uri; a species change is one PUT. Delete of germplasm on a plant or
+with other germplasm under it is **refused** by OpenSILEX (nothing cascades).
+
+**In the app:**
+- **Create:** + New germplasm from the Germplasm list: name, type (Species / Variety / Accession),
+  species (PHIS's species list; needed for a variety or accession). Always public. A name another
+  germplasm of that type has is refused (any case).
+- **Rename** like every type, same duplicate rule.
+- **Delete:** the page says why before you try — "is on scientific objects in PBar1x4" (its
+  experiments) or "has varieties or accessions: …" (a species); OpenSILEX's refusal is the backstop.
+- **Species / variety:** Link selection with germplasm only. The one species (or variety) selected
+  is set on the rest: "Set Oat as species of Annika…", "Set Annika as variety of A1…". Setting a
+  variety also sets its species; a new species on an accession drops its old variety. Two species
+  (or only varieties) -> no button, the why line says "Select one species or variety, and the
+  germplasm to set it on." No Unlink selection for these (a variety can't be without a species).
+  Rows and chips carry `kind` for this; a chip without it (a plant's germplasm row) leaves the
+  check to the server.
+- The Germplasm list reloads after a create or species change, so items sit under their species.
+
+**Not in this step:** parent germplasm, synonyms, code, institute and the other descriptive fields
+(empty in PHIS); a variety-with-accessions delete is not pre-checked (OpenSILEX's refusal shows).
+Live round trip on ZZ germplasm through the app's API (create each kind, missing species and
+duplicate refused, rename, set species, set variety, both delete blocks, refused delete), cleaned up.
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only

@@ -79,6 +79,21 @@ export const CREATABLE = {
     scalarLinkFields: ["experiment"],
     fields: [{ key: "levels", label: "Levels (one per line)", input: "lines", required: true }],
   },
+  // Germplasm from the Germplasm list: a species, or a variety/accession under a species. The
+  // backend (NODE_TYPES.germplasm.create) refuses a variety/accession without one and makes it
+  // public. options: a list endpoint, or the choices themselves.
+  germplasm: {
+    url: "/core/germplasm",
+    linkFields: {},
+    fields: [
+      { key: "rdf_type", label: "Type", input: "select", required: true, options: [
+        { id: "vocabulary:Species", label: "Species" },
+        { id: "vocabulary:Variety", label: "Variety" },
+        { id: "vocabulary:Accession", label: "Accession" },
+      ] },
+      { key: "species", label: "Species (for a variety or accession)", input: "select", options: "/api/germplasm-species" },
+    ],
+  },
   // One more level of one factor: no POST of its own — the backend saves the factor with the
   // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
   // a selected factor reaches it.

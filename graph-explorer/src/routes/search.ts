@@ -1,4 +1,4 @@
-import { authedGet } from "../opensilex.ts";
+import { authedGet, escapeRegex } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 import { listRoutes, toRows, type Row } from "./list.ts";
 
@@ -17,8 +17,6 @@ const SEARCH_TYPES: Record<string, string> = {
 // ponytail: whole-list filter, capped by the list route's page_size=500; fine for these small types.
 const FILTER_HERE = new Set(["facility", "site", "organization"]);
 
-// OpenSILEX's `name=` is a case-insensitive Java regex — a bare "(" is an error, "." matches anything.
-const escapeRegex = (q: string) => q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export type SearchGroup = { type: string; total: number; items: Row[]; error?: string };
 

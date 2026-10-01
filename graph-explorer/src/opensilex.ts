@@ -149,3 +149,6 @@ export function _resetAuthCacheForTests() {
   token = null;
   nameSpaces = null;
 }
+
+// OpenSILEX's `name=` is a case-insensitive Java regex — a bare "(" is an error, "." matches anything.
+export const escapeRegex = (q: string) => q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

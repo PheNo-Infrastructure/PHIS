@@ -1,12 +1,14 @@
 import { authedGet, compactUri, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
+import { germplasmKind } from "../node-types.ts";
 
 const byName = (i: RawItem) => String(i.name ?? i.uri);
 
 // parent: the one node an item sits under in the category browser (a germplasm's species) —
 // the page lists only parentless items at the category level and an opened node's children
 // under it. Only for strictly single-parent relations; many-to-many ones stay relation chips.
-export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown };
+// kind: what the item is within its type (a germplasm's species/variety/accession).
+export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
@@ -25,7 +27,9 @@ export const listRoutes: Record<string, ListRoute> = {
   },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
-  "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species },
+  "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species, kind: (i) => germplasmKind(i.rdf_type) },
+  // Not a browsable category: the species a new variety/accession is created under (create form).
+  "/api/germplasm-species": { url: "/core/germplasm?rdf_type=vocabulary%3ASpecies&page_size=500", type: "germplasm", label: byName },
   "/api/datafiles": { url: "/core/datafiles?page_size=500", type: "data_file", label: (i) => String(i.filename ?? i.uri) },
   "/api/provenances": { url: "/core/provenances?page_size=500", type: "provenance", label: byName },
   "/api/events": { url: "/core/events?page_size=500", type: "event", label: (i) => String(i.description ?? i.rdf_type_name ?? i.uri) },
@@ -36,14 +40,17 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/scientific-object-types": { url: "/core/scientific_objects/used_types", type: "rdf_type", label: byName },
 };
 
-export type Row = { id: string; type: string; label: string; parent?: string };
+export type Row = { id: string; type: string; label: string; parent?: string; kind?: string };
 
 // One row per OpenSILEX item — shared by the list and search routes so a browsed row and a
 // search hit are the same item (same id form). A germplasm's own uri comes back full
 // (https://phis.pheno.no/id/...) while its species field is often prefixed (phis:id/...), same as
 // the detail pane's chips — so ids and parents are compacted to one form.
 export async function toRows(route: ListRoute, items: RawItem[]): Promise<Row[]> {
-  const rows: Row[] = items.map((i) => ({ id: String(i.uri), type: route.type, label: route.label(i) }));
+  const rows: Row[] = items.map((i) => {
+    const kind = route.kind?.(i);
+    return { id: String(i.uri), type: route.type, label: route.label(i), ...(kind ? { kind } : {}) };
+  });
   if (!route.parent) return rows;
   return Promise.all(
     items.map(async (i, n) => {

@@ -1,6 +1,6 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, applyLink, resolveLink, type CarryOver, type ResolvedLink } from "../node-types.ts";
+import { NODE_TYPES, applyLink, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
 
 // Links a whole selection of EXISTING nodes directly (no third node created) — the counterpart
 // to the unlink flow in routes/node.ts, and to /api/create's `links` (which links a NEW node to
@@ -27,6 +27,16 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     else idsByType.set(it.type, [it.id]);
   }
   const types = [...idsByType.keys()];
+
+  // Germplasm only: a species or variety set on the others (their own record's field).
+  if (types.length === 1 && types[0] === "germplasm") {
+    await respondOpenSilexErrors(res, async () => {
+      const r = await setGermplasmParent(idsByType.get("germplasm")!);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+    });
+    return true;
+  }
 
   // Every distinct-type pair present that resolveLink can resolve. A selection with only one
   // type (types.length === 1, e.g. 3 facilities and nothing else) never has a resolvable pair —

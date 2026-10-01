@@ -1,4 +1,4 @@
-import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete, compactUri } from "./opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete, compactUri, escapeRegex } from "./opensilex.ts";
 
 // View/edit/delete config, one entry per type — same reasoning as CREATABLE in creation.js:
 // adding a type is "add one entry here," not a new code path. Unlike CREATABLE this doesn't
@@ -6,7 +6,8 @@ import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedD
 // {label, items} shape the backend already translated), so it stays plain TS, not inlined JS.
 // nameField: for a single-uri field (a germplasm's `species`), the DTO field holding its label
 // (`species_name`).
-export type RelationGroup = { label: string; field: string; type: string; nameField?: string };
+// kind: what the item is within its type (a germplasm's species/variety/accession), for the page.
+export type RelationGroup = { label: string; field: string; type: string; nameField?: string; kind?: string };
 
 export type Action = "rename" | "delete" | "link";
 export const allows = (config: NodeConfig, action: Action) => (config.actions ?? ["rename", "delete", "link"]).includes(action);
@@ -31,7 +32,7 @@ export type NodeConfig = {
   deleteRemovesLinks?: true;
   // Why OpenSILEX will refuse deleting THIS node, read from its own record — shown before the
   // user tries (node-detail's `deleteBlocked`) and enforced by the DELETE route.
-  deleteBlockedBy?: (dto: Record<string, unknown>) => string | null;
+  deleteBlockedBy?: (dto: Record<string, unknown>, id: string) => string | null | Promise<string | null>;
   // DELETE calls to make before deleteUrl — e.g. a scientific object's per-experiment copies
   // (OpenSILEX refuses deleting the global copy while any experiment copy exists — probed).
   deleteFirst?: (id: string) => Promise<string[]>;
@@ -84,7 +85,7 @@ export type NodeConfig = {
     label: string;
     type: string;
     url: (id: string) => string;
-    item?: (row: Record<string, unknown>) => { id: string; label: string } | null;
+    item?: (row: Record<string, unknown>) => { id: string; label: string; kind?: string } | null;
     // Builds the items itself instead of mapping `url`'s rows (labels that need the parent node).
     load?: (id: string) => Promise<{ id: string; label: string; [k: string]: unknown }[]>;
     // Makes the group's chips unlinkable (×), through contextLinks[field].
@@ -231,6 +232,51 @@ async function saveLevels(f: FactorDto, levels: { uri?: string; name: string; de
   await authedPut("/core/experiments/factors", NODE_TYPES.factor.putPayload!({ ...f, levels }, f.name));
 }
 const localName = (property: unknown) => String(property).split(/[:#/]/).pop();
+
+// A germplasm's kind, from its rdf_type (vocabulary:Variety or the full oeso#Variety); rank says
+// which can be set on which: a species on varieties/accessions, a variety on accessions.
+const GERMPLASM_RANK: Record<string, number> = { species: 3, variety: 2, accession: 1 };
+export const germplasmKind = (rdfType: unknown) => {
+  const k = localName(rdfType)?.toLowerCase() ?? "";
+  return k in GERMPLASM_RANK ? k : undefined;
+};
+
+// OpenSILEX takes two germplasm of one name (the second gets "/1" — probed); the app refuses it
+// within one type (a species and a variety may share a name).
+async function refuseTakenGermplasmName(name: string, rdfType: string, self?: string) {
+  const want = name.trim().toLowerCase();
+  if (!want) throw new OpenSilexError(400, "A name is required.");
+  const rows = (await authedGet(`/core/germplasm?name=${encodeURIComponent(`^${escapeRegex(name.trim())}$`)}&rdf_type=${encodeURIComponent(rdfType)}&page_size=50`)).result;
+  const selfKey = self ? await compactUri(self) : null;
+  for (const r of rows) {
+    if (String(r.name).toLowerCase() !== want || (selfKey && (await compactUri(String(r.uri))) === selfKey)) continue;
+    throw new OpenSilexError(400, `There is already a ${germplasmKind(rdfType)} named "${r.name}".`);
+  }
+}
+
+// Link selection with germplasm only: the one highest-ranked item (a species or a variety) is set
+// on all the others. Setting a variety also sets its species; setting a new species on an
+// accession drops its variety (that belonged to the old species).
+export async function setGermplasmParent(ids: string[]) {
+  const dtos = await Promise.all(ids.map(async (id) => ({ id, dto: (await authedGetOne(`/core/germplasm/${encodeURIComponent(id)}`)).result })));
+  const rank = (d: Record<string, unknown>) => GERMPLASM_RANK[germplasmKind(d.rdf_type) ?? ""] ?? 0;
+  const top = Math.max(...dtos.map((d) => rank(d.dto)));
+  const tops = dtos.filter((d) => rank(d.dto) === top);
+  if (top < 2 || tops.length !== 1) throw new OpenSilexError(400, "Select one species or variety, and the germplasm to set it on.");
+  const parent = tops[0];
+  const same = async (a: unknown, b: unknown) => (a ? await compactUri(String(a)) : null) === (b ? await compactUri(String(b)) : null);
+  let linked = 0;
+  let already = 0;
+  for (const { id, dto } of dtos) {
+    if (id === parent.id) continue;
+    const species = top === 3 ? parent.dto.uri : parent.dto.species;
+    const variety = top === 2 ? parent.dto.uri : (await same(dto.species, species)) ? dto.variety : null;
+    if ((await same(dto.species, species)) && (await same(dto.variety, variety))) { already++; continue; }
+    await authedPut("/core/germplasm", updatePayloadFromDto(id, String(dto.name ?? ""), { ...dto, species, variety }, NODE_TYPES.germplasm));
+    linked++;
+  }
+  return { linked, already };
+}
 
 // Adds/removes values of one relation on the object's copy in ONE experiment. The PUT replaces
 // the copy's whole relations list (leaving parent out wiped it — probed), so everything else is
@@ -510,17 +556,45 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     putUrl: "/core/germplasm",
     deleteUrl: (id) => `/core/germplasm/${encodeURIComponent(id)}`,
     relationGroups: [
-      { label: "Species", field: "species", type: "germplasm", nameField: "species_name" },
-      { label: "Variety", field: "variety", type: "germplasm", nameField: "variety_name" },
-      { label: "Accession", field: "accession", type: "germplasm", nameField: "accession_name" },
+      { label: "Species", field: "species", type: "germplasm", nameField: "species_name", kind: "species" },
+      { label: "Variety", field: "variety", type: "germplasm", nameField: "variety_name", kind: "variety" },
+      { label: "Accession", field: "accession", type: "germplasm", nameField: "accession_name", kind: "accession" },
     ],
     updateLinkFields: [],
-    // "link" only for scientific objects (their side holds it — /api/link's in-experiment pairs);
-    // the germplasm record itself still isn't edited here.
-    actions: ["link"],
+    // Species/variety are set through Link selection (setGermplasmParent), not unlinked: a
+    // variety can't be without a species (probed).
+    actions: ["rename", "delete", "link"],
     visibility: true,
+    // OpenSILEX refuses deleting germplasm in use (probed) — said before the user tries.
+    deleteBlockedBy: async (dto, id) => {
+      const exps = (await authedGet(`/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500`)).result;
+      if (exps.length) return `is on scientific objects in ${exps.map((e) => String(e.name ?? e.uri)).join(", ")}. Remove it from them first.`;
+      if (germplasmKind(dto.rdf_type) !== "species") return null;
+      const self = await compactUri(id);
+      const kids = [];
+      for (const k of (await authedGet(`/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`)).result) if ((await compactUri(String(k.uri))) !== self) kids.push(String(k.name ?? k.uri));
+      return kids.length ? `has varieties or accessions: ${kids.join(", ")}. Delete them or give them another species first.` : null;
+    },
+    rename: async (id, name) => {
+      const dto = (await authedGetOne(`/core/germplasm/${encodeURIComponent(id)}`)).result;
+      await refuseTakenGermplasmName(name, String(dto.rdf_type), id);
+      await updateNode(NODE_TYPES.germplasm, id, { name: name.trim() });
+      return name.trim();
+    },
+    // New germplasm is always public: admin-created germplasm is hidden from Feide users otherwise.
+    create: async (p) => {
+      const rdfType = String(p.rdf_type ?? "");
+      const kind = germplasmKind(rdfType);
+      if (!kind || !rdfType.startsWith("vocabulary:")) throw new OpenSilexError(400, "Pick a type: species, variety or accession.");
+      if (kind !== "species" && !p.species) throw new OpenSilexError(400, `A${kind === "accession" ? "n" : ""} ${kind} needs a species.`);
+      const name = String(p.name ?? "").trim();
+      await refuseTakenGermplasmName(name, rdfType);
+      const made = (await authedPost("/core/germplasm", { name, rdf_type: rdfType, ...(kind !== "species" ? { species: p.species } : {}), is_public: true })).result as unknown;
+      return { id: await compactUri(String(Array.isArray(made) ? made[0] : made)), label: name, kind };
+    },
     queryRelations: [
-      { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true },
+      { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true,
+        item: (r) => ({ id: String(r.uri), label: String(r.name ?? r.uri), kind: germplasmKind(r.rdf_type) }) },
       { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
     ],
   },
@@ -636,6 +710,7 @@ export function relationsFromDto(dto: Record<string, unknown>, config: NodeConfi
       id: String(r.uri),
       type: rg.type,
       label: String(r.name ?? r.uri),
+      ...(rg.kind ? { kind: rg.kind } : {}),
     }));
     if (!items.length) return [];
     const unlinkable = config.updateLinkFields.includes(rg.field);

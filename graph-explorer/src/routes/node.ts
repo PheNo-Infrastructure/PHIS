@@ -15,6 +15,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
   }
   await respondOpenSilexErrors(res, async () => {
     const dto = (await authedGetOne(config.getUrl(id))).result;
+    const blocked = await config.deleteBlockedBy?.(dto, id);
     // Body fully built BEFORE writeHead (same reason as list.ts): a relation query failing after
     // the 200 header went out can't be reported anymore and leaves the request hanging.
     const body = JSON.stringify({
@@ -24,7 +25,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       actions: (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
       ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
       ...(config.visibility ? { isPublic: dto.is_public === true } : {}),
-      ...(config.deleteBlockedBy?.(dto) ? { deleteBlocked: config.deleteBlockedBy(dto) } : {}),
+      ...(blocked ? { deleteBlocked: blocked } : {}),
       ...(config.deleteWarning ? { deleteWarning: await config.deleteWarning(id, dto) } : {}),
       relations: await relationsFor(id, dto, config),
     });
@@ -133,7 +134,7 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     await respondOpenSilexErrors(res, async () => {
-      const blocked = config.deleteBlockedBy?.((await authedGetOne(config.getUrl(id))).result);
+      const blocked = config.deleteBlockedBy && (await config.deleteBlockedBy((await authedGetOne(config.getUrl(id))).result, id));
       if (blocked) {
         res.writeHead(409, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: `It ${blocked}` }));

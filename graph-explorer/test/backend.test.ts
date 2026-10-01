@@ -167,7 +167,7 @@ test("POST /api/create rejects a type with no creation config", async () => {
     const res = await realFetch(`${base}/api/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "germplasm", name: "x", links: [] }),
+      body: JSON.stringify({ type: "device", name: "x", links: [] }),
     });
     assert.equal(res.status, 400);
     const body = await res.json();
@@ -428,7 +428,7 @@ test("experiment node-detail appends a 'Scientific objects' group from the SO-by
   });
 });
 
-test("germplasm node-detail: single-uri species labelled from species_name, members minus itself (full vs prefixed uri); only 'link' (from objects)", async () => {
+test("germplasm node-detail: single-uri species labelled from species_name, members minus itself (full vs prefixed uri); rename, delete and link", async () => {
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
@@ -443,9 +443,9 @@ test("germplasm node-detail: single-uri species labelled from species_name, memb
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
     const detail = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=phis:id/sp`)).json();
-    assert.deepEqual(detail.actions, ["link"]);
+    assert.deepEqual(detail.actions, ["rename", "delete", "link"]);
     assert.deepEqual(detail.relations, [
-      { label: "Species", items: [{ id: "phis:id/parent", type: "germplasm", label: "Parent" }] },
+      { label: "Species", items: [{ id: "phis:id/parent", type: "germplasm", label: "Parent", kind: "species" }] },
       { label: "Varieties and accessions", items: [{ id: "phis:id/acc", type: "germplasm", label: "A1" }] },
       { label: "Experiments", items: [{ id: "exp-1", type: "experiment", label: "E" }] },
     ]);
@@ -1885,5 +1885,144 @@ test("create factor level: one factor selected, saved with the level added, answ
     const two = await create({ type: "factor_level", name: "4", links: [fac, { type: "factor", id: "f2" }] });
     assert.equal(two.status, 400);
     assert.equal(puts.length, 1);
+  });
+});
+
+// ---------- germplasm: create, rename, delete, species/variety (probed on phis-test 2026-10-01) ----------
+const GP = "https://phis.pheno.no/id/germplasm/";
+const gRecords: Record<string, any> = {
+  [`${GP}species.barley`]: { uri: `${GP}species.barley`, name: "Barley", rdf_type: "vocabulary:Species", species: null, variety: null, is_public: true },
+  [`${GP}species.oat`]: { uri: `${GP}species.oat`, name: "Oat", rdf_type: "vocabulary:Species", species: null, variety: null, is_public: true },
+  [`${GP}variety.annika`]: { uri: `${GP}variety.annika`, name: "Annika", rdf_type: "vocabulary:Variety", species: `${GP}species.barley`, species_name: "Barley", variety: null, is_public: true },
+  [`${GP}variety.tiril`]: { uri: `${GP}variety.tiril`, name: "Tiril", rdf_type: "vocabulary:Variety", species: `${GP}species.oat`, species_name: "Oat", variety: null, is_public: true },
+  [`${GP}accession.a1`]: { uri: `${GP}accession.a1`, name: "A1", rdf_type: "vocabulary:Accession", species: `${GP}species.barley`, variety: null, is_public: true },
+};
+// used: germplasm uri -> experiments it is in (through its plants); children found by species.
+function germplasmStub(log: { puts: any[]; posts: any[]; deletes: string[] }, used: Record<string, string[]> = {}) {
+  return (async (url: string, init?: RequestInit) => {
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    if (init?.method === "PUT") { log.puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "ok" }); }
+    if (init?.method === "POST") { log.posts.push(JSON.parse(String(init.body))); return jsonResponse(201, { result: [`${GP}new`] }); }
+    if (init?.method === "DELETE") { log.deletes.push(decodeURIComponent(url.split("/core/germplasm/")[1])); return jsonResponse(200, { result: "ok" }); }
+    const u = new URL(url);
+    if (u.pathname.endsWith("/core/germplasm")) {
+      const name = u.searchParams.get("name");
+      const type = u.searchParams.get("rdf_type");
+      const species = u.searchParams.get("species");
+      const rows = Object.values(gRecords).filter((g) =>
+        (!name || new RegExp(name, "i").test(g.name)) && (!type || g.rdf_type === type) && (!species || g.species === species));
+      return jsonResponse(200, { result: rows });
+    }
+    const exps = url.match(/\/core\/germplasm\/([^/?]+)\/experiments/);
+    if (exps) return jsonResponse(200, { result: (used[decodeURIComponent(exps[1])] ?? []).map((n) => ({ uri: `exp-${n}`, name: n })) });
+    const one = url.match(/\/core\/germplasm\/([^/?]+)$/);
+    if (one) { const g = gRecords[decodeURIComponent(one[1])]; return g ? jsonResponse(200, { result: g }) : jsonResponse(404, { result: { message: "nope" } }); }
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+const newLog = () => ({ puts: [] as any[], posts: [] as any[], deletes: [] as string[] });
+const gq = (u: string) => encodeURIComponent(u);
+
+test("germplasm: rename/delete/link allowed; delete is blocked (and refused) while it's on plants or has varieties/accessions, allowed when unused", async () => {
+  await withServer(async (base) => {
+    const log = newLog();
+    globalThis.fetch = germplasmStub(log, { [`${GP}variety.annika`]: ["PBar1x4"] });
+    const annika = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=${gq(`${GP}variety.annika`)}`)).json();
+    assert.deepEqual(annika.actions, ["rename", "delete", "link"]);
+    assert.equal(annika.deleteBlocked, "is on scientific objects in PBar1x4. Remove it from them first.");
+    const barley = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=${gq(`${GP}species.barley`)}`)).json();
+    assert.equal(barley.deleteBlocked, "has varieties or accessions: Annika, A1. Delete them or give them another species first.");
+    const res = await realFetch(`${base}/api/node?type=germplasm&id=${gq(`${GP}variety.annika`)}`, { method: "DELETE" });
+    assert.equal(res.status, 409);
+    const tiril = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=${gq(`${GP}variety.tiril`)}`)).json();
+    assert.equal(tiril.deleteBlocked, undefined);
+    assert.equal((await realFetch(`${base}/api/node?type=germplasm&id=${gq(`${GP}variety.tiril`)}`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(log.deletes, [`${GP}variety.tiril`]);
+  });
+});
+
+test("create germplasm: public, the picked type; a variety/accession needs a species, a species takes none; the same name for that type is refused", async () => {
+  await withServer(async (base) => {
+    const log = newLog();
+    globalThis.fetch = germplasmStub(log);
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+    const v = await create({ type: "germplasm", name: "Fager", links: [], fields: { rdf_type: "vocabulary:Variety", species: `${GP}species.barley` } });
+    assert.equal(v.status, 201, await v.clone().text());
+    assert.deepEqual(log.posts[0], { name: "Fager", rdf_type: "vocabulary:Variety", species: `${GP}species.barley`, is_public: true });
+    const s = await create({ type: "germplasm", name: "Rye", links: [], fields: { rdf_type: "vocabulary:Species", species: `${GP}species.barley` } });
+    assert.equal(s.status, 201);
+    assert.deepEqual(log.posts[1], { name: "Rye", rdf_type: "vocabulary:Species", is_public: true });
+
+    const noSpecies = await create({ type: "germplasm", name: "X", links: [], fields: { rdf_type: "vocabulary:Accession" } });
+    assert.equal(noSpecies.status, 400);
+    assert.match((await noSpecies.json()).error, /An accession needs a species/);
+    const dup = await create({ type: "germplasm", name: "annika", links: [], fields: { rdf_type: "vocabulary:Variety", species: `${GP}species.barley` } });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /There is already a variety named "Annika"/);
+    const badType = await create({ type: "germplasm", name: "X", links: [], fields: { rdf_type: "vocabulary:SeedLot", species: `${GP}species.barley` } });
+    assert.equal(badType.status, 400);
+    assert.equal(log.posts.length, 2);
+  });
+});
+
+test("germplasm rename keeps species and visibility; a name another germplasm of that type has is refused", async () => {
+  await withServer(async (base) => {
+    const log = newLog();
+    globalThis.fetch = germplasmStub(log);
+    const ok = await nodePut(base, { type: "germplasm", id: `${GP}variety.annika`, name: "Annika 2" });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    assert.equal(log.puts[0].name, "Annika 2");
+    assert.equal(log.puts[0].species, `${GP}species.barley`);
+    assert.equal(log.puts[0].is_public, true);
+    const same = await nodePut(base, { type: "germplasm", id: `${GP}variety.annika`, name: "ANNIKA" });
+    assert.equal(same.status, 200, "its own name in another case is fine");
+    const dup = await nodePut(base, { type: "germplasm", id: `${GP}variety.annika`, name: "Tiril" });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /There is already a variety named "Tiril"/);
+    assert.equal(log.puts.length, 2);
+  });
+});
+
+test("link germplasm + germplasm: a species is set on varieties/accessions, a variety on accessions (with its species); two species, or two varieties, are refused", async () => {
+  await withServer(async (base) => {
+    const log = newLog();
+    globalThis.fetch = germplasmStub(log);
+    const g = (k: string) => ({ type: "germplasm", id: `${GP}${k}` });
+
+    const r1 = await linkPost(base, [g("species.oat"), g("variety.annika"), g("accession.a1")]);
+    const b1 = await r1.json();
+    assert.equal(r1.status, 200, JSON.stringify(b1));
+    assert.equal(b1.linkedPairs, 2);
+    assert.deepEqual(log.puts.map((p) => [p.uri, p.species, p.variety]), [[`${GP}variety.annika`, `${GP}species.oat`, null], [`${GP}accession.a1`, `${GP}species.oat`, null]]);
+
+    log.puts.length = 0;
+    const r2 = await linkPost(base, [g("accession.a1"), g("variety.tiril")]);
+    assert.equal(r2.status, 200);
+    assert.deepEqual(log.puts.map((p) => [p.uri, p.species, p.variety]), [[`${GP}accession.a1`, `${GP}species.oat`, `${GP}variety.tiril`]]);
+
+    log.puts.length = 0;
+    const r3 = await linkPost(base, [g("species.barley"), g("variety.annika")]);
+    assert.deepEqual(await r3.json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
+    assert.equal(log.puts.length, 0);
+
+    const two = await linkPost(base, [g("species.barley"), g("species.oat"), g("variety.annika")]);
+    assert.equal(two.status, 400);
+    assert.match((await two.json()).error, /one species or variety/);
+    const peers = await linkPost(base, [g("variety.annika"), g("variety.tiril")]);
+    assert.equal(peers.status, 400);
+    assert.equal(log.puts.length, 0);
+  });
+});
+
+test("germplasm rows and chips carry their kind (species / variety / accession) so the page can say what a link sets", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = germplasmStub(newLog());
+    const rows = await (await realFetch(`${base}/api/germplasm`)).json();
+    assert.equal(rows.find((r: any) => r.label === "Annika").kind, "variety");
+    assert.equal(rows.find((r: any) => r.label === "Barley").kind, "species");
+    const d = await (await realFetch(`${base}/api/node-detail?type=germplasm&id=${gq(`${GP}variety.annika`)}`)).json();
+    assert.equal(d.relations.find((r: any) => r.label === "Species").items[0].kind, "species");
   });
 });
