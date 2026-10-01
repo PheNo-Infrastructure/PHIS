@@ -1254,6 +1254,9 @@ factor's old level; unlink removes it. e2e: level chips select; Link selection l
 experiments; delete confirm names the plant count. Live: one throwaway "ZZ" experiment on
 phis-test through the app's own API (create factor, set level, rename, delete), cleaned up.
 
+**Built 2026-10-01:** all of the above, deployed to phis.pheno.no/portal; live round trip on the
+ZZ throwaway (create, set, replace, rename, counted delete). Next: editing a factor's level list.
+
 ## Access during development
 
 Not exposed on the public web. Runs locally (or on an internal-only
