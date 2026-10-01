@@ -1,0 +1,15 @@
+# The explorer is its own app: PHIS_HOST (deployment.yaml) picks which OpenSILEX it talks to.
+# Applied by hand (not Flux):
+#   kubectl apply -k graph-explorer/k8s
+# Secrets are created with kubectl, never committed: graph-explorer-env (PHIS_USER, PHIS_PASS)
+# and graph-explorer-basic-auth (key `auth`, htpasswd line from `openssl passwd -apr1`).
+# Image: `az acr build -r phisacr -t graph-explorer:latest graph-explorer`, then
+#   kubectl rollout restart deploy/graph-explorer -n graph-explorer
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: graph-explorer
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml

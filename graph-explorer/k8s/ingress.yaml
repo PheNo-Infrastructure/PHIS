@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: graph-explorer
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: graph-explorer-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "PHIS Graph Explorer"
+    # Imports stream progress for minutes and upload instrument ZIPs.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - explorer.172-211-86-191.sslip.io
+      secretName: graph-explorer-tls
+  rules:
+    - host: explorer.172-211-86-191.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: graph-explorer
+                port:
+                  number: 80
