@@ -37,3 +37,8 @@ dbg-patch*.json
 # Graph Explorer
 graph-explorer/.env
 graph-explorer/node_modules/
+
+# Kubeconfigs handed to collaborators (contain credentials)
+*kubeconfig*.yaml
+# Terraform plan files (can contain secrets)
+*.tfplan
