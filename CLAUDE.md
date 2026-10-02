@@ -38,7 +38,7 @@ The user is learning Kubernetes and Azure infrastructure. For `kubectl`, `az`, `
 On-demand environments for testing changes without touching production. Managed by `scripts/test-env.ps1` (interactive PowerShell menu).
 
 - Namespaces: `phis-<name>` (e.g. `phis-test`, `phis-myfeature`)
-- Max **1 test environment** at a time — Azure Disk limit (7/8 slots used by prod+test on the D4s_v3)
+- Max **1 test environment** at a time — prod+test use 7 Azure Disk slots; the E4as_v7 node (since 2026-10-02) allows 12, so check memory before raising this
 - Test PVCs use `managed-csi` with Delete reclaim policy — data is destroyed with `kubectl delete namespace`
 - Production deployment files are sourced at spin-up time — new environments automatically get the latest image tags
 - `email: enable: false` is required in `k8s/test/opensilex.yml` — `simulateSending: true` alone still crashes on SMTP connect
