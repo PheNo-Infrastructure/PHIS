@@ -739,6 +739,8 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     // variety can't be without a species (probed).
     actions: ["rename", "delete", "link"],
     visibility: true,
+    // A variety's code (TraitFinder's G_alias, set by the import).
+    facts: (d) => factsOf([["Code", d.code]]),
     // OpenSILEX refuses deleting germplasm in use (probed) — said before the user tries.
     deleteBlockedBy: async (dto, id) => {
       const exps = (await authedGet(`/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500`)).result;

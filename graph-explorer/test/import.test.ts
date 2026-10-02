@@ -74,10 +74,24 @@ const SHEET = [
   '"32",1,1,"2025-10-29 13:19:34","PB_3","Annika","TraitFinder",12',
 ].join("\n");
 
-function mockPhis(calls: string[]) {
+// The vocabulary checks (Tray type, a plant's position): `present` = this PHIS already has them.
+function ontologyAnswer(url: string, present: boolean) {
+  if (url.includes("/ontology/rdf_type?") || url.includes("/ontology/property?")) {
+    return present ? jsonResponse(200, { result: { uri: "x" } }) : jsonResponse(500, { result: { message: "owl:Class URI not found : x" } });
+  }
+  if (url.includes("/vuejs/owl_extension/rdf_type_properties")) {
+    return jsonResponse(200, { result: { data_properties: present ? [{ uri: "https://phis.pheno.no/vocabulary#positionInTray" }] : [] } });
+  }
+  return null;
+}
+
+function mockPhis(calls: string[], olveCode: string | null = null) {
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     calls.push(`${init?.method ?? "GET"} ${url}`);
     if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    const onto = ontologyAnswer(url, false);
+    if (onto) return onto;
+    if (url.includes("/core/germplasm/g%3Aolve")) return jsonResponse(200, { result: { uri: "g:olve", name: "Olve", code: olveCode } });
     if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [{ uri: "e1", name: "PBar1x4 – TraitFinder – 2025-10-22 (old)" }] });
     if (url.includes("rdf_type=")) return jsonResponse(200, { result: [{ uri: "agrovoc:barley", name: "barley" }] });
     if (url.includes("/core/germplasm?name=Olve")) return jsonResponse(200, { result: [{ uri: "g:olve", name: "olve" }, { uri: "g:olve2", name: "Olve 2" }] });
@@ -95,13 +109,35 @@ test("POST /api/import/plan: TraitFinder ZIP -> the plan (exact-name germplasm m
     const plan = await res.json();
     assert.equal(plan.instrument, "TraitFinder (PlantEye)");
     assert.deepEqual(plan.experiment, { name: "PBar1x4 – TraitFinder – 2025-10-22", startDate: "2025-10-22", exists: false }, "a name that only contains it isn't a match; earliest date starts it");
-    assert.deepEqual(plan.germplasm, { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril"], ambiguous: [] }, "case-insensitive exact match; 'Olve 2' ignored");
+    assert.deepEqual(plan.germplasm, { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril"], ambiguous: [], codes: [{ name: "Olve", code: "G5" }, { name: "Tiril", code: "G16" }] }, "case-insensitive exact match; 'Olve 2' ignored; codes from G_alias");
+    assert.deepEqual(plan.vocabulary.map((v: any) => v.label), ["the object type Tray", "the plant property Position in tray"], "what this PHIS lacks, added first");
     assert.deepEqual(plan.speciesOptions, [{ id: "agrovoc:barley", label: "barley" }]);
     assert.deepEqual(plan.factors, [{ name: "Replicate", levels: ["1", "2"] }, { name: "GroupID", levels: ["9", "10"] }], "levels sorted as numbers");
-    assert.equal(plan.objects.count, 3);
-    assert.deepEqual(plan.objects.sample[0], { name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1", GroupID: "9" } });
+    assert.equal(plan.objects.count, 5, "3 plants + their 2 trays");
+    assert.deepEqual(plan.objects.kinds, [{ type: "tray", count: 2 }, { type: "plant", count: 3 }]);
+    assert.deepEqual(plan.objects.sample[0], { name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1", GroupID: "9" }, parent: "Tray 31", position: 1 }, "the sample shows plants, not trays");
     assert.deepEqual(plan.warnings, ["On 2025-10-29 the observation sheet names different germplasm than the design manifest (PB003: sheet says Annika, manifest says Olve). The manifest is used."]);
     assert.ok(calls.every((c) => c.startsWith("GET ") || c.includes("/security/authenticate")), "the plan writes nothing");
+  });
+});
+
+test("POST /api/import/plan: codes come from the manifest — an existing different code is kept, a variety it gives two codes gets none (both warned), the sheet's codes are ignored; vocabulary already there isn't listed", async () => {
+  await withServer(async (base) => {
+    mockPhis([], "G99");
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => ontologyAnswer(url, true) ?? inner(url, init)) as typeof fetch;
+    // The sheet's codes differ (as in PBar1x4, where its variety names were wrong): ignored.
+    const sheet = SHEET.replace('"Sensor"', '"G_alias","Sensor"')
+      .replace('"PB_1","Olve","TraitFinder"', '"PB_1","Olve","G77","TraitFinder"')
+      .replace('"PB_2","Tiril","TraitFinder"', '"PB_2","Tiril","G1","TraitFinder"')
+      .replace('"PB_3","Annika","TraitFinder"', '"PB_3","Annika","G5","TraitFinder"');
+    const manifest = MANIFEST + "\n33:01:01,33,1,1,PB004,Tiril,G7,1,9";
+    const res = await realFetch(`${base}/api/import/plan`, { method: "POST", body: makeZip({ "PBar1x4_Metadata.csv": manifest, "Sheets/PBar1x4_TraitFinder_20260107_PHIS.csv": sheet }) });
+    const plan = await res.json();
+    assert.deepEqual(plan.vocabulary, []);
+    assert.deepEqual(plan.germplasm.codes, [], "Olve keeps G99, Tiril is G16 and G7 in the manifest, Annika is only in the sheet");
+    assert.ok(plan.warnings.includes("The design manifest gives Tiril 2 codes (G16, G7), so no code is set for it."), plan.warnings.join(" | "));
+    assert.ok(plan.warnings.includes("Olve already has the code G99 in PHIS; the file's G5 isn't used."), plan.warnings.join(" | "));
   });
 });
 
@@ -126,8 +162,12 @@ function mockPhisForRun(writes: { method: string; path: string; body: any }[], f
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    const onto = method === "GET" && ontologyAnswer(url, false);
+    if (onto) return onto;
     if (method !== "GET") {
       writes.push({ method, path, body });
+      if (path.startsWith("/vuejs/") || path.startsWith("/ontology/")) return jsonResponse(201, { result: body.uri ?? "ok" });
+      if (path === "/core/germplasm" && method === "PUT") return jsonResponse(200, { result: body.uri });
       if (path === "/core/experiments") return jsonResponse(201, { result: "exp:new" });
       if (path === "/core/germplasm") return jsonResponse(201, { result: [`g:${body.name}`] });
       if (path === "/core/experiments/factors") return jsonResponse(201, { result: `f:${body.name}` });
@@ -145,6 +185,7 @@ function mockPhisForRun(writes: { method: string; path: string; body: any }[], f
     if (url.includes("rdf_type=")) return jsonResponse(200, { result: [{ uri: "agrovoc:barley", name: "barley" }] });
     if (url.includes("/core/germplasm?name=Olve")) return jsonResponse(200, { result: [{ uri: "g:olve", name: "Olve" }] });
     if (url.includes("/core/germplasm?name=Tiril")) return jsonResponse(200, { result: [] });
+    if (url.includes("/core/germplasm/g%3Aolve")) return jsonResponse(200, { result: { uri: "g:olve", name: "Olve", rdf_type: "vocabulary:Variety", species: "agrovoc:barley", is_public: true, code: null } });
     throw new Error(`unexpected fetch: ${method} ${url}`);
   }) as typeof fetch;
 }
@@ -163,37 +204,51 @@ test("POST /api/import/run refuses before writing anything when a choice is miss
   });
 });
 
-test("POST /api/import/run writes in order: experiment, new germplasm (variety of the species), factors with levels, then each object with its germplasm and factor levels", async () => {
+test("POST /api/import/run writes in order: vocabulary, experiment, new germplasm (with its code), an existing germplasm's code, factors with levels, trays, then each plant with its germplasm, factor levels, tray and position", async () => {
   await withServer(async (base) => {
     const writes: { method: string; path: string; body: any }[] = [];
     mockPhisForRun(writes);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200);
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`), [
-      "1/7 Created the experiment", "2/7 Creating germplasm: 1 of 1", "3/7 Creating factors: 1 of 2", "4/7 Creating factors: 2 of 2",
-      "5/7 Creating scientific objects: 1 of 3", "6/7 Creating scientific objects: 2 of 3", "7/7 Creating scientific objects: 3 of 3",
+    const steps = lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`);
+    assert.deepEqual(steps.slice(0, 7), [
+      "1/12 Added the object type Tray to PHIS", "2/12 Added the plant property Position in tray to PHIS", "3/12 Created the experiment",
+      "4/12 Creating germplasm: 1 of 1", "5/12 Setting variety codes: 1 of 1", "6/12 Creating factors: 1 of 2", "7/12 Creating factors: 2 of 2",
     ], "one progress line per write");
-    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, factors: 2, objects: 3 } } });
-    assert.deepEqual(writes.map((w) => `${w.path} ${w.body.name}`), [
-      "/core/experiments PBar1x4 – TraitFinder – 2025-10-22",
-      "/core/germplasm Tiril",
-      "/core/experiments/factors Replicate",
-      "/core/experiments/factors GroupID",
-      "/core/scientific_objects PB001", "/core/scientific_objects PB002", "/core/scientific_objects PB003",
-    ]);
-    assert.deepEqual(writes[0].body, { name: "PBar1x4 – TraitFinder – 2025-10-22", start_date: "2025-10-22", objective: "Imported from a TraitFinder (PlantEye) export.", is_public: true });
-    assert.deepEqual(writes[1].body, { name: "Tiril", rdf_type: "vocabulary:Variety", species: "agrovoc:barley", is_public: true });
-    assert.deepEqual(writes[2].body, { name: "Replicate", experiment: "exp:new", levels: [{ name: "1" }, { name: "2" }] });
-    assert.deepEqual(writes[5].body, {
+    assert.equal(steps.at(-1), "12/12 Creating scientific objects: 5 of 5");
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, codes: 1, factors: 2, objects: 5, vocabulary: 2 } } });
+    assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri ?? w.body.property}`), [
+      "POST /vuejs/owl_extension/rdf_type Tray",
+      "POST /ontology/property https://phis.pheno.no/vocabulary#positionInTray",
+      "POST /ontology/rdf_type_property_restriction https://phis.pheno.no/vocabulary#positionInTray",
+      "POST /core/experiments PBar1x4 – TraitFinder – 2025-10-22",
+      "POST /core/germplasm Tiril",
+      "PUT /core/germplasm Olve",
+      "POST /core/experiments/factors Replicate",
+      "POST /core/experiments/factors GroupID",
+      "POST /core/scientific_objects Tray 31", "POST /core/scientific_objects Tray 32",
+      "POST /core/scientific_objects PB001", "POST /core/scientific_objects PB002", "POST /core/scientific_objects PB003",
+    ], "trays before the plants in them");
+    const w = (name: string) => writes.find((x) => x.body.name === name)!.body;
+    assert.deepEqual(writes[3].body, { name: "PBar1x4 – TraitFinder – 2025-10-22", start_date: "2025-10-22", objective: "Imported from a TraitFinder (PlantEye) export.", is_public: true });
+    assert.deepEqual(w("Tiril"), { name: "Tiril", rdf_type: "vocabulary:Variety", species: "agrovoc:barley", is_public: true, code: "G16" });
+    assert.equal(writes[5].body.code, "G5");
+    assert.equal(writes[5].body.species, "agrovoc:barley", "the rest of Olve's record goes back too");
+    assert.deepEqual(w("Replicate"), { name: "Replicate", experiment: "exp:new", levels: [{ name: "1" }, { name: "2" }] });
+    assert.deepEqual(w("Tray 31"), { name: "Tray 31", rdf_type: "https://phis.pheno.no/vocabulary#Tray", experiment: "exp:new", relations: [] });
+    assert.deepEqual(w("PB002"), {
       name: "PB002", rdf_type: "vocabulary:Plant", experiment: "exp:new",
       relations: [
         { property: "vocabulary:hasGermplasm", value: "g:Tiril", inverse: false },
         { property: "vocabulary:hasFactorLevel", value: "lvl:Replicate.1", inverse: false },
         { property: "vocabulary:hasFactorLevel", value: "lvl:GroupID.10", inverse: false },
+        { property: "vocabulary:isPartOf", value: "so:Tray 31", inverse: false },
+        { property: "https://phis.pheno.no/vocabulary#positionInTray", value: "2", inverse: false },
       ],
-    }, "new germplasm by its new uri, existing by PHIS's, levels by name");
-    assert.equal(writes[4].body.relations[0].value, "g:olve");
+    }, "new germplasm by its new uri, existing by PHIS's, levels by name, tray by its new uri");
+    assert.equal(w("PB001").relations[0].value, "g:olve");
+    assert.equal(w("PB003").relations.find((r: any) => r.property === "vocabulary:isPartOf").value, "so:Tray 32");
   });
 });
 
@@ -204,7 +259,7 @@ test("POST /api/import/run that fails part-way says what it created and how to s
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200, "already streaming when it failed");
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
-    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 2 of 3 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
-    assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 3, "the batch in flight finishes; the report counts what exists");
+    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 4 of 5 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
+    assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 5, "the batch in flight finishes; the report counts what exists");
   });
 });

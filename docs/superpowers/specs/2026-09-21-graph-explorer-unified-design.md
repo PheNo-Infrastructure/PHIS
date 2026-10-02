@@ -1495,3 +1495,15 @@ an empty `code` field. Scientific object types: plant, plot, SubPlot, leaf, seed
    re-import skips values already there (same plant, variable, time).
 4. Show them: a plant's page lists its measurements per variable; a variable's page its experiments.
 Later: histogram bins, the raw `.ply` scans as data files.
+
+**Step 1 built (2026-10-02).** Probed: custom classes need a uri (`POST /vuejs/owl_extension/rdf_type`);
+a plant only accepts a custom property after a restriction (`POST /ontology/rdf_type_property_restriction`
+with `rdf_type` + `domain` + `property`); a missing class/property answers 500 "URI not found". Terms
+`https://phis.pheno.no/vocabulary#Tray` and `#positionInTray` (xsd:integer, on plants) — `src/import/ontology.ts`
+adds whichever the instance lacks, listed in the plan as "Vocabulary". The import creates one Tray per Block
+(before its plants), each plant *part of* its tray with its column as position; variety codes come from the
+**manifest only** (in PBar1x4 the sheet's variety names were wrong on 2025-10-29 while its G_alias matched
+the manifest), are set where PHIS has none, an existing different code is kept (warned), and a variety given
+two codes gets none (warned). A variety's page shows its Code. Live round trip on a 3-tray ZZ subset of the
+real export (15 objects, positions, codes, tray page "Contains PB001–PB004"), cleaned up; the vocabulary and
+the codes stay on phis-test. Next: step 2, variables.

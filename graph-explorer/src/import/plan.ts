@@ -1,8 +1,9 @@
 // The shared import engine, step 1: the reviewable plan. Whatever the instrument, its TrialData is
 // matched against PHIS by name and summarised as "exists / will be created / needs a choice" —
 // nothing is written here.
-import { OpenSilexError, authedGet } from "../opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne } from "../opensilex.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
+import { POSITION_IN_TRAY, missingTerms } from "./ontology.ts";
 
 const enc = encodeURIComponent;
 const byNumberThenText = (a: string, b: string) => (Number(a) - Number(b)) || a.localeCompare(b);
@@ -41,6 +42,27 @@ export async function prepare(files: Files) {
     ? (await authedGet(`/core/germplasm?rdf_type=${enc("vocabulary:Species")}&page_size=500`)).result.map((s) => ({ id: s.uri, label: String(s.name ?? s.uri) }))
     : [];
 
+  // Codes (G_alias): set where the germplasm has none in PHIS; an existing different code is kept.
+  const codes = trial.germplasmCodes ?? {};
+  const setCodes: { name: string; code: string }[] = [];
+  const keptCodes: { name: string; code: string; inPhis: string }[] = [];
+  await Promise.all(existing.filter((g) => codes[g.name]).map(async (g) => {
+    const inPhis = String((await authedGetOne(`/core/germplasm/${enc(g.id)}`)).result.code ?? "").trim();
+    if (!inPhis) setCodes.push({ name: g.name, code: codes[g.name] });
+    else if (inPhis !== codes[g.name]) keptCodes.push({ name: g.name, code: codes[g.name], inPhis });
+  }));
+  for (const name of missing) if (codes[name]) setCodes.push({ name, code: codes[name] });
+  setCodes.sort((a, b) => a.name.localeCompare(b.name));
+  const warnings = [...trial.warnings, ...keptCodes.map((k) => `${k.name} already has the code ${k.inPhis} in PHIS; the file's ${k.code} isn't used.`)];
+
+  // Vocabulary the objects need that this PHIS lacks (a Tray type, a plant's position) — added first.
+  const needed = new Set(trial.objects.map((o) => o.rdfType));
+  if (trial.objects.some((o) => o.position !== undefined)) needed.add(POSITION_IN_TRAY);
+  const vocabulary = await missingTerms(needed);
+  const parents = new Set(trial.objects.map((o) => o.parent).filter(Boolean)); // the sample shows what is measured, not trays
+  const kinds = new Map<string, number>();
+  for (const o of trial.objects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
+
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
 
@@ -51,11 +73,14 @@ export async function prepare(files: Files) {
       existing: existing.sort((a, b) => a.name.localeCompare(b.name)),
       missing: missing.sort(),
       ambiguous,
+      codes: setCodes,
     },
     speciesOptions,
     factors: [...levels].map(([name, set]) => ({ name, levels: [...set].sort(byNumberThenText) })),
-    objects: { count: trial.objects.length, sample: trial.objects.slice(0, 5) },
-    warnings: trial.warnings,
+    vocabulary,
+    // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Tray) — fine for these two.
+    objects: { count: trial.objects.length, kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })), sample: trial.objects.filter((o) => !parents.has(o.name)).slice(0, 5) },
+    warnings,
   };
   return { trial, plan };
 }

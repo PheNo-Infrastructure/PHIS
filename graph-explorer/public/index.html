@@ -3158,6 +3158,10 @@ function importPlanHtml(p) {
   return `
     <p class="ranking-hint">Recognised as <b>${escapeHtml(p.instrument)}</b>.</p>
     ${p.warnings.map(w => `<div class="import-warning">${escapeHtml(w)}</div>`).join("")}
+    ${p.vocabulary.length ? `<div class="import-section">
+      <h3>Vocabulary<small>words this PHIS doesn't have yet</small></h3>
+      <p>Adds ${escapeHtml(andList(p.vocabulary.map(v => v.label)))}. Done once; later imports reuse ${p.vocabulary.length === 1 ? "it" : "them"}.</p>
+    </div>` : ""}
     <div class="import-section">
       <h3>Experiment<small>your trial</small></h3>
       <p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>
@@ -3168,6 +3172,7 @@ function importPlanHtml(p) {
       ${g.existing.length ? `<p>Already in PHIS, reused: ${g.existing.length} <span class="import-names">(${list(g.existing.map(x => x.name))})</span></p>` : ""}
       ${newCount ? `<p>New: ${newCount} <span class="import-names">(${list(g.missing)})</span></p>
         <p><label>Species for the new germplasm: <select id="importSpecies"><option value="">Choose…</option>${p.speciesOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}</select></label></p>` : ""}
+      ${g.codes.length ? `<p>Codes set: ${g.codes.length} <span class="import-names">(${list(g.codes.map(c => `${c.name} = ${c.code}`))})</span></p>` : ""}
       ${g.ambiguous.map(a => `<div class="import-warning">"${escapeHtml(a.name)}" matches ${a.ids.length} germplasm in PHIS — it isn't clear which one is meant.</div>`).join("")}
     </div>
     <div class="import-section">
@@ -3176,7 +3181,7 @@ function importPlanHtml(p) {
     </div>
     <div class="import-section">
       <h3>${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></h3>
-      <p>New: ${p.objects.count}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`)].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
+      <p>New: ${p.objects.count}${p.objects.kinds.length > 1 ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.parent && `in ${sample.parent}${sample.position ? `, position ${sample.position}` : ""}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
     </div>
     <div class="import-footer" id="importFooter">${importFooterHtml(p)}</div>`;
 }
@@ -3237,7 +3242,7 @@ function wireImportRun(file, plan, close) {
       if (failed || !body) { footer.innerHTML = `<div class="import-warning">${escapeHtml(failed || "The import ended without an answer.")}</div>`; return; }
       await reloadCategories(["cat-experiments", "cat-germplasm", "cat-scientificobjects", "cat-factors"]);
       const c = body.created;
-      footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${c.codes ? `, and set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
     } catch (err) {
       footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;

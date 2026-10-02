@@ -1649,10 +1649,11 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
         instrument: "TraitFinder (PlantEye)",
         experiment: { name: "PBar1x4 – TraitFinder – 2025-10-22", startDate: "2025-10-22", exists: false },
-        germplasm: { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril", "<b>Bad</b>"], ambiguous: [] },
+        germplasm: { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril", "<b>Bad</b>"], ambiguous: [], codes: [{ name: "Olve", code: "G5" }] },
         speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
         factors: [{ name: "Replicate", levels: ["1", "2"] }],
-        objects: { count: 3, sample: [{ name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1" } }] },
+        vocabulary: [{ uri: "x#Tray", label: "the object type Tray" }, { uri: "x#pos", label: "the plant property Position in tray" }],
+        objects: { count: 4, kinds: [{ type: "tray", count: 1 }, { type: "plant", count: 3 }], sample: [{ name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1" }, parent: "Tray 31", position: 1 }] },
         warnings: ["On 2025-10-29 the sheet disagrees."],
       }) });
     });
@@ -1663,10 +1664,12 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
     await page.locator(".import-section").first().waitFor();
     assert.equal(uploaded, 11, "the file goes up unchanged");
     const text = (await page.locator("#importPlan").innerText()).replace(/\s+/g, " ");
-    assert.match(text, /Recognised as TraitFinder \(PlantEye\)\. On 2025-10-29 the sheet disagrees\. Experiment/, "the warning comes before the plan");
+    assert.match(text, /Recognised as TraitFinder \(PlantEye\)\. On 2025-10-29 the sheet disagrees\. Vocabulary/, "the warning comes before the plan");
+    assert.match(text, /Adds the object type Tray and the plant property Position in tray\. Done once; later imports reuse them\./);
+    assert.match(text, /Codes set: 1 \(Olve = G5\)/);
     assert.match(text, /Already in PHIS, reused: 1 \(Olve\) New: 2 \(Tiril, <b>Bad<\/b>\)/, "names from the file are shown as text");
     assert.match(text, /Replicate: 2 levels \(1, 2\)/);
-    assert.match(text, /Scientific objects.* New: 3 \(e\.g\. PB001: Olve, Replicate 1\)/);
+    assert.match(text, /Scientific objects.* New: 4 \(1 tray and 3 plants\) \(e\.g\. PB001: Olve, Replicate 1, in Tray 31, position 1\)/);
     assert.match(text, /Nothing has been written to PHIS yet\./);
     assert.equal(await page.locator("#importSpecies").inputValue(), "", "no species chosen for the user");
     await page.locator("#importClose").click();
@@ -1683,10 +1686,11 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     await page.route("**/api/import/plan", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
       instrument: "TraitFinder (PlantEye)",
       experiment: { name: exp.label, startDate: "2025-10-22", exists: false },
-      germplasm: { existing: [], missing: ["Tiril"], ambiguous: [] },
+      germplasm: { existing: [], missing: ["Tiril"], ambiguous: [], codes: [] },
       speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
       factors: [{ name: "Replicate", levels: ["1"] }],
-      objects: { count: 3, sample: [] },
+      vocabulary: [],
+      objects: { count: 3, kinds: [{ type: "plant", count: 3 }], sample: [] },
       warnings: [],
     }) }));
     await page.route("**/api/import/run**", (route) => {
