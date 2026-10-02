@@ -1353,22 +1353,27 @@ async function setVisibility(items, isPublic) {
   showToast(`Made ${done} ${isPublic ? "public" : "private"}${failed.length ? `. Failed: ${failed.join(", ")}` : ""}`, failed.length ? 6000 : 1600);
 }
 
-async function renameNode(item) {
-  const label = prompt(`New name for ${item.label}?`, item.label);
-  if (!label || label === item.label) return;
+// `inExp` = {id, label, name}: rename only the copy in that experiment (a scientific object's
+// box on its page) — the title then changes only if it showed that copy's name.
+async function renameNode(item, inExp = null) {
+  const current = inExp ? inExp.name : item.label;
+  const label = prompt(inExp ? `New name for ${current} in ${inExp.label}?` : `New name for ${item.label}?`, current);
+  if (!label || label === current) return;
   try {
     const res = await fetch("api/node", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: item.type, id: item.id, name: label }),
+      body: JSON.stringify({ type: item.type, id: item.id, name: label, ...(inExp ? { experiment: inExp.id } : {}) }),
     });
     const body = await res.json();
-    if (!res.ok) { showToast(`Failed to rename: ${body.error || res.status}`); return; }
+    if (!res.ok) { showToast(`Failed to rename: ${body.error || res.status}`, 6000); return; }
     // item is the same object referenced from selection/CATEGORY_ITEMS/path (see how "+ New"
     // auto-attach relies on the same sharing) — mutating it in place keeps everywhere in sync.
-    item.label = body.label;
+    if (!inExp || item.label === current) item.label = body.label;
     // Its connections still show the old name (a factor's Levels list, a plant's level chip).
     (NODE_DETAIL[item.id]?.relations ?? []).flatMap(rel => rel.items).forEach(it => delete NODE_DETAIL[it.id]);
+    // Its own page shows per-experiment names (a scientific object's boxes): fetch it again.
+    if (item.type === "scientific_object") { delete NODE_DETAIL[item.id]; loadNodeDetail(item); }
     render();
     showToast(`Renamed to ${body.label}`);
   } catch (err) {
@@ -1657,6 +1662,10 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false } = {})
   if (rel.items.some(it => it.groups)) {
     rel.items.forEach(it => {
       h += `<div class="item-box"><div class="chip-row">${chip(it)}</div><div class="item-box-rows">`;
+      // A scientific object's name in this experiment (each copy has its own), renamed here only.
+      if (typeof it.name === "string") {
+        h += `<span class="item-box-key">Name</span><div class="chip-row"><span>${escapeHtml(it.name)}</span>${unlinking ? "" : ` <button class="btn ghost small" data-rename-in="${escapeHtml(it.id)}">Rename</button>`}</div>`;
+      }
       (it.groups || []).forEach(g => {
         const chips = g.items.map(x => chipHtml(x, unlinking && g.field ? g.field : null, it.id)).join("");
         h += `<span class="item-box-key">${escapeHtml(g.label)}</span><div class="chip-row">${chips || `<span class="rel-empty">none</span>`}</div>`;
@@ -1691,7 +1700,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   // Rename/Delete only appear once a real node-detail response has come back (`node` truthy —
   // set by loadNodeDetail on a 200) — that's the one reliable signal the backend actually
   // supports this type, same honesty rule the "+ New" menu follows for CREATABLE. Which buttons
-  // show comes from node.actions (e.g. a scientific object can be deleted but not renamed).
+  // show comes from node.actions (e.g. a move event can only be deleted).
   const canEdit = !isCategoryMembers && node;
   const actions = node?.actions ?? ["rename", "delete", "link"]; // same default as the backend
   const canRename = canEdit && actions.includes("rename");
@@ -1799,6 +1808,10 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   }
 
   document.getElementById("renameNodeBtn")?.addEventListener("click", () => renameNode(focusNode));
+  els.detailBody.querySelectorAll("[data-rename-in]").forEach(btn => btn.addEventListener("click", () => {
+    const box = (node?.relations ?? []).flatMap(rel => rel.items).find(it => it.id === btn.dataset.renameIn && typeof it.name === "string");
+    if (box) renameNode(focusNode, box);
+  }));
   document.getElementById("deleteBlockedOkBtn")?.addEventListener("click", () => { deleteBlockedShown = null; renderDetail(); });
   document.getElementById("deleteNodeBtn")?.addEventListener("click", () => deleteNode(focusNode));
   document.getElementById("unlinkModeBtn")?.addEventListener("click", () => { unlinkTargetId = focusNode.id; render(); });

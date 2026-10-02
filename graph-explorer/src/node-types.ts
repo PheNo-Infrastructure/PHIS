@@ -24,8 +24,7 @@ export type NodeConfig = {
   updateLinkFields: string[];
   // What the app may do with this type — default all three. The backend refuses the rest, the
   // frontend hides them, and only "link" types belong in the mockup's LINKABLE_TYPES. E.g. a
-  // scientific object can be deleted but not renamed/linked yet (its writes need experiment
-  // context).
+  // move event can only be deleted.
   actions?: Action[];
   // Delete goes ahead with links still in place — OpenSILEX drops them with the node (confirmed
   // for sites and experiments) — so the confirm names them instead of routing to unlink mode.
@@ -44,8 +43,9 @@ export type NodeConfig = {
   deleteWarning?: (id: string, dto: Record<string, unknown>) => Promise<string>;
   // For a node that lives inside another one's record (a factor level inside its factor): rename,
   // delete and create save that record instead of putUrl/deleteUrl/CREATABLE.url. rename answers
-  // the new label, create the new item.
-  rename?: (id: string, name: string) => Promise<string>;
+  // the new label, create the new item. `experiment`: rename only the node's copy there (a
+  // scientific object has one name per experiment).
+  rename?: (id: string, name: string, experiment?: string) => Promise<string>;
   remove?: (id: string) => Promise<void>;
   create?: (payload: Record<string, unknown>) => Promise<{ id: string; label: string; [k: string]: unknown }>;
   // A few plain values shown under the title (an account's email/admin/enabled) — not resources.
@@ -456,8 +456,33 @@ const SO_EXPERIMENTS: QueryRelation = {
   field: "experiment",
   type: "experiment",
   url: (id) => `/core/scientific_objects/${encodeURIComponent(id)}/experiments`,
-  item: (r) => (r.experiment && r.experiment_name ? { id: String(r.experiment), label: String(r.experiment_name) } : null),
+  // `name`: what the object is called in that experiment (each copy has its own — probed).
+  item: (r) => (r.experiment && r.experiment_name ? { id: String(r.experiment), label: String(r.experiment_name), ...(r.name != null ? { name: String(r.name) } : {}) } : null),
 };
+
+// A scientific object's name lives on each copy: renaming one experiment's copy leaves the global
+// copy and its other experiments alone (probed 2026-10-02). Without `expId` the only candidate is
+// used — the global copy for an object in no experiment, else its one experiment; several ask.
+// A taken name in that experiment is refused here (OpenSILEX's own refusal is a Java dump). The
+// PUT replaces the copy's relations, so they go back as they are (like updateSoInExperiment).
+async function renameSo(soId: string, name: string, expId?: string): Promise<string> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new OpenSilexError(400, "A name is required.");
+  const exps = await queryItems(SO_EXPERIMENTS, soId);
+  if (!expId && exps.length > 1) {
+    throw new OpenSilexError(400, `It has its own name in each of its experiments (${exps.map((e) => e.label).join(", ")}). Use Rename in that experiment's box below.`);
+  }
+  const want = expId ? await compactUri(expId) : null;
+  const keyed = await Promise.all(exps.map(async (e) => ({ ...e, key: await compactUri(e.id) })));
+  const exp = want ? keyed.find((e) => e.key === want) : exps[0];
+  if (want && !exp) throw new OpenSilexError(400, "It isn't in that experiment.");
+  if (exp) await refuseTakenName(`/core/scientific_objects?experiment=${encodeURIComponent(exp.id)}`, trimmed, `scientific object in ${exp.label}`, soId);
+  const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}${exp ? `?experiment=${encodeURIComponent(exp.id)}` : ""}`)).result;
+  const relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
+    .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
+  await authedPut("/core/scientific_objects", { uri: soId, name: trimmed, rdf_type: copy.rdf_type, ...(exp ? { experiment: exp.id } : {}), relations });
+  return trimmed;
+}
 // Only for the detail pane: link/unlink/delete only need the experiment ids (SO_EXPERIMENTS).
 const SO_EXPERIMENTS_DETAIL: QueryRelation = {
   ...SO_EXPERIMENTS,
@@ -636,8 +661,8 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteUrl: (id) => `/core/scientific_objects/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["delete", "link"],
     deleteRemovesLinks: true,
+    rename: renameSo,
     contextLinks: {
       experiment: {
         otherType: "experiment",

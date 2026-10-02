@@ -57,6 +57,15 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     const experiment = (body as { experiment?: string }).experiment;
+    if (experiment && name && config.rename) {
+      // A rename of the node's copy in one experiment (a scientific object's name is per copy).
+      await respondOpenSilexErrors(res, async () => {
+        const label = await config.rename!(id, name, experiment);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id, type, label }));
+      });
+      return true;
+    }
     if (experiment) {
       // A link that lives only inside one experiment (see NodeConfig.inExperiment).
       const field = (unlink ?? link)?.field ?? "";

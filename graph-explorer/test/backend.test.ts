@@ -559,7 +559,7 @@ test("the page's '+ New' rule never offers a link /api/create would refuse", asy
   }
 });
 
-test("scientific object: detail lists its REAL experiments (unlinkable) + class name; no rename; DELETE removes each experiment copy, then the global copy", async () => {
+test("scientific object: detail lists its REAL experiments (unlinkable, with its name in each) + class name; DELETE removes each experiment copy, then the global copy", async () => {
   await withServer(async (base) => {
     const deletes: string[] = [];
     let puts = 0;
@@ -582,19 +582,68 @@ test("scientific object: detail lists its REAL experiments (unlinkable) + class 
     assert.deepEqual(detail, {
       uri: "so-1",
       typeName: "plant",
-      actions: ["delete", "link"],
+      actions: ["rename", "delete", "link"],
       deleteRemovesLinks: true,
-      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] }] }] }],
+      relations: [{ label: "In experiments", field: "experiment", items: [{ id: "exp-1", label: "Trial A", name: "P1", type: "experiment", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] }] }] }],
     });
-    const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "scientific_object", id: "so-1", name: "X" }) });
-    assert.equal(put.status, 400);
-    assert.equal(puts, 0);
-
     const del = await realFetch(`${base}/api/node?type=scientific_object&id=so-1`, { method: "DELETE" });
     assert.equal(del.status, 200);
+    assert.equal(puts, 0);
     assert.equal(deletes.length, 2);
     assert.match(deletes[0], /scientific_objects\/so-1\?experiment=exp-1$/, "experiment copy first");
     assert.match(deletes[1], /scientific_objects\/so-1$/, "then the global copy");
+  });
+});
+
+// Probed 2026-10-02: each copy has its own name; renaming one leaves the others alone.
+test("scientific object rename: only the copy in the given experiment (relations sent back), its only experiment when none is given, the global copy when in none; several ask; a name taken in that experiment is refused", async () => {
+  await withServer(async (base) => {
+    const puts: Record<string, unknown>[] = [];
+    let experimentsOf: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "so-1" }); }
+      if (url.includes("/so-1/experiments")) return jsonResponse(200, { result: experimentsOf });
+      // The taken-name check: exp-b already has a "P9".
+      if (url.includes("&name=")) return jsonResponse(200, { result: url.includes("exp-b") && /p9/i.test(decodeURIComponent(url)) ? [{ uri: "so-9", name: "P9" }] : [] });
+      if (url.includes("/core/scientific_objects/so-1")) {
+        const exp = new URL(url).searchParams.get("experiment");
+        return jsonResponse(200, { result: { uri: "so-1", name: exp ? `P1 in ${exp}` : "P1", rdf_type: "vocabulary:Plant", relations: exp ? [{ property: "vocabulary:isPartOf", value: "so-0", inverse: false }] : [] } });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const nodePut = (b: string, body: unknown) => realFetch(`${b}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const A = { experiment: "exp-a", experiment_name: "Trial A", name: "P1" };
+    const B = { experiment: "exp-b", experiment_name: "Trial B", name: "P1" };
+
+    experimentsOf = [A, B];
+    const inB = await nodePut(base, { type: "scientific_object", id: "so-1", name: " P2 ", experiment: "exp-b" });
+    assert.equal(inB.status, 200, await inB.clone().text());
+    assert.equal((await inB.json()).label, "P2");
+    assert.deepEqual(puts.pop(), { uri: "so-1", name: "P2", rdf_type: "vocabulary:Plant", experiment: "exp-b", relations: [{ property: "vocabulary:isPartOf", value: "so-0", inverse: false }] });
+
+    const several = await nodePut(base, { type: "scientific_object", id: "so-1", name: "P2" });
+    assert.equal(several.status, 400);
+    assert.match((await several.json()).error, /own name in each of its experiments \(Trial A, Trial B\)/);
+
+    const taken = await nodePut(base, { type: "scientific_object", id: "so-1", name: "p9", experiment: "exp-b" });
+    assert.equal(taken.status, 400);
+    assert.match((await taken.json()).error, /already a scientific object in Trial B named "P9"/);
+
+    const elsewhere = await nodePut(base, { type: "scientific_object", id: "so-1", name: "P2", experiment: "exp-z" });
+    assert.equal(elsewhere.status, 400);
+    assert.equal(puts.length, 0, "refusals write nothing");
+
+    experimentsOf = [A];
+    assert.equal((await nodePut(base, { type: "scientific_object", id: "so-1", name: "P3" })).status, 200);
+    assert.equal(puts.pop()?.experiment, "exp-a", "its one experiment");
+
+    experimentsOf = [{ experiment: "phis:set/scientific-object", experiment_name: null, name: "P1" }];
+    assert.equal((await nodePut(base, { type: "scientific_object", id: "so-1", name: "P4" })).status, 200);
+    const global = puts.pop()!;
+    assert.equal(global.name, "P4");
+    assert.ok(!("experiment" in global), "the global copy");
   });
 });
 

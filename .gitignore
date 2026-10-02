@@ -40,3 +40,6 @@ graph-explorer/node_modules/
 
 # Brainstorming companion mockups (local only)
 .superpowers/
+
+# Kubeconfigs handed to collaborators (contain credentials)
+*kubeconfig*.yaml

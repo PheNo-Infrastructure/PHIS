@@ -1441,3 +1441,20 @@ devices were moved to — both leave moves pointing at nothing.
 **Deferred minors:** the events list labels a move by its description while chips say
 "date · moved to X"; the old facility's "Devices located here" stays cached after a move until
 reopened; every event is read as a move (the only kind in PHIS today).
+
+## Scientific-object rename (built 2026-10-02)
+
+**Probed on phis-test (ZZ throwaways, cleaned):** each copy of an object has its own name. Renaming
+the copy in one experiment leaves the global copy and its other experiments alone (and the reverse).
+The experiment's list shows the copy's name; the global list and search show the global name. A name
+taken in that experiment is refused by OpenSILEX with a Java dump; relations survive when sent back.
+
+**In the app (user's choice: rename only the copy in one experiment):**
+- Each "In experiments" box on the object's page shows **Name** (its name there) with **Rename**,
+  which renames that copy only. A name taken in that experiment is refused in plain words.
+- The title's **Rename** renames the only candidate: the global copy for an object in no experiment,
+  its one experiment's copy otherwise. In several experiments it answers "use Rename in that
+  experiment's box below".
+
+**Known consequence:** after a rename inside an experiment, search (global names) still finds the old
+name. Renaming the global copy along with it is a possible later step — not decided.

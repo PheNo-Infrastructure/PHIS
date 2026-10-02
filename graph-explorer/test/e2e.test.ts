@@ -431,6 +431,40 @@ test("e2e: opening a facility shows its real relations, and Rename/Delete work e
   });
 });
 
+test("e2e: a scientific object's experiment box shows its name there; Rename in the box renames that copy only and reloads the page", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let nameInB = "P1";
+    const puts: any[] = [];
+    const box = (id: string, label: string, name: string) => ({ id, type: "experiment", label, name, groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [] }] });
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "so-1", actions: ["rename", "delete", "link"], deleteRemovesLinks: true,
+      relations: [{ label: "In experiments", field: "experiment", items: [box("exp-a", "Trial A", "P1"), box("exp-b", "Trial B", nameInB)] }],
+    }) }));
+    await page.route("**/api/node", (r) => {
+      const b = r.request().postDataJSON();
+      puts.push(b);
+      nameInB = b.name;
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "so-1", type: "scientific_object", label: b.name }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
+    await page.waitForTimeout(400);
+    const boxB = page.locator(".item-box", { hasText: "Trial B" });
+    assert.match(await boxB.innerText(), /Name\s+P1/);
+
+    let asked = "";
+    page.once("dialog", (d) => { asked = d.message(); d.accept("P2"); });
+    await boxB.locator("[data-rename-in]").click();
+    await page.waitForTimeout(400);
+    assert.equal(asked, "New name for P1 in Trial B?");
+    assert.deepEqual(puts, [{ type: "scientific_object", id: "so-1", name: "P2", experiment: "exp-b" }]);
+    assert.match(await page.locator(".item-box", { hasText: "Trial B" }).innerText(), /Name\s+P2/, "page fetched again");
+    assert.match(await page.locator(".item-box", { hasText: "Trial A" }).innerText(), /Name\s+P1/);
+    assert.match(await page.locator("#renameNodeBtn").innerText(), /Rename/, "the title's Rename is there too");
+  });
+});
+
 test("e2e: clicking a relation chip jumps to that resource's own canonical breadcrumb, instead of appending to the current trail", async () => {
   // Regression test for a real bug: opening Org A, following a relation chip to Facility X,
   // used to just push X onto whatever breadcrumb got you to A — so following a chip back from
