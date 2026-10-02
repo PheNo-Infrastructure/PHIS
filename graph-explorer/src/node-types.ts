@@ -463,8 +463,16 @@ const SO_EXPERIMENTS: QueryRelation = {
 // A scientific object's name lives on each copy: renaming one experiment's copy leaves the global
 // copy and its other experiments alone (probed 2026-10-02). Without `expId` the only candidate is
 // used — the global copy for an object in no experiment, else its one experiment; several ask.
-// A taken name in that experiment is refused here (OpenSILEX's own refusal is a Java dump). The
-// PUT replaces the copy's relations, so they go back as they are (like updateSoInExperiment).
+// In exactly one experiment the global copy is renamed too (user, 2026-10-02), so search — which
+// reads global names — finds the new one. A taken name in that experiment is refused here
+// (OpenSILEX's own refusal is a Java dump). The PUT replaces the copy's relations, so they go
+// back as they are (like updateSoInExperiment).
+async function renameSoCopy(soId: string, name: string, expId?: string) {
+  const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}${expId ? `?experiment=${encodeURIComponent(expId)}` : ""}`)).result;
+  const relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
+    .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
+  await authedPut("/core/scientific_objects", { uri: soId, name, rdf_type: copy.rdf_type, ...(expId ? { experiment: expId } : {}), relations });
+}
 async function renameSo(soId: string, name: string, expId?: string): Promise<string> {
   const trimmed = name.trim();
   if (!trimmed) throw new OpenSilexError(400, "A name is required.");
@@ -477,10 +485,8 @@ async function renameSo(soId: string, name: string, expId?: string): Promise<str
   const exp = want ? keyed.find((e) => e.key === want) : exps[0];
   if (want && !exp) throw new OpenSilexError(400, "It isn't in that experiment.");
   if (exp) await refuseTakenName(`/core/scientific_objects?experiment=${encodeURIComponent(exp.id)}`, trimmed, `scientific object in ${exp.label}`, soId);
-  const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}${exp ? `?experiment=${encodeURIComponent(exp.id)}` : ""}`)).result;
-  const relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
-    .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
-  await authedPut("/core/scientific_objects", { uri: soId, name: trimmed, rdf_type: copy.rdf_type, ...(exp ? { experiment: exp.id } : {}), relations });
+  await renameSoCopy(soId, trimmed, exp?.id);
+  if (exp && exps.length === 1) await renameSoCopy(soId, trimmed);
   return trimmed;
 }
 // Only for the detail pane: link/unlink/delete only need the experiment ids (SO_EXPERIMENTS).

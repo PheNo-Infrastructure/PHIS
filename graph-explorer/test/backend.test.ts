@@ -596,7 +596,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable, with its
 });
 
 // Probed 2026-10-02: each copy has its own name; renaming one leaves the others alone.
-test("scientific object rename: only the copy in the given experiment (relations sent back), its only experiment when none is given, the global copy when in none; several ask; a name taken in that experiment is refused", async () => {
+test("scientific object rename: only the copy in the given experiment (relations sent back), its only experiment (+ the global copy) when it has one, the global copy when in none; several ask; a name taken in that experiment is refused", async () => {
   await withServer(async (base) => {
     const puts: Record<string, unknown>[] = [];
     let experimentsOf: Record<string, unknown>[] = [];
@@ -637,7 +637,9 @@ test("scientific object rename: only the copy in the given experiment (relations
 
     experimentsOf = [A];
     assert.equal((await nodePut(base, { type: "scientific_object", id: "so-1", name: "P3" })).status, 200);
-    assert.equal(puts.pop()?.experiment, "exp-a", "its one experiment");
+    assert.deepEqual(puts.splice(0).map((p) => [p.name, p.experiment]), [["P3", "exp-a"], ["P3", undefined]], "its one experiment, and the global copy with it (search reads global names)");
+    assert.equal((await nodePut(base, { type: "scientific_object", id: "so-1", name: "P5", experiment: "exp-a" })).status, 200);
+    assert.equal(puts.splice(0).length, 2, "the same from the box");
 
     experimentsOf = [{ experiment: "phis:set/scientific-object", experiment_name: null, name: "P1" }];
     assert.equal((await nodePut(base, { type: "scientific_object", id: "so-1", name: "P4" })).status, 200);

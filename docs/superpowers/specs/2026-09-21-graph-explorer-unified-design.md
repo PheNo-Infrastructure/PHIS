@@ -1456,5 +1456,6 @@ taken in that experiment is refused by OpenSILEX with a Java dump; relations sur
   its one experiment's copy otherwise. In several experiments it answers "use Rename in that
   experiment's box below".
 
-**Known consequence:** after a rename inside an experiment, search (global names) still finds the old
-name. Renaming the global copy along with it is a possible later step — not decided.
+**Global name follows when there is one experiment (user, 2026-10-02):** an object in exactly one
+experiment gets its global copy renamed too, so search (global names) finds the new name. With
+several experiments only the chosen copy changes, and search keeps the global name.
