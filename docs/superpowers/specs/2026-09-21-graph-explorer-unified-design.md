@@ -1459,3 +1459,39 @@ taken in that experiment is refused by OpenSILEX with a Java dump; relations sur
 **Global name follows when there is one experiment (user, 2026-10-02):** an object in exactly one
 experiment gets its global copy renamed too, so search (global names) finds the new name. With
 several experiments only the chosen copy changes, and search keeps the global name.
+
+## Stage 2: measurements (designed 2026-10-02)
+
+**Source:** the real TraitFinder (PlantEye) export for PBar1x4 (`PBar1x4_Metadata.csv` + `Sheets/…_PHIS.csv`,
+also `…_Clean` and `…_Messy` variants). 25 trays ("Block") of 4 plants (Column 1–4, Row always 1), one
+replicate per tray. The scanner takes **one 3D scan (`.ply`) per tray per date** and measures each plant:
+9 dates (2025-10-22 to 2026-01-02), 884 plant rows (16 missing), 66 trait columns = 21 main traits + 45
+histogram bins ("Hue [0:25] %"). `G_alias` is one code per variety (Olve = G5). The Messy sheet adds empty
+values and contradictions (a variety with two aliases) — test cases for the import's reporting.
+
+**Probed on phis-test (read-only):** variables, data, provenances, data files and entities are empty;
+characteristics (Height, NDVI, DryBiomass, FreshBiomass), methods (ImageProcessing, Standard method,
+Weighing) and units (Millimeter, SquareMillimeter, CubicMillimeter, Percent, Degree, …) exist. Germplasm has
+an empty `code` field. Scientific object types: plant, plot, SubPlot, leaf, seed, … — no tray.
+
+**Decisions (user, 2026-10-02):**
+- **Trays are objects:** "Tray 31", type **Tray** (added to the instance's ontology by the import when
+  missing — API only, works on any PHIS), its 4 plants *part of* it in the experiment. Where the column
+  (position in the tray) is stored is settled by the step-1 probe.
+- **G_alias -> the variety's `code`.** A variety given two codes in one file is a contradiction (below).
+- **Variables: the 21 main traits now**, the 45 histogram bins later. A variable = entity (Plant) +
+  characteristic (the column name without its unit) + method (PlantEye 3D scan) + unit (from the column
+  name: mm, mm², mm³, %, °); existing characteristics/units are reused by name.
+- **Messy data: skip and report.** Empty values are skipped; contradictions are listed in the plan before
+  anything is written, and the scientist decides. Nothing is guessed.
+
+**Steps (one at a time, each tested and verified live on phis-test):**
+1. Trays + variety codes in the import (stage-1 extension): Tray type, tray objects, plants part of their
+   tray, `code` on varieties; plan shows them; re-import finds them.
+2. Variables: the import creates the 21 variables (and their entity/characteristic/method/unit when
+   missing); a Variables page in the explorer (its parts, the experiments with data).
+3. Measurements: one provenance per import (TraitFinder, scan dates), values posted in batches (about
+   18,500 for PBar1x4's 21 traits); the dry run counts what would be written, skipped and contradicting; a
+   re-import skips values already there (same plant, variable, time).
+4. Show them: a plant's page lists its measurements per variable; a variable's page its experiments.
+Later: histogram bins, the raw `.ply` scans as data files.
