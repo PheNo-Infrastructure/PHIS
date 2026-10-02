@@ -150,6 +150,11 @@ spec:
                 --lang=en 2>&1 | tail -3 || true
               ./bin/opensilex.sh server start
           env:
+            # OpenSILEX's start script passes no heap flag (JAVA_OPTS is never read), so Java used
+            # its default 25% of the limit. The JVM reads JAVA_TOOL_OPTIONS itself: heap = 75% of the
+            # memory limit, so raising the limit raises the heap (2026-10-02).
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
             - name: OPENSILEX_CONFIG_DIR
               value: /home/opensilex/config
             - name: OPENSILEX_ADMIN_PASSWORD
@@ -193,12 +198,13 @@ spec:
           resources:
             requests:
               cpu: "200m"
-              memory: "512Mi"
+              # Request = limit: reserved, so the node can't be overcommitted (2026-10-02).
+              memory: "3Gi"
             # No CPU limit on purpose (cluster-wide, 2026-09-30): the node averages ~18% CPU and OpenSILEX
             # writes are CPU-bound (~0.5-1 CPU-s per object) — a 1-core limit throttled them. Requests still
             # decide each pod's share under contention. Memory stays limited: it is the scarce resource.
             limits:
-              memory: "2Gi"
+              memory: "3Gi"
           volumeMounts:
             - name: config-gen
               mountPath: /home/opensilex/config

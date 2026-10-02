@@ -120,7 +120,9 @@ spec:
           resources:
             requests:
               cpu: "250m"
-              memory: "512Mi"
+              # Request = limit: reserved, so the node can't be overcommitted (2026-10-02).
+              # MongoDB sizes its cache from the limit itself.
+              memory: "2Gi"
             limits:
               memory: "2Gi"
           volumeMounts:
