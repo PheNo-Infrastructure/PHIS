@@ -29,7 +29,7 @@ spec:
                   key: admin-password
             - name: GDB_JAVA_OPTS
               value: >-
-                -Xmx5g -Xms512m
+                -XX:MaxRAMPercentage=80 -Xms512m
                 -Dgraphdb.home=/opt/graphdb/home
                 -Dgraphdb.workbench.cors.enable=false
                 -Dgraphdb.engine.query-timeout=60
@@ -52,7 +52,9 @@ spec:
           resources:
             requests:
               cpu: "500m"
-              memory: "1Gi"
+              # Request = limit: reserved, so the node can't be overcommitted (2026-10-02).
+              # The heap follows the limit (MaxRAMPercentage above) — change only this number.
+              memory: "6Gi"
             limits:
               memory: "6Gi"
           volumeMounts:
