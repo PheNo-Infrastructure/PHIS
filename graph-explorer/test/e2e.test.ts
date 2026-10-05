@@ -1654,6 +1654,10 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
         factors: [{ name: "Replicate", levels: ["1", "2"] }],
         vocabulary: [{ uri: "x#Tray", label: "the object type Tray" }, { uri: "x#pos", label: "the plant property Position in tray" }],
         objects: { count: 4, kinds: [{ type: "tray", count: 1 }, { type: "plant", count: 3 }], sample: [{ name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1" }, parent: "Tray 31", position: 1 }] },
+        variables: { existing: ["Plant Height Max"], missing: ["NDVI Average", "Leaf inclination", "A", "B"], parts: [
+          { kind: "entities", name: "Plant" }, { kind: "characteristics", name: "c1" }, { kind: "characteristics", name: "c2" }, { kind: "characteristics", name: "c3" }, { kind: "characteristics", name: "c4" },
+          { kind: "units", name: "Unitless" }, { kind: "units", name: "SquareMillimeterPerSquareMillimeter", symbol: "mm²/mm²" },
+        ] },
         warnings: ["On 2025-10-29 the sheet disagrees."],
       }) });
     });
@@ -1670,6 +1674,7 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
     assert.match(text, /Already in PHIS, reused: 1 \(Olve\) New: 2 \(Tiril, <b>Bad<\/b>\)/, "names from the file are shown as text");
     assert.match(text, /Replicate: 2 levels \(1, 2\)/);
     assert.match(text, /Scientific objects.* New: 4 \(1 tray and 3 plants\) \(e\.g\. PB001: Olve, Replicate 1, in Tray 31, position 1\)/);
+    assert.match(text, /Variables.* Already in PHIS, reused: 1 \(Plant Height Max\) New: 4 \(NDVI Average, Leaf inclination, A, B\) Also adds what they're made of: the entity Plant, 4 characteristics and the units Unitless and SquareMillimeterPerSquareMillimeter \(mm²\/mm²\)\./);
     assert.match(text, /Nothing has been written to PHIS yet\./);
     assert.equal(await page.locator("#importSpecies").inputValue(), "", "no species chosen for the user");
     await page.locator("#importClose").click();
@@ -1690,13 +1695,14 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
       speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
       factors: [{ name: "Replicate", levels: ["1"] }],
       vocabulary: [],
+      variables: { existing: [], missing: ["NDVI Average"], parts: [] },
       objects: { count: 3, kinds: [{ type: "plant", count: 3 }], sample: [] },
       warnings: [],
     }) }));
     await page.route("**/api/import/run**", (route) => {
       runUrl = route.request().url();
       imported = true;
-      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
+      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3, variables: 1 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
     });
     await page.route("**/api/node-detail**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: exp.id, actions: [], relations: [] }) }));
     await page.goto(base);
@@ -1705,13 +1711,13 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
     const btn = page.locator("#importRunBtn");
     await btn.waitFor();
-    assert.equal((await btn.innerText()).trim(), "Create 1 experiment, 1 germplasm, 1 factor and 3 scientific objects");
+    assert.equal((await btn.innerText()).trim(), "Create 1 experiment, 1 germplasm, 1 factor, 3 scientific objects and 1 variable");
     assert.equal(await btn.isDisabled(), true, "no species yet");
     await page.locator("#importSpecies").selectOption("agrovoc:barley");
     await btn.click();
     await page.locator("#importOpenBtn").waitFor();
     assert.match(runUrl, /\/api\/import\/run\?species=agrovoc%3Abarley$/);
-    assert.match((await page.locator("#importFooter").innerText()).replace(/\s+/g, " "), /Created PBar1x4 – TraitFinder – 2025-10-22 with 3 scientific objects, 1 factor and 1 new germplasm\./);
+    assert.match((await page.locator("#importFooter").innerText()).replace(/\s+/g, " "), /Created PBar1x4 – TraitFinder – 2025-10-22 with 3 scientific objects, 1 factor and 1 new germplasm, and created 1 variable\./);
     await page.locator("#importOpenBtn").click();
     await page.waitForTimeout(300);
     assert.equal(await page.locator("#importOverlay.open").count(), 0);

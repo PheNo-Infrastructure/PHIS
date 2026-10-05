@@ -5,8 +5,8 @@
 // The two name plants differently (PB001 vs PB_1), so they're joined on position (Block/Column/Row).
 // A Block is a tray of plants (the scanner images one tray at a time): it becomes a Tray object the
 // plants are part of, the Column their position in it. G_alias is the variety's code (Olve = G5).
-// Observations aren't imported yet (stage 2); the sheet is read for the start date, the experiment
-// name, and to warn where it disagrees with the manifest.
+// Measured values aren't imported yet (stage 2); the sheet is read for the start date, the experiment
+// name, its traits (the variables), and to warn where it disagrees with the manifest.
 import { parseCsv } from "../files.ts";
 import type { Files, InstrumentPlugin, TrialData } from "../plugins.ts";
 import { TRAY } from "../ontology.ts";
@@ -14,6 +14,11 @@ import { TRAY } from "../ontology.ts";
 const MANIFEST_COLUMNS = ["Block", "Column", "Row", "PlantID", "Genotype", "Replicate", "GroupID"];
 const SHEET_COLUMNS = ["Block", "Column", "Row", "Timestamp", "Plant_ID", "Germplasm"];
 const FACTORS = ["Replicate", "GroupID"];
+// The sheet's other columns are traits, "Plant Height Max mm" = name + unit symbol. Histogram bins
+// ("Hue [0:25] %") come later; "Block.1" etc. are repeats of the position columns.
+const NOT_TRAITS = new Set([...SHEET_COLUMNS, "Filename", "G_alias", "Sensor"]);
+const UNIT = /\s+(mm²\/mm²|mm³|mm²|mm|%|°)$/;
+const METHOD = "PlantEye 3D scan";
 
 type Csv = { path: string; rows: Record<string, string>[] };
 function csvsWith(files: Files, columns: string[]): Csv[] {
@@ -91,9 +96,15 @@ const plugin: InstrumentPlugin = {
       if (unplaced.size) warnings.push(`The observation sheet has positions the design manifest doesn't (Block/Column/Row ${[...unplaced].slice(0, 5).join(", ")}${unplaced.size > 5 ? ", …" : ""}).`);
     }
 
+    const traits = Object.keys(sheet?.rows[0] ?? {}).filter((c) => !NOT_TRAITS.has(c) && !c.includes("[") && !/\.\d+$/.test(c));
+    const variables = traits.map((column) => {
+      const name = column.replace(UNIT, "");
+      return { name, entity: "Plant", characteristic: name, method: METHOD, unit: column.match(UNIT)?.[1] ?? "", description: `TraitFinder column "${column}".` };
+    });
+
     const prefix = baseName(sheet?.path ?? manifest.path).split(/_TraitFinder|_Metadata/i)[0];
     const startDate = dates[0] ?? new Date().toISOString().slice(0, 10);
-    return { experiment: { name: `${prefix} – TraitFinder – ${startDate}`, startDate }, objects, germplasmCodes, warnings };
+    return { experiment: { name: `${prefix} – TraitFinder – ${startDate}`, startDate }, objects, germplasmCodes, variables, warnings };
   },
 };
 export default plugin;

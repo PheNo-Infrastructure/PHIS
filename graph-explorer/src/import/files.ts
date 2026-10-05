@@ -17,7 +17,8 @@ export function readZip(buf: Buffer): Map<string, Buffer> {
     const size = buf.readUInt32LE(p + 20);
     const nameLen = buf.readUInt16LE(p + 28);
     const next = p + 46 + nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
-    const name = buf.toString("utf8", p + 46, p + 46 + nameLen);
+    // Windows PowerShell's Compress-Archive writes "Sheets\x.csv"; ZIP paths use "/".
+    const name = buf.toString("utf8", p + 46, p + 46 + nameLen).replaceAll("\\", "/");
     const local = buf.readUInt32LE(p + 42);
     const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
     const data = buf.subarray(start, start + size);

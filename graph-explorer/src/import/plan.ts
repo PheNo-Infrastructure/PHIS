@@ -1,9 +1,10 @@
 // The shared import engine, step 1: the reviewable plan. Whatever the instrument, its TrialData is
 // matched against PHIS by name and summarised as "exists / will be created / needs a choice" —
 // nothing is written here.
-import { OpenSilexError, authedGet, authedGetOne } from "../opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne, escapeRegex } from "../opensilex.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
 import { POSITION_IN_TRAY, missingTerms } from "./ontology.ts";
+import { resolveVariables } from "./variables.ts";
 
 const enc = encodeURIComponent;
 const byNumberThenText = (a: string, b: string) => (Number(a) - Number(b)) || a.localeCompare(b);
@@ -24,7 +25,8 @@ export async function prepare(files: Files) {
 
   // OpenSILEX's name filters match parts of names, so exact (case-insensitive) matching is done here.
   const same = (a: unknown, b: string) => String(a ?? "").toLowerCase() === b.toLowerCase();
-  const experimentExists = (await authedGet(`/core/experiments?name=${enc(trial.experiment.name)}&page_size=50`)).result
+  // OpenSILEX's name filters are regexes, so names are escaped ("Tiril (G16)" is a name, not a pattern).
+  const experimentExists = (await authedGet(`/core/experiments?name=${enc(escapeRegex(trial.experiment.name))}&page_size=50`)).result
     .some((e) => same(e.name, trial.experiment.name));
 
   const germplasmNames = [...new Set(trial.objects.map((o) => o.germplasm).filter((g): g is string => !!g))];
@@ -32,7 +34,7 @@ export async function prepare(files: Files) {
   const missing: string[] = [];
   const ambiguous: { name: string; ids: string[] }[] = [];
   await Promise.all(germplasmNames.map(async (name) => {
-    const hits = (await authedGet(`/core/germplasm?name=${enc(name)}&page_size=50`)).result.filter((g) => same(g.name, name));
+    const hits = (await authedGet(`/core/germplasm?name=${enc(escapeRegex(name))}&page_size=50`)).result.filter((g) => same(g.name, name));
     if (hits.length === 1) existing.push({ name, id: hits[0].uri });
     else if (hits.length) ambiguous.push({ name, ids: hits.map((g) => g.uri) });
     else missing.push(name);
@@ -63,6 +65,8 @@ export async function prepare(files: Files) {
   const kinds = new Map<string, number>();
   for (const o of trial.objects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
 
+  const variables = await resolveVariables(trial.variables ?? []);
+
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
 
@@ -78,11 +82,16 @@ export async function prepare(files: Files) {
     speciesOptions,
     factors: [...levels].map(([name, set]) => ({ name, levels: [...set].sort(byNumberThenText) })),
     vocabulary,
+    variables: {
+      existing: variables.existing.map((v) => v.name),
+      missing: variables.missing.map((v) => v.name),
+      parts: variables.create.map((p) => ({ kind: p.kind, name: p.name, ...(p.symbol ? { symbol: p.symbol } : {}) })),
+    },
     // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Tray) — fine for these two.
     objects: { count: trial.objects.length, kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })), sample: trial.objects.filter((o) => !parents.has(o.name)).slice(0, 5) },
     warnings,
   };
-  return { trial, plan };
+  return { trial, plan, variables };
 }
 
 export async function buildPlan(files: Files) {

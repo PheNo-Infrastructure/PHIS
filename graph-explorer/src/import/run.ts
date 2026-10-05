@@ -1,22 +1,28 @@
 // The shared import engine, step 3: write what the plan showed, in dependency order —
-// vocabulary -> experiment -> germplasm (+ codes) -> factors (+ levels) -> scientific objects,
+// vocabulary -> variables (+ their parts) -> experiment -> germplasm (+ codes) -> factors (+ levels) -> scientific objects,
 // containers (trays) before what is part of them, each with its germplasm, factor levels, parent
 // and position (all live on the object's copy in the experiment, so they're sent on creation).
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "../opensilex.ts";
 import { NODE_TYPES, updatePayloadFromDto } from "../node-types.ts";
 import { POSITION_IN_TRAY, addTerm } from "./ontology.ts";
 import { prepare } from "./plan.ts";
+import { createPart, createVariable, type PartKind } from "./variables.ts";
 import type { Files } from "./plugins.ts";
 
 const enc = encodeURIComponent;
 const OBJECTS_AT_ONCE = 4;
 const firstUri = (r: { result: unknown }) => String([r.result].flat()[0]);
+const PART_LABEL: Record<PartKind, string> = { entities: "entity", characteristics: "characteristic", methods: "method", units: "unit" };
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const andList = (items: (string | 0)[]) => {
+  const xs = items.filter((x): x is string => !!x);
+  return xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+};
 
 // `progress` is called after each write (never before the checks pass), so a caller can show it.
 export type Progress = { step: string; done: number; total: number };
 export async function runImport(files: Files, choices: { species?: string }, progress: (p: Progress) => void = () => {}) {
-  const { trial, plan } = await prepare(files);
+  const { trial, plan, variables } = await prepare(files);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];
@@ -25,10 +31,10 @@ export async function runImport(files: Files, choices: { species?: string }, pro
   if (plan.germplasm.missing.length && !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
-  const done = { vocabulary: 0, experiment: "", germplasm: 0, codes: 0, factors: 0, objects: 0 };
+  const done = { vocabulary: 0, parts: 0, variables: 0, experiment: "", germplasm: 0, codes: 0, factors: 0, objects: 0 };
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
-  const total = plan.vocabulary.length + 1 + plan.germplasm.missing.length + existingCodes.length + plan.factors.length + trial.objects.length;
+  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + 1 + plan.germplasm.missing.length + existingCodes.length + plan.factors.length + trial.objects.length;
   let steps = 0;
   const tick = (step: string) => progress({ step, done: ++steps, total });
   try {
@@ -36,6 +42,18 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       await addTerm(term.uri);
       done.vocabulary++;
       tick(`Added ${term.label} to PHIS`);
+    }
+
+    // Variables don't belong to the experiment: like vocabulary, they're kept and reused if it fails.
+    for (const part of variables.create) {
+      await createPart(variables, part);
+      done.parts++;
+      tick(`Added the ${PART_LABEL[part.kind]} ${part.name}`);
+    }
+    for (const v of variables.missing) {
+      await createVariable(variables, v);
+      done.variables++;
+      tick(`Creating variables: ${done.variables} of ${variables.missing.length}`);
     }
 
     done.experiment = firstUri(await authedPost("/core/experiments", {
@@ -94,11 +112,13 @@ export async function runImport(files: Files, choices: { species?: string }, pro
   } catch (err) {
     const what = done.experiment
       ? `It had created the experiment, ${plural(done.germplasm, "new germplasm", "new germplasm")}, ${done.factors} of ${plan.factors.length} factors and ${done.objects} of ${trial.objects.length} scientific objects. To start over, delete the experiment "${plan.experiment.name}" (new germplasm stays and is reused next time).`
-      : done.vocabulary ? `Only ${plural(done.vocabulary, "vocabulary term")} ${done.vocabulary === 1 ? "was" : "were"} added to PHIS (kept, and reused next time).` : "Nothing was written.";
+      : done.vocabulary || done.parts || done.variables
+        ? `Only ${andList([done.vocabulary && plural(done.vocabulary, "vocabulary term"), done.parts && plural(done.parts, "variable part"), done.variables && plural(done.variables, "variable")])} ${done.vocabulary + done.parts + done.variables === 1 ? "was" : "were"} added to PHIS (kept, and reused next time).`
+        : "Nothing was written.";
     throw new OpenSilexError(err instanceof OpenSilexError ? err.status : 502, `The import stopped part-way: ${err instanceof Error ? err.message : String(err)}. ${what}`);
   }
   return {
     experiment: { id: done.experiment, type: "experiment", label: plan.experiment.name },
-    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, vocabulary: done.vocabulary },
+    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, vocabulary: done.vocabulary, variables: done.variables },
   };
 }

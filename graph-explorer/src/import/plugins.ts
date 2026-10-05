@@ -16,6 +16,8 @@ export type TrialData = {
   // Germplasm name -> its code in the files (TraitFinder's G_alias: Olve -> G5). A name the files give
   // two codes is left out and warned about.
   germplasmCodes?: Record<string, string>;
+  // What the files measure: a variable's parts by name, its unit by symbol ("" = none).
+  variables?: { name: string; entity: string; characteristic: string; method: string; unit: string; description?: string }[];
   // Things the user must see before anything is written (e.g. the files disagree).
   warnings: string[];
 };

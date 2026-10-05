@@ -1507,3 +1507,16 @@ the manifest), are set where PHIS has none, an existing different code is kept (
 two codes gets none (warned). A variety's page shows its Code. Live round trip on a 3-tray ZZ subset of the
 real export (15 objects, positions, codes, tray page "Contains PB001–PB004"), cleaned up; the vocabulary and
 the codes stay on phis-test. Next: step 2, variables.
+
+**Step 2a built (2026-10-05): the import creates the variables.** Probed: entity, characteristic, method
+and unit each need only a name (unit: also a symbol); a variable needs all four + a datatype (decimal);
+OpenSILEX makes each uri from the name. The plugin turns each trait column into a variable named after the
+trait ("Plant Height Max mm" -> Plant Height Max: entity Plant, characteristic Plant Height Max, method
+PlantEye 3D scan, unit by symbol). `src/import/variables.ts` reuses by exact name (units also by symbol when
+PHIS's unit has one) and creates what is missing — parts, then variables — after the vocabulary and before
+the experiment; like vocabulary they're kept if the import fails later. Units PHIS lacked: mm²/mm² ->
+SquareMillimeterPerSquareMillimeter, the indices (GLI, NDVI, NPCI, PSRI) -> Unitless. Existing
+characteristics Height/NDVI aren't reused (different names). Live round trip on the 3-tray ZZ subset: 21
+variables and their parts created, a re-plan reuses all 21; the variables stay on phis-test. Also fixed:
+ZIP paths with backslashes (PowerShell's Compress-Archive) and unescaped names in the plan's regex lookups.
+Next: 2b, a Variables page.
