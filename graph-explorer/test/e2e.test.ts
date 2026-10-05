@@ -1702,7 +1702,7 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     await page.route("**/api/import/run**", (route) => {
       runUrl = route.request().url();
       imported = true;
-      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3, variables: 1 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
+      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3, variables: 1, values: 1200 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
     });
     await page.route("**/api/node-detail**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: exp.id, actions: [], relations: [] }) }));
     await page.goto(base);
@@ -1717,7 +1717,7 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     await btn.click();
     await page.locator("#importOpenBtn").waitFor();
     assert.match(runUrl, /\/api\/import\/run\?species=agrovoc%3Abarley$/);
-    assert.match((await page.locator("#importFooter").innerText()).replace(/\s+/g, " "), /Created PBar1x4 – TraitFinder – 2025-10-22 with 3 scientific objects, 1 factor and 1 new germplasm, and created 1 variable\./);
+    assert.match((await page.locator("#importFooter").innerText()).replace(/\s+/g, " "), /Created PBar1x4 – TraitFinder – 2025-10-22 with 3 scientific objects, 1 factor and 1 new germplasm; it also created 1 variable and wrote 1,200 measured values\./);
     await page.locator("#importOpenBtn").click();
     await page.waitForTimeout(300);
     assert.equal(await page.locator("#importOverlay.open").count(), 0);

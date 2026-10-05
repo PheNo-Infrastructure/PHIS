@@ -1536,3 +1536,23 @@ its own page under Data › Variables (parts are shared, so they sit beside the 
 its factor), with its description (a unit also its symbol) and the variables made with it
 (`/core/variables?unit=…` etc.). All read-only. "Experiments with data" waits for step 3. Next: step 3,
 the measurements.
+
+**Step 3a built (2026-10-05): the import writes the measured values (new experiment only).** Probed on
+phis-test: POST /core/data is all-or-nothing (one duplicate refuses the whole batch, nothing written); the
+same plant + variable + time + provenance can't be stored twice, but a NEW provenance can (so a re-import
+must skip existing values itself); values posted through the API get no batch record (`batchUri` null) —
+one import's values are found and deleted by `experiment` + `provenance`; a local time + `timezone` is stored
+with its offset; 1000 values ≈ 0.5 s; PHIS refuses to delete a scientific object that has values ("object
+has associated data"); an experiment's and an object's variables are derived from their data. Built:
+`src/import/measurements.ts` checks the raw values (empty cells counted; non-numbers and contradictions —
+same plant, trait, time, two values — left out with examples; an identical repeat is one value), the plan's
+Measurements section counts them and states the time zone (the export has none; TraitFinder ->
+Europe/Oslo), the run creates one provenance per import (name with the import time; a prov:Activity
+spanning the scans) and writes the values 1000 per POST after the objects. A failure after values were
+written names the provenance (values must go before plants). Live round trip on the 3-tray ZZ subset:
+2,268 values, PB001's Plant Height Max series equal to the file, cleaned up. The PHIS sheet is tidy
+(884 x 21 = 18,564 values, none empty); the Clean/Messy sheets are a different format (Unit "31:01:01",
+US dates, lower-case headers in Messy) the plugin doesn't read yet.
+**Still open (user's call):** importing into an experiment that already exists (re-import; PBar1x4 on
+phis-test has no values for this reason), reading the Clean/Messy format, deleting one import's values
+from the app.

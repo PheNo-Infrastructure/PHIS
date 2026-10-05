@@ -129,6 +129,10 @@ test("POST /api/import/plan: TraitFinder ZIP -> the plan (exact-name germplasm m
         { kind: "units", name: "Unitless" }, { kind: "units", name: "SquareMillimeterPerSquareMillimeter", symbol: "mm²/mm²" },
       ],
     }, "traits from the sheet's columns (no bins, no repeated position columns); the method and Millimeter are reused");
+    assert.deepEqual(plan.measurements, {
+      count: 9, objects: 3, variables: 3, days: 2, first: "2025-10-22T13:19:34", last: "2025-10-29T13:19:34", timezone: "Europe/Oslo",
+      skipped: { empty: 0, notNumbers: { count: 0, examples: [] }, contradictions: { count: 0, examples: [] } },
+    }, "3 plants x 3 traits; the bin and the repeated Block column aren't values");
     assert.deepEqual(plan.speciesOptions, [{ id: "agrovoc:barley", label: "barley" }]);
     assert.deepEqual(plan.factors, [{ name: "Replicate", levels: ["1", "2"] }, { name: "GroupID", levels: ["9", "10"] }], "levels sorted as numbers");
     assert.equal(plan.objects.count, 5, "3 plants + their 2 trays");
@@ -188,6 +192,8 @@ function mockPhisForRun(writes: { method: string; path: string; body: any }[], f
       if (path.startsWith("/vuejs/") || path.startsWith("/ontology/")) return jsonResponse(201, { result: body.uri ?? "ok" });
       if (path === "/core/germplasm" && method === "PUT") return jsonResponse(200, { result: body.uri });
       if (path === "/core/experiments") return jsonResponse(201, { result: "exp:new" });
+      if (path === "/core/provenances") return jsonResponse(201, { result: "prov:new" });
+      if (path === "/core/data") return jsonResponse(201, { result: body.map((_: unknown, i: number) => `data:${i}`) });
       const part = path.match(/^\/core\/(entities|characteristics|units|variables)$/);
       if (part) return jsonResponse(201, { result: [`${part[1]}:${body.name}`] });
       if (path === "/core/germplasm") return jsonResponse(201, { result: [`g:${body.name}`] });
@@ -231,16 +237,16 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
     const steps = lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`);
     assert.deepEqual(steps.slice(0, 16), [
-      "1/21 Added the object type Tray to PHIS", "2/21 Added the plant property Position in tray to PHIS",
-      "3/21 Added the entity Plant", "4/21 Added the characteristic Height", "5/21 Added the characteristic NDVI Average", "6/21 Added the characteristic Leaf inclination",
-      "7/21 Added the unit Unitless", "8/21 Added the unit SquareMillimeterPerSquareMillimeter",
-      "9/21 Creating variables: 1 of 3", "10/21 Creating variables: 2 of 3", "11/21 Creating variables: 3 of 3",
-      "12/21 Created the experiment",
-      "13/21 Creating germplasm: 1 of 1", "14/21 Setting variety codes: 1 of 1", "15/21 Creating factors: 1 of 2", "16/21 Creating factors: 2 of 2",
+      "1/23 Added the object type Tray to PHIS", "2/23 Added the plant property Position in tray to PHIS",
+      "3/23 Added the entity Plant", "4/23 Added the characteristic Height", "5/23 Added the characteristic NDVI Average", "6/23 Added the characteristic Leaf inclination",
+      "7/23 Added the unit Unitless", "8/23 Added the unit SquareMillimeterPerSquareMillimeter",
+      "9/23 Creating variables: 1 of 3", "10/23 Creating variables: 2 of 3", "11/23 Creating variables: 3 of 3",
+      "12/23 Created the experiment",
+      "13/23 Creating germplasm: 1 of 1", "14/23 Setting variety codes: 1 of 1", "15/23 Creating factors: 1 of 2", "16/23 Creating factors: 2 of 2",
     ], "one progress line per write");
-    assert.equal(steps.at(-1), "21/21 Creating scientific objects: 5 of 5");
-    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, codes: 1, factors: 2, objects: 5, vocabulary: 2, variables: 3 } } });
-    assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri ?? w.body.property}`), [
+    assert.deepEqual(steps.slice(-3), ["21/23 Creating scientific objects: 5 of 5", "22/23 Created the provenance of the measurements", "23/23 Writing measurements: 9 of 9"]);
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, codes: 1, factors: 2, objects: 5, vocabulary: 2, variables: 3, values: 9 } } });
+    assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${String(w.body.name ?? w.body.uri ?? w.body.property).replace(/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, "")}`), [
       "POST /vuejs/owl_extension/rdf_type Tray",
       "POST /ontology/property https://phis.pheno.no/vocabulary#positionInTray",
       "POST /ontology/rdf_type_property_restriction https://phis.pheno.no/vocabulary#positionInTray",
@@ -255,8 +261,18 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
       "POST /core/experiments/factors GroupID",
       "POST /core/scientific_objects Tray 31", "POST /core/scientific_objects Tray 32",
       "POST /core/scientific_objects PB001", "POST /core/scientific_objects PB002", "POST /core/scientific_objects PB003",
-    ], "trays before the plants in them");
+      "POST /core/provenances PBar1x4 – TraitFinder – 2025-10-22 – TraitFinder import", "POST /core/data undefined",
+    ], "trays before the plants in them; the values last");
     const w = (name: string) => writes.find((x) => x.body.name === name)!.body;
+    const prov = writes.find((x) => x.path === "/core/provenances")!.body;
+    assert.match(prov.description, /^Imported from a TraitFinder \(PlantEye\) export by the Graph Explorer: 9 values, scans from 2025-10-22 13:19:34 to 2025-10-29 13:19:34 \(Europe\/Oslo\)\.$/);
+    assert.deepEqual(prov.prov_activity, [{ rdf_type: "http://www.w3.org/ns/prov#Activity", start_date: "2025-10-22T13:19:34", end_date: "2025-10-29T13:19:34", timezone: "Europe/Oslo" }]);
+    const data = writes.find((x) => x.path === "/core/data")!.body;
+    assert.equal(data.length, 9);
+    assert.deepEqual(data.find((d: any) => d.target === "so:PB002" && d.variable === "variables:NDVI Average"), {
+      target: "so:PB002", variable: "variables:NDVI Average", date: "2025-10-22T13:19:34", timezone: "Europe/Oslo", value: 0.6,
+      provenance: { uri: "prov:new", experiments: ["exp:new"] },
+    }, "the plant by its new uri, the variable by its new uri, a number, local time with its zone");
     assert.deepEqual(writes.find((x) => x.path === "/core/experiments")!.body, { name: "PBar1x4 – TraitFinder – 2025-10-22", start_date: "2025-10-22", objective: "Imported from a TraitFinder (PlantEye) export.", is_public: true });
     const variable = (name: string) => writes.find((x) => x.path === "/core/variables" && x.body.name === name)!.body;
     assert.deepEqual(variable("Height"), {
@@ -292,7 +308,7 @@ test("POST /api/import/run that fails part-way says what it created and how to s
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200, "already streaming when it failed");
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
-    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors and 4 of 5 scientific objects\. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
+    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors, 4 of 5 scientific objects and 0 of 9 measured values. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
     assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 5, "the batch in flight finishes; the report counts what exists");
   });
 });
@@ -303,5 +319,22 @@ test("POST /api/import/run that fails before the experiment says the vocabulary 
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
     assert.match(error, /Only 2 vocabulary terms, 6 variable parts and 3 variables were added to PHIS \(kept, and reused next time\)\.$/);
+  });
+});
+
+test("POST /api/import/plan: messy values are left out and reported — empty cells counted, non-numbers and contradictions (same plant, trait and time, two values) with examples; a repeated identical row is one value", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const sheet = SHEET
+      .replace('"TraitFinder",10,0.5,1.2', '"TraitFinder",,n/a,1.2')
+      + '\n"31",2,1,"2025-10-22 13:19:34","PB_2","Tiril","TraitFinder",11,0.7,1.1,4,"31"';
+    const res = await realFetch(`${base}/api/import/plan`, { method: "POST", body: makeZip({ "PBar1x4_Metadata.csv": MANIFEST, "Sheets/PBar1x4_TraitFinder_20260107_PHIS.csv": sheet }) });
+    const m = (await res.json()).measurements;
+    assert.equal(m.count, 6, "9 - 1 empty - 1 not a number - 1 contradiction; PB002's Height and Leaf inclination repeat identically");
+    assert.deepEqual(m.skipped, {
+      empty: 1,
+      notNumbers: { count: 1, examples: ['PB001, NDVI Average, 2025-10-29 13:19:34: "n/a"'] },
+      contradictions: { count: 1, examples: ["PB002, NDVI Average, 2025-10-22 13:19:34: 0.6 or 0.7"] },
+    });
   });
 });

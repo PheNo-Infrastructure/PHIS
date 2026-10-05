@@ -3163,6 +3163,8 @@ function importPlanHtml(p) {
   const newCount = g.missing.length;
   const sample = p.objects.sample[0];
   const v = p.variables;
+  const m = p.measurements;
+  const skipped = m && (m.skipped.empty + m.skipped.notNumbers.count + m.skipped.contradictions.count);
   return `
     <p class="ranking-hint">Recognised as <b>${escapeHtml(p.instrument)}</b>.</p>
     ${p.warnings.map(w => `<div class="import-warning">${escapeHtml(w)}</div>`).join("")}
@@ -3196,7 +3198,14 @@ function importPlanHtml(p) {
       ${v.existing.length ? `<p>Already in PHIS, reused: ${v.existing.length} <span class="import-names">(${list(v.existing)})</span></p>` : ""}
       ${v.missing.length ? `<p>New: ${v.missing.length} <span class="import-names">(${list(v.missing, 30)})</span></p>` : ""}
       ${v.parts.length ? `<p>Also adds what they're made of: ${escapeHtml(andList(partsText(v.parts)))}.</p>` : ""}
-      <p class="import-names">The measured values themselves aren't imported yet.</p>
+    </div>` : ""}
+    ${m && (m.count || skipped) ? `<div class="import-section">
+      <h3>Measurements<small>the values: one per plant, variable and scan time</small></h3>
+      <p>New: ${m.count.toLocaleString("en")} values <span class="import-names">(${m.objects} ${typeName("scientific_object", m.objects)}, ${m.variables} ${m.variables === 1 ? "variable" : "variables"}, scanned on ${m.days} ${m.days === 1 ? "day" : "days"}${m.first ? ` from ${escapeHtml(m.first.slice(0, 10))} to ${escapeHtml(m.last.slice(0, 10))}` : ""})</span></p>
+      ${m.timezone ? `<p class="import-names">The file gives no time zone; its times are read as ${escapeHtml(m.timezone)} time.</p>` : ""}
+      ${m.skipped.empty ? `<p>Left out: ${m.skipped.empty.toLocaleString("en")} empty ${m.skipped.empty === 1 ? "cell" : "cells"}.</p>` : ""}
+      ${m.skipped.notNumbers.count ? `<div class="import-warning">Left out: ${m.skipped.notNumbers.count} ${m.skipped.notNumbers.count === 1 ? "value that isn't a number" : "values that aren't numbers"} (e.g. ${escapeHtml(m.skipped.notNumbers.examples.join("; "))}).</div>` : ""}
+      ${m.skipped.contradictions.count ? `<div class="import-warning">Left out: ${m.skipped.contradictions.count} ${m.skipped.contradictions.count === 1 ? "place where" : "places where"} the file gives two different values for the same plant, variable and time (e.g. ${escapeHtml(m.skipped.contradictions.examples.join("; "))}). Fix the file and import again to include them.</div>` : ""}
     </div>` : ""}
     <div class="import-footer" id="importFooter">${importFooterHtml(p)}</div>`;
 }
@@ -3224,6 +3233,7 @@ function importFooterHtml(p) {
     ...(p.factors.length ? [`${p.factors.length} ${p.factors.length === 1 ? "factor" : "factors"}`] : []),
     `${p.objects.count} ${typeName("scientific_object", p.objects.count)}`,
     ...(p.variables.missing.length ? [`${p.variables.missing.length} ${p.variables.missing.length === 1 ? "variable" : "variables"}`] : []),
+    ...(p.measurements?.count ? [`${p.measurements.count.toLocaleString("en")} measured ${p.measurements.count === 1 ? "value" : "values"}`] : []),
   ];
   return `<span>Nothing has been written to PHIS yet. What it creates will be public: every PHIS user can see it.</span><button class="btn primary" id="importRunBtn">Create ${escapeHtml(andList(parts))}</button>`;
 }
@@ -3268,7 +3278,12 @@ function wireImportRun(file, plan, close) {
       if (failed || !body) { footer.innerHTML = `<div class="import-warning">${escapeHtml(failed || "The import ended without an answer.")}</div>`; return; }
       await reloadCategories(["cat-experiments", "cat-germplasm", "cat-scientificobjects", "cat-factors"]);
       const c = body.created;
-      footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${c.codes ? `, set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}` : ""}${c.variables ? `, and created ${c.variables} ${c.variables === 1 ? "variable" : "variables"}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      const also = [
+        ...(c.codes ? [`set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}`] : []),
+        ...(c.variables ? [`created ${c.variables} ${c.variables === 1 ? "variable" : "variables"}`] : []),
+        ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
+      ];
+      footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
     } catch (err) {
       footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;

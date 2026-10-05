@@ -1,12 +1,14 @@
 // The shared import engine, step 3: write what the plan showed, in dependency order —
 // vocabulary -> variables (+ their parts) -> experiment -> germplasm (+ codes) -> factors (+ levels) -> scientific objects,
 // containers (trays) before what is part of them, each with its germplasm, factor levels, parent
-// and position (all live on the object's copy in the experiment, so they're sent on creation).
+// and position (all live on the object's copy in the experiment, so they're sent on creation)
+// -> the measured values.
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "../opensilex.ts";
 import { NODE_TYPES, updatePayloadFromDto } from "../node-types.ts";
 import { POSITION_IN_TRAY, addTerm } from "./ontology.ts";
 import { prepare } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
+import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts";
 import type { Files } from "./plugins.ts";
 
 const enc = encodeURIComponent;
@@ -22,7 +24,7 @@ const andList = (items: (string | 0)[]) => {
 // `progress` is called after each write (never before the checks pass), so a caller can show it.
 export type Progress = { step: string; done: number; total: number };
 export async function runImport(files: Files, choices: { species?: string }, progress: (p: Progress) => void = () => {}) {
-  const { trial, plan, variables } = await prepare(files);
+  const { trial, plan, variables, values } = await prepare(files);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];
@@ -31,10 +33,11 @@ export async function runImport(files: Files, choices: { species?: string }, pro
   if (plan.germplasm.missing.length && !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
-  const done = { vocabulary: 0, parts: 0, variables: 0, experiment: "", germplasm: 0, codes: 0, factors: 0, objects: 0 };
+  const done = { vocabulary: 0, parts: 0, variables: 0, experiment: "", germplasm: 0, codes: 0, factors: 0, objects: 0, provenance: "", values: 0 };
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
-  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + 1 + plan.germplasm.missing.length + existingCodes.length + plan.factors.length + trial.objects.length;
+  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + 1 + plan.germplasm.missing.length + existingCodes.length + plan.factors.length + trial.objects.length
+    + (values.length ? 1 + Math.ceil(values.length / VALUES_AT_ONCE) : 0);
   let steps = 0;
   const tick = (step: string) => progress({ step, done: ++steps, total });
   try {
@@ -50,8 +53,9 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       done.parts++;
       tick(`Added the ${PART_LABEL[part.kind]} ${part.name}`);
     }
+    const variableUri = new Map(variables.existing.map((v) => [v.name, v.id]));
     for (const v of variables.missing) {
-      await createVariable(variables, v);
+      variableUri.set(v.name, await createVariable(variables, v));
       done.variables++;
       tick(`Creating variables: ${done.variables} of ${variables.missing.length}`);
     }
@@ -109,9 +113,30 @@ export async function runImport(files: Files, choices: { species?: string }, pro
     for (const pass of [trial.objects.filter((o) => !o.parent), trial.objects.filter((o) => o.parent)]) {
       for (let i = 0; i < pass.length; i += OBJECTS_AT_ONCE) await Promise.all(pass.slice(i, i + OBJECTS_AT_ONCE).map(write));
     }
+
+    // The measured values, under one provenance for this import, one batch at a time.
+    if (values.length) {
+      const m = plan.measurements;
+      const tz = trial.timezone ?? "UTC";
+      done.provenance = await createProvenance(
+        `${plan.experiment.name} – ${trial.source ?? plan.instrument} import ${new Date().toISOString().slice(0, 19).replace("T", " ")}`,
+        `Imported from a ${plan.instrument} export by the Graph Explorer: ${values.length} values, scans from ${m.first!.replace("T", " ")} to ${m.last!.replace("T", " ")} (${tz}).`,
+        m.first!, m.last!, tz,
+      );
+      tick("Created the provenance of the measurements");
+      for (let i = 0; i < values.length; i += VALUES_AT_ONCE) {
+        const batch = values.slice(i, i + VALUES_AT_ONCE);
+        await writeValues(batch, { objects: objectUri, variables: variableUri }, done.provenance, done.experiment, tz);
+        done.values += batch.length;
+        tick(`Writing measurements: ${done.values} of ${values.length}`);
+      }
+    }
   } catch (err) {
     const what = done.experiment
-      ? `It had created the experiment, ${plural(done.germplasm, "new germplasm", "new germplasm")}, ${done.factors} of ${plan.factors.length} factors and ${done.objects} of ${trial.objects.length} scientific objects. To start over, delete the experiment "${plan.experiment.name}" (new germplasm stays and is reused next time).`
+      ? `It had created ${andList([
+        "the experiment", plural(done.germplasm, "new germplasm", "new germplasm"), `${done.factors} of ${plan.factors.length} factors`,
+        `${done.objects} of ${trial.objects.length} scientific objects`, values.length > 0 && `${done.values} of ${values.length} measured values`,
+      ].map((x) => x || 0))}.${done.values ? ` Its measured values are under the provenance "${done.provenance}"; PHIS won't delete a plant that has values, so those go first.` : ""} To start over, delete the experiment "${plan.experiment.name}" (new germplasm stays and is reused next time).`
       : done.vocabulary || done.parts || done.variables
         ? `Only ${andList([done.vocabulary && plural(done.vocabulary, "vocabulary term"), done.parts && plural(done.parts, "variable part"), done.variables && plural(done.variables, "variable")])} ${done.vocabulary + done.parts + done.variables === 1 ? "was" : "were"} added to PHIS (kept, and reused next time).`
         : "Nothing was written.";
@@ -119,6 +144,6 @@ export async function runImport(files: Files, choices: { species?: string }, pro
   }
   return {
     experiment: { id: done.experiment, type: "experiment", label: plan.experiment.name },
-    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, vocabulary: done.vocabulary, variables: done.variables },
+    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, vocabulary: done.vocabulary, variables: done.variables, values: done.values },
   };
 }

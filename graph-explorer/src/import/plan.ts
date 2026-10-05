@@ -5,6 +5,7 @@ import { OpenSilexError, authedGet, authedGetOne, escapeRegex } from "../opensil
 import { instrumentPlugins, type Files } from "./plugins.ts";
 import { POSITION_IN_TRAY, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
+import { checkMeasurements } from "./measurements.ts";
 
 const enc = encodeURIComponent;
 const byNumberThenText = (a: string, b: string) => (Number(a) - Number(b)) || a.localeCompare(b);
@@ -66,6 +67,7 @@ export async function prepare(files: Files) {
   for (const o of trial.objects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
 
   const variables = await resolveVariables(trial.variables ?? []);
+  const measurements = checkMeasurements(trial.measurements ?? []);
 
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
@@ -87,11 +89,12 @@ export async function prepare(files: Files) {
       missing: variables.missing.map((v) => v.name),
       parts: variables.create.map((p) => ({ kind: p.kind, name: p.name, ...(p.symbol ? { symbol: p.symbol } : {}) })),
     },
+    measurements: { ...measurements.summary, timezone: trial.timezone ?? null },
     // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Tray) — fine for these two.
     objects: { count: trial.objects.length, kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })), sample: trial.objects.filter((o) => !parents.has(o.name)).slice(0, 5) },
     warnings,
   };
-  return { trial, plan, variables };
+  return { trial, plan, variables, values: measurements.values };
 }
 
 export async function buildPlan(files: Files) {

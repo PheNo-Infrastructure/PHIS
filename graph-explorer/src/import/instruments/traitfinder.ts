@@ -5,8 +5,8 @@
 // The two name plants differently (PB001 vs PB_1), so they're joined on position (Block/Column/Row).
 // A Block is a tray of plants (the scanner images one tray at a time): it becomes a Tray object the
 // plants are part of, the Column their position in it. G_alias is the variety's code (Olve = G5).
-// Measured values aren't imported yet (stage 2); the sheet is read for the start date, the experiment
-// name, its traits (the variables), and to warn where it disagrees with the manifest.
+// The sheet gives the start date, the experiment name, its traits (the variables) and their values
+// per plant and scan time; it's also checked against the manifest.
 import { parseCsv } from "../files.ts";
 import type { Files, InstrumentPlugin, TrialData } from "../plugins.ts";
 import { TRAY } from "../ontology.ts";
@@ -102,9 +102,23 @@ const plugin: InstrumentPlugin = {
       return { name, entity: "Plant", characteristic: name, method: METHOD, unit: column.match(UNIT)?.[1] ?? "", description: `TraitFinder column "${column}".` };
     });
 
+    // One value per plant row and trait. Rows at a position the manifest lacks were warned about above.
+    const measurements: NonNullable<TrialData["measurements"]> = [];
+    const badTimes = new Set<string>();
+    for (const r of sheet?.rows ?? []) {
+      const plant = byPosition.get(position(r))?.PlantID;
+      if (!plant) continue;
+      const date = r.Timestamp.replace(" ", "T");
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(date)) { badTimes.add(r.Timestamp); continue; }
+      for (let i = 0; i < traits.length; i++) measurements.push({ object: plant, variable: variables[i].name, date, value: r[traits[i]] });
+    }
+    if (badTimes.size) warnings.push(`Some rows have a time this app can't read (${[...badTimes].slice(0, 3).join(", ")}); their values are left out.`);
+
     const prefix = baseName(sheet?.path ?? manifest.path).split(/_TraitFinder|_Metadata/i)[0];
     const startDate = dates[0] ?? new Date().toISOString().slice(0, 10);
-    return { experiment: { name: `${prefix} – TraitFinder – ${startDate}`, startDate }, objects, germplasmCodes, variables, warnings };
+    return { experiment: { name: `${prefix} – TraitFinder – ${startDate}`, startDate }, objects, germplasmCodes, variables, measurements,
+      // ponytail: the export has no time zone; the TraitFinder is in Norway. Shown in the plan.
+      timezone: "Europe/Oslo", source: "TraitFinder", warnings };
   },
 };
 export default plugin;
