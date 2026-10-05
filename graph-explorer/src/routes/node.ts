@@ -39,8 +39,9 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
 };
 
 export const handleNodeMutation: RouteHandler = async (req, res, { pathname, searchParams }) => {
-  // The way past a blocked delete (deleteBlockFix), taken only on its own confirmed request.
-  if (pathname === "/api/node/delete-fix" && req.method === "POST") {
+  // The way past a blocked delete (deleteBlockFix), taken only on its own confirmed request. A DELETE,
+  // not a POST: a browser preflights it, so another site can't make a logged-in browser send it (CSRF).
+  if (pathname === "/api/node/delete-fix" && req.method === "DELETE") {
     const config = NODE_TYPES[searchParams.get("type") ?? ""];
     const id = searchParams.get("id");
     if (!config?.deleteBlockFix || !id) {
@@ -49,6 +50,12 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     await respondOpenSilexErrors(res, async () => {
+      // Only when the fix is on offer right now (not, e.g., for an object with a location history).
+      if (!(await config.deleteBlockFix!.check(id, (await authedGetOne(config.getUrl(id))).result))) {
+        res.writeHead(409, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "There's nothing to delete first anymore." }));
+        return;
+      }
       await config.deleteBlockFix!.run(id);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));

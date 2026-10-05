@@ -1558,7 +1558,7 @@ rule as elsewhere: real content blocks a delete up front (germplasm in use, devi
 history, objects in an experiment); only bookkeeping goes along with a counted confirm (device moves, factor
 levels). Measured values are research data, so Delete is blocked: "has 189 measured values (from <provenance>).
 Delete them first." The banner offers "Delete its 189 measured values" (NodeConfig.deleteBlockFix): counted
-again when pressed, its own confirm ("research data: can't be recovered"), POST /api/node/delete-fix ->
+again when pressed, its own confirm ("research data: can't be recovered"), DELETE /api/node/delete-fix (a DELETE so browsers preflight it: no CSRF; the server re-checks the fix is on offer) ->
 DELETE /core/data?target=<object> (probed: removes only that object's values, every experiment). Probed: count
 the object in the BODY of /core/data/count — as a query parameter `targets` is ignored and everything is
 counted. Live on phis-test with 3 values on the ZZ plant (plant kept).

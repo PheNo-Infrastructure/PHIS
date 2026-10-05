@@ -1829,7 +1829,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     const fix = NODE_DETAIL[item.id]?.deleteFix;
     if (!fix) { deleteBlockedShown = null; renderDetail(); return; }
     if (!confirm(fix.confirm)) { renderDetail(); return; }
-    const res = await fetch(`api/node/delete-fix?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, { method: "POST" });
+    const res = await fetch(`api/node/delete-fix?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
     const body = await res.json().catch(() => ({}));
     delete NODE_DETAIL[item.id];
     await loadNodeDetail(item);

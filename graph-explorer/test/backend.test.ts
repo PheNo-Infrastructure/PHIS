@@ -825,8 +825,12 @@ test("scientific object with measured values: Delete is blocked with the count a
     assert.equal(refused.status, 409, "the server enforces the block too");
     assert.deepEqual(writes, []);
 
-    assert.equal((await realFetch(`${base}/api/node/delete-fix?type=scientific_object&id=so-1`, { method: "POST" })).status, 200);
+    assert.notEqual((await realFetch(`${base}/api/node/delete-fix?type=scientific_object&id=so-1`, { method: "POST" })).status, 200, "a POST (sendable cross-site without a preflight) does nothing");
+    assert.deepEqual(writes, []);
+    assert.equal((await realFetch(`${base}/api/node/delete-fix?type=scientific_object&id=so-1`, { method: "DELETE" })).status, 200);
     assert.deepEqual(writes, ["DELETE /core/data?target=so-1"], "only this object's values");
+    assert.equal((await realFetch(`${base}/api/node/delete-fix?type=scientific_object&id=so-1`, { method: "DELETE" })).status, 409, "nothing left to delete first: refused");
+    assert.equal(writes.length, 1);
     const after = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     assert.equal(after.deleteBlocked, undefined);
     assert.equal(after.deleteFix, undefined);
