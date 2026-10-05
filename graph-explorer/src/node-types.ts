@@ -230,7 +230,7 @@ function levelName(f: FactorDto, typed: string) {
 // uri keeps its objects, a level sent without one gets a new uri, a missing one is dropped from
 // its objects). OpenSILEX would also take two levels of one name ("b", "b/1") and no levels at
 // all — both refused here.
-async function saveLevels(f: FactorDto, levels: { uri?: string; name: string; description?: string | null }[]) {
+export async function saveLevels(f: FactorDto, levels: { uri?: string; name: string; description?: string | null }[]) {
   if (!levels.length) throw new OpenSilexError(400, "A factor needs at least one level — delete the factor instead.");
   const seen = new Set<string>();
   for (const l of levels) {

@@ -248,7 +248,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
       "13/23 Creating germplasm: 1 of 1", "14/23 Setting variety codes: 1 of 1", "15/23 Creating factors: 1 of 2", "16/23 Creating factors: 2 of 2",
     ], "one progress line per write");
     assert.deepEqual(steps.slice(-3), ["21/23 Creating scientific objects: 5 of 5", "22/23 Created the provenance of the measurements", "23/23 Writing measurements: 9 of 9"]);
-    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, codes: 1, factors: 2, objects: 5, vocabulary: 2, variables: 3, values: 9 } } });
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: "PBar1x4 – TraitFinder – 2025-10-22" }, created: { germplasm: 1, codes: 1, factors: 2, objects: 5, filled: 0, levels: 0, vocabulary: 2, variables: 3, values: 9 } } });
     assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${String(w.body.name ?? w.body.uri ?? w.body.property).replace(/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, "")}`), [
       "POST /vuejs/owl_extension/rdf_type Tray",
       "POST /ontology/property https://phis.pheno.no/vocabulary#positionInTray",
@@ -304,14 +304,14 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
   });
 });
 
-test("POST /api/import/run that fails part-way says what it created and how to start over", async () => {
+test("POST /api/import/run that fails part-way says what it did and that importing again finishes it", async () => {
   await withServer(async (base) => {
     const writes: any[] = [];
     mockPhisForRun(writes, "PB002");
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200, "already streaming when it failed");
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
-    assert.match(error, /^The import stopped part-way: .*It had created the experiment, 1 new germplasm, 2 of 2 factors, 4 of 5 scientific objects and 0 of 9 measured values. To start over, delete the experiment "PBar1x4 – TraitFinder – 2025-10-22"/);
+    assert.match(error, /^The import stopped part-way: .*It had created the experiment, created 1 new germplasm, created 2 factors and created 4 of 5 scientific objects in "PBar1x4 – TraitFinder – 2025-10-22"\. Import the same files again to finish: what is already in PHIS is skipped, nothing is written twice\.$/);
     assert.equal(writes.filter((w: any) => w.path === "/core/scientific_objects").length, 5, "the batch in flight finishes; the report counts what exists");
   });
 });
@@ -339,5 +339,118 @@ test("POST /api/import/plan: messy values are left out and reported — empty ce
       notNumbers: { count: 1, examples: ['PB001, NDVI Average, 2025-10-29 13:19:34: "n/a"'] },
       contradictions: { count: 1, examples: ["PB002, NDVI Average, 2025-10-22 13:19:34: 0.6 or 0.7"] },
     });
+  });
+});
+
+// An experiment of the same name already in PHIS: Tray 31, PB001 (nothing set) and PB002 (another
+// variety, position 3) are there; factor Replicate has only level 1, GroupID is missing; the variables
+// exist, and PB001 already has two values on 2025-10-29 (one equal to the file, one not).
+function mockExistingExperiment(writes: { method: string; path: string; body: any }[]) {
+  const exp = "exp:old";
+  const name = "PBar1x4 – TraitFinder – 2025-10-22";
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    const method = init?.method ?? "GET";
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (method === "GET") { const known = ontologyAnswer(url, true); if (known) return known; }
+    if (path.startsWith("/core/data/search")) return jsonResponse(200, { result: [
+      { target: "so:old1", variable: "var:Height", date: "2025-10-29T13:19:34.000+0100", value: 10 },
+      { target: "so:old1", variable: "var:NDVI Average", date: "2025-10-29T13:19:34.000+0100", value: 0.9 },
+    ] });
+    if (method !== "GET") {
+      writes.push({ method, path, body });
+      if (path === "/core/germplasm") return jsonResponse(201, { result: [`g:${body.name}`] });
+      if (path === "/core/experiments/factors") return jsonResponse(method === "PUT" ? 200 : 201, { result: `f:${body.name}` });
+      if (path === "/core/scientific_objects") return jsonResponse(method === "PUT" ? 200 : 201, { result: method === "PUT" ? body.uri : `so:${body.name}` });
+      if (path === "/core/provenances") return jsonResponse(201, { result: "prov:new" });
+      if (path === "/core/data") return jsonResponse(201, { result: body.map((_: unknown, i: number) => `data:${i}`) });
+    }
+    if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [{ uri: exp, name }] });
+    if (path.startsWith(`/core/scientific_objects?experiment=${encodeURIComponent(exp)}`)) return jsonResponse(200, { result: [{ uri: "so:tray31", name: "Tray 31" }, { uri: "so:old1", name: "PB001" }, { uri: "so:old2", name: "PB002" }] });
+    if (path === `/core/experiments/${encodeURIComponent(exp)}/factors`) return jsonResponse(200, { result: [{ uri: "f:rep", name: "Replicate", experiment: exp, levels: [{ uri: "lvl:Replicate.1", name: "1" }] }] });
+    const copy = path.match(/^\/core\/scientific_objects\/so%3A(old1|old2|tray31)\?experiment=/);
+    if (copy) return jsonResponse(200, { result: copy[1] === "tray31" ? { uri: "so:tray31", name: "Tray 31", rdf_type: "https://phis.pheno.no/vocabulary#Tray", relations: [] }
+      : copy[1] === "old1"
+      ? { uri: "so:old1", name: "PB001", rdf_type: "vocabulary:Plant", relations: [] }
+      : { uri: "so:old2", name: "PB002", rdf_type: "vocabulary:Plant", relations: [
+        { property: "vocabulary:hasGermplasm", value: "g:annika", inverse: false },
+        { property: "https://phis.pheno.no/vocabulary#positionInTray", value: "3", inverse: false }] } });
+    if (path === "/core/germplasm/g%3Aannika") return jsonResponse(200, { result: { uri: "g:annika", name: "Annika" } });
+    const levels = path.match(/^\/core\/experiments\/factors\/f%3A(\w+)\/levels$/);
+    if (levels) {
+      const names = levels[1] === "rep" ? ["1", "2"] : ["9", "10"];
+      const fac = levels[1] === "rep" ? "Replicate" : "GroupID";
+      return jsonResponse(200, { result: names.map((n) => ({ uri: `lvl:${fac}.${n}`, name: n })) });
+    }
+    const variable = url.match(/\/core\/variables\?name=([^&]+)/);
+    if (variable) { const n = decodeURIComponent(variable[1]).replace(/\\/g, ""); return jsonResponse(200, { result: [{ uri: `var:${n}`, name: n }] }); }
+    const known = variablesAnswer(url);
+    if (known) return known;
+    if (url.includes("rdf_type=")) return jsonResponse(200, { result: [{ uri: "agrovoc:barley", name: "barley" }] });
+    if (url.includes("/core/germplasm?name=Olve")) return jsonResponse(200, { result: [{ uri: "g:olve", name: "Olve" }] });
+    if (url.includes("/core/germplasm?name=Tiril")) return jsonResponse(200, { result: [] });
+    if (url.includes("/core/germplasm/g%3Aolve")) return jsonResponse(200, { result: { uri: "g:olve", name: "Olve", code: "G5" } });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("POST /api/import/plan into an existing experiment is a fill: what PHIS lacks is listed to add, what PHIS has differently is listed and kept, values already there are skipped", async () => {
+  await withServer(async (base) => {
+    const writes: any[] = [];
+    mockExistingExperiment(writes);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.equal(plan.experiment.exists, true);
+    assert.deepEqual(plan.factors, [
+      { name: "Replicate", levels: ["1", "2"], exists: true, newLevels: ["2"] },
+      { name: "GroupID", levels: ["9", "10"] },
+    ]);
+    assert.equal(plan.objects.count, 2, "Tray 32 and PB003 are new");
+    assert.equal(plan.objects.existing, 3);
+    assert.deepEqual(plan.objects.fills, { count: 2, what: { tray: 2, position: 1, germplasm: 1, levels: 2 } }, "PB002 keeps its variety and position");
+    assert.deepEqual(plan.objects.conflicts, { count: 2, examples: ["PB002: PHIS has Annika, the file Tiril", "PB002: PHIS has position 3, the file position 2"] });
+    assert.equal(plan.measurements.count, 7, "9 in the file, 1 already in PHIS, 1 different in PHIS");
+    assert.equal(plan.measurements.alreadyInPhis, 1, "PHIS's +0100 on 2025-10-29 is 13:19:34 Oslo time, as in the file");
+    assert.deepEqual(plan.measurements.differ, { count: 1, examples: ["PB001, NDVI Average, 2025-10-29 13:19:34: PHIS has 0.9, the file 0.5"] });
+    assert.deepEqual(writes, [], "the plan writes nothing");
+  });
+});
+
+test("POST /api/import/run into an existing experiment creates only what's new, adds a missing level, fills existing objects without changing what they have, and writes only new values", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockExistingExperiment(writes);
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(lines.at(-1).result.created, { germplasm: 1, codes: 0, factors: 1, objects: 2, filled: 2, levels: 1, vocabulary: 0, variables: 0, values: 7 });
+    assert.deepEqual(writes.filter((w) => w.path !== "/core/data").map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri}`.replace(/ import \d{4}.*$/, " import")), [
+      "POST /core/germplasm Tiril",
+      "PUT /core/experiments/factors Replicate",
+      "POST /core/experiments/factors GroupID",
+      "POST /core/scientific_objects Tray 32",
+      "POST /core/scientific_objects PB003",
+      "PUT /core/scientific_objects PB001", "PUT /core/scientific_objects PB002",
+      "POST /core/provenances PBar1x4 – TraitFinder – 2025-10-22 – TraitFinder import",
+    ], "no experiment created; existing ones filled after the new tray exists");
+    assert.deepEqual(writes[1].body.levels.map((l: any) => l.name), ["1", "2"], "level 1 kept, level 2 added");
+    const put = (uri: string) => writes.find((w) => w.method === "PUT" && w.body.uri === uri)!.body;
+    assert.deepEqual(put("so:old1").relations, [
+      { property: "vocabulary:hasGermplasm", value: "g:olve", inverse: false },
+      { property: "vocabulary:hasFactorLevel", value: "lvl:Replicate.1", inverse: false },
+      { property: "vocabulary:hasFactorLevel", value: "lvl:GroupID.9", inverse: false },
+      { property: "vocabulary:isPartOf", value: "so:tray31", inverse: false },
+      { property: "https://phis.pheno.no/vocabulary#positionInTray", value: "1", inverse: false },
+    ]);
+    assert.deepEqual(put("so:old2").relations, [
+      { property: "vocabulary:hasGermplasm", value: "g:annika", inverse: false },
+      { property: "https://phis.pheno.no/vocabulary#positionInTray", value: "3", inverse: false },
+      { property: "vocabulary:hasFactorLevel", value: "lvl:Replicate.1", inverse: false },
+      { property: "vocabulary:hasFactorLevel", value: "lvl:GroupID.10", inverse: false },
+      { property: "vocabulary:isPartOf", value: "so:tray31", inverse: false },
+    ], "Annika and position 3 stay; only what was missing is added");
+    const data = writes.find((w) => w.path === "/core/data")!.body;
+    assert.equal(data.length, 7);
+    assert.ok(!data.some((d: any) => d.target === "so:old1" && d.date === "2025-10-29T13:19:34" && ["var:Height", "var:NDVI Average"].includes(d.variable)), "neither the equal nor the differing value is written");
+    assert.ok(data.some((d: any) => d.target === "so:PB003"), "a new plant's values go to its new uri");
   });
 });

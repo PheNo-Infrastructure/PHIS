@@ -6,8 +6,16 @@ import { instrumentPlugins, type Files } from "./plugins.ts";
 import { POSITION_IN_TRAY, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
 import { checkMeasurements } from "./measurements.ts";
+import { compareObjects, newValues, readExperiment, valuesIn, type Experiment } from "./existing.ts";
 
 const enc = encodeURIComponent;
+// How many existing objects get each kind of detail added: "tray", "position", "germplasm", "factor level".
+function fillWhat(fills: Awaited<ReturnType<typeof compareObjects>>["fills"]) {
+  return {
+    tray: fills.filter((f) => f.parent).length, position: fills.filter((f) => f.position !== undefined).length,
+    germplasm: fills.filter((f) => f.germplasm).length, levels: fills.filter((f) => f.levels.length).length,
+  };
+}
 const byNumberThenText = (a: string, b: string) => (Number(a) - Number(b)) || a.localeCompare(b);
 
 // Plan and run both start here, so what is written is exactly what was shown.
@@ -27,8 +35,10 @@ export async function prepare(files: Files) {
   // OpenSILEX's name filters match parts of names, so exact (case-insensitive) matching is done here.
   const same = (a: unknown, b: string) => String(a ?? "").toLowerCase() === b.toLowerCase();
   // OpenSILEX's name filters are regexes, so names are escaped ("Tiril (G16)" is a name, not a pattern).
-  const experimentExists = (await authedGet(`/core/experiments?name=${enc(escapeRegex(trial.experiment.name))}&page_size=50`)).result
-    .some((e) => same(e.name, trial.experiment.name));
+  // An experiment of the same name is filled in (existing.ts); two of them can't be told apart.
+  const sameName = (await authedGet(`/core/experiments?name=${enc(escapeRegex(trial.experiment.name))}&page_size=50`)).result
+    .filter((e) => same(e.name, trial.experiment.name));
+  const experiment: Experiment | null = sameName.length === 1 ? await readExperiment(String(sameName[0].uri)) : null;
 
   const germplasmNames = [...new Set(trial.objects.map((o) => o.germplasm).filter((g): g is string => !!g))];
   const existing: { name: string; id: string }[] = [];
@@ -63,18 +73,26 @@ export async function prepare(files: Files) {
   if (trial.objects.some((o) => o.position !== undefined)) needed.add(POSITION_IN_TRAY);
   const vocabulary = await missingTerms(needed);
   const parents = new Set(trial.objects.map((o) => o.parent).filter(Boolean)); // the sample shows what is measured, not trays
+  const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
   const kinds = new Map<string, number>();
-  for (const o of trial.objects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
+  for (const o of newObjects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
+  const germplasmIds = new Map(existing.map((g) => [g.name, g.id]));
+  const compared = experiment ? await compareObjects(trial.objects, experiment, germplasmIds) : { fills: [], conflicts: [] };
 
   const variables = await resolveVariables(trial.variables ?? []);
   const measurements = checkMeasurements(trial.measurements ?? []);
+  // In an existing experiment, values PHIS already has (same object, variable and time) aren't written again.
+  const timezone = trial.timezone ?? "UTC";
+  const against = experiment && measurements.values.length
+    ? newValues(measurements.values, await valuesIn(experiment, new Map(variables.existing.map((v) => [v.name, v.id])), timezone))
+    : { fresh: measurements.values, already: 0, differ: [] as string[] };
 
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
 
   const plan = {
     instrument: plugin.label,
-    experiment: { ...trial.experiment, exists: experimentExists },
+    experiment: { ...trial.experiment, exists: !!experiment, ...(sameName.length > 1 ? { sameName: sameName.length } : {}) },
     germplasm: {
       existing: existing.sort((a, b) => a.name.localeCompare(b.name)),
       missing: missing.sort(),
@@ -82,19 +100,35 @@ export async function prepare(files: Files) {
       codes: setCodes,
     },
     speciesOptions,
-    factors: [...levels].map(([name, set]) => ({ name, levels: [...set].sort(byNumberThenText) })),
+    factors: [...levels].map(([name, set]) => {
+      const inPhis = experiment?.factors.find((f) => same(f.name, name));
+      const all = [...set].sort(byNumberThenText);
+      return { name, levels: all, ...(inPhis ? { exists: true, newLevels: all.filter((l) => !inPhis.levels.some((x) => same(x.name, l))) } : {}) };
+    }),
     vocabulary,
     variables: {
       existing: variables.existing.map((v) => v.name),
       missing: variables.missing.map((v) => v.name),
       parts: variables.create.map((p) => ({ kind: p.kind, name: p.name, ...(p.symbol ? { symbol: p.symbol } : {}) })),
     },
-    measurements: { ...measurements.summary, timezone: trial.timezone ?? null },
+    measurements: {
+      ...measurements.summary, count: against.fresh.length, timezone: trial.timezone ?? null,
+      ...(experiment ? { alreadyInPhis: against.already, differ: { count: against.differ.length, examples: against.differ.slice(0, 3) } } : {}),
+    },
     // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Tray) — fine for these two.
-    objects: { count: trial.objects.length, kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })), sample: trial.objects.filter((o) => !parents.has(o.name)).slice(0, 5) },
+    objects: {
+      count: newObjects.length,
+      kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })),
+      sample: newObjects.filter((o) => !parents.has(o.name)).slice(0, 5),
+      ...(experiment ? {
+        existing: trial.objects.length - newObjects.length,
+        fills: { count: compared.fills.length, what: fillWhat(compared.fills) },
+        conflicts: { count: compared.conflicts.length, examples: compared.conflicts.slice(0, 3) },
+      } : {}),
+    },
     warnings,
   };
-  return { trial, plan, variables, values: measurements.values };
+  return { trial, plan, variables, values: against.fresh, experiment, fills: compared.fills };
 }
 
 export async function buildPlan(files: Files) {

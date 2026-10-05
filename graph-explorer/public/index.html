@@ -3199,8 +3199,10 @@ function importPlanHtml(p) {
     </div>` : ""}
     <div class="import-section">
       <h3>Experiment<small>your trial</small></h3>
-      <p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>
-      ${p.experiment.exists ? `<div class="import-warning">An experiment with this name already exists in PHIS.</div>` : ""}
+      ${p.experiment.exists
+        ? `<p>Already in PHIS: <b>${escapeHtml(p.experiment.name)}</b>. The import fills in what it lacks; nothing already in PHIS is changed.</p>`
+        : `<p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>`}
+      ${p.experiment.sameName ? `<div class="import-warning">${p.experiment.sameName} experiments in PHIS have this name, so it isn't clear which one to fill in.</div>` : ""}
     </div>
     <div class="import-section">
       <h3>Germplasm<small>plant material: species, varieties, lines</small></h3>
@@ -3212,11 +3214,13 @@ function importPlanHtml(p) {
     </div>
     <div class="import-section">
       <h3>Factors<small>treatments and design</small></h3>
-      ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.levels.length} levels <span class="import-names">(${list(f.levels, 12)})</span></p>`).join("") : "<p>None.</p>"}
+      ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.exists ? (f.newLevels.length ? `already in PHIS; adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))}` : "already in PHIS, with all its levels") : `${f.levels.length} levels`} <span class="import-names">(${list(f.levels, 12)})</span></p>`).join("") : "<p>None.</p>"}
     </div>
     <div class="import-section">
       <h3>${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></h3>
-      <p>New: ${p.objects.count}${p.objects.kinds.length > 1 ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.parent && `in ${sample.parent}${sample.position ? `, position ${sample.position}` : ""}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
+      <p>New: ${p.objects.count}${p.objects.kinds.length ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.parent && `in ${sample.parent}${sample.position ? `, position ${sample.position}` : ""}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
+      ${p.objects.existing ? `<p>Already in PHIS: ${p.objects.existing}${p.objects.fills.count ? `; fills in what ${p.objects.fills.count} of them lack: ${escapeHtml(andList(fillsText(p.objects.fills.what)))}` : ", nothing to fill in"}.</p>` : ""}
+      ${p.objects.conflicts?.count ? `<div class="import-warning">PHIS and the file disagree in ${p.objects.conflicts.count} ${p.objects.conflicts.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(p.objects.conflicts.examples.join("; "))}).</div>` : ""}
     </div>
     ${v.existing.length + v.missing.length ? `<div class="import-section">
       <h3>Variables<small>what is measured: a trait of the plant, how, and in what unit</small></h3>
@@ -3224,15 +3228,23 @@ function importPlanHtml(p) {
       ${v.missing.length ? `<p>New: ${v.missing.length} <span class="import-names">(${list(v.missing, 30)})</span></p>` : ""}
       ${v.parts.length ? `<p>Also adds what they're made of: ${escapeHtml(andList(partsText(v.parts)))}.</p>` : ""}
     </div>` : ""}
-    ${m && (m.count || skipped) ? `<div class="import-section">
+    ${m && (m.count || skipped || m.alreadyInPhis || m.differ?.count) ? `<div class="import-section">
       <h3>Measurements<small>the values: one per plant, variable and scan time</small></h3>
       <p>New: ${m.count.toLocaleString("en")} values <span class="import-names">(${m.objects} ${typeName("scientific_object", m.objects)}, ${m.variables} ${m.variables === 1 ? "variable" : "variables"}, scanned on ${m.days} ${m.days === 1 ? "day" : "days"}${m.first ? ` from ${escapeHtml(m.first.slice(0, 10))} to ${escapeHtml(m.last.slice(0, 10))}` : ""})</span></p>
+      ${m.alreadyInPhis ? `<p>Already in PHIS, skipped: ${m.alreadyInPhis.toLocaleString("en")}.</p>` : ""}
+      ${m.differ?.count ? `<div class="import-warning">PHIS has a different value in ${m.differ.count.toLocaleString("en")} ${m.differ.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(m.differ.examples.join("; "))}).</div>` : ""}
       ${m.timezone ? `<p class="import-names">The file gives no time zone; its times are read as ${escapeHtml(m.timezone)} time.</p>` : ""}
       ${m.skipped.empty ? `<p>Left out: ${m.skipped.empty.toLocaleString("en")} empty ${m.skipped.empty === 1 ? "cell" : "cells"}.</p>` : ""}
       ${m.skipped.notNumbers.count ? `<div class="import-warning">Left out: ${m.skipped.notNumbers.count} ${m.skipped.notNumbers.count === 1 ? "value that isn't a number" : "values that aren't numbers"} (e.g. ${escapeHtml(m.skipped.notNumbers.examples.join("; "))}).</div>` : ""}
       ${m.skipped.contradictions.count ? `<div class="import-warning">Left out: ${m.skipped.contradictions.count} ${m.skipped.contradictions.count === 1 ? "place where" : "places where"} the file gives two different values for the same plant, variable and time (e.g. ${escapeHtml(m.skipped.contradictions.examples.join("; "))}). Fix the file and import again to include them.</div>` : ""}
     </div>` : ""}
     <div class="import-footer" id="importFooter">${importFooterHtml(p)}</div>`;
+}
+
+// What existing objects get filled in: "their tray (100), position (100)".
+function fillsText(what) {
+  return [["tray", what.tray], ["position in the tray", what.position], ["germplasm", what.germplasm], ["factor levels", what.levels]]
+    .filter(([, k]) => k).map(([label, k]) => `${label} (${k})`);
 }
 
 // "the entity Plant, 21 characteristics, the units Unitless and … (mm²/mm²)": one kind named, many counted.
@@ -3248,19 +3260,26 @@ function partsText(parts) {
 // What stops the import is said up front; otherwise the button says exactly what it will create.
 function importFooterHtml(p) {
   const stops = [
-    ...(p.experiment.exists ? ["an experiment with this name already exists"] : []),
+    ...(p.experiment.sameName ? ["more than one experiment has this name"] : []),
     ...(p.germplasm.ambiguous.length ? ["some germplasm names match more than one in PHIS"] : []),
   ];
   if (stops.length) return `<span>Can't import this yet: ${escapeHtml(stops.join("; "))}. Nothing has been written to PHIS.</span>`;
+  const newFactors = p.factors.filter(f => !f.exists).length;
   const parts = [
-    "1 experiment",
+    ...(p.experiment.exists ? [] : ["1 experiment"]),
     ...(p.germplasm.missing.length ? [`${p.germplasm.missing.length} germplasm`] : []),
-    ...(p.factors.length ? [`${p.factors.length} ${p.factors.length === 1 ? "factor" : "factors"}`] : []),
-    `${p.objects.count} ${typeName("scientific_object", p.objects.count)}`,
+    ...(newFactors ? [`${newFactors} ${newFactors === 1 ? "factor" : "factors"}`] : []),
+    ...(p.objects.count || !p.experiment.exists ? [`${p.objects.count} ${typeName("scientific_object", p.objects.count)}`] : []),
     ...(p.variables.missing.length ? [`${p.variables.missing.length} ${p.variables.missing.length === 1 ? "variable" : "variables"}`] : []),
     ...(p.measurements?.count ? [`${p.measurements.count.toLocaleString("en")} measured ${p.measurements.count === 1 ? "value" : "values"}`] : []),
   ];
-  return `<span>Nothing has been written to PHIS yet. What it creates will be public: every PHIS user can see it.</span><button class="btn primary" id="importRunBtn">Create ${escapeHtml(andList(parts))}</button>`;
+  const fill = p.objects.fills?.count ? `fill in ${p.objects.fills.count} existing ${typeName("scientific_object", p.objects.fills.count)}` : "";
+  const label = p.experiment.exists
+    ? [parts.length && `add ${andList(parts)}`, fill].filter(Boolean)
+    : [`create ${andList(parts)}`];
+  if (!label.length) return `<span>Everything in these files is already in PHIS. Nothing to do.</span>`;
+  const text = andList(label);
+  return `<span>Nothing has been written to PHIS yet. What it creates will be public: every PHIS user can see it.</span><button class="btn primary" id="importRunBtn">${escapeHtml(text[0].toUpperCase() + text.slice(1))}</button>`;
 }
 
 function wireImportRun(file, plan, close) {
@@ -3308,7 +3327,7 @@ function wireImportRun(file, plan, close) {
         ...(c.variables ? [`created ${c.variables} ${c.variables === 1 ? "variable" : "variables"}`] : []),
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
       ];
-      footer.innerHTML = `<span>Created <b>${escapeHtml(body.experiment.label)}</b> with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
     } catch (err) {
       footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;

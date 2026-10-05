@@ -1565,6 +1565,17 @@ counted. Live on phis-test with 3 values on the ZZ plant (plant kept).
 **Provenance agent (noted, not planned):** a provenance can name agents (a device, a person) — it is then
 linked to that device directly, and PHIS's data search filters by device through it. The import sets none
 yet; naming the TraitFinder device would link device -> provenance -> values.
-**Still open (user's call):** importing into an experiment that already exists (re-import; PBar1x4 on
-phis-test has no values for this reason), reading the Clean/Messy format, deleting one import's values
-from the app.
+**Step 3b built (2026-10-05): importing into an experiment that exists is a fill** (user: "minimize
+orphans; importing into something that exists works as a fill function"). `src/import/existing.ts`: the
+experiment (one of that name; two are a blocker) is reused; factors by name, missing levels added
+(saveLevels); objects by name in the experiment — new ones created, existing ones get only what their copy
+lacks (germplasm, a level per factor, tray, position: one PUT with every relation sent back); where PHIS
+says something else it's listed ("PB002: PHIS has Annika, the file Tiril") and PHIS is kept; values PHIS
+already has (same object, variable, local time — PHIS's offset converted to the file's zone) are skipped,
+different ones listed and kept. A failed import is finished by importing the same files again (nothing is
+written twice), for a new experiment too. Live: an old-style ZZ experiment (4 plants with only their
+variety) filled from Block 31 — Tray 31 contains PB001–PB004, levels set, GroupID created, 756 values; the
+same files again: nothing to do. Read-only plan of the real export against PBar1x4 on phis-test: 25 new
+trays, 100 plants filled (tray + position), 18,564 values, no disagreements.
+**Still open (user's call):** reading the Clean/Messy format, deleting one import's values from the app,
+the TraitFinder device as the provenance's agent, step 4 (show values on a plant's and a variable's page).

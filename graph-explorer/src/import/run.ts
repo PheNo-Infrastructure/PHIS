@@ -2,13 +2,15 @@
 // vocabulary -> variables (+ their parts) -> experiment -> germplasm (+ codes) -> factors (+ levels) -> scientific objects,
 // containers (trays) before what is part of them, each with its germplasm, factor levels, parent
 // and position (all live on the object's copy in the experiment, so they're sent on creation)
-// -> the measured values.
+// -> the measured values. Into an experiment that exists, the same order fills in only what PHIS
+// lacks (existing.ts): new factors/levels/objects are created, existing objects get what they miss.
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "../opensilex.ts";
-import { NODE_TYPES, updatePayloadFromDto } from "../node-types.ts";
+import { NODE_TYPES, saveLevels, updatePayloadFromDto } from "../node-types.ts";
 import { POSITION_IN_TRAY, addTerm } from "./ontology.ts";
 import { prepare } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
 import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts";
+import { writeFill } from "./existing.ts";
 import type { Files } from "./plugins.ts";
 
 const enc = encodeURIComponent;
@@ -24,19 +26,23 @@ const andList = (items: (string | 0)[]) => {
 // `progress` is called after each write (never before the checks pass), so a caller can show it.
 export type Progress = { step: string; done: number; total: number };
 export async function runImport(files: Files, choices: { species?: string }, progress: (p: Progress) => void = () => {}) {
-  const { trial, plan, variables, values } = await prepare(files);
+  const { trial, plan, variables, values, experiment, fills } = await prepare(files);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];
-  if (plan.experiment.exists) blockers.push(`An experiment named "${plan.experiment.name}" already exists in PHIS.`);
+  if (plan.experiment.sameName) blockers.push(`${plan.experiment.sameName} experiments in PHIS are named "${plan.experiment.name}", so it isn't clear which one to fill in.`);
   for (const a of plan.germplasm.ambiguous) blockers.push(`"${a.name}" matches ${a.ids.length} germplasm in PHIS, so it isn't clear which one is meant.`);
   if (plan.germplasm.missing.length && !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
-  const done = { vocabulary: 0, parts: 0, variables: 0, experiment: "", germplasm: 0, codes: 0, factors: 0, objects: 0, provenance: "", values: 0 };
+  const done = { vocabulary: 0, parts: 0, variables: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0 };
+  const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
+  const newFactors = plan.factors.filter((f) => !f.exists);
+  const grownFactors = plan.factors.filter((f) => f.newLevels?.length);
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
-  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + 1 + plan.germplasm.missing.length + existingCodes.length + plan.factors.length + trial.objects.length
+  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + (experiment ? 0 : 1) + plan.germplasm.missing.length + existingCodes.length
+    + newFactors.length + grownFactors.length + newObjects.length + fills.length
     + (values.length ? 1 + Math.ceil(values.length / VALUES_AT_ONCE) : 0);
   let steps = 0;
   const tick = (step: string) => progress({ step, done: ++steps, total });
@@ -60,14 +66,16 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       tick(`Creating variables: ${done.variables} of ${variables.missing.length}`);
     }
 
-    done.experiment = firstUri(await authedPost("/core/experiments", {
-      name: plan.experiment.name,
-      start_date: plan.experiment.startDate,
-      objective: `Imported from a ${plan.instrument} export.`,
-      // Public, or nobody but this app's account sees it in PHIS (OpenSILEX defaults to private).
-      is_public: true,
-    }));
-    tick("Created the experiment");
+    if (!experiment) {
+      done.experiment = firstUri(await authedPost("/core/experiments", {
+        name: plan.experiment.name,
+        start_date: plan.experiment.startDate,
+        objective: `Imported from a ${plan.instrument} export.`,
+        // Public, or nobody but this app's account sees it in PHIS (OpenSILEX defaults to private).
+        is_public: true,
+      }));
+      tick("Created the experiment");
+    }
 
     const germplasm = new Map(plan.germplasm.existing.map((g) => [g.name, g.id]));
     for (const name of plan.germplasm.missing) {
@@ -88,17 +96,25 @@ export async function runImport(files: Files, choices: { species?: string }, pro
 
     const levels = new Map<string, string>(); // "factor|level" -> uri
     for (const f of plan.factors) {
-      const id = firstUri(await authedPost("/core/experiments/factors", { name: f.name, experiment: done.experiment, levels: f.levels.map((name) => ({ name })) }));
-      done.factors++;
-      tick(`Creating factors: ${done.factors} of ${plan.factors.length}`);
-      for (const l of (await authedGet(`/core/experiments/factors/${enc(id)}/levels`)).result) levels.set(`${f.name}|${l.name}`, l.uri);
+      const inPhis = experiment?.factors.find((x) => x.name.toLowerCase() === f.name.toLowerCase());
+      let id = inPhis?.uri;
+      if (!inPhis) {
+        id = firstUri(await authedPost("/core/experiments/factors", { name: f.name, experiment: done.experiment, levels: f.levels.map((name) => ({ name })) }));
+        done.factors++;
+        tick(`Creating factors: ${done.factors} of ${newFactors.length}`);
+      } else if (f.newLevels?.length) {
+        await saveLevels(inPhis, [...inPhis.levels, ...f.newLevels.map((name) => ({ name }))]);
+        done.levels += f.newLevels.length;
+        tick(`Added ${plural(f.newLevels.length, "level")} to ${inPhis.name}`);
+      }
+      for (const l of (await authedGet(`/core/experiments/factors/${enc(id!)}/levels`)).result) levels.set(`${f.name}|${l.name}`, l.uri);
     }
 
     // One POST per object (no batch endpoint in this OpenSILEX), OBJECTS_AT_ONCE in flight: each costs
     // OpenSILEX ~0.5-1 CPU-s, and with no CPU limit 4-5 at a time is ~2x faster; more gains nothing
     // on the 4-vCPU node (measured 2026-09-30). A failure stops the next batch.
     // Containers first, so a plant's tray has a uri when the plant is sent.
-    const objectUri = new Map<string, string>();
+    const objectUri = new Map<string, string>(experiment?.objects ?? []);
     const write = async (o: (typeof trial.objects)[number]) => {
       const relations = [
         ...(o.germplasm ? [{ property: "vocabulary:hasGermplasm", value: germplasm.get(o.germplasm), inverse: false }] : []),
@@ -108,10 +124,18 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       ];
       objectUri.set(o.name, firstUri(await authedPost("/core/scientific_objects", { name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations })));
       done.objects++;
-      tick(`Creating scientific objects: ${done.objects} of ${trial.objects.length}`);
+      tick(`Creating scientific objects: ${done.objects} of ${newObjects.length}`);
     };
-    for (const pass of [trial.objects.filter((o) => !o.parent), trial.objects.filter((o) => o.parent)]) {
+    for (const pass of [newObjects.filter((o) => !o.parent), newObjects.filter((o) => o.parent)]) {
       for (let i = 0; i < pass.length; i += OBJECTS_AT_ONCE) await Promise.all(pass.slice(i, i + OBJECTS_AT_ONCE).map(write));
+    }
+    // Existing objects get what they lack (their tray now has a uri), one PUT each.
+    for (let i = 0; i < fills.length; i += OBJECTS_AT_ONCE) {
+      await Promise.all(fills.slice(i, i + OBJECTS_AT_ONCE).map(async (fill) => {
+        await writeFill(fill, done.experiment, { germplasm, levels, objects: objectUri });
+        done.filled++;
+        tick(`Filling in existing objects: ${done.filled} of ${fills.length}`);
+      }));
     }
 
     // The measured values, under one provenance for this import, one batch at a time.
@@ -132,11 +156,19 @@ export async function runImport(files: Files, choices: { species?: string }, pro
       }
     }
   } catch (err) {
-    const what = done.experiment
-      ? `It had created ${andList([
-        "the experiment", plural(done.germplasm, "new germplasm", "new germplasm"), `${done.factors} of ${plan.factors.length} factors`,
-        `${done.objects} of ${trial.objects.length} scientific objects`, values.length > 0 && `${done.values} of ${values.length} measured values`,
-      ].map((x) => x || 0))}.${done.values ? ` Its measured values are under the provenance "${done.provenance}"; PHIS won't delete a plant that has values, so those go first.` : ""} To start over, delete the experiment "${plan.experiment.name}" (new germplasm stays and is reused next time).`
+    // Whatever it got to, importing the same files again finishes the job: the experiment then exists
+    // and is filled in, so nothing is written twice.
+    const wrote = [
+      !experiment && done.experiment && "created the experiment",
+      done.germplasm && `created ${plural(done.germplasm, "new germplasm", "new germplasm")}`,
+      done.factors && `created ${plural(done.factors, "factor")}`,
+      done.levels && `added ${plural(done.levels, "factor level")}`,
+      done.objects && `created ${done.objects} of ${newObjects.length} scientific objects`,
+      done.filled && `filled in ${done.filled} of ${fills.length} existing ones`,
+      done.values && `written ${done.values} of ${values.length} measured values`,
+    ];
+    const what = done.experiment && wrote.some(Boolean)
+      ? `It had ${andList(wrote.map((x) => x || 0))} in "${plan.experiment.name}". Import the same files again to finish: what is already in PHIS is skipped, nothing is written twice.`
       : done.vocabulary || done.parts || done.variables
         ? `Only ${andList([done.vocabulary && plural(done.vocabulary, "vocabulary term"), done.parts && plural(done.parts, "variable part"), done.variables && plural(done.variables, "variable")])} ${done.vocabulary + done.parts + done.variables === 1 ? "was" : "were"} added to PHIS (kept, and reused next time).`
         : "Nothing was written.";
@@ -144,6 +176,6 @@ export async function runImport(files: Files, choices: { species?: string }, pro
   }
   return {
     experiment: { id: done.experiment, type: "experiment", label: plan.experiment.name },
-    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, vocabulary: done.vocabulary, variables: done.variables, values: done.values },
+    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, filled: done.filled, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, values: done.values },
   };
 }
