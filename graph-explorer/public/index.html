@@ -823,6 +823,10 @@ const TYPES = {
   scientific_object: { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "scientific object" },
   germplasm:  { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "germplasm", plural: "germplasm" },
   variable:   { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "variable" },
+  entity:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "entity", plural: "entities" },
+  characteristic: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "characteristic" },
+  method:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "method" },
+  unit:       { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "unit" },
   factor:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "factor" },
   factor_level: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "factor level" },
   device:     { color: "var(--type-device)", soft: "var(--type-device-soft)", name: "device" },
@@ -1265,6 +1269,7 @@ function openNode(item) {
 // onto whatever ad-hoc trail got you there (like openNode does for real drill-down) would grow
 // the breadcrumb into a nonsensical, looping trail (A -> X -> A -> X...). Jump to the target's
 // canonical path instead — same destination as if you'd browsed there directly.
+const VARIABLE_PARTS = new Set(["entity", "characteristic", "method", "unit"]);
 function openRelatedNode(item) {
   navigateTo(canonicalPathFor(item));
 }
@@ -1289,6 +1294,8 @@ function canonicalPathFor(item) {
     const factor = findItemById(item.factor) || { id: item.factor, type: "factor", label: item.label.split(":")[0] };
     return [...canonicalPathFor(factor), item];
   }
+  // A variable's parts are shared by many variables, so they sit beside them: Data › Variables › Millimeter.
+  if (VARIABLE_PARTS.has(item.type)) return [...canonicalPathFor({ type: "variable", id: "" }).slice(0, -1), item];
   const categoryId = CATEGORY_FOR_TYPE[item.type];
   // Its parents too (an accession's species), outermost first; the length cap guards a cycle.
   const ancestors = [];

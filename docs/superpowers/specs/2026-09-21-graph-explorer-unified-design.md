@@ -1520,3 +1520,19 @@ characteristics Height/NDVI aren't reused (different names). Live round trip on 
 variables and their parts created, a re-plan reuses all 21; the variables stay on phis-test. Also fixed:
 ZIP paths with backslashes (PowerShell's Compress-Archive) and unescaped names in the plan's regex lookups.
 Next: 2b, a Variables page.
+
+**Open questions from step 2a (user, 2026-10-05: no answer yet — decide before importing to prod):**
+- Variable names: the trait alone ("Plant Height Max", as built) or OpenSILEX style
+  (`Plant_PlantHeightMax_PlantEye3DScan_mm`)?
+- Unit for the indices GLI/NDVI/NPCI/PSRI: "Unitless" (as built) or e.g. "Index"?
+- Unit for Leaf inclination: "SquareMillimeterPerSquareMillimeter" (mm²/mm², as built) — keep?
+- PHIS's existing characteristics Height and NDVI aren't reused (names differ from "Plant Height Max" /
+  "NDVI Average"): match them by hand, or leave separate?
+Renaming later is possible in PHIS, but the uris are made from the first name (they'd keep it).
+
+**Step 2b built (2026-10-05): variable pages.** Data › Variables › a variable shows what its values are
+(decimal numbers), its description, and its entity, characteristic, method and unit as chips. Each part opens
+its own page under Data › Variables (parts are shared, so they sit beside the variables, like a level under
+its factor), with its description (a unit also its symbol) and the variables made with it
+(`/core/variables?unit=…` etc.). All read-only. "Experiments with data" waits for step 3. Next: step 3,
+the measurements.

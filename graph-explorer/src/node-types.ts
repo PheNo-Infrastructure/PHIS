@@ -513,6 +513,25 @@ export function contextLinkFor(typeA: string, typeB: string): { ownerType: strin
   return null;
 }
 
+const DATATYPES: Record<string, string> = {
+  "http://www.w3.org/2001/XMLSchema#decimal": "decimal numbers", "http://www.w3.org/2001/XMLSchema#integer": "whole numbers",
+  "http://www.w3.org/2001/XMLSchema#string": "text", "http://www.w3.org/2001/XMLSchema#boolean": "yes/no",
+  "http://www.w3.org/2001/XMLSchema#date": "dates", "http://www.w3.org/2001/XMLSchema#dateTime": "dates and times",
+};
+// An entity, characteristic, method or unit: its page lists the variables made with it.
+function variablePart(field: string, path: string, more: (dto: Record<string, unknown>) => [string, unknown][] = () => []): NodeConfig {
+  return {
+    getUrl: (id) => `/core/${path}/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    facts: (dto) => factsOf([...more(dto), ["Description", dto.description]]),
+    queryRelations: [{ label: "Variables", type: "variable", url: (id) => `/core/variables?${field}=${encodeURIComponent(id)}&page_size=500` }],
+  };
+}
+
 export const NODE_TYPES: Record<string, NodeConfig> = {
   facility: {
     getUrl: (id) => `/core/facilities/${encodeURIComponent(id)}`,
@@ -874,6 +893,26 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       })),
     ],
   },
+  // What is measured: a variable = entity + characteristic + method + unit, each its own resource
+  // shared by many variables. Read-only for now (created by the import, stage 2).
+  variable: {
+    getUrl: (id) => `/core/variables/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [
+      { label: "Entity", field: "entity", type: "entity" },
+      { label: "Characteristic", field: "characteristic", type: "characteristic" },
+      { label: "Method", field: "method", type: "method" },
+      { label: "Unit", field: "unit", type: "unit" },
+    ],
+    updateLinkFields: [],
+    actions: [],
+    facts: (v) => factsOf([["Values", DATATYPES[String(v.datatype)] ?? v.datatype], ["Description", v.description]]),
+  },
+  entity: variablePart("entity", "entities"),
+  characteristic: variablePart("characteristic", "characteristics"),
+  method: variablePart("method", "methods"),
+  unit: variablePart("unit", "units", (u) => [["Symbol", u.symbol]]),
   account: {
     getUrl: (id) => `/security/accounts/${encodeURIComponent(id)}`,
     putUrl: "",
@@ -970,7 +1009,10 @@ export function relationsFromDto(dto: Record<string, unknown>, config: NodeConfi
     const refs = dto[rg.field];
     // Most relation fields are {uri, name} refs; some (an experiment's supervisors/factors) are
     // bare uri strings; a few hold ONE uri with its label in nameField (a germplasm's species).
-    const list = Array.isArray(refs) ? (refs as (NamedRef | string)[]) : typeof refs === "string" ? [{ uri: refs, name: rg.nameField ? (dto[rg.nameField] as string | undefined) : undefined }] : [];
+    // A variable's parts are one {uri, name} each.
+    const list = Array.isArray(refs) ? (refs as (NamedRef | string)[])
+      : typeof refs === "string" ? [{ uri: refs, name: rg.nameField ? (dto[rg.nameField] as string | undefined) : undefined }]
+      : refs && typeof refs === "object" && "uri" in refs ? [refs as NamedRef] : [];
     const items = list.map((r) => (typeof r === "string" ? { uri: r } : r)).map((r) => ({
       id: String(r.uri),
       type: rg.type,

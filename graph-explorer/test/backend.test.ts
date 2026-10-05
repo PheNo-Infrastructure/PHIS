@@ -1247,6 +1247,42 @@ test("PUT /api/node with `unlink` drops just that one uri from its field, keeps 
   });
 });
 
+test("GET /api/node-detail: a variable shows its four parts and what its values are; a unit lists the variables using it, with its symbol (both read-only)", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/variables/var-1")) {
+        return jsonResponse(200, { result: {
+          uri: "var-1", name: "Plant Height Max", description: "TraitFinder column", datatype: "http://www.w3.org/2001/XMLSchema#decimal",
+          entity: { uri: "ent-1", name: "Plant" }, characteristic: { uri: "ch-1", name: "Plant Height Max" },
+          method: { uri: "m-1", name: "PlantEye 3D scan" }, unit: { uri: "u-1", name: "Millimeter", symbol: "mm" }, entity_of_interest: null,
+        } });
+      }
+      if (url.includes("/core/units/u-1")) return jsonResponse(200, { result: { uri: "u-1", name: "Millimeter", symbol: "mm", description: null } });
+      if (url.includes("/core/variables?unit=u-1")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Plant Height Max" }] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json(), {
+      uri: "var-1", actions: [],
+      facts: [{ label: "Values", value: "decimal numbers" }, { label: "Description", value: "TraitFinder column" }],
+      relations: [
+        { label: "Entity", items: [{ id: "ent-1", type: "entity", label: "Plant" }] },
+        { label: "Characteristic", items: [{ id: "ch-1", type: "characteristic", label: "Plant Height Max" }] },
+        { label: "Method", items: [{ id: "m-1", type: "method", label: "PlantEye 3D scan" }] },
+        { label: "Unit", items: [{ id: "u-1", type: "unit", label: "Millimeter" }] },
+      ],
+    });
+    assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=unit&id=u-1`)).json(), {
+      uri: "u-1", actions: [],
+      facts: [{ label: "Symbol", value: "mm" }],
+      relations: [{ label: "Variables", items: [{ id: "var-1", type: "variable", label: "Plant Height Max" }] }],
+    });
+  });
+});
+
 test("GET /api/node-detail surfaces a real OpenSILEX error (e.g. 404) as its own status/message, not a generic 502", async () => {
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string) => {
