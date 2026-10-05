@@ -6,7 +6,10 @@ import { handleRequest, _resetAuthCacheForTests } from "../src/index.ts";
 // Real network calls are never made in this file — fetch is replaced per test
 // so we can simulate exactly the "unexpected turns" a live OpenSILEX server
 // can throw at us: auth expiry, malformed bodies, downtime.
-const realFetch = globalThis.fetch;
+const nativeFetch = globalThis.fetch;
+// Calls to the server carry the page's write header on changes, as the page's own fetch does.
+const realFetch = ((url: string, init: RequestInit = {}) => (init.method ?? "GET") === "GET" ? nativeFetch(url, init)
+  : nativeFetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "X-Graph-Explorer": "1" } })) as typeof fetch;
 
 async function withServer(fn: (base: string) => Promise<void>) {
   const server = createServer(handleRequest);
@@ -17,7 +20,7 @@ async function withServer(fn: (base: string) => Promise<void>) {
     await fn(`http://localhost:${port}`);
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    globalThis.fetch = realFetch;
+    globalThis.fetch = nativeFetch;
     _resetAuthCacheForTests();
   }
 }
@@ -25,6 +28,36 @@ async function withServer(fn: (base: string) => Promise<void>) {
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
+
+test("CSRF: a change without the page's write header is refused before PHIS is touched (any method, any body type); reads still work; no CORS header lets other sites read answers", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/organisations")) return jsonResponse(200, { result: [] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const forged = [
+      // What a hidden form on another site can send: a simple POST with a text/plain or form body.
+      { path: "/api/create", init: { method: "POST", headers: { "Content-Type": "text/plain" }, body: '{"type":"organization","name":"x"}' } },
+      { path: "/api/link", init: { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "a=b" } },
+      { path: "/api/import/run", init: { method: "POST", body: "PK" } },
+      { path: "/api/node?type=organization&id=x", init: { method: "DELETE" } },
+      { path: "/api/node/delete-fix?type=scientific_object&id=x", init: { method: "DELETE" } },
+      { path: "/api/node", init: { method: "PUT", body: "{}" } },
+    ];
+    for (const f of forged) {
+      const res = await nativeFetch(`${base}${f.path}`, f.init);
+      assert.equal(res.status, 403, f.path);
+      assert.equal((await res.json()).error, "Changes are only accepted from the Graph Explorer page itself.");
+    }
+    assert.deepEqual(calls, [], "nothing reached PHIS");
+    const read = await nativeFetch(`${base}/api/organizations`);
+    assert.equal(read.status, 200, "reads need no header");
+    assert.equal(read.headers.get("access-control-allow-origin"), null);
+  });
+});
 
 test("GET /api/organizations returns 200 with mapped items on a normal response", async () => {
   await withServer(async (base) => {
@@ -141,13 +174,6 @@ test("unknown route returns 404", async () => {
   await withServer(async (base) => {
     const res = await realFetch(`${base}/nope`);
     assert.equal(res.status, 404);
-  });
-});
-
-test("every response carries permissive CORS header, even on error paths", async () => {
-  await withServer(async (base) => {
-    const res = await realFetch(`${base}/nope`);
-    assert.equal(res.headers.get("access-control-allow-origin"), "*");
   });
 });
 

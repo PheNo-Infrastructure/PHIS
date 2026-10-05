@@ -811,6 +811,14 @@ button { font-family: inherit; }
 <script>
 // API calls are relative ("api/...") so the page also works under a sub-path such as
 // phis.pheno.no/portal/ (the server redirects the bare /portal to it).
+// Every change the page asks for carries X-Graph-Explorer; the server refuses changes without it.
+// Browsers won't add a custom header for another site, so no other site can make this browser
+// change PHIS while it holds the portal's login (CSRF). Wrapped once so no call can forget it.
+{
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (url, init = {}) => (init.method ?? "GET") === "GET" ? nativeFetch(url, init)
+    : nativeFetch(url, { ...init, headers: { ...init.headers, "X-Graph-Explorer": "1" } });
+}
 /* ---------------- mock graph data ---------------- */
 // `name` = PHIS's own word for the type, so what users learn here carries over to PHIS; the plain
 // explanation lives in the menu hints. Every type name on the page goes through typeName().

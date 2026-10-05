@@ -5,7 +5,10 @@ import { deflateRawSync } from "node:zlib";
 import { handleRequest, _resetAuthCacheForTests } from "../src/index.ts";
 import { parseCsv, readZip } from "../src/import/files.ts";
 
-const realFetch = globalThis.fetch;
+const nativeFetch = globalThis.fetch;
+// Calls to the server carry the page's write header on changes, as the page's own fetch does.
+const realFetch = ((url: string, init: RequestInit = {}) => (init.method ?? "GET") === "GET" ? nativeFetch(url, init)
+  : nativeFetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), "X-Graph-Explorer": "1" } })) as typeof fetch;
 const jsonResponse = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 async function withServer(fn: (base: string) => Promise<void>) {
@@ -17,7 +20,7 @@ async function withServer(fn: (base: string) => Promise<void>) {
     await fn(`http://localhost:${port}`);
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    globalThis.fetch = realFetch;
+    globalThis.fetch = nativeFetch;
     _resetAuthCacheForTests();
   }
 }
