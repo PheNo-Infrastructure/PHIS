@@ -32,6 +32,12 @@ export type NodeConfig = {
   // Why OpenSILEX will refuse deleting THIS node, read from its own record — shown before the
   // user tries (node-detail's `deleteBlocked`) and enforced by the DELETE route.
   deleteBlockedBy?: (dto: Record<string, unknown>, id: string) => string | null | Promise<string | null>;
+  // A blocked delete's way forward when the app can take it (a plant's measured values): offered in
+  // the blocked banner as its own action, with its own confirm, counted when it's pressed.
+  deleteBlockFix?: {
+    check: (id: string, dto: Record<string, unknown>) => Promise<{ label: string; confirm: string } | null>;
+    run: (id: string) => Promise<void>;
+  };
   // DELETE calls to make before deleteUrl — e.g. a scientific object's per-experiment copies
   // (OpenSILEX refuses deleting the global copy while any experiment copy exists — probed).
   deleteFirst?: (id: string) => Promise<string[]>;
@@ -513,6 +519,17 @@ export function contextLinkFor(typeA: string, typeB: string): { ownerType: strin
   return null;
 }
 
+const plural = (n: number, one: string) => `${n.toLocaleString("en")} ${one}${n === 1 ? "" : "s"}`;
+// A scientific object's measured values, counted now, with where they came from. The object goes in
+// the body: as a query parameter `targets` is ignored and everything is counted (probed 2026-10-05).
+async function valuesOf(id: string) {
+  const count = Number((await authedPost("/core/data/count?count_limit=10000000", [id])).result);
+  if (!count) return { count, text: "" };
+  const sources = (await authedPost("/core/data/provenances/by_targets", [id])).result as unknown as { name?: string; uri: string }[];
+  const names = sources.map((p) => String(p.name ?? p.uri));
+  return { count, text: `${plural(count, "measured value")} (from ${names.length > 2 ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more` : names.join(" and ")})` };
+}
+
 const DATATYPES: Record<string, string> = {
   "http://www.w3.org/2001/XMLSchema#decimal": "decimal numbers", "http://www.w3.org/2001/XMLSchema#integer": "whole numbers",
   "http://www.w3.org/2001/XMLSchema#string": "text", "http://www.w3.org/2001/XMLSchema#boolean": "yes/no",
@@ -705,9 +722,27 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     // An object given a position gets a Move event, and OpenSILEX refuses deleting it while one
     // exists ("object has associated moves" — probed). Decided with the user: the app doesn't
     // delete location history; it explains and points to PHIS.
-    deleteBlockedBy: (dto) => ((dto.location as { geojson?: unknown } | null)?.geojson
-      ? "has a location history in PHIS (where it was placed, and when). OpenSILEX won't delete an object that has one, and this app doesn't delete location history. Delete it in PHIS instead — open the object there; its location history is under Events and Positions."
-      : null),
+    // Measured values: OpenSILEX refuses too ("object has associated data" — probed). They're research
+    // data, so they never go as a side effect of a delete (decided with the user, 2026-10-05): the delete
+    // is blocked, and deleting the values is offered as its own step (deleteBlockFix).
+    deleteBlockedBy: async (dto, id) => {
+      if ((dto.location as { geojson?: unknown } | null)?.geojson) {
+        return "has a location history in PHIS (where it was placed, and when). OpenSILEX won't delete an object that has one, and this app doesn't delete location history. Delete it in PHIS instead — open the object there; its location history is under Events and Positions.";
+      }
+      const v = await valuesOf(id);
+      return v.count ? `has ${v.text}. Delete them first.` : null;
+    },
+    deleteBlockFix: {
+      check: async (id, dto) => {
+        if ((dto.location as { geojson?: unknown } | null)?.geojson) return null;
+        const v = await valuesOf(id);
+        return v.count ? {
+          label: `Delete its ${plural(v.count, "measured value")}`,
+          confirm: `Delete ${String(dto.name ?? id)}'s ${v.text}? Measured values are research data: they can't be recovered.`,
+        } : null;
+      },
+      run: async (id) => { await authedDelete(`/core/data?target=${encodeURIComponent(id)}`); },
+    },
     inExperiment: {
       fields: SO_ROWS_PER_EXPERIMENT.filter((r) => r.removable).map((r) => r.property),
       byType: { ...Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.addable).map((r) => [r.type, r.property])), factor_level: "hasFactorLevel" },

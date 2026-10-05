@@ -565,6 +565,7 @@ test("scientific object: detail lists its REAL experiments (unlinkable, with its
     let puts = 0;
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 }); // no measured values
       if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       if (init?.method === "DELETE") { deletes.push(url); return jsonResponse(200, { result: "ok" }); }
       if (init?.method === "PUT") { puts++; return jsonResponse(200, { result: "x" }); }
@@ -654,6 +655,7 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
     const named: string[] = [];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 }); // no measured values
       if (url.includes("&parent=")) return jsonResponse(200, { result: [] }); // no children
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (url.includes("/so-1/experiments")) {
@@ -751,6 +753,7 @@ test("scientific object: factor levels show per experiment as selectable levels 
     const rels = [{ property: "vocabulary:hasFactorLevel", value: "https://phis.pheno.no/id/factor/rep.2", inverse: false }];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 }); // no measured values
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "so-1" }); }
       if (url.includes("&parent=")) return jsonResponse(200, { result: [] });
@@ -778,6 +781,7 @@ test("scientific object in no experiment says why nothing can be set; an experim
   await withServer(async (base) => {
     globalThis.fetch = (async (url: string) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 }); // no measured values
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (url.includes("/so-lone/experiments")) return jsonResponse(200, { result: [{ experiment: "phis:set/scientific-object", experiment_name: null }] });
       if (url.includes("/core/scientific_objects/so-lone")) return jsonResponse(200, { result: { uri: "so-lone", name: "Lone" } });
@@ -792,6 +796,41 @@ test("scientific object in no experiment says why nothing can be set; an experim
     assert.deepEqual(so.relations, [{ label: "In experiments", field: "experiment", items: [], emptyText: "Not in any experiment. Germplasm and parent can only be set inside an experiment." }]);
     const exp = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-1`)).json();
     assert.deepEqual(exp.relations, [{ label: "Species", items: [{ id: "phis:id/barley", type: "germplasm", label: "Hordeum vulgare" }] }]);
+  });
+});
+
+test("scientific object with measured values: Delete is blocked with the count and where they came from, the fix deletes only its values (counted with the object in the body), then Delete goes through", async () => {
+  await withServer(async (base) => {
+    let values = 189;
+    const writes: string[] = [];
+    const counted: unknown[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) { counted.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: values }); }
+      if (url.includes("/core/data/provenances/by_targets")) return jsonResponse(200, { result: [{ uri: "prov-1", name: "TraitFinder import 5 Oct" }] });
+      if (method === "DELETE") { writes.push(`DELETE ${url.replace(/^.*\/rest/, "")}`); if (url.includes("/core/data?")) values = 0; return jsonResponse(200, { result: "ok" }); }
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (url.includes("/so-1/experiments")) return jsonResponse(200, { result: [{ experiment: "phis:set/scientific-object", experiment_name: null }] });
+      if (url.includes("/core/scientific_objects/so-1")) return jsonResponse(200, { result: { uri: "so-1", name: "PB001" } });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+
+    const so = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
+    assert.equal(so.deleteBlocked, "has 189 measured values (from TraitFinder import 5 Oct). Delete them first.");
+    assert.deepEqual(so.deleteFix, { label: "Delete its 189 measured values", confirm: "Delete PB001's 189 measured values (from TraitFinder import 5 Oct)? Measured values are research data: they can't be recovered." });
+    assert.deepEqual(counted[0], ["so-1"], "the object in the body — as a query parameter PHIS counts everything");
+
+    const refused = await realFetch(`${base}/api/node?type=scientific_object&id=so-1`, { method: "DELETE" });
+    assert.equal(refused.status, 409, "the server enforces the block too");
+    assert.deepEqual(writes, []);
+
+    assert.equal((await realFetch(`${base}/api/node/delete-fix?type=scientific_object&id=so-1`, { method: "POST" })).status, 200);
+    assert.deepEqual(writes, ["DELETE /core/data?target=so-1"], "only this object's values");
+    const after = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
+    assert.equal(after.deleteBlocked, undefined);
+    assert.equal(after.deleteFix, undefined);
+    assert.equal((await realFetch(`${base}/api/node?type=scientific_object&id=so-1`, { method: "DELETE" })).status, 200);
   });
 });
 
@@ -1071,6 +1110,7 @@ test("'Contains' on a parent lists its children in that experiment; removing one
     const rels: Record<string, { property: string; value: string }[]> = { row: [], "plant-b": [{ property: "vocabulary:isPartOf", value: "row" }, { property: "vocabulary:hasGermplasm", value: "zebra" }] };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 }); // no measured values
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (init?.method === "PUT") { const b = JSON.parse(String(init.body)); puts.push({ so: b.uri, relations: b.relations.map((r: any) => r.value) }); rels[b.uri] = b.relations; return jsonResponse(200, { result: b.uri }); }
       if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u === "plant-b" ? "Plant B" : u })) });

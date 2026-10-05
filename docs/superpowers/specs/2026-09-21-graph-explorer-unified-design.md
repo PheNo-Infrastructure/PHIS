@@ -1553,6 +1553,18 @@ written names the provenance (values must go before plants). Live round trip on 
 2,268 values, PB001's Plant Height Max series equal to the file, cleaned up. The PHIS sheet is tidy
 (884 x 21 = 18,564 values, none empty); the Clean/Messy sheets are a different format (Unit "31:01:01",
 US dates, lower-case headers in Messy) the plugin doesn't read yet.
+**Deleting an object with measured values (built 2026-10-05, user: "blocked, but with a solution").** Same
+rule as elsewhere: real content blocks a delete up front (germplasm in use, devices in a facility, location
+history, objects in an experiment); only bookkeeping goes along with a counted confirm (device moves, factor
+levels). Measured values are research data, so Delete is blocked: "has 189 measured values (from <provenance>).
+Delete them first." The banner offers "Delete its 189 measured values" (NodeConfig.deleteBlockFix): counted
+again when pressed, its own confirm ("research data: can't be recovered"), POST /api/node/delete-fix ->
+DELETE /core/data?target=<object> (probed: removes only that object's values, every experiment). Probed: count
+the object in the BODY of /core/data/count — as a query parameter `targets` is ignored and everything is
+counted. Live on phis-test with 3 values on the ZZ plant (plant kept).
+**Provenance agent (noted, not planned):** a provenance can name agents (a device, a person) — it is then
+linked to that device directly, and PHIS's data search filters by device through it. The import sets none
+yet; naming the TraitFinder device would link device -> provenance -> values.
 **Still open (user's call):** importing into an experiment that already exists (re-import; PBar1x4 on
 phis-test has no values for this reason), reading the Clean/Messy format, deleting one import's values
 from the app.

@@ -1744,7 +1744,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   if (node?.deleteBlocked && deleteBlockedShown === focusNode.id) {
     html += `<div class="unlink-intro">
       <span class="unlink-intro-text"><b>CAN'T DELETE HERE</b> — ${escapeHtml(label)} ${escapeHtml(node.deleteBlocked)}</span>
-      <span class="unlink-intro-actions"><button class="btn warn small" id="deleteBlockedOkBtn">OK</button></span>
+      <span class="unlink-intro-actions">${node.deleteFix ? `<button class="btn warn small" id="deleteFixBtn">${escapeHtml(node.deleteFix.label)}</button>` : ""}<button class="btn small" id="deleteBlockedOkBtn">${node.deleteFix ? "Cancel" : "OK"}</button></span>
     </div>`;
   }
 
@@ -1820,6 +1820,23 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     if (box) renameNode(focusNode, box);
   }));
   document.getElementById("deleteBlockedOkBtn")?.addEventListener("click", () => { deleteBlockedShown = null; renderDetail(); });
+  // The way past the block: counted again right now (values may have been added since the page
+  // opened), its own confirm, then the node is reloaded — Delete then works as usual.
+  document.getElementById("deleteFixBtn")?.addEventListener("click", async () => {
+    const item = focusNode;
+    delete NODE_DETAIL[item.id];
+    await loadNodeDetail(item);
+    const fix = NODE_DETAIL[item.id]?.deleteFix;
+    if (!fix) { deleteBlockedShown = null; renderDetail(); return; }
+    if (!confirm(fix.confirm)) { renderDetail(); return; }
+    const res = await fetch(`api/node/delete-fix?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    delete NODE_DETAIL[item.id];
+    await loadNodeDetail(item);
+    deleteBlockedShown = NODE_DETAIL[item.id]?.deleteBlocked ? item.id : null;
+    renderDetail();
+    showToast(res.ok ? `Done. ${item.label} can be deleted now.` : (body.error || `It didn't work (${res.status}).`), 3000);
+  });
   document.getElementById("deleteNodeBtn")?.addEventListener("click", () => deleteNode(focusNode));
   document.getElementById("unlinkModeBtn")?.addEventListener("click", () => { unlinkTargetId = focusNode.id; render(); });
   // The open node's own title is a chip too: however you navigated here (breadcrumb, chip, tree),

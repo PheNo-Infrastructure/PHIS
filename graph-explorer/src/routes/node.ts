@@ -16,6 +16,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
   await respondOpenSilexErrors(res, async () => {
     const dto = (await authedGetOne(config.getUrl(id))).result;
     const blocked = await config.deleteBlockedBy?.(dto, id);
+    const fix = blocked ? await config.deleteBlockFix?.check(id, dto) : null;
     // Body fully built BEFORE writeHead (same reason as list.ts): a relation query failing after
     // the 200 header went out can't be reported anymore and leaves the request hanging.
     const body = JSON.stringify({
@@ -27,6 +28,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       ...(config.visibility ? { isPublic: dto.is_public === true } : {}),
       ...(config.facts ? { facts: config.facts(dto) } : {}),
       ...(blocked ? { deleteBlocked: blocked } : {}),
+      ...(fix ? { deleteFix: fix } : {}),
       ...(config.deleteWarning ? { deleteWarning: await config.deleteWarning(id, dto) } : {}),
       relations: await relationsFor(id, dto, config),
     });
@@ -37,6 +39,22 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
 };
 
 export const handleNodeMutation: RouteHandler = async (req, res, { pathname, searchParams }) => {
+  // The way past a blocked delete (deleteBlockFix), taken only on its own confirmed request.
+  if (pathname === "/api/node/delete-fix" && req.method === "POST") {
+    const config = NODE_TYPES[searchParams.get("type") ?? ""];
+    const id = searchParams.get("id");
+    if (!config?.deleteBlockFix || !id) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "nothing to do for this type" }));
+      return true;
+    }
+    await respondOpenSilexErrors(res, async () => {
+      await config.deleteBlockFix!.run(id);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    return true;
+  }
   if (pathname !== "/api/node") return false;
 
   if (req.method === "PUT") {
