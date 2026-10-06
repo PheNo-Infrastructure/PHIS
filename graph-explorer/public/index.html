@@ -488,6 +488,9 @@ button { font-family: inherit; }
 .go-plants:hover { color: var(--ink); border-color: var(--accent); }
 .go-level { margin-left: -2px; margin-right: 6px; padding: 0 6px; }
 .hx-plants { display: grid; grid-template-columns: repeat(auto-fill, 56px); gap: 4px; }
+.var-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px; }
+.var-grid .chip { display: flex; align-items: center; margin: 0; white-space: nowrap; overflow: hidden; }
+.var-grid .chip > span:last-child { margin-left: auto; padding-left: 8px; }
 .ov-levels { display: grid; grid-template-columns: repeat(auto-fill, 172px); gap: 4px 8px; }
 .ov-lv { display: flex; align-items: center; gap: 2px; }
 .ov-lv .chip { flex: 1; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; }
@@ -1752,7 +1755,7 @@ const escapeHtml = v => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;
 
 function chipHtml(it, unlinkField, expId) {
   const e = escapeHtml;
-  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"${it.factor ? ` data-factor="${e(it.factor)}"` : ""}><span class="swatch"></span>${e(it.label)}${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
+  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"${it.factor ? ` data-factor="${e(it.factor)}"` : ""}${it.title ? ` title="${e(it.title)}"` : ""}><span class="swatch"></span>${e(it.label)}${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
     + (unlinkField ? `<button class="chip-unlink" data-field="${e(unlinkField)}" data-uri="${e(it.id)}"${expId ? ` data-exp="${e(expId)}"` : ""} title="Unlink">&times;</button>` : "")
     + `</span>`;
 }
@@ -1813,7 +1816,7 @@ function variablesBodyHtml(st, q) {
   const text = q.trim().toLowerCase();
   const list = st.variables.filter(v => !text || v.label.toLowerCase().includes(text));
   return list.length
-    ? `<div class="chip-row">${list.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("")}</div>`
+    ? `<div class="chip-row var-grid">${list.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en"), title: v.label })).join("")}</div>`
     : `<span class="rel-empty">${st.variables.length ? `No variable matches "${escapeHtml(q)}".` : "None."}</span>`;
 }
 function variablesTabHtml(id, st) {
