@@ -481,6 +481,19 @@ button { font-family: inherit; }
 .tab-controls .pill { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .tab-controls .pill.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .tab-filter { flex: 1; min-width: 140px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 2px 10px; font: inherit; font-size: 12px; }
+.ov-fac { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 7px 10px 8px; margin-bottom: 6px; }
+.ov-fac-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 4px; }
+.ov-fac-head small { color: var(--ink-faint); }
+.go-plants { border: 1px solid var(--border); background: none; color: var(--ink-muted); border-radius: 10px; font: inherit; font-size: 11.5px; padding: 0 8px; cursor: pointer; }
+.go-plants:hover { color: var(--ink); border-color: var(--accent); }
+.go-level { margin-left: -2px; margin-right: 6px; padding: 0 6px; }
+.hx-plants { display: grid; grid-template-columns: repeat(auto-fill, 56px); gap: 4px; }
+.ov-levels { display: grid; grid-template-columns: repeat(auto-fill, 172px); gap: 4px 8px; }
+.ov-lv { display: flex; align-items: center; gap: 2px; }
+.ov-lv .chip { flex: 1; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; }
+.hx-plant { text-align: center; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flash { animation: hxflash 1.6s ease-out; }
+@keyframes hxflash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
 .meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
 .meas-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); }
 .meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
@@ -1792,6 +1805,7 @@ function hxPlants(list, via, fac) {
 
 // Per node (by id): which factor the Plants tab groups by ("none" = A-Z) and what is typed in its filter.
 const plantsView = {}, varFilter = {};
+let plantsFocus = null; // a level to scroll to and flash once, after the next render
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 
 function variablesBodyHtml(st, q) {
@@ -1840,7 +1854,7 @@ function plantsTabHtml(id, st) {
   const view = plantsView[id];
   if (view.by !== "none" && !st.factors.some(f => f.id === view.by)) view.by = st.factors[0]?.id ?? "none";
   const pill = (by, label) => `<button class="pill${view.by === by ? " on" : ""}" data-by="${escapeHtml(by)}">${escapeHtml(label)}</button>`;
-  return `<div class="rel-group"><div class="rel-label">Scientific objects</div>
+  return `<div class="rel-group"><div class="tab-controls"><button class="go-plants" data-dtab="overview">‹ Overview</button></div><div class="rel-label">Scientific objects</div>
     <div class="tab-controls"><span class="k">Group by</span>${st.factors.map(f => pill(f.id, f.label)).join("")}${pill("none", "None (A-Z)")}
       <input class="tab-filter" data-filter="plants" placeholder="Filter plants…" value="${escapeHtml(view.q)}"></div>
     <div id="plantsBody">${plantsBodyHtml(id, st)}</div></div>`;
@@ -1858,6 +1872,14 @@ function overviewHtml(node) {
     <div class="ov-card"><b>${st.variables.length}</b><span>variables · ${values.toLocaleString("en")} values</span></div>
     <div class="ov-card"><b>${inFactors + st.other.length}</b><span>scientific objects · ${inFactors} in a factor</span></div>
     <div class="ov-card"><b>${st.factors.length}</b><span>factor${st.factors.length === 1 ? "" : "s"}</span></div></div>`;
+  const e = escapeHtml;
+  if (st.factors.length) {
+    h += `<div class="rel-group"><div class="rel-label">Factors</div>` + st.factors.map(f => `<div class="ov-fac" data-fac="${e(f.id)}">
+      <div class="ov-fac-head"><b>${e(f.label)}</b><small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small>
+        <button class="go-plants" data-by="${e(f.id)}" title="Pick plants grouped by ${e(f.label)}">Pick plants ›</button></div>
+      <div class="chip-row ov-levels">${f.levels.map(l => `<span class="ov-lv">` + chipHtml({ id: l.id, type: "factor_level", label: l.label, factor: f.id, count: l.plants.length })
+        + `<button class="go-plants go-level" data-by="${e(f.id)}" data-level="${e(l.id)}" title="Pick plants in ${e(l.label)}">›</button></span>`).join("")}</div></div>`).join("") + `</div>`;
+  }
   node.relations.forEach(rel => {
     if (["Scientific objects", "Factors", "Species"].includes(rel.label)) return; // their own tabs
     h += relGroupHtml(rel);
@@ -2007,6 +2029,17 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   els.detailBody.innerHTML = html;
   wireTypeInfo(els.detailBody);
   els.detailBody.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { detailTab[focusNode.id] = b.dataset.dtab; renderDetail(); }));
+  els.detailBody.querySelectorAll("button.go-plants[data-by]").forEach(b => b.addEventListener("click", () => {
+    plantsView[focusNode.id] = { by: b.dataset.by, q: "" };
+    detailTab[focusNode.id] = "plants";
+    plantsFocus = b.dataset.level ?? null;
+    renderDetail();
+  }));
+  if (plantsFocus) {
+    const box = [...els.detailBody.querySelectorAll(".hx-level[data-level]")].find(x => x.dataset.level === plantsFocus);
+    plantsFocus = null;
+    if (box) { box.scrollIntoView({ block: "center" }); box.classList.add("flash"); }
+  }
   els.detailBody.querySelectorAll("button.pill[data-by]").forEach(b => b.addEventListener("click", () => { plantsView[focusNode.id].by = b.dataset.by; renderDetail(); }));
   els.detailBody.querySelectorAll("input[data-filter]").forEach(inp => inp.addEventListener("input", () => {
     const st = NODE_DETAIL[focusNode.id].structure;

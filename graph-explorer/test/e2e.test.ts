@@ -2530,3 +2530,25 @@ test("e2e: the Variables tab filters by name", async () => {
     assert.equal(await body.locator("#variablesBody .chip").count(), 1);
   });
 });
+
+test("e2e: the Overview lists factors with their levels; 'Pick plants' jumps to the Plants tab grouped by that factor, and a level's arrow to that level; Overview link goes back", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base, null);
+    const body = page.locator("#detailBody");
+    assert.equal(await body.locator(".ov-fac").count(), 2);
+    assert.equal(await body.locator('.ov-fac[data-fac="fac-g"] .chip').count(), 2, "a chip per level");
+
+    await body.locator('.ov-fac[data-fac="fac-g"] .chip', { hasText: "GroupID: 2" }).click({ modifiers: ["Control"] });
+    assert.deepEqual(await page.evaluate(() => [...selection.keys()]), ["lv-g2"], "a level chip picks the level, like any chip");
+
+    await body.locator('.ov-fac[data-fac="fac-r"] button.go-plants:not([data-level])').click();
+    assert.match((await page.locator("button.dtab.on").innerText()).trim(), /^Plants/);
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-r"]').count(), 1, "grouped by the factor whose button was pressed");
+    assert.deepEqual(await page.evaluate(() => [...selection.keys()]), ["lv-g2"], "the selection survived the jump");
+
+    await body.locator('button[data-dtab="overview"]').first().click();
+    await body.locator('.ov-fac[data-fac="fac-g"] button.go-plants[data-level="lv-g2"]').click();
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"]').count(), 1);
+    assert.equal(await body.locator('.hx-level[data-level="lv-g2"].flash').count(), 1, "the level's box is highlighted");
+  });
+});
