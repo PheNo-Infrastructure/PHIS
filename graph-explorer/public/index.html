@@ -1763,7 +1763,7 @@ function structureHtml(st) {
       + st.variables.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("") + `</div></div>`;
   }
   h += `<div class="rel-group"><div class="rel-label">Scientific objects — by factor</div>`;
-  if (st.truncated) h += `<div class="hx-note">PHIS returned only the first 500 objects, so some are missing here.</div>`;
+  if (st.truncated) h += `<div class="hx-note">PHIS returned only the first 500 objects of a list, so some plants are missing or sit in the wrong box here.</div>`;
   st.factors.forEach(f => {
     h += `<div class="hx-fac" data-fac="${e(f.id)}">${hx("factor", { id: f.id, label: f.label }, { fac: f.id }, "hx-head")}${e(f.label)} <small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small></span><div class="hx-levels">`;
     f.levels.forEach(l => {

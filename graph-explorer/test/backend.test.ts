@@ -2485,3 +2485,46 @@ test("an experiment's page still loads, without its structure, when PHIS can't a
     assert.deepEqual(body.relations.find((r: any) => r.label === "Scientific objects").items.map((i: any) => i.label), ["A"], "the flat list is still there");
   });
 });
+
+test("structure: a cut-off level list is flagged too, because its plants would show under the wrong box", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/experiments/exp-4/variables")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-4/species")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-4/factors")) return jsonResponse(200, { result: [{ uri: "fac-g", name: "G", experiment: "exp-4", levels: [{ uri: "lv-1", name: "1" }] }] });
+      if (url.includes("factor_levels=lv-1")) return jsonResponse(200, { result: [{ uri: "so-a", name: "A" }], metadata: { pagination: { totalCount: 900 } } });
+      if (url.includes("/core/scientific_objects?experiment=exp-4")) return jsonResponse(200, { result: [{ uri: "so-a", name: "A" }], metadata: { pagination: { totalCount: 1 } } });
+      if (url.endsWith("/core/experiments/exp-4")) return jsonResponse(200, { result: { uri: "exp-4", name: "Trial" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const { structure } = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-4`)).json();
+    assert.equal(structure.truncated, true, "the level has 900 plants, 1 came back");
+  });
+});
+
+test("structure: PHIS is asked for the per-variable counts a few at a time, not all at once", async () => {
+  await withServer(async (base) => {
+    let inFlight = 0, peak = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/data/count")) {
+        inFlight++; peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 15));
+        inFlight--;
+        return jsonResponse(200, { result: 1 });
+      }
+      if (url.includes("/core/experiments/exp-5/variables")) return jsonResponse(200, { result: Array.from({ length: 12 }, (_, i) => ({ uri: `var-${i}`, name: `V${i}` })) });
+      if (url.includes("/core/experiments/exp-5/species")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-5/factors")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/scientific_objects?experiment=exp-5")) return jsonResponse(200, { result: [] });
+      if (url.endsWith("/core/experiments/exp-5")) return jsonResponse(200, { result: { uri: "exp-5", name: "Trial" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const { structure } = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-5`)).json();
+    assert.equal(structure.variables.length, 12);
+    assert.ok(peak <= 4, `at most 4 counts at once, saw ${peak}`);
+  });
+});
