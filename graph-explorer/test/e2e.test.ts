@@ -2416,7 +2416,9 @@ test("e2e: in the factor boxes plain click opens, ctrl toggles (remembering the 
     await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
     assert.deepEqual(await sel(), [["so-p1", ["lv-g1"]]], "ctrl picks it, remembering the level box it was picked in");
     assert.equal(await page.locator('.hx-plant[data-id="so-p1"].on').count(), 1, "lit in that box");
-    assert.equal(await page.locator('.hx-plant[data-id="so-p1"].also').count(), 1, "ringed in the other factor's box");
+    await page.locator('button.pill[data-by="fac-r"]').click();
+    assert.equal(await page.locator('.hx-plant[data-id="so-p1"].also').count(), 1, "ringed in the other factor's box (shown after switching Group by)");
+    await page.locator('button.pill[data-by="fac-g"]').click();
     await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
     assert.deepEqual(await sel(), [], "ctrl on the same copy again deselects");
 
@@ -2429,6 +2431,7 @@ test("e2e: in the factor boxes plain click opens, ctrl toggles (remembering the 
     assert.ok((await sel()).some((s) => s[0] === "fac-g"), "ctrl on a factor header picks the whole factor");
 
     await page.evaluate(() => { selection = new Map(); refreshLeftPane(); renderDetail(); renderActionbar(); });
+    await page.locator('button.pill[data-by="fac-r"]').click(); // the Plants tab shows one factor at a time
     const r = page.locator('.hx-fac[data-fac="fac-r"]');
     const a = (await r.locator('.hx-plant[data-id="so-p1"]').boundingBox())!, b = (await r.locator('.hx-plant[data-id="so-p3"]').boundingBox())!;
     await page.mouse.move(a.x + 2, a.y + 2);
@@ -2446,6 +2449,7 @@ test("e2e: picking the same plant from two boxes makes the selection graph-only:
     await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
     assert.ok(await page.locator("#newBtn").count() > 0, "one pick: the usual actions");
 
+    await page.locator('button.pill[data-by="fac-r"]').click(); // the Plants tab shows one factor at a time
     await r.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
     assert.equal(await page.evaluate(() => selection.size), 1, "still one plant");
     assert.deepEqual(await page.evaluate(() => selection.get("so-p1").vias), ["lv-g1", "lv-r1"], "two instances");
@@ -2484,5 +2488,42 @@ test("e2e: the browser's back and forward (Alt+Left/Right, mouse buttons) walk t
     await page.evaluate(() => navigateTo([path[0]]));
     await page.goForward().catch(() => {});
     assert.equal(await crumbs(), "Graph", "a new page after going back drops the old forward trail");
+  });
+});
+
+test("e2e: Plants tab shows one factor at a time (switchable, or None A-Z) and filters by name; the filter keeps its text across a pick", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base);
+    const body = page.locator("#detailBody");
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"]').count(), 1, "the first factor is shown");
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-r"]').count(), 0, "not both at once");
+    assert.equal(await body.locator('.hx-fac[data-fac="#other"]').count(), 1, "'Not in a factor' stays");
+
+    await body.locator('button.pill[data-by="fac-r"]').click();
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-r"] .hx-level').count(), 1);
+    await body.locator('button.pill[data-by="none"]').click();
+    assert.deepEqual(await body.locator('.hx-fac[data-fac="#all"] .hx-plant').allInnerTexts(), ["PB001", "PB002", "PB003"], "None = every plant A-Z");
+
+    await body.locator('input[data-filter="plants"]').fill("pb002");
+    assert.deepEqual(await body.locator(".hx-plant").allInnerTexts(), ["PB002"], "filtered by name");
+    await body.locator('button.pill[data-by="fac-g"]').click();
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-level').count(), 1, "levels with no match are hidden");
+    await body.locator(".hx-plant", { hasText: "PB002" }).first().click({ modifiers: ["Control"] });
+    assert.equal(await body.locator('input[data-filter="plants"]').inputValue(), "pb002", "typed text survives the re-render a pick causes");
+    await body.locator('input[data-filter="plants"]').fill("zzz");
+    assert.match(await body.locator("#plantsBody").innerText(), /No plant matches/);
+    await body.locator('input[data-filter="plants"]').fill("");
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-plant').count(), 3, "clearing the filter restores everything");
+  });
+});
+
+test("e2e: the Variables tab filters by name", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base, "variables");
+    const body = page.locator("#detailBody");
+    await body.locator('input[data-filter="variables"]').fill("zzz");
+    assert.match(await body.locator("#variablesBody").innerText(), /No variable matches/);
+    await body.locator('input[data-filter="variables"]').fill("height");
+    assert.equal(await body.locator("#variablesBody .chip").count(), 1);
   });
 });

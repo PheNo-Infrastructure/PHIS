@@ -476,6 +476,11 @@ button { font-family: inherit; }
 .ov-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 7px 10px; }
 .ov-card b { display: block; font-size: 17px; font-weight: 600; }
 .ov-card span { font-size: 11.5px; color: var(--ink-faint); }
+.tab-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+.tab-controls .k { color: var(--ink-faint); }
+.tab-controls .pill { border: 1px solid var(--border); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.tab-controls .pill.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
+.tab-filter { flex: 1; min-width: 140px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 2px 10px; font: inherit; font-size: 12px; }
 .meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
 .meas-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); }
 .meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
@@ -1785,26 +1790,60 @@ function hxPlants(list, via, fac) {
     : `<div class="hx-note">no plants</div>`;
 }
 
-function variablesTabHtml(st) {
-  if (!st.variables.length) return `<div class="rel-group"><div class="rel-label">Variables measured</div><span class="rel-empty">None.</span></div>`;
-  return `<div class="rel-group"><div class="rel-label">Variables measured</div><div class="chip-row">`
-    + st.variables.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("") + `</div></div>`;
+// Per node (by id): which factor the Plants tab groups by ("none" = A-Z) and what is typed in its filter.
+const plantsView = {}, varFilter = {};
+const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+
+function variablesBodyHtml(st, q) {
+  const text = q.trim().toLowerCase();
+  const list = st.variables.filter(v => !text || v.label.toLowerCase().includes(text));
+  return list.length
+    ? `<div class="chip-row">${list.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("")}</div>`
+    : `<span class="rel-empty">${st.variables.length ? `No variable matches "${escapeHtml(q)}".` : "None."}</span>`;
+}
+function variablesTabHtml(id, st) {
+  const q = varFilter[id] ?? "";
+  return `<div class="rel-group"><div class="rel-label">Variables measured</div>
+    <div class="tab-controls"><input class="tab-filter" data-filter="variables" placeholder="Filter variables…" value="${escapeHtml(q)}"></div>
+    <div id="variablesBody">${variablesBodyHtml(st, q)}</div></div>`;
+}
+
+function plantsBodyHtml(id, st) {
+  const view = plantsView[id], q = view.q.trim().toLowerCase(), e = escapeHtml;
+  const hit = p => !q || p.label.toLowerCase().includes(q);
+  let h = st.truncated ? `<div class="hx-note">PHIS returned only the first 500 objects of a list, so some plants are missing or sit in the wrong box here.</div>` : "";
+  let any = false;
+  const f = st.factors.find(x => x.id === view.by);
+  if (f) {
+    h += `<div class="hx-fac" data-fac="${e(f.id)}">${hxHtml("factor", { id: f.id, label: f.label }, { fac: f.id }, "hx-head")}${e(f.label)} <small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small></span><div class="hx-levels">`;
+    f.levels.forEach(l => {
+      const shown = l.plants.filter(hit);
+      if (q && !shown.length) return;
+      any = any || shown.length > 0;
+      h += `<div class="hx-level" data-level="${e(l.id)}">${hxHtml("level", l, { fac: f.id, factor: f.id }, "hx-head")}${e(l.label.replace(/^[^:]*:\s*/, "Level "))} <small>${q ? `${shown.length} of ${l.plants.length}` : l.plants.length} plants</small></span>${hxPlants(shown, l.id, f.id)}</div>`;
+    });
+    const unset = f.unset.filter(hit);
+    if (unset.length) { any = true; h += `<div class="hx-level"><div class="hx-head" style="cursor:default">(unset) <small>${unset.length} without a level here</small></div>${hxPlants(unset, `${f.id}#unset`, f.id)}</div>`; }
+    h += `</div></div>`;
+  } else {
+    const byId = new Map([...st.factors.flatMap(x => x.levels.flatMap(l => l.plants)), ...st.factors.flatMap(x => x.unset)].map(p => [p.id, p]));
+    const all = [...byId.values()].sort((a, b) => natural(a.label, b.label)).filter(hit);
+    if (all.length) { any = true; h += `<div class="hx-fac" data-fac="#all"><div class="hx-head" style="cursor:default">All plants <small>${all.length}</small></div>${hxPlants(all, "#all", "#all")}</div>`; }
+  }
+  const other = st.other.filter(hit);
+  if (other.length) { any = true; h += `<div class="hx-fac" data-fac="#other"><div class="hx-head" style="cursor:default">Not in a factor <small>${other.length}</small></div>${hxPlants(other, "#other", "#other")}</div>`; }
+  return h + (any ? "" : `<div class="hx-note">No plant matches "${e(view.q)}".</div>`);
 }
 
 function plantsTabHtml(id, st) {
-  const e = escapeHtml;
-  let h = `<div class="rel-group"><div class="rel-label">Scientific objects — by factor</div>`;
-  if (st.truncated) h += `<div class="hx-note">PHIS returned only the first 500 objects of a list, so some plants are missing or sit in the wrong box here.</div>`;
-  st.factors.forEach(f => {
-    h += `<div class="hx-fac" data-fac="${e(f.id)}">${hxHtml("factor", { id: f.id, label: f.label }, { fac: f.id }, "hx-head")}${e(f.label)} <small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small></span><div class="hx-levels">`;
-    f.levels.forEach(l => {
-      h += `<div class="hx-level" data-level="${e(l.id)}">${hxHtml("level", l, { fac: f.id, factor: f.id }, "hx-head")}${e(l.label.replace(/^[^:]*:\s*/, "Level "))} <small>${l.plants.length} plants</small></span>${hxPlants(l.plants, l.id, f.id)}</div>`;
-    });
-    if (f.unset.length) h += `<div class="hx-level"><div class="hx-head" style="cursor:default">(unset) <small>${f.unset.length} without a level here</small></div>${hxPlants(f.unset, `${f.id}#unset`, f.id)}</div>`;
-    h += `</div></div>`;
-  });
-  if (st.other.length) h += `<div class="hx-fac" data-fac="#other"><div class="hx-head" style="cursor:default">Not in a factor <small>${st.other.length}</small></div>${hxPlants(st.other, "#other", "#other")}</div>`;
-  return h + `</div>`;
+  plantsView[id] ??= { by: st.factors[0]?.id ?? "none", q: "" };
+  const view = plantsView[id];
+  if (view.by !== "none" && !st.factors.some(f => f.id === view.by)) view.by = st.factors[0]?.id ?? "none";
+  const pill = (by, label) => `<button class="pill${view.by === by ? " on" : ""}" data-by="${escapeHtml(by)}">${escapeHtml(label)}</button>`;
+  return `<div class="rel-group"><div class="rel-label">Scientific objects</div>
+    <div class="tab-controls"><span class="k">Group by</span>${st.factors.map(f => pill(f.id, f.label)).join("")}${pill("none", "None (A-Z)")}
+      <input class="tab-filter" data-filter="plants" placeholder="Filter plants…" value="${escapeHtml(view.q)}"></div>
+    <div id="plantsBody">${plantsBodyHtml(id, st)}</div></div>`;
 }
 
 // An experiment's page: tabs, so nothing long sits on the first screen. `detailTab` (node id -> tab) survives re-renders.
@@ -1840,7 +1879,7 @@ function tabbedExperimentHtml(id, node) {
   const none = label => `<div class="rel-group"><div class="rel-label">${label}</div><span class="rel-empty">None.</span></div>`;
   const body = {
     overview: () => overviewHtml(node),
-    variables: () => variablesTabHtml(st),
+    variables: () => variablesTabHtml(id, st),
     plants: () => plantsTabHtml(id, st),
     factors: () => rel("Factors") ? relGroupHtml(rel("Factors")) : none("Factors"),
     species: () => rel("Species") ? relGroupHtml(rel("Species")) : none("Species"),
@@ -1968,6 +2007,19 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   els.detailBody.innerHTML = html;
   wireTypeInfo(els.detailBody);
   els.detailBody.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { detailTab[focusNode.id] = b.dataset.dtab; renderDetail(); }));
+  els.detailBody.querySelectorAll("button.pill[data-by]").forEach(b => b.addEventListener("click", () => { plantsView[focusNode.id].by = b.dataset.by; renderDetail(); }));
+  els.detailBody.querySelectorAll("input[data-filter]").forEach(inp => inp.addEventListener("input", () => {
+    const st = NODE_DETAIL[focusNode.id].structure;
+    if (inp.dataset.filter === "plants") {
+      plantsView[focusNode.id].q = inp.value;
+      document.getElementById("plantsBody").innerHTML = plantsBodyHtml(focusNode.id, st);
+    } else {
+      varFilter[focusNode.id] = inp.value;
+      const body = document.getElementById("variablesBody");
+      body.innerHTML = variablesBodyHtml(st, inp.value);
+      wireChips(body);
+    }
+  }));
 
   if (isCategoryMembers) renderDetailMembers(focusNode.id);
 
@@ -2060,7 +2112,8 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       }
     }
   };
-  els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => chip.addEventListener("click", (e) => onChipClick(chip, e)));
+  const wireChips = root => root.querySelectorAll(".chip[data-openid]").forEach(chip => chip.addEventListener("click", (e) => onChipClick(chip, e)));
+  wireChips(els.detailBody);
   if (type === "scientific_object" && !unlinking) loadMeasurements(focusNode.id, focusNode.label, onChipClick);
 }
 
