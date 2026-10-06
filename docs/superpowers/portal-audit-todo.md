@@ -33,3 +33,13 @@ the same patterns exist in many other places. Audit the whole portal in one pass
 - A plain click on a box item always navigates globally, even when the page was opened locally from the tree.
 - Overview cards say "scientific objects · N in a factor"; the spec asked for plants/trays and a scan-range card.
 - Names from PHIS are escaped in all new code; older innerHTML spots are listed in the unified-design spec's Known gaps.
+
+## 4. Chart grid — deferred minors (2026-10-06 review)
+- With shared y-axis and statistics both on, the mean ± SD band can spill outside the plot (the y range ignores it).
+- Non-numeric values arrive as NaN/null and can show as blank charts or zeros (the plant page has the same issue).
+- The graph-only bar promises charts even when the shown page is not the experiment (no button then).
+- Picked levels / factors of another experiment are ignored silently (only plants are reported as outside).
+- The hover tip disappears beside a visible line when the nearest scan has no value for that chart.
+- A remembered builder pick that no longer exists throws on Show chart grid.
+- `sameId()` matches uris by their last path segment; compare compacted uris server-side instead (not verified on live prefixes).
+- The overview data (`OVERVIEW`) and measurements caches are never refreshed after an import (session lifetime).
