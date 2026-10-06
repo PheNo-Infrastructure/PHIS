@@ -12,6 +12,7 @@ import { handleImport } from "./routes/import.ts";
 import { handleElsewhere } from "./routes/elsewhere.ts";
 import { handleSearch } from "./routes/search.ts";
 import { handleMeasurements } from "./routes/measurements.ts";
+import { handleExperimentOverview } from "./routes/experiment-overview.ts";
 
 export { _resetAuthCacheForTests } from "./opensilex.ts";
 export const WRITE_HEADER = "x-graph-explorer"; // node lowercases header names
@@ -24,6 +25,7 @@ const routeHandlers: RouteHandler[] = [
   handleList,
   handleSearch,
   handleMeasurements,
+  handleExperimentOverview,
   handleCreate,
   handleNodeDetail,
   handleNodeMutation,

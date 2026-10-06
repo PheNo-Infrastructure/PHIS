@@ -4,8 +4,20 @@ import { authedGetOne, authedPost, compactUri, respondOpenSilexErrors } from "..
 import type { RouteHandler } from "../http.ts";
 
 const enc = encodeURIComponent;
-type Row = { variable: string; date: string; value: unknown };
+type Row = { variable: string; date: string; value: unknown; target?: string };
 const unitSymbols = new Map<string, Promise<string>>();
+
+// Scans as columns: one per day, or per day and minute when a day holds several values of one variable
+// (for one object, or for the same plant: two plants measured the same day still share a column).
+export function buildColumns(rows: Row[]) {
+  const day = (r: Row) => r.date.slice(0, 10);
+  const minute = (r: Row) => r.date.slice(0, 16);
+  const perDay = new Set(rows.map((r) => `${r.variable}|${r.target ?? ""}|${day(r)}`)).size === rows.length;
+  const key = perDay ? day : minute;
+  const keys = [...new Set(rows.map(key))].sort();
+  const columns = keys.map((k) => ({ key: k, times: [...new Set(rows.filter((r) => key(r) === k).map((r) => r.date.slice(11, 16)))] }));
+  return { columns, key, keys };
+}
 
 export async function measurementsOf(object: string, experiment: string) {
   // The object goes in the body: as a query parameter `targets` is ignored (probed 2026-10-05).
@@ -14,12 +26,7 @@ export async function measurementsOf(object: string, experiment: string) {
 
   // PHIS answers each time in the zone it was stored with ("2025-10-22T13:19:34.000+0200"): its date
   // and clock time are the scan's local ones. A day is one column unless a variable has two values that day.
-  const day = (r: Row) => r.date.slice(0, 10);
-  const minute = (r: Row) => r.date.slice(0, 16);
-  const perDay = new Set(rows.map((r) => `${r.variable}|${day(r)}`)).size === rows.length;
-  const key = perDay ? day : minute;
-  const keys = [...new Set(rows.map(key))].sort();
-  const columns = keys.map((k) => ({ key: k, times: [...new Set(rows.filter((r) => key(r) === k).map((r) => r.date.slice(11, 16)))] }));
+  const { columns, key, keys } = buildColumns(rows);
 
   const uris = [...new Set(rows.map((r) => r.variable))];
   const variables = (await authedPost("/core/variables/by_uris", uris)).result as unknown as { uri: string; name: string; unit?: { uri: string; name?: string } }[];

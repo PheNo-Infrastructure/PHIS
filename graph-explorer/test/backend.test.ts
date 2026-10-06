@@ -2528,3 +2528,64 @@ test("structure: PHIS is asked for the per-variable counts a few at a time, not 
     assert.ok(peak <= 4, `at most 4 counts at once, saw ${peak}`);
   });
 });
+
+test("GET /api/experiment-overview: one variable's values for every plant of an experiment, scans aligned; bad requests are refused", async () => {
+  await withServer(async (base) => {
+    let searchUrl = "", searchBody: unknown = null;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/data/search")) {
+        searchUrl = url; searchBody = JSON.parse(String(init?.body));
+        return jsonResponse(200, { result: [
+          { date: "2025-10-22T12:54:51.000+0200", target: "so-p1", variable: "var-1", value: 10 },
+          { date: "2025-10-22T13:10:00.000+0200", target: "so-p2", variable: "var-1", value: 20 },
+          { date: "2025-10-23T08:00:00.000+0200", target: "so-p1", variable: "var-1", value: 12 },
+        ] });
+      }
+      if (url.includes("/core/variables/by_uris")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Height", unit: { uri: "unit-mm", name: "millimeter" } }] });
+      if (url.includes("/core/units/unit-mm")) return jsonResponse(200, { result: { symbol: "mm" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const res = await realFetch(`${base}/api/experiment-overview?experiment=exp-1&variable=var-1`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.match(searchUrl, /experiments=exp-1/);
+    assert.match(searchUrl, /variables=var-1/);
+    assert.deepEqual(searchBody, [], "no target filter: every plant of the experiment");
+    assert.deepEqual(body.variable, { id: "var-1", name: "Height", unit: "mm" });
+    assert.deepEqual(body.columns, [{ key: "2025-10-22", times: ["12:54", "13:10"] }, { key: "2025-10-23", times: ["08:00"] }]);
+    assert.deepEqual(body.plants, [
+      { id: "so-p1", values: [{ v: 10, at: "12:54" }, { v: 12, at: "08:00" }] },
+      { id: "so-p2", values: [{ v: 20, at: "13:10" }, null] },
+    ]);
+
+    const bad = await realFetch(`${base}/api/experiment-overview?experiment=exp-1`);
+    assert.equal(bad.status, 400);
+  });
+});
+
+test("GET /api/experiment-overview: an experiment with no values for the variable answers with empty lists", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/search")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/variables/by_uris")) return jsonResponse(200, { result: [{ uri: "var-9", name: "Empty" }] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const body = await (await realFetch(`${base}/api/experiment-overview?experiment=exp-1&variable=var-9`)).json();
+    assert.deepEqual(body.columns, []);
+    assert.deepEqual(body.plants, []);
+    assert.equal(body.variable.name, "Empty");
+  });
+});
+
+test("the page carries the chart maths inline (no export keyword left, functions present)", async () => {
+  await withServer(async (base) => {
+    const html = await (await nativeFetch(`${base}/`)).text();
+    assert.match(html, /function meanSd\(/);
+    assert.match(html, /function arrangeCharts\(/);
+    assert.doesNotMatch(html, /^export function meanSd/m);
+  });
+});
