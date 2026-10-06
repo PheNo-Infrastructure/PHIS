@@ -2685,7 +2685,10 @@ test("e2e: the statistics toggle draws a mean ± SD band and fades the plant lin
     await grid.locator("#gridStats").check();
     assert.equal(await grid.locator(".g-chart").first().locator(".g-band").count(), 1, "level 1 has 2 plants: a band");
     assert.equal(await grid.locator(".g-chart").nth(1).locator(".g-band").count(), 0, "level 2 has 1 plant: SD is null, no band");
-    assert.equal(await grid.locator(".g-chart.stats").count(), 2, "stats class fades the plant lines");
+    assert.equal(await grid.locator(".g-line").count(), 0, "with statistics on the individual observations are hidden, only mean and band remain");
+    assert.equal(await grid.locator(".g-mean").count(), 2, "the mean lines stay");
+    await grid.locator("#gridStats").uncheck();
+    assert.equal(await grid.locator(".g-line").count(), 3, "and they come back when statistics is off");
   });
 });
 
@@ -2830,4 +2833,45 @@ test("e2e: the Overview lists the first variables as a selectable grid (ctrl and
   } finally {
     STRUCT.variables.length -= extra.length;
   }
+});
+
+async function openGridFor(page: import("playwright").Page, base: string) {
+  await routeOverview(page);
+  await openStructuredExperiment(page, base, "variables");
+  await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+  await page.locator('button.dtab[data-dtab="plants"]').click();
+  await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+  await page.locator("#showGridBtn").click();
+  await page.locator("#chartGrid .g-chart").first().waitFor();
+}
+
+test("e2e: the grid has a size switch (S / M / L) that changes the charts' width and height, and the settings are remembered", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openGridFor(page, base);
+    const grid = page.locator("#chartGrid");
+    const size = async () => { const b = (await grid.locator(".g-plot").first().boundingBox())!; return [Math.round(b.width), Math.round(b.height)]; };
+    await grid.locator('button[data-size="s"]').click();
+    const [ws, hs] = await size();
+    await grid.locator('button[data-size="m"]').click();
+    const [wm, hm] = await size();
+    await grid.locator('button[data-size="l"]').click();
+    const [wl, hl] = await size();
+    assert.deepEqual([hs, hm, hl], [96, 170, 260], "plot heights per size");
+    assert.ok(ws < wm && wm < wl, `widths grow with the size (${ws} < ${wm} < ${wl})`);
+
+    await grid.locator("#gridStats").check();
+    const saved = JSON.parse(await page.evaluate(() => localStorage.getItem("ge.grid") ?? "null"));
+    assert.deepEqual(saved, { size: "l", sharedY: true, stats: true, overlay: false });
+  });
+});
+
+test("e2e: saved grid settings are applied when the grid opens", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.addInitScript(() => localStorage.setItem("ge.grid", JSON.stringify({ size: "s", sharedY: false, stats: true, overlay: false })));
+    await openGridFor(page, base);
+    const grid = page.locator("#chartGrid");
+    assert.equal(await grid.locator('button[data-size="s"].on').count(), 1);
+    assert.equal(await grid.locator("#gridStats").isChecked(), true);
+    assert.equal(await grid.locator("#gridShared").isChecked(), false);
+  });
 });

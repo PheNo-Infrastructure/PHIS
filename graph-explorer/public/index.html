@@ -495,7 +495,7 @@ button { font-family: inherit; }
 .var-grid .chip { display: flex; align-items: center; margin: 0; white-space: nowrap; overflow: hidden; }
 .var-grid .chip-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .var-grid .chip > span:last-child { margin-left: auto; padding-left: 8px; flex: none; }
-.grid-dialog { width: min(1280px, 96vw); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
+.grid-dialog { --gw: 340px; --gh: 170px; width: min(2200px, 96vw); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .g-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
 .g-title { font-size: 16px; font-weight: 600; }
@@ -505,12 +505,16 @@ button { font-family: inherit; }
 .g-pager button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .g-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; margin-bottom: 10px; }
 .g-row-label { font-weight: 600; font-size: 13px; padding-top: 4px; }
-.g-row-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.g-row-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--gw), 1fr)); gap: 8px; }
+.grid-dialog.size-s { --gw: 240px; --gh: 96px; }
+.grid-dialog.size-l { --gw: 520px; --gh: 260px; }
+.g-size { display: inline-flex; gap: 2px; }
+.g-size button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .g-chart { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px 6px; cursor: pointer; }
 .g-chart:hover { border-color: var(--accent); }
 .g-ct { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
 .g-ct span { color: var(--ink-faint); font-size: 11px; }
-.g-plot { position: relative; height: 96px; }
+.g-plot { position: relative; height: var(--gh, 96px); }
 .g-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .g-plot polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .g-line { stroke-width: 1; opacity: .35; }
@@ -519,7 +523,7 @@ button { font-family: inherit; }
 .g-mean { stroke-width: 2.4; }
 .g-band { opacity: .2; stroke: none; }
 .g-pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; }
-.g-empty { color: var(--ink-faint); font-size: 12px; line-height: 96px; text-align: center; }
+.g-empty { color: var(--ink-faint); font-size: 12px; line-height: var(--gh, 96px); text-align: center; }
 .g-plants { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .g-plant { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 10px; font: inherit; font-size: 11.5px; padding: 0 8px; cursor: pointer; }
 .g-plant.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
@@ -1960,7 +1964,12 @@ function tabbedExperimentHtml(id, node) {
 
 // ---- the experiment chart grid ----
 const OVERVIEW = {}; // "<experiment>|<variable>" -> promise of /api/experiment-overview
-const gridState = { vi: 0, stats: false, sharedY: true };
+// The grid's settings are remembered in this browser (size, shared y-axis, statistics, overlay).
+const GRID_KEY = "ge.grid";
+const gridState = { vi: 0, size: "m", stats: false, sharedY: true, overlay: false };
+try { Object.assign(gridState, JSON.parse(localStorage.getItem(GRID_KEY) ?? "{}")); } catch { /* storage blocked or unreadable: defaults */ }
+if (!["s", "m", "l"].includes(gridState.size)) gridState.size = "m";
+const saveGrid = () => { try { localStorage.setItem(GRID_KEY, JSON.stringify({ size: gridState.size, sharedY: gridState.sharedY, stats: gridState.stats, overlay: gridState.overlay })); } catch { /* not remembered, still works */ } };
 const colorVar = i => `var(--c${(i % 8) + 1})`;
 const sameId = (a, b) => a === b || String(a).split("/").pop() === String(b).split("/").pop(); // PHIS gives full or prefixed uris
 
@@ -2008,7 +2017,9 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   if (ch.kind !== "plant") pts.forEach(p => {
     const d = path(p.values.map(v => v?.v ?? null));
     if (view.hidden.has(p.id)) return;
-    if (d.length > 1) svg += `<polyline class="g-line${ch.emphasis.some(x => sameId(x, p.id)) || view.highlight.has(p.id) ? " em" : ""}" stroke="${color}" points="${d.join(" ")}"/>`;
+    const emph = ch.emphasis.some(x => sameId(x, p.id)) || view.highlight.has(p.id);
+    if (opts.stats && !view.big && !emph) return; // with statistics on, only the mean and its band are drawn
+    if (d.length > 1) svg += `<polyline class="g-line${emph ? " em" : ""}" stroke="${color}" points="${d.join(" ")}"/>`;
   });
   if (band) {
     const up = [], down = [];
@@ -2046,12 +2057,14 @@ async function renderChartGrid() {
   const sel = chartableSelection();
   if (!dlg || !sel || !sel.plan.variables.length) return;
   const { plan } = sel, e = escapeHtml;
+  dlg.className = `grid-dialog size-${gridState.size}`;
   gridState.vi = Math.max(0, Math.min(gridState.vi, plan.variables.length - 1));
   const v = plan.variables[gridState.vi];
   const pager = plan.variables.length > 1
     ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><span class="g-title">${e(v.label)}</span>${pager}<span style="flex:1"></span>
+      <span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
       <label><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>
       <button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
@@ -2059,8 +2072,9 @@ async function renderChartGrid() {
   dlg.querySelector("#gridPrev")?.addEventListener("click", () => { gridState.vi--; renderChartGrid(); });
   dlg.querySelector("#gridNext")?.addEventListener("click", () => { gridState.vi++; renderChartGrid(); });
   dlg.querySelectorAll("[data-gvar]").forEach(b => b.addEventListener("click", () => { gridState.vi = Number(b.dataset.gvar); renderChartGrid(); }));
-  dlg.querySelector("#gridShared").addEventListener("change", ev => { gridState.sharedY = ev.target.checked; renderChartGrid(); });
-  dlg.querySelector("#gridStats").addEventListener("change", ev => { gridState.stats = ev.target.checked; renderChartGrid(); });
+  dlg.querySelectorAll("[data-size]").forEach(b => b.addEventListener("click", () => { gridState.size = b.dataset.size; saveGrid(); renderChartGrid(); }));
+  dlg.querySelector("#gridShared").addEventListener("change", ev => { gridState.sharedY = ev.target.checked; saveGrid(); renderChartGrid(); });
+  dlg.querySelector("#gridStats").addEventListener("change", ev => { gridState.stats = ev.target.checked; saveGrid(); renderChartGrid(); });
   const body = dlg.querySelector("#gridBody");
   let data;
   try { data = await loadOverview(sel.experiment, v.id); }
@@ -2147,7 +2161,7 @@ function openChartGrid() {
   if (!chartableSelection()) { showToast("Open the experiment's page to chart it.", 3000); return; }
   document.getElementById("chartGrid")?.remove();
   const dlg = document.createElement("dialog");
-  dlg.className = "grid-dialog";
+  dlg.className = `grid-dialog size-${gridState.size}`;
   dlg.id = "chartGrid";
   document.body.appendChild(dlg);
   dlg.addEventListener("close", () => dlg.remove());
