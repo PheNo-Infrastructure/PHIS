@@ -2752,24 +2752,6 @@ test("e2e: an empty chart does not open a detail dialog", async () => {
   });
 });
 
-test("e2e: the Overview's chart builder sets the selection and opens the grid; a note explains how charts work", async () => {
-  await withServerAndBrowser(async (base, page) => {
-    await routeOverview(page);
-    await openStructuredExperiment(page, base, null);
-    const body = page.locator("#detailBody");
-    assert.match(await body.locator("details.how-charts summary").innerText(), /How charts work/);
-    assert.equal(await body.locator("#cbVariable option").count(), 1);
-    await body.locator('button.cb-factor[data-fac="fac-r"]').click();
-    await body.locator("#cbShow").click();
-    const grid = page.locator("#chartGrid");
-    await grid.locator(".g-chart").first().waitFor();
-    assert.match(await grid.locator(".g-row").first().innerText(), /Replicate/);
-    assert.deepEqual(await page.evaluate(() => [...selection.values()].map((v: any) => v.type).sort()), ["factor", "variable"], "the builder just fills the selection");
-    await grid.locator("#gridClose").click();
-    await page.waitForTimeout(100);
-    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Show chart grid/, "and the action bar offers the same button");
-  });
-});
 
 test("e2e: the chart grid works when the experiment page was opened as a local view (the arrow), not only from the breadcrumb path", async () => {
   await withServerAndBrowser(async (base, page) => {
@@ -2786,20 +2768,6 @@ test("e2e: the chart grid works when the experiment page was opened as a local v
   });
 });
 
-test("e2e: the Overview builder adds to the selection instead of replacing it, and says what is already picked", async () => {
-  await withServerAndBrowser(async (base, page) => {
-    await routeOverview(page);
-    await openStructuredExperiment(page, base, "plants");
-    await page.locator('.hx-fac[data-fac="fac-g"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
-    await page.locator('button.dtab[data-dtab="overview"]').first().click();
-    assert.match((await page.locator("#detailBody").innerText()).replace(/\s+/g, " "), /already picked: 1 plant/i);
-    await page.locator('button.cb-factor[data-fac="fac-r"]').click();
-    await page.locator("#cbShow").click();
-    await page.locator("#chartGrid .g-chart").first().waitFor();
-    assert.deepEqual(await page.evaluate(() => [...selection.values()].map((v: any) => v.type).sort()), ["factor", "scientific_object", "variable"], "the plant pick is kept");
-    assert.deepEqual(await page.locator("#chartGrid .g-row").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.row)), ["GroupID", "Replicate"], "and charted: its level, plus the factor");
-  });
-});
 
 test("e2e: the chart detail dialog can open the level or plant it shows", async () => {
   await withServerAndBrowser(async (base, page) => {
@@ -2836,4 +2804,30 @@ test("e2e: scans that only differ by clock time show their time in the hover", a
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
     assert.match(await plot.locator(".g-tip").innerText(), /22 Oct 2025 15:30/);
   });
+});
+
+test("e2e: the Overview lists the first variables as a selectable grid (ctrl and shift pick), links to the rest, keeps the how-charts note; there is no chart builder", async () => {
+  const extra = Array.from({ length: 9 }, (_, i) => ({ id: `var-x${i}`, label: `Extra ${i}`, count: i + 1 }));
+  STRUCT.variables.push(...extra);
+  try {
+    await withServerAndBrowser(async (base, page) => {
+      await openStructuredExperiment(page, base, null);
+      const body = page.locator("#detailBody");
+      assert.equal(await body.locator("#cbShow, #cbVariable").count(), 0, "no chart builder");
+      assert.match(await body.locator("details.how-charts summary").innerText(), /How charts work/);
+      assert.equal(await body.locator(".var-grid .chip").count(), 8, "the first 8 variables");
+      assert.match((await body.locator("button.go-vars").innerText()).trim(), /Show all 10/);
+
+      const sel = () => page.evaluate(() => [...selection.values()].map((v: any) => v.id));
+      await body.locator(".var-grid .chip").nth(0).click({ modifiers: ["Control"] });
+      await body.locator(".var-grid .chip").nth(2).click({ modifiers: ["Shift"] });
+      assert.equal((await sel()).length, 3, "ctrl then shift picks the range of listed variables, as on the Variables tab");
+
+      await body.locator("button.go-vars").click();
+      assert.match((await page.locator("button.dtab.on").innerText()).trim(), /^Variables/);
+      assert.equal(await body.locator("#variablesBody .chip").count(), 10);
+    });
+  } finally {
+    STRUCT.variables.length -= extra.length;
+  }
 });

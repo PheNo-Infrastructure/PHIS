@@ -525,8 +525,6 @@ button { font-family: inherit; }
 .g-plant.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .g-plant.off { opacity: .4; text-decoration: line-through; }
 .g-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: nowrap; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; display: none; }
-.cb { border: 1px solid var(--accent); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 7%, transparent); padding: 8px 10px; margin-bottom: 6px; }
-.cb .tab-controls { margin-bottom: 6px; }
 .how-charts { margin-top: 6px; font-size: 12.5px; color: var(--ink-muted); }
 .how-charts summary { cursor: pointer; }
 .ov-levels { display: grid; grid-template-columns: repeat(auto-fill, 172px); gap: 4px 8px; }
@@ -1906,7 +1904,6 @@ function plantsTabHtml(id, st) {
 
 // An experiment's page: tabs, so nothing long sits on the first screen. `detailTab` (node id -> tab) survives re-renders.
 const detailTab = {};
-const ovBuilder = {}; // per experiment: what the Overview's chart builder has chosen (variable, factor)
 const plantIdsOf = st => new Set(st.factors.flatMap(f => f.levels.flatMap(l => l.plants.map(p => p.id))));
 
 function overviewHtml(node) {
@@ -1918,14 +1915,12 @@ function overviewHtml(node) {
     <div class="ov-card"><b>${inFactors + st.other.length}</b><span>scientific objects · ${inFactors} in a factor</span></div>
     <div class="ov-card"><b>${st.factors.length}</b><span>factor${st.factors.length === 1 ? "" : "s"}</span></div></div>`;
   const e = escapeHtml;
-  if (st.variables.length && st.factors.length) {
-    const pick = ovBuilder[node.uri] ??= { fac: st.factors[0].id, variable: st.variables[0].id };
-    h += `<div class="rel-group"><div class="rel-label">Chart builder</div><div class="cb">
-      <div class="tab-controls"><span class="k">Variable</span><select id="cbVariable" class="tab-filter" style="flex:none">${st.variables.map(v => `<option value="${e(v.id)}"${v.id === pick.variable ? " selected" : ""}>${e(v.label)}</option>`).join("")}</select></div>
-      <div class="tab-controls"><span class="k">Compare</span>${st.factors.map(f => `<button class="pill cb-factor${f.id === pick.fac ? " on" : ""}" data-fac="${e(f.id)}">${e(f.label)} (${f.levels.length} levels)</button>`).join("")}</div>
-      ${(() => { const n = t => [...selection.values()].filter(x => x.type === t).length, bits = [["plant", "scientific_object"], ["level", "factor_level"], ["factor", "factor"], ["variable", "variable"]].map(([w, t]) => n(t) ? `${n(t)} ${w}${n(t) === 1 ? "" : "s"}` : "").filter(Boolean); return bits.length ? `<div class="hx-note">Already picked: ${bits.join(", ")} — the builder adds to them.</div>` : ""; })()}
-      <div class="tab-controls"><button class="btn primary" id="cbShow">Show chart grid</button><span class="k">= every level of the factor, for this variable. Pick plants or more variables on their tabs for other charts.</span></div></div>
-      <details class="how-charts"><summary>How charts work</summary><p>Pick variables (Variables tab) and plants, levels or whole factors (Plants tab or the factor list below) — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar below or here. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
+  if (st.variables.length) {
+    const shown = st.variables.slice(0, 8);
+    h += `<div class="rel-group"><div class="rel-label">Variables</div>
+      <div class="chip-row var-grid">${shown.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en"), title: v.label })).join("")}</div>
+      ${st.variables.length > shown.length ? `<button class="go-plants go-vars" title="All variables, with a filter">Show all ${st.variables.length} ›</button>` : ""}
+      <details class="how-charts"><summary>How charts work</summary><p>Pick variables here or on the Variables tab, and plants, levels or whole factors below or on the Plants tab — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
   }
   if (st.factors.length) {
     h += `<div class="rel-group"><div class="rel-label">Factors</div>` + st.factors.map(f => `<div class="ov-fac" data-fac="${e(f.id)}">
@@ -2281,17 +2276,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   els.detailBody.innerHTML = html;
   wireTypeInfo(els.detailBody);
   els.detailBody.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { detailTab[focusNode.id] = b.dataset.dtab; renderDetail(); }));
-  els.detailBody.querySelector("#cbVariable")?.addEventListener("change", ev => { ovBuilder[node.uri].variable = ev.target.value; });
-  els.detailBody.querySelectorAll("button.cb-factor").forEach(b => b.addEventListener("click", () => { ovBuilder[node.uri].fac = b.dataset.fac; renderDetail(); }));
-  els.detailBody.querySelector("#cbShow")?.addEventListener("click", () => {
-    const st = node.structure, pick = ovBuilder[node.uri];
-    const v = st.variables.find(x => x.id === pick.variable), f = st.factors.find(x => x.id === pick.fac);
-    selection = new Map(selection); // the builder adds to what is picked, it never replaces it
-    selection.set(v.id, { id: v.id, type: "variable", label: v.label });
-    selection.set(f.id, { id: f.id, type: "factor", label: f.label });
-    hxAfterPick();
-    openChartGrid();
-  });
+  els.detailBody.querySelector("button.go-vars")?.addEventListener("click", () => { detailTab[focusNode.id] = "variables"; renderDetail(); });
   els.detailBody.querySelectorAll("button.go-plants[data-by]").forEach(b => b.addEventListener("click", () => {
     plantsView[focusNode.id] = { by: b.dataset.by, q: "" };
     detailTab[focusNode.id] = "plants";
