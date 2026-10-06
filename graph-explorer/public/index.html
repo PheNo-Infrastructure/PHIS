@@ -1805,6 +1805,7 @@ function hxPlants(list, via, fac) {
 
 // Per node (by id): which factor the Plants tab groups by ("none" = A-Z) and what is typed in its filter.
 const plantsView = {}, varFilter = {};
+let ovAnchor = null; // the Overview level chip last picked (for shift ranges within its factor)
 let plantsFocus = null; // a level to scroll to and flash once, after the next render
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 
@@ -2128,8 +2129,26 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   const onChipClick = (chip, e) => {
     {
       const id = chip.dataset.openid;
-      const found = findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim(), ...(chip.dataset.factor ? { factor: chip.dataset.factor } : {}) };
+      // A level chip on the Overview: its item comes from the structure (the chip's own text carries the count),
+      // and shift picks the range of that factor's levels (anything else falls back to ctrl).
+      const ovLevel = chip.closest(".ov-levels") ? node?.structure?.factors.flatMap(f => f.levels).find(l => l.id === id) : null;
+      const found = ovLevel ? { id, type: "factor_level", label: ovLevel.label, factor: ovLevel.factor }
+        : findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim(), ...(chip.dataset.factor ? { factor: chip.dataset.factor } : {}) };
+      if (ovLevel && e.shiftKey && !unlinking) {
+        const row = [...chip.closest(".ov-levels").querySelectorAll(".chip[data-openid]")].map(c => c.dataset.openid);
+        if (ovAnchor && selection.has(ovAnchor.id) && row.includes(ovAnchor.id) && ovAnchor.factor === ovLevel.factor) {
+          const lo = Math.min(row.indexOf(ovAnchor.id), row.indexOf(id)), hi = Math.max(row.indexOf(ovAnchor.id), row.indexOf(id));
+          selection = new Map();
+          row.slice(lo, hi + 1).forEach(rid => { const l = node.structure.factors.flatMap(f => f.levels).find(x => x.id === rid); selection.set(rid, { id: rid, type: "factor_level", label: l.label, factor: l.factor }); });
+          hxAfterPick();
+          return;
+        }
+        ovAnchor = { id, factor: ovLevel.factor };
+        toggleChipSelection(found);
+        return;
+      }
       if (e.ctrlKey || e.metaKey) {
+        if (ovLevel) ovAnchor = { id, factor: ovLevel.factor };
         toggleChipSelection(found);
         return;
       }

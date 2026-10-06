@@ -2552,3 +2552,23 @@ test("e2e: the Overview lists factors with their levels; 'Pick plants' jumps to 
     assert.equal(await body.locator('.hx-level[data-level="lv-g2"].flash').count(), 1, "the level's box is highlighted");
   });
 });
+
+test("e2e: on the Overview, shift-click on a factor's level chips picks the range within that factor (labels without the count); across factors it falls back to a plain pick", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base, null);
+    const body = page.locator("#detailBody");
+    const sel = () => page.evaluate(() => [...selection.values()].map((v: any) => [v.id, v.label]));
+    const g = (n: number) => body.locator('.ov-fac[data-fac="fac-g"] .chip', { hasText: `GroupID: ${n}` });
+
+    await g(1).click({ modifiers: ["Control"] });
+    await g(2).click({ modifiers: ["Shift"] });
+    assert.deepEqual(await sel(), [["lv-g1", "GroupID: 1"], ["lv-g2", "GroupID: 2"]], "the range, with clean labels");
+
+    await page.evaluate(() => { selection = new Map(); refreshLeftPane(); renderDetail(); renderActionbar(); });
+    await g(2).click({ modifiers: ["Shift"] });
+    assert.deepEqual((await sel()).map((s) => s[0]), ["lv-g2"], "shift with no anchor just picks that level");
+
+    await body.locator('.ov-fac[data-fac="fac-r"] .chip', { hasText: "Replicate: 1" }).click({ modifiers: ["Shift"] });
+    assert.deepEqual((await sel()).map((s) => s[0]).sort(), ["lv-g2", "lv-r1"], "across factors it adds just that level instead of a nonsense range");
+  });
+});
