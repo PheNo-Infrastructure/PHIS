@@ -67,6 +67,16 @@ the full picture. Exploratory and descriptive (mean, SD, values) — no signific
   and value. Colours: one per level, validated for dark mode, at most ~8 levels per chart (clear message above).
 - **Statistics** toggle: per-scan mean ± 1 SD band per chart; plant lines fade. Missing values are skipped per
   scan; one value only -> SD blank, not zero.
+- **Mixed selections** — the grid is a set of views of the selection, nothing is merged or deduplicated:
+  a level/factor plus a standalone plant gives the level/factor charts plus a "Plants" row with the plant's own
+  chart; if that plant also belongs to a picked level it appears in both, drawn bolder among the level's lines;
+  a plant ctrl-clicked inside a picked level adds no chart (already in it), it is only emphasised; plants picked
+  inside a level that is not picked overlay in that level's chart. Factor rows come first (experiment factor
+  order), then the Plants row. Single plants have no mean/SD, so the statistics band only appears on level and
+  factor charts. Graph-only mode is triggered only by explicitly picking the same plant twice, not by a plant
+  merely being inside a picked level.
+- **The variable is independent of the selection:** the selection decides who is charted, the variable what is
+  plotted; paging changes only the variable, so only that variable's values are fetched.
 - **Click a chart** -> dialog like the plant page's, for the group: larger chart, a mean/SD/n table per scan,
   the plants in it (click highlights, ctrl hides), links to the plant, level or factor page.
 - Several variables selected: one grid per variable, paged — a pager above the grid (‹ Plant Height Max · 2 of 4 ›, plus the variable names as tabs) goes to the grid of that variable. The group selection is shared; only the variable changes. A plant with no values for the shown variable gets an empty chart saying so (a plant is tied to a variable only through its values).
