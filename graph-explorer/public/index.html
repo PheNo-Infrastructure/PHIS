@@ -1327,7 +1327,24 @@ function openRelatedNode(item) {
   navigateTo(canonicalPathFor(item));
 }
 
+// Back/forward (Alt+Left/Right, the mouse buttons): every navigateTo pushes a history entry; the path itself
+// stays in memory under the entry's number (the address never changes), and popstate shows it again.
+// A reload starts fresh. Selections are not part of history.
+const historyPaths = new Map([[0, path]]);
+let historyCount = 0;
+history.replaceState({ n: 0 }, "", location.href);
+window.addEventListener("popstate", (e) => {
+  const p = historyPaths.get(e.state?.n);
+  if (p) showPath(p);
+});
+
 function navigateTo(newPath) {
+  showPath(newPath);
+  historyPaths.set(++historyCount, path);
+  history.pushState({ n: historyCount }, "", location.href);
+}
+
+function showPath(newPath) {
   clearSearch();
   path = newPath;
   detailPath = []; // a real navigation ends any local detail opened from the tree
@@ -1509,7 +1526,7 @@ async function deleteNode(item, force = false) {
     forgetNode(item);
     related.forEach(it => invalidateNodeDetail(it.id)); // their relations still list this node
     unlinkTargetId = null;
-    if (path[path.length - 1]?.id === item.id) path = path.slice(0, -1);
+    if (path[path.length - 1]?.id === item.id) { path = path.slice(0, -1); historyPaths.set(history.state?.n, path); }
     render();
     showToast(`Deleted ${item.label}`);
   } catch (err) {

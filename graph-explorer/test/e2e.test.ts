@@ -2445,3 +2445,27 @@ test("e2e: picking the same plant from two boxes makes the selection graph-only:
     assert.equal(await page.locator("#dropExtraBtn").count(), 0);
   });
 });
+
+test("e2e: the browser's back and forward (Alt+Left/Right, mouse buttons) walk through the pages you opened", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const crumbs = async () => (await page.locator("#crumbs").innerText()).replace(/\s+/g, " ").trim();
+    const first = await page.evaluate(() => ROOT[0].label), second = await page.evaluate(() => CATEGORY_ITEMS[ROOT[0].id][0].label);
+    assert.equal(await crumbs(), "Graph");
+
+    await page.evaluate(() => navigateTo([path[0], ROOT[0]]));
+    await page.evaluate(() => navigateTo([path[0], ROOT[0], CATEGORY_ITEMS[ROOT[0].id][0]]));
+    assert.equal(await crumbs(), `Graph › ${first} › ${second}`);
+
+    await page.goBack();
+    assert.equal(await crumbs(), `Graph › ${first}`, "back goes one page up");
+    await page.goBack();
+    assert.equal(await crumbs(), "Graph", "back again reaches the start");
+    await page.goForward();
+    assert.equal(await crumbs(), `Graph › ${first}`, "forward walks the same way");
+    await page.evaluate(() => navigateTo([path[0]]));
+    await page.goForward().catch(() => {});
+    assert.equal(await crumbs(), "Graph", "a new page after going back drops the old forward trail");
+  });
+});
