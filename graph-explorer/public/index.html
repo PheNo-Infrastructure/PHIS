@@ -2185,6 +2185,33 @@ function hxSweep(hits, mod) {
   hxAfterPick();
 }
 
+// The selection is graph-only as soon as one plant is picked in more than one place (two boxes, or a
+// list plus a box). Only charts make sense then: link/create/visibility would act on the same plant twice.
+const isGraphOnly = () => [...selection.values()].some(v => v.type === "scientific_object" && plantInstances(v).length > 1);
+function pickCounts() {
+  let picks = 0, plants = 0;
+  selection.forEach(v => { if (v.type === "scientific_object") { plants++; picks += plantInstances(v).length; } else picks++; });
+  return { picks, plants };
+}
+function viaLabel(via) {
+  if (via === "") return "the list";
+  if (via === "#other") return "Not in a factor";
+  const st = NODE_DETAIL[currentPane()?.id]?.structure;
+  const level = st?.factors.flatMap(f => f.levels).find(l => l.id === via);
+  if (level) return level.label;
+  const unset = st?.factors.find(f => via === `${f.id}#unset`);
+  return unset ? `${unset.label} (unset)` : via;
+}
+function dropExtraPicks() {
+  selection.forEach((v, id) => {
+    if (v.type === "scientific_object" && plantInstances(v).length > 1) {
+      const first = plantInstances(v)[0];
+      selection.set(id, first === "" ? (({ vias, ...rest }) => rest)(v) : { ...v, vias: [first] });
+    }
+  });
+  hxAfterPick();
+}
+
 /* Real, selectable rows for a category's members — ctrl/shift-click
    resolves through the same global mousedown/mouseup pipeline as every
    other row (see addressableItems), so deselecting one out of an "all
@@ -3012,6 +3039,22 @@ function renderActionbar() {
     }
     bar.className = "actionbar idle";
     bar.innerHTML = `Open or select something to see what you can add to it.`;
+    return;
+  }
+  if (isGraphOnly()) {
+    const { picks, plants } = pickCounts();
+    const twice = [...selection.values()].filter(v => v.type === "scientific_object" && plantInstances(v).length > 1);
+    const where = v => andList(plantInstances(v).map(viaLabel));
+    bar.className = "actionbar";
+    bar.innerHTML = `
+      <div class="selection-summary">Selected <b>${picks}</b> picks · <b>${plants}</b> ${plants === 1 ? "plant" : "plants"}
+        <span class="selection-names">${twice.map(v => `${escapeHtml(v.label)} is picked in ${escapeHtml(where(v))}`).join("; ")}</span></div>
+      <div class="selection-summary link-why">Only charts are available while a plant is picked twice. Remove the extra picks to get the usual actions back.</div>
+      <button class="btn primary" id="dropExtraBtn">Remove extra picks</button>
+      <button class="btn ghost" id="clearSel">Clear</button>
+    `;
+    document.getElementById("dropExtraBtn").addEventListener("click", dropExtraPicks);
+    document.getElementById("clearSel").addEventListener("click", () => { selection = new Map(); anchorId = null; hxAnchor = null; hxAfterPick(); });
     return;
   }
   bar.className = "actionbar";

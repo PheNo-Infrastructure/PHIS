@@ -2421,3 +2421,27 @@ test("e2e: in the factor boxes plain click opens, ctrl toggles (remembering the 
     assert.deepEqual(await sel(), [["so-p1", ["lv-r1"]], ["so-p2", ["lv-r1"]], ["so-p3", ["lv-r1"]]], "drag inside a box picks what it crosses, only in that factor");
   });
 });
+
+test("e2e: picking the same plant from two boxes makes the selection graph-only: the usual actions go, the way back is offered", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base);
+    const g = page.locator('.hx-fac[data-fac="fac-g"]'), r = page.locator('.hx-fac[data-fac="fac-r"]');
+    await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    assert.ok(await page.locator("#newBtn").count() > 0, "one pick: the usual actions");
+
+    await r.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    assert.equal(await page.evaluate(() => selection.size), 1, "still one plant");
+    assert.deepEqual(await page.evaluate(() => selection.get("so-p1").vias), ["lv-g1", "lv-r1"], "two instances");
+    const text = (await page.locator("#actionbar").innerText()).replace(/\s+/g, " "); // the bar is a flex row: <b> parts land on their own lines
+    assert.match(text, /2 picks/);
+    assert.match(text, /1 plant/);
+    assert.match(text, /PB001 is picked in GroupID: 1 and Replicate: 1/);
+    assert.match(text, /only charts are available/i);
+    assert.equal(await page.locator("#newBtn, #linkSelectionBtn, #visBtn").count(), 0, "no create/link/visibility in graph-only mode");
+
+    await page.locator("#dropExtraBtn").click();
+    assert.deepEqual(await page.evaluate(() => selection.get("so-p1").vias), ["lv-g1"], "extra picks dropped, the first kept");
+    assert.ok(await page.locator("#newBtn").count() > 0, "the usual actions are back");
+    assert.equal(await page.locator("#dropExtraBtn").count(), 0);
+  });
+});
