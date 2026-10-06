@@ -520,6 +520,10 @@ button { font-family: inherit; }
 .g-band { opacity: .2; stroke: none; }
 .g-pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; }
 .g-empty { color: var(--ink-faint); font-size: 12px; line-height: 96px; text-align: center; }
+.g-plants { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.g-plant { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 10px; font: inherit; font-size: 11.5px; padding: 0 8px; cursor: pointer; }
+.g-plant.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
+.g-plant.off { opacity: .4; text-decoration: line-through; }
 .g-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: nowrap; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; display: none; }
 .ov-levels { display: grid; grid-template-columns: repeat(auto-fill, 172px); gap: 4px 8px; }
 .ov-lv { display: flex; align-items: center; gap: 2px; }
@@ -1975,7 +1979,7 @@ function gridButtonHtml(grid) {
 }
 
 // One chart: a group's plants as thin lines with the mean thick (and, with statistics, a mean ± SD band), or a single plant.
-function gridChartHtml(ch, data, yr, opts) {
+function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden: new Set(), big: false }) {
   const e = escapeHtml;
   const head = `<div class="g-ct"><b style="color:${ch.kind === "plant" ? "var(--ink)" : colorVar(ch.colorIndex)}">${e(ch.title)}</b><span>${e(ch.sub)}</span></div>`;
   const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
@@ -1992,7 +1996,8 @@ function gridChartHtml(ch, data, yr, opts) {
   let svg = "", dots = "";
   if (ch.kind !== "plant") pts.forEach(p => {
     const d = path(p.values.map(v => v?.v ?? null));
-    if (d.length > 1) svg += `<polyline class="g-line${ch.emphasis.some(x => sameId(x, p.id)) ? " em" : ""}" stroke="${color}" points="${d.join(" ")}"/>`;
+    if (view.hidden.has(p.id)) return;
+    if (d.length > 1) svg += `<polyline class="g-line${ch.emphasis.some(x => sameId(x, p.id)) || view.highlight.has(p.id) ? " em" : ""}" stroke="${color}" points="${d.join(" ")}"/>`;
   });
   if (band) {
     const up = [], down = [];
@@ -2002,7 +2007,7 @@ function gridChartHtml(ch, data, yr, opts) {
   const mean = path(stats.map(s => s ? s.mean : null));
   if (mean.length > 1) svg += `<polyline class="g-mean" stroke="${color}" points="${mean.join(" ")}"/>`;
   else if (mean.length === 1) { const [x, y] = mean[0].split(","); dots = `<span class="g-pt" style="left:${x}%;top:${y}%;background:${color}"></span>`; }
-  return `<div class="g-chart${opts.stats ? " stats" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-tip"></span></div></div>`;
+  return `<div class="g-chart${opts.stats ? " stats" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:220px"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-tip"></span></div></div>`;
 }
 
 // Hover: the nearest scan of the chart: the mean (± SD, n) of a group, the value of a single plant.
@@ -2060,6 +2065,62 @@ async function renderChartGrid() {
     const ch = plan.rows.flatMap(r => r.charts).find(c => c.key === plot.dataset.key);
     wireGridChart(plot, ch, data);
   });
+  body.querySelectorAll(".g-chart[data-key]").forEach(c => {
+    if (!c.querySelector(".g-plot")) return; // an empty chart has nothing to show
+    const ch = plan.rows.flatMap(r => r.charts).find(x => x.key === c.dataset.key);
+    c.addEventListener("click", () => openChartDetail(ch, data, sel.st));
+  });
+}
+
+function plantLabelIn(st, id) {
+  const all = [...st.factors.flatMap(f => f.levels.flatMap(l => l.plants)), ...st.factors.flatMap(f => f.unset), ...st.other];
+  return all.find(p => sameId(p.id, id))?.label ?? String(id).split("/").pop();
+}
+
+// One chart's full numbers: a big chart, the mean / SD / n of every scan (or the value, for one plant), and its plants
+// (click highlights a line, ctrl-click hides it).
+function openChartDetail(ch, data, st) {
+  document.getElementById("chartDetail")?.remove();
+  const e = escapeHtml;
+  const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
+  const stats = groupColumns(plants, data.columns.length);
+  const view = { highlight: new Set(), hidden: new Set(), big: true };
+  const unit = data.variable.unit ? ` (${e(data.variable.unit)})` : "";
+  const single = ch.kind === "plant";
+  const rows = data.columns.map((c, i) => {
+    const s = stats[i];
+    return `<tr><td>${e(whenText(c.key))}</td>${single ? `<td>${s ? sig4(s.mean) : "–"}</td>` : `<td>${s ? sig4(s.mean) : "–"}</td><td>${s && s.sd != null ? sig4(s.sd) : "–"}</td><td>${s ? s.n : 0}</td>`}</tr>`;
+  }).join("");
+  const dlg = document.createElement("dialog");
+  dlg.className = "meas-dialog";
+  dlg.id = "chartDetail";
+  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(ch.title)}<span class="meas-unit">${e(data.variable.name)}${unit}</span></div>
+      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><button class="btn ghost small g-close">Close</button></div>
+    <div id="detailPlot"></div>
+    <div class="meas-values" style="margin-top:12px"><table><thead><tr><th>Scan</th>${single ? "<th>Value</th>" : "<th>Mean</th><th>SD</th><th>n</th>"}</tr></thead><tbody>${rows}</tbody></table></div>
+    ${single ? "" : `<div class="hx-note" style="margin-top:10px">Plants — click highlights a line, ctrl-click hides it.</div><div class="g-plants">${plants.map(p => `<button class="g-plant" data-id="${e(p.id)}">${e(plantLabelIn(st, p.id))}</button>`).join("")}</div>`}`;
+  document.body.appendChild(dlg);
+  const paint = () => {
+    const box = dlg.querySelector("#detailPlot");
+    box.innerHTML = gridChartHtml(ch, data, null, { stats: true, sharedY: false }, view);
+    const plot = box.querySelector(".g-plot");
+    if (plot) wireGridChart(plot, ch, data);
+    dlg.querySelectorAll(".g-plant").forEach(b => {
+      b.classList.toggle("on", view.highlight.has(b.dataset.id));
+      b.classList.toggle("off", view.hidden.has(b.dataset.id));
+    });
+  };
+  dlg.addEventListener("click", ev => {
+    if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
+    const b = ev.target.closest(".g-plant");
+    if (!b) return;
+    const id = b.dataset.id, set = ev.ctrlKey || ev.metaKey ? view.hidden : view.highlight;
+    if (set.has(id)) set.delete(id); else set.add(id);
+    paint();
+  });
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.showModal();
+  paint();
 }
 
 function openChartGrid() {

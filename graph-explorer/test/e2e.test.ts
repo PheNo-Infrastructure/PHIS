@@ -2707,3 +2707,46 @@ test("e2e: a standalone plant and a plant picked in a level box get their charts
     assert.match(await plot.locator(".g-tip").innerText(), /22 Oct 2025/);
   });
 });
+
+test("e2e: clicking a chart opens its numbers: a scan table with mean, SD and n, and the plants of the group (click highlights, ctrl hides)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    await grid.locator('.g-chart[data-key="lv-g1"] .g-ct').click();
+    const d = page.locator("#chartDetail");
+    await d.waitFor();
+    const text = (await d.innerText()).replace(/\s+/g, " ");
+    assert.match(text, /GroupID: 1/);
+    assert.match(text, /22 Oct 2025 11\.5 0\.7071 2/, "scan row: mean 11.5, SD 0.7071, n 2 (values 11 and 12)");
+    assert.match(text, /24 Oct 2025 34\.5 2\.121 2/, "another scan: mean 34.5, SD 2.121, n 2 (values 33 and 36)");
+    assert.equal(await d.locator("button.g-plant").count(), 2);
+    await d.locator('button.g-plant[data-id="so-p1"]').click();
+    assert.equal(await d.locator(".g-line.em").count(), 1, "click highlights that plant's line");
+    await d.locator('button.g-plant[data-id="so-p2"]').click({ modifiers: ["Control"] });
+    assert.equal(await d.locator(".g-line").count(), 1, "ctrl hides a plant's line");
+    await d.locator("button.g-close").click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("#chartDetail").count(), 0);
+    assert.equal(await page.locator("#chartGrid").count(), 1, "the grid is still there behind it");
+  });
+});
+
+test("e2e: an empty chart does not open a detail dialog", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-fac[data-fac="#other"] .hx-plant').first().click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator('.g-chart[data-key="plant:so-t1"]').click();
+    assert.equal(await page.locator("#chartDetail").count(), 0);
+  });
+});
