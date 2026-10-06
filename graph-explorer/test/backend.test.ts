@@ -2465,3 +2465,23 @@ test("an experiment with no factors puts every object in 'other'; a cut-off obje
     assert.equal(structure.truncated, true, "900 objects exist, 1 came back");
   });
 });
+
+test("an experiment's page still loads, without its structure, when PHIS can't answer the structure queries", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/experiments/exp-3/variables")) return jsonResponse(500, { message: "boom" });
+      if (url.includes("/core/experiments/exp-3/factors")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-3/species")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/scientific_objects?experiment=exp-3")) return jsonResponse(200, { result: [{ uri: "so-a", name: "A" }] });
+      if (url.endsWith("/core/experiments/exp-3")) return jsonResponse(200, { result: { uri: "exp-3", name: "Trial" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await realFetch(`${base}/api/node-detail?type=experiment&id=exp-3`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.structure, undefined, "no structure sent");
+    assert.deepEqual(body.relations.find((r: any) => r.label === "Scientific objects").items.map((i: any) => i.label), ["A"], "the flat list is still there");
+  });
+});

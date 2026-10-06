@@ -17,6 +17,9 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
     const dto = (await authedGetOne(config.getUrl(id))).result;
     const blocked = await config.deleteBlockedBy?.(dto, id);
     const fix = blocked ? await config.deleteBlockFix?.check(id, dto) : null;
+    // The structure is an extra view of what `relations` already lists: if PHIS can't answer it, the page
+    // loads without it (and falls back to the flat list) instead of failing whole.
+    const structure = config.structure ? await config.structure(id).catch((err) => { console.error(`structure of ${id} failed:`, err); return null; }) : null;
     // Body fully built BEFORE writeHead (same reason as list.ts): a relation query failing after
     // the 200 header went out can't be reported anymore and leaves the request hanging.
     const body = JSON.stringify({
@@ -31,7 +34,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       ...(fix ? { deleteFix: fix } : {}),
       ...(config.deleteWarning ? { deleteWarning: await config.deleteWarning(id, dto) } : {}),
       relations: await relationsFor(id, dto, config),
-      ...(config.structure ? { structure: await config.structure(id) } : {}),
+      ...(structure ? { structure } : {}),
     });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(body);
