@@ -467,6 +467,15 @@ button { font-family: inherit; }
 .hx-plant.on { font-weight: 700; }
 .hx.also { border-style: dashed; border-color: var(--accent); }
 .hx-note { font-size: 12px; color: var(--ink-faint); margin: 4px 0; }
+.dtabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); margin: 10px 0 12px; }
+.dtab { border: none; background: none; color: var(--ink-muted); font: inherit; font-size: 12.5px; padding: 6px 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.dtab small { color: var(--ink-faint); margin-left: 3px; }
+.dtab:hover { color: var(--ink); }
+.dtab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.ov-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.ov-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 7px 10px; }
+.ov-card b { display: block; font-size: 17px; font-weight: 600; }
+.ov-card span { font-size: 11.5px; color: var(--ink-faint); }
 .meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
 .meas-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); }
 .meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
@@ -1758,39 +1767,85 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, withMe
   return h + `<div class="chip-row">${rel.items.map(chip).join("")}</div></div>`;
 }
 
-// An experiment's structure: its variables and its plants in a box per factor and level (a plant is
-// listed under every factor it belongs to). The .hx elements are picked/opened by the pipeline in
-// setupSelection; `on` = picked from this box, `also` = picked, but from another box.
-function structureHtml(st) {
+// An experiment's plants in a box per factor and level (a plant is listed under every factor it belongs to).
+// The .hx elements are picked/opened by the pipeline in setupSelection; `on` = picked from this box,
+// `also` = picked, but from another box.
+function hxHtml(kind, it, extra, cls = "") {
   const e = escapeHtml;
-  const hx = (kind, it, extra, cls = "") => {
-    const picked = selection.get(it.id);
-    const state = kind === "plant"
-      ? (picked ? ((picked.vias ?? [""]).includes(extra.via) ? " on" : " also") : "")
-      : (picked ? " on" : "");
-    const data = Object.entries(extra).map(([k, v]) => ` data-${k}="${e(v)}"`).join("");
-    return `<span class="hx ${cls}${state}" data-hx="${kind}" data-id="${e(it.id)}" data-label="${e(it.label)}"${data}>`;
-  };
-  const plants = (list, via, fac) => list.length
-    ? `<div class="hx-plants">${list.map(p => `${hx("plant", p, { via, fac }, "hx-plant")}${e(p.label)}</span>`).join("")}</div>`
+  const picked = selection.get(it.id);
+  const state = kind === "plant"
+    ? (picked ? ((picked.vias ?? [""]).includes(extra.via) ? " on" : " also") : "")
+    : (picked ? " on" : "");
+  const data = Object.entries(extra).map(([k, v]) => ` data-${k}="${e(v)}"`).join("");
+  return `<span class="hx ${cls}${state}" data-hx="${kind}" data-id="${e(it.id)}" data-label="${e(it.label)}"${data}>`;
+}
+function hxPlants(list, via, fac) {
+  return list.length
+    ? `<div class="hx-plants">${list.map(p => `${hxHtml("plant", p, { via, fac }, "hx-plant")}${escapeHtml(p.label)}</span>`).join("")}</div>`
     : `<div class="hx-note">no plants</div>`;
-  let h = "";
-  if (st.variables.length) {
-    h += `<div class="rel-group"><div class="rel-label">Variables measured</div><div class="chip-row">`
-      + st.variables.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("") + `</div></div>`;
-  }
-  h += `<div class="rel-group"><div class="rel-label">Scientific objects — by factor</div>`;
+}
+
+function variablesTabHtml(st) {
+  if (!st.variables.length) return `<div class="rel-group"><div class="rel-label">Variables measured</div><span class="rel-empty">None.</span></div>`;
+  return `<div class="rel-group"><div class="rel-label">Variables measured</div><div class="chip-row">`
+    + st.variables.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("") + `</div></div>`;
+}
+
+function plantsTabHtml(id, st) {
+  const e = escapeHtml;
+  let h = `<div class="rel-group"><div class="rel-label">Scientific objects — by factor</div>`;
   if (st.truncated) h += `<div class="hx-note">PHIS returned only the first 500 objects of a list, so some plants are missing or sit in the wrong box here.</div>`;
   st.factors.forEach(f => {
-    h += `<div class="hx-fac" data-fac="${e(f.id)}">${hx("factor", { id: f.id, label: f.label }, { fac: f.id }, "hx-head")}${e(f.label)} <small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small></span><div class="hx-levels">`;
+    h += `<div class="hx-fac" data-fac="${e(f.id)}">${hxHtml("factor", { id: f.id, label: f.label }, { fac: f.id }, "hx-head")}${e(f.label)} <small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small></span><div class="hx-levels">`;
     f.levels.forEach(l => {
-      h += `<div class="hx-level" data-level="${e(l.id)}">${hx("level", l, { fac: f.id, factor: f.id }, "hx-head")}${e(l.label.replace(/^[^:]*:s*/, "Level "))} <small>${l.plants.length} plants</small></span>${plants(l.plants, l.id, f.id)}</div>`;
+      h += `<div class="hx-level" data-level="${e(l.id)}">${hxHtml("level", l, { fac: f.id, factor: f.id }, "hx-head")}${e(l.label.replace(/^[^:]*:\s*/, "Level "))} <small>${l.plants.length} plants</small></span>${hxPlants(l.plants, l.id, f.id)}</div>`;
     });
-    if (f.unset.length) h += `<div class="hx-level"><div class="hx-head" style="cursor:default">(unset) <small>${f.unset.length} without a level here</small></div>${plants(f.unset, `${f.id}#unset`, f.id)}</div>`;
+    if (f.unset.length) h += `<div class="hx-level"><div class="hx-head" style="cursor:default">(unset) <small>${f.unset.length} without a level here</small></div>${hxPlants(f.unset, `${f.id}#unset`, f.id)}</div>`;
     h += `</div></div>`;
   });
-  if (st.other.length) h += `<div class="hx-fac" data-fac="#other"><div class="hx-head" style="cursor:default">Not in a factor <small>${st.other.length}</small></div>${plants(st.other, "#other", "#other")}</div>`;
+  if (st.other.length) h += `<div class="hx-fac" data-fac="#other"><div class="hx-head" style="cursor:default">Not in a factor <small>${st.other.length}</small></div>${hxPlants(st.other, "#other", "#other")}</div>`;
   return h + `</div>`;
+}
+
+// An experiment's page: tabs, so nothing long sits on the first screen. `detailTab` (node id -> tab) survives re-renders.
+const detailTab = {};
+const plantIdsOf = st => new Set(st.factors.flatMap(f => f.levels.flatMap(l => l.plants.map(p => p.id))));
+
+function overviewHtml(node) {
+  const st = node.structure;
+  const values = st.variables.reduce((n, v) => n + v.count, 0);
+  const inFactors = plantIdsOf(st).size;
+  let h = `<div class="ov-cards">
+    <div class="ov-card"><b>${st.variables.length}</b><span>variables · ${values.toLocaleString("en")} values</span></div>
+    <div class="ov-card"><b>${inFactors + st.other.length}</b><span>scientific objects · ${inFactors} in a factor</span></div>
+    <div class="ov-card"><b>${st.factors.length}</b><span>factor${st.factors.length === 1 ? "" : "s"}</span></div></div>`;
+  node.relations.forEach(rel => {
+    if (["Scientific objects", "Factors", "Species"].includes(rel.label)) return; // their own tabs
+    h += relGroupHtml(rel);
+  });
+  return h;
+}
+
+function tabbedExperimentHtml(id, node) {
+  const st = node.structure;
+  const rel = label => node.relations.find(r => r.label === label);
+  const tabs = [
+    ["overview", "Overview", null],
+    ["variables", "Variables", st.variables.length],
+    ["plants", "Plants", plantIdsOf(st).size + st.other.length],
+    ["factors", "Factors", st.factors.length],
+    ["species", "Species", rel("Species")?.items.length ?? 0],
+  ];
+  const active = tabs.some(t => t[0] === detailTab[id]) ? detailTab[id] : "overview";
+  const none = label => `<div class="rel-group"><div class="rel-label">${label}</div><span class="rel-empty">None.</span></div>`;
+  const body = {
+    overview: () => overviewHtml(node),
+    variables: () => variablesTabHtml(st),
+    plants: () => plantsTabHtml(id, st),
+    factors: () => rel("Factors") ? relGroupHtml(rel("Factors")) : none("Factors"),
+    species: () => rel("Species") ? relGroupHtml(rel("Species")) : none("Species"),
+  }[active]();
+  return `<div class="dtabs">${tabs.map(([k, label, n]) => `<button class="dtab${k === active ? " on" : ""}" data-dtab="${k}">${label}${n == null ? "" : ` <small>${n}</small>`}</button>`).join("")}</div>${body}`;
 }
 
 function renderNodeDetail(focusNode, { local } = { local: false }) {
@@ -1897,11 +1952,8 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
       }
     } else {
-      if (node.structure) html += structureHtml(node.structure);
-      node.relations.forEach(rel => {
-        if (node.structure && rel.field === "scientific_object") return; // shown as boxes above (unlink mode keeps the flat list)
-        html += relGroupHtml(rel, { withMeasurements: type === "scientific_object" });
-      });
+      if (node.structure) html += tabbedExperimentHtml(focusNode.id, node);
+      else node.relations.forEach(rel => { html += relGroupHtml(rel, { withMeasurements: type === "scientific_object" }); });
     }
   } else {
     // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely
@@ -1915,6 +1967,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
 
   els.detailBody.innerHTML = html;
   wireTypeInfo(els.detailBody);
+  els.detailBody.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { detailTab[focusNode.id] = b.dataset.dtab; renderDetail(); }));
 
   if (isCategoryMembers) renderDetailMembers(focusNode.id);
 

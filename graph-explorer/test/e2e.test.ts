@@ -2355,7 +2355,7 @@ const STRUCT = {
   ],
   other: [{ id: "so-t1", label: "Tray 31" }],
 };
-async function openStructuredExperiment(page: import("playwright").Page, base: string) {
+async function openStructuredExperiment(page: import("playwright").Page, base: string, tab: string | null = "plants") {
   await page.route("**/api/node-detail*", (r) => {
     const id = new URL(r.request().url()).searchParams.get("id");
     const body = id === "exp-1"
@@ -2367,19 +2367,36 @@ async function openStructuredExperiment(page: import("playwright").Page, base: s
   await page.waitForTimeout(1000);
   await page.evaluate(() => openNode({ id: "exp-1", type: "experiment", label: "Trial" }));
   await page.waitForTimeout(500);
+  if (tab) { await page.locator(`button.dtab[data-dtab="${tab}"]`).click(); await page.waitForTimeout(200); }
 }
 
-test("e2e: an experiment's page lists its variables with counts and its plants in a box per factor and level; trays sit under 'Not in a factor'", async () => {
+test("e2e: an experiment's page has tabs with counts; the Overview holds cards and the other connections, not the long lists", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await openStructuredExperiment(page, base);
+    await openStructuredExperiment(page, base, null);
+    const tabs = (await page.locator("button.dtab").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
+    assert.deepEqual(tabs, ["Overview", "Variables 1", "Plants 4", "Factors 2", "Species 0"], "counts in the labels (4 = 3 plants + 1 tray)");
+    assert.equal((await page.locator("button.dtab.on").innerText()).trim(), "Overview", "the Overview opens first");
+    const ov = (await page.locator("#detailBody").innerText()).replace(/\s+/g, " ");
+    assert.match(ov, /1,200\s*values/);
+    assert.equal(await page.locator("#detailBody .hx-plant").count(), 0, "no plant list on the Overview");
+    assert.equal(await page.locator("#detailBody .hx-fac").count(), 0);
+  });
+});
+
+test("e2e: the Variables tab lists variables with counts; Plants has a box per factor and level, trays under 'Not in a factor'; tabs keep the selection", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base, "variables");
     const body = page.locator("#detailBody");
     assert.match(await body.locator(".rel-group", { hasText: "Variables measured" }).innerText(), /Plant Height\s*·\s*1,200/);
+    await page.locator('button.dtab[data-dtab="plants"]').click();
     assert.equal(await body.locator(".hx-fac").count(), 3, "two factors and 'Not in a factor'");
     assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-level').count(), 2);
-    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-plant').count(), 3);
     assert.equal(await body.locator('.hx-plant[data-id="so-p1"]').count(), 2, "a plant is listed under every factor it belongs to");
     assert.match(await body.locator('.hx-fac[data-fac="#other"]').innerText(), /Tray 31/);
-    assert.equal(await body.locator(".rel-group", { hasText: "Scientific objects" }).locator(".chip", { hasText: "PB001" }).count(), 0, "the flat list is replaced");
+    await body.locator('.hx-fac[data-fac="fac-g"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="factors"]').click();
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    assert.equal(await body.locator('.hx-plant[data-id="so-p1"].on').count(), 1, "the pick is still there after leaving and coming back");
   });
 });
 
