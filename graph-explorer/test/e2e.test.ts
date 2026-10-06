@@ -508,11 +508,11 @@ test("e2e: a plant's experiment box shows its measurements as a trend line per v
     assert.match(dt, /Plant height/);
     assert.match(dt, /12.34567/, "every value at full precision");
     assert.equal(await dlg.locator(".meas-values tbody tr").count(), 2, "only scans that have a value");
-    await page.screenshot({ path: (process.env.MEAS_SHOT || "measurements.png").replace(".png", "-dialog.png") }).catch(() => {});
+    if (process.env.MEAS_SHOT) await page.screenshot({ path: process.env.MEAS_SHOT.replace(".png", "-dialog.png") });
     await dlg.locator("[data-close]").click();
     await page.waitForTimeout(100);
     assert.equal(await page.locator("dialog.meas-dialog").count(), 0, "Close removes it");
-    await page.screenshot({ path: process.env.MEAS_SHOT || "measurements.png", fullPage: true }).catch(() => {});
+    if (process.env.MEAS_SHOT) await page.screenshot({ path: process.env.MEAS_SHOT, fullPage: true });
     await boxA.locator("a[data-openid='var-1']").click();
     await page.waitForTimeout(300);
     assert.match(await page.locator("#detailBody").innerText(), /Plant height/);
