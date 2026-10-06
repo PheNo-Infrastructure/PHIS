@@ -1809,7 +1809,7 @@ function hxPlants(list, via, fac) {
 
 // Per node (by id): which factor the Plants tab groups by ("none" = A-Z) and what is typed in its filter.
 const plantsView = {}, varFilter = {};
-let ovAnchor = null; // the Overview level chip last picked (for shift ranges within its factor)
+let chipAnchor = null; // the grid chip last picked (an Overview level or a variable), for shift ranges within its group
 let plantsFocus = null; // a level to scroll to and flash once, after the next render
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 
@@ -2133,26 +2133,35 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   const onChipClick = (chip, e) => {
     {
       const id = chip.dataset.openid;
-      // A level chip on the Overview: its item comes from the structure (the chip's own text carries the count),
-      // and shift picks the range of that factor's levels (anything else falls back to ctrl).
-      const ovLevel = chip.closest(".ov-levels") ? node?.structure?.factors.flatMap(f => f.levels).find(l => l.id === id) : null;
-      const found = ovLevel ? { id, type: "factor_level", label: ovLevel.label, factor: ovLevel.factor }
-        : findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim(), ...(chip.dataset.factor ? { factor: chip.dataset.factor } : {}) };
-      if (ovLevel && e.shiftKey && !unlinking) {
-        const row = [...chip.closest(".ov-levels").querySelectorAll(".chip[data-openid]")].map(c => c.dataset.openid);
-        if (ovAnchor && selection.has(ovAnchor.id) && row.includes(ovAnchor.id) && ovAnchor.factor === ovLevel.factor) {
-          const lo = Math.min(row.indexOf(ovAnchor.id), row.indexOf(id)), hi = Math.max(row.indexOf(ovAnchor.id), row.indexOf(id));
+      // Chips in an experiment's grids (the Overview's levels, the Variables tab): their items come from the
+      // structure (a chip's own text carries the count), and shift picks the range of the listed chips of that
+      // group (anything else falls back to ctrl).
+      const grp = chip.closest(".ov-levels, .var-grid");
+      const st = node?.structure;
+      const grpKey = grp?.matches(".ov-levels") ? grp.closest(".ov-fac")?.dataset.fac : "#variables";
+      const grpItem = gid => {
+        if (!grp || !st) return null;
+        if (grp.matches(".ov-levels")) { const l = st.factors.flatMap(x => x.levels).find(x => x.id === gid); return l && { id: gid, type: "factor_level", label: l.label, factor: l.factor }; }
+        const v = st.variables.find(x => x.id === gid);
+        return v && { id: gid, type: "variable", label: v.label };
+      };
+      const inGroup = grpItem(id);
+      const found = inGroup || findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim(), ...(chip.dataset.factor ? { factor: chip.dataset.factor } : {}) };
+      if (inGroup && e.shiftKey && !unlinking) {
+        const row = [...grp.querySelectorAll(".chip[data-openid]")].map(c => c.dataset.openid);
+        if (chipAnchor && chipAnchor.group === grpKey && selection.has(chipAnchor.id) && row.includes(chipAnchor.id)) {
+          const lo = Math.min(row.indexOf(chipAnchor.id), row.indexOf(id)), hi = Math.max(row.indexOf(chipAnchor.id), row.indexOf(id));
           selection = new Map();
-          row.slice(lo, hi + 1).forEach(rid => { const l = node.structure.factors.flatMap(f => f.levels).find(x => x.id === rid); selection.set(rid, { id: rid, type: "factor_level", label: l.label, factor: l.factor }); });
+          row.slice(lo, hi + 1).forEach(rid => selection.set(rid, grpItem(rid)));
           hxAfterPick();
           return;
         }
-        ovAnchor = { id, factor: ovLevel.factor };
+        chipAnchor = { id, group: grpKey };
         toggleChipSelection(found);
         return;
       }
       if (e.ctrlKey || e.metaKey) {
-        if (ovLevel) ovAnchor = { id, factor: ovLevel.factor };
+        if (inGroup) chipAnchor = { id, group: grpKey };
         toggleChipSelection(found);
         return;
       }

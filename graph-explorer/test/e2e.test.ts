@@ -2588,3 +2588,34 @@ test("e2e: the graph-only bar names the 'None (A-Z)' view properly, and tiles ca
     assert.equal(await body.locator('.ov-lv', { hasText: "GroupID: 1" }).getAttribute("title"), "GroupID: 1", "an Overview level cell has its full label as a title");
   });
 });
+
+test("e2e: on the Variables tab, shift-click picks the range of the listed (filtered) variables; labels carry no count", async () => {
+  const extra = [{ id: "var-2", label: "Leaf Area", count: 3 }, { id: "var-3", label: "Plant Height Max", count: 5 }, { id: "var-4", label: "NDVI", count: 7 }];
+  STRUCT.variables.push(...extra);
+  try {
+    await withServerAndBrowser(async (base, page) => {
+      await openStructuredExperiment(page, base, "variables");
+      const body = page.locator("#detailBody");
+      const sel = () => page.evaluate(() => [...selection.values()].map((v: any) => [v.id, v.label, v.type]));
+      const listed = () => body.locator("#variablesBody .chip").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.openid));
+      const chip = (label: string) => body.locator("#variablesBody .chip", { hasText: label });
+
+      await chip("Plant Height").first().click({ modifiers: ["Control"] });
+      await chip("NDVI").click({ modifiers: ["Shift"] });
+      let order = await listed();
+      let a = order.indexOf("var-1"), z = order.indexOf("var-4");
+      assert.deepEqual((await sel()).map((s) => s[0]), order.slice(Math.min(a, z), Math.max(a, z) + 1), "the range between the two, in listed order");
+      assert.ok((await sel()).every((s) => s[2] === "variable" && !String(s[1]).includes("·")), "variable items with clean labels");
+
+      await page.evaluate(() => { selection = new Map(); refreshLeftPane(); renderDetail(); renderActionbar(); });
+      await body.locator('input[data-filter="variables"]').fill("a");
+      await chip("Leaf Area").click({ modifiers: ["Control"] });
+      await chip("Plant Height Max").click({ modifiers: ["Shift"] });
+      order = await listed();
+      a = order.indexOf("var-2"); z = order.indexOf("var-3");
+      assert.deepEqual((await sel()).map((s) => s[0]), order.slice(Math.min(a, z), Math.max(a, z) + 1), "only what is listed after filtering");
+    });
+  } finally {
+    STRUCT.variables.length -= extra.length;
+  }
+});
