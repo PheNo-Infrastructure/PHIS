@@ -2382,3 +2382,42 @@ test("e2e: an experiment's page lists its variables with counts and its plants i
     assert.equal(await body.locator(".rel-group", { hasText: "Scientific objects" }).locator(".chip", { hasText: "PB001" }).count(), 0, "the flat list is replaced");
   });
 });
+
+test("e2e: in the factor boxes plain click opens, ctrl toggles (remembering the box), shift ranges within one factor, drag sweeps within one box", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base);
+    const sel = () => page.evaluate(() => [...selection.values()].map((v: any) => [v.id, v.vias ?? null]));
+    const g = page.locator('.hx-fac[data-fac="fac-g"]');
+
+    await g.locator('.hx-plant[data-id="so-p1"]').click();
+    await page.waitForTimeout(300);
+    assert.match(await page.locator("#selfChip").innerText(), /PB001/, "plain click opens the plant");
+    assert.deepEqual(await sel(), [], "and selects nothing");
+    await page.evaluate(() => openNode({ id: "exp-1", type: "experiment", label: "Trial" }));
+    await page.waitForTimeout(400);
+
+    await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    assert.deepEqual(await sel(), [["so-p1", ["lv-g1"]]], "ctrl picks it, remembering the level box it was picked in");
+    assert.equal(await page.locator('.hx-plant[data-id="so-p1"].on').count(), 1, "lit in that box");
+    assert.equal(await page.locator('.hx-plant[data-id="so-p1"].also').count(), 1, "ringed in the other factor's box");
+    await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    assert.deepEqual(await sel(), [], "ctrl on the same copy again deselects");
+
+    await g.locator('.hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    await g.locator('.hx-plant[data-id="so-p3"]').click({ modifiers: ["Shift"] });
+    assert.deepEqual((await sel()).map((s) => s[0]), ["so-p1", "so-p2", "so-p3"], "shift ranges in reading order within the factor");
+    await g.locator('.hx-head[data-id="lv-g2"]').click({ modifiers: ["Control"] });
+    assert.ok((await sel()).some((s) => s[0] === "lv-g2"), "ctrl on a level header picks the level");
+    await g.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    assert.ok((await sel()).some((s) => s[0] === "fac-g"), "ctrl on a factor header picks the whole factor");
+
+    await page.evaluate(() => { selection = new Map(); refreshLeftPane(); renderDetail(); renderActionbar(); });
+    const r = page.locator('.hx-fac[data-fac="fac-r"]');
+    const a = (await r.locator('.hx-plant[data-id="so-p1"]').boundingBox())!, b = (await r.locator('.hx-plant[data-id="so-p3"]').boundingBox())!;
+    await page.mouse.move(a.x + 2, a.y + 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width - 2, b.y + b.height - 2, { steps: 6 });
+    await page.mouse.up();
+    assert.deepEqual(await sel(), [["so-p1", ["lv-r1"]], ["so-p2", ["lv-r1"]], ["so-p3", ["lv-r1"]]], "drag inside a box picks what it crosses, only in that factor");
+  });
+});

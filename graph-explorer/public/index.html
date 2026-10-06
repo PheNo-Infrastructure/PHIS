@@ -2115,6 +2115,76 @@ function toggleChipSelection(item) {
   renderActionbar();
 }
 
+// ---- picks inside an experiment's factor boxes (.hx) ----
+// A plant picked from a box is remembered with that box (`vias`); one picked from a list has none (""),
+// so "the same plant picked twice" is simply more than one instance.
+const plantInstances = it => it.vias ?? [""];
+
+function hxItem(el) {
+  const d = el.dataset;
+  if (d.hx === "plant") return { id: d.id, type: "scientific_object", label: d.label };
+  if (d.hx === "level") return { id: d.id, type: "factor_level", label: d.label, factor: d.factor };
+  return { id: d.id, type: "factor", label: d.label };
+}
+
+// Adds or removes ONE instance of a plant (the copy clicked in `via`'s box).
+function togglePlantVia(item, via) {
+  const cur = selection.get(item.id);
+  if (!cur) { selection.set(item.id, { ...item, vias: [via] }); return; }
+  const vias = plantInstances(cur);
+  if (vias.includes(via)) {
+    const left = vias.filter(v => v !== via);
+    if (left.length) selection.set(item.id, { ...cur, vias: left }); else selection.delete(item.id);
+  } else {
+    selection.set(item.id, { ...cur, vias: [...vias, via] });
+  }
+}
+
+function hxAfterPick() { refreshLeftPane(); renderDetail(); renderActionbar(); }
+
+// ctrl toggles one thing; shift picks the range, in reading order, between the anchor and this one
+// among things of the same kind in the same factor box (anything else falls back to ctrl).
+let hxAnchor = null; // the .hx element last clicked, by data
+const hxKey = d => `${d.hx}|${d.fac}|${d.via ?? ""}|${d.id}`;
+function hxPick(el, mod) {
+  const item = hxItem(el);
+  if (mod === "shift" && hxAnchor && hxAnchor.hx === el.dataset.hx && hxAnchor.fac === el.dataset.fac) {
+    const all = [...document.querySelectorAll(`.hx[data-hx="${el.dataset.hx}"][data-fac="${CSS.escape(el.dataset.fac)}"]`)];
+    const i = all.findIndex(x => hxKey(x.dataset) === hxAnchor.key), j = all.indexOf(el);
+    if (i >= 0 && j >= 0) {
+      selection = new Map();
+      all.slice(Math.min(i, j), Math.max(i, j) + 1).forEach(x => {
+        const it = hxItem(x);
+        if (it.type === "scientific_object") togglePlantVia(it, x.dataset.via); else selection.set(it.id, it);
+      });
+      hxAfterPick();
+      return;
+    }
+  }
+  if (item.type === "scientific_object") togglePlantVia(item, el.dataset.via);
+  else if (selection.has(item.id)) selection.delete(item.id); else selection.set(item.id, item);
+  hxAnchor = { hx: el.dataset.hx, fac: el.dataset.fac, key: hxKey(el.dataset) };
+  anchorId = item.id;
+  hxAfterPick();
+}
+
+// A drag that started inside one factor box: picks the plants it crossed (or, if it crossed none, the
+// level/factor headers) in that box only. Without ctrl it replaces the selection.
+function hxSweep(hits, mod) {
+  const plants = hits.filter(x => x.dataset.hx === "plant");
+  const chosen = plants.length ? plants : hits;
+  if (!chosen.length) return;
+  if (mod !== "ctrl") selection = new Map();
+  chosen.forEach(x => {
+    const it = hxItem(x);
+    if (it.type === "scientific_object") { const cur = selection.get(it.id); if (!cur || !plantInstances(cur).includes(x.dataset.via)) togglePlantVia(it, x.dataset.via); }
+    else selection.set(it.id, it);
+  });
+  const last = chosen[chosen.length - 1];
+  hxAnchor = { hx: last.dataset.hx, fac: last.dataset.fac, key: hxKey(last.dataset) };
+  hxAfterPick();
+}
+
 /* Real, selectable rows for a category's members — ctrl/shift-click
    resolves through the same global mousedown/mouseup pipeline as every
    other row (see addressableItems), so deselecting one out of an "all
@@ -3199,6 +3269,7 @@ function findItemById(id) {
   let tracking = false, startX = 0, startY = 0, mod = "plain", box = null;
   let downItem = null;   // the row (item + type) the mousedown actually started on, if any
   let downInTree = false; // …and whether it was in the tree (shift ranges stay within one area)
+  let downHx = null, downFac = null; // …or the factor-box element (and its box) it started on
 
   function removeBox() { if (box) { box.remove(); box = null; } }
   function modFromEvent(e) {
@@ -3218,6 +3289,8 @@ function findItemById(id) {
     const rowEl = e.target.closest(".row");
     downItem = rowEl ? (addressableItems.get(rowEl.dataset.id) || null) : null;
     downInTree = !!rowEl?.closest("#treeArea");
+    downHx = e.target.closest(".hx");
+    downFac = e.target.closest(".hx-fac");
 
     removeBox();
     box = document.createElement("div");
@@ -3244,6 +3317,16 @@ function findItemById(id) {
       // that fans out into N relations is a creation-panel concern, not a
       // reason to block selection here.
       if (downItem) applyClick(downItem, mod, downInTree ? treeOrder : rowOrder);
+      else if (downHx) {
+        if (mod === "plain") openRelatedNode(hxItem(downHx)); // plain click opens, like a chip
+        else hxPick(downHx, mod);
+      }
+    } else if (box && downFac) {
+      const rect = box.getBoundingClientRect();
+      hxSweep([...downFac.querySelectorAll(".hx")].filter(x => {
+        const r = x.getBoundingClientRect();
+        return r.right > rect.left && r.left < rect.right && r.bottom > rect.top && r.top < rect.bottom;
+      }), mod);
     } else if (box) {
       const bx = box.getBoundingClientRect();
       const hit = [];
@@ -3264,7 +3347,7 @@ function findItemById(id) {
       }
     }
     removeBox();
-    downItem = null;
+    downItem = null; downHx = downFac = null;
   });
 })();
 
