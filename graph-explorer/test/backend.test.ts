@@ -2409,3 +2409,59 @@ test("link device + facility = a move on the given date; a device already there 
     assert.match((await two.json()).error, /one facility/);
   });
 });
+
+test("GET /api/node-detail for an experiment adds its structure: variables with counts, plants per factor level, unset and 'other' objects", async () => {
+  await withServer(async (base) => {
+    const so = (n: string) => ({ uri: `so-${n}`, name: n });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: url.includes("variables=var-1") ? 5 : 3 });
+      if (url.includes("/core/experiments/exp-1/variables")) return jsonResponse(200, { result: [{ uri: "var-2", name: "Leaf area" }, { uri: "var-1", name: "Height" }] });
+      if (url.includes("/core/experiments/exp-1/species")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-1/factors")) return jsonResponse(200, { result: [
+        { uri: "fac-g", name: "GroupID", experiment: "exp-1", levels: [{ uri: "lv-g1", name: "1" }, { uri: "lv-g2", name: "2" }] },
+        { uri: "fac-r", name: "Replicate", experiment: "exp-1", levels: [{ uri: "lv-r1", name: "1" }] },
+      ] });
+      if (url.includes("factor_levels=lv-g1")) return jsonResponse(200, { result: [so("p2"), so("p1")] });
+      if (url.includes("factor_levels=lv-g2")) return jsonResponse(200, { result: [so("p3")] });
+      if (url.includes("factor_levels=lv-r1")) return jsonResponse(200, { result: [so("p1"), so("p2")] });
+      if (url.includes("/core/scientific_objects?experiment=exp-1&page_size=500")) return jsonResponse(200, { result: [so("p1"), so("p2"), so("p3"), so("t1")], metadata: { pagination: { totalCount: 4 } } });
+      if (url.endsWith("/core/experiments/exp-1")) return jsonResponse(200, { result: { uri: "exp-1", name: "Trial" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const res = await realFetch(`${base}/api/node-detail?type=experiment&id=exp-1`);
+    assert.equal(res.status, 200);
+    const { structure } = await res.json();
+    assert.equal(structure.truncated, false);
+    assert.deepEqual(structure.variables, [{ id: "var-1", label: "Height", count: 5 }, { id: "var-2", label: "Leaf area", count: 3 }], "sorted by name, counted per variable");
+    const g = structure.factors.find((f: any) => f.label === "GroupID");
+    assert.deepEqual(g.levels.map((l: any) => [l.label, l.plants.map((p: any) => p.label)]), [["GroupID: 1", ["p1", "p2"]], ["GroupID: 2", ["p3"]]], "levels and plants in natural order");
+    assert.deepEqual(g.levels[0], { id: "lv-g1", type: "factor_level", label: "GroupID: 1", factor: "fac-g", plants: [{ id: "so-p1", label: "p1" }, { id: "so-p2", label: "p2" }] });
+    assert.deepEqual(g.unset, [], "every plant with a level somewhere has one in GroupID");
+    const r = structure.factors.find((f: any) => f.label === "Replicate");
+    assert.deepEqual(r.unset.map((p: any) => p.label), ["p3"], "p3 has a GroupID but no Replicate");
+    assert.deepEqual(structure.other.map((p: any) => p.label), ["t1"], "the tray is in no factor at all");
+  });
+});
+
+test("an experiment with no factors puts every object in 'other'; a cut-off object list is flagged", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/experiments/exp-2/variables")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-2/species")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-2/factors")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/scientific_objects?experiment=exp-2&page_size=500")) return jsonResponse(200, { result: [{ uri: "so-a", name: "A" }], metadata: { pagination: { totalCount: 900 } } });
+      if (url.endsWith("/core/experiments/exp-2")) return jsonResponse(200, { result: { uri: "exp-2", name: "Plain" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const { structure } = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-2`)).json();
+    assert.deepEqual(structure.variables, []);
+    assert.deepEqual(structure.factors, []);
+    assert.deepEqual(structure.other, [{ id: "so-a", label: "A" }]);
+    assert.equal(structure.truncated, true, "900 objects exist, 1 came back");
+  });
+});

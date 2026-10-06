@@ -31,6 +31,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       ...(fix ? { deleteFix: fix } : {}),
       ...(config.deleteWarning ? { deleteWarning: await config.deleteWarning(id, dto) } : {}),
       relations: await relationsFor(id, dto, config),
+      ...(config.structure ? { structure: await config.structure(id) } : {}),
     });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(body);

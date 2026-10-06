@@ -1,4 +1,5 @@
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete, compactUri, escapeRegex } from "./opensilex.ts";
+import { experimentStructure } from "./experiment-structure.ts";
 
 // View/edit/delete config, one entry per type — same reasoning as CREATABLE in creation.js:
 // adding a type is "add one entry here," not a new code path. Unlike CREATABLE this doesn't
@@ -111,6 +112,8 @@ export type NodeConfig = {
     // Shown instead of hiding the group when it's empty.
     emptyText?: string;
   }[];
+  // Extra structure for the node's page (an experiment's variables and factor boxes), sent beside `relations`.
+  structure?: (id: string) => Promise<unknown>;
 };
 
 export type ContextLink = {
@@ -677,6 +680,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     updateLinkFields: ["organisations", "facilities", "projects", "scientific_supervisors", "technical_supervisors", "factors"],
     deleteRemovesLinks: true,
     visibility: true,
+    structure: experimentStructure,
     queryRelations: [
       EXPERIMENT_SOS,
       { label: "Factors", type: "factor", url: (id) => `/core/experiments/${encodeURIComponent(id)}/factors` },
