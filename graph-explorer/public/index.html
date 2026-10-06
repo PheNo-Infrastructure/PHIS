@@ -1122,6 +1122,8 @@ const els = {
 };
 
 function currentPane() { return path[path.length - 1]; }
+// What the detail pane is showing: a node opened locally with the › arrow, else the path's last.
+function shownNode() { return detailPath.length ? detailPath[detailPath.length - 1] : currentPane(); }
 
 function itemsForPane() {
   const p = currentPane();
@@ -1921,6 +1923,7 @@ function overviewHtml(node) {
     h += `<div class="rel-group"><div class="rel-label">Chart builder</div><div class="cb">
       <div class="tab-controls"><span class="k">Variable</span><select id="cbVariable" class="tab-filter" style="flex:none">${st.variables.map(v => `<option value="${e(v.id)}"${v.id === pick.variable ? " selected" : ""}>${e(v.label)}</option>`).join("")}</select></div>
       <div class="tab-controls"><span class="k">Compare</span>${st.factors.map(f => `<button class="pill cb-factor${f.id === pick.fac ? " on" : ""}" data-fac="${e(f.id)}">${e(f.label)} (${f.levels.length} levels)</button>`).join("")}</div>
+      ${(() => { const n = t => [...selection.values()].filter(x => x.type === t).length, bits = [["plant", "scientific_object"], ["level", "factor_level"], ["factor", "factor"], ["variable", "variable"]].map(([w, t]) => n(t) ? `${n(t)} ${w}${n(t) === 1 ? "" : "s"}` : "").filter(Boolean); return bits.length ? `<div class="hx-note">Already picked: ${bits.join(", ")} — the builder adds to them.</div>` : ""; })()}
       <div class="tab-controls"><button class="btn primary" id="cbShow">Show chart grid</button><span class="k">= every level of the factor, for this variable. Pick plants or more variables on their tabs for other charts.</span></div></div>
       <details class="how-charts"><summary>How charts work</summary><p>Pick variables (Variables tab) and plants, levels or whole factors (Plants tab or the factor list below) — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar below or here. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
   }
@@ -1978,7 +1981,7 @@ function loadOverview(exp, varId) {
 
 // The open experiment page's structure and what the selection asks to chart; null off an experiment page.
 function chartableSelection() {
-  const p = currentPane();
+  const p = shownNode();
   const st = p && NODE_DETAIL[p.id]?.structure;
   if (!st) return null;
   return { experiment: p.id, st, plan: arrangeCharts([...selection.values()], st) };
@@ -2108,7 +2111,7 @@ function openChartDetail(ch, data, st) {
   dlg.className = "meas-dialog";
   dlg.id = "chartDetail";
   dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(ch.title)}<span class="meas-unit">${e(data.variable.name)}${unit}</span></div>
-      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><button class="btn ghost small g-close">Close</button></div>
+      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><span><button class="btn ghost small g-open">Open ${e(ch.title)}</button> <button class="btn ghost small g-close">Close</button></span></div>
     <div id="detailPlot"></div>
     <div class="meas-values" style="margin-top:12px"><table><thead><tr><th>Scan</th>${single ? "<th>Value</th>" : "<th>Mean</th><th>SD</th><th>n</th>"}</tr></thead><tbody>${rows}</tbody></table></div>
     ${single ? "" : `<div class="hx-note" style="margin-top:10px">Plants — click highlights a line, ctrl-click hides it.</div><div class="g-plants">${plants.map(p => `<button class="g-plant" data-id="${e(p.id)}">${e(plantLabelIn(st, p.id))}</button>`).join("")}</div>`}`;
@@ -2125,6 +2128,15 @@ function openChartDetail(ch, data, st) {
   };
   dlg.addEventListener("click", ev => {
     if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
+    if (ev.target.closest(".g-open")) {
+      const levelId = ch.key.replace(/:picked$/, "");
+      const item = single ? { id: ch.plantIds[0], type: "scientific_object", label: ch.title }
+        : { id: levelId, type: "factor_level", label: ch.title, factor: st.factors.find(x => x.levels.some(l => l.id === levelId))?.id };
+      dlg.close();
+      document.getElementById("chartGrid")?.close();
+      openRelatedNode(item);
+      return;
+    }
     const b = ev.target.closest(".g-plant");
     if (!b) return;
     const id = b.dataset.id, set = ev.ctrlKey || ev.metaKey ? view.hidden : view.highlight;
@@ -2137,6 +2149,7 @@ function openChartDetail(ch, data, st) {
 }
 
 function openChartGrid() {
+  if (!chartableSelection()) { showToast("Open the experiment's page to chart it.", 3000); return; }
   document.getElementById("chartGrid")?.remove();
   const dlg = document.createElement("dialog");
   dlg.className = "grid-dialog";
@@ -2273,7 +2286,9 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   els.detailBody.querySelector("#cbShow")?.addEventListener("click", () => {
     const st = node.structure, pick = ovBuilder[node.uri];
     const v = st.variables.find(x => x.id === pick.variable), f = st.factors.find(x => x.id === pick.fac);
-    selection = new Map([[v.id, { id: v.id, type: "variable", label: v.label }], [f.id, { id: f.id, type: "factor", label: f.label }]]);
+    selection = new Map(selection); // the builder adds to what is picked, it never replaces it
+    selection.set(v.id, { id: v.id, type: "variable", label: v.label });
+    selection.set(f.id, { id: f.id, type: "factor", label: f.label });
     hxAfterPick();
     openChartGrid();
   });
@@ -2436,7 +2451,7 @@ const sig4 = n => String(Number(n.toPrecision(4)));
 // One row per variable: name, a trend line that fills the row (hover = that scan's time and value,
 // click = the full picture in a dialog), and the latest value.
 const timeOf = k => Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10), k.length > 10 ? +k.slice(11, 13) : 0, k.length > 10 ? +k.slice(14, 16) : 0);
-const whenText = (key, at) => `${+key.slice(8, 10)} ${MONTHS[+key.slice(5, 7) - 1]} ${key.slice(0, 4)}${at ? " " + at : ""}`;
+const whenText = (key, at) => `${+key.slice(8, 10)} ${MONTHS[+key.slice(5, 7) - 1]} ${key.slice(0, 4)}${at ? " " + at : key.length > 10 ? " " + key.slice(11, 16) : ""}`;
 const unitText = u => UNIT_TEXT[u] || u;
 
 // A variable's scans that have a value, placed 0-100 across and 0-100 down (0 = top) with a little margin.
@@ -2628,7 +2643,7 @@ function viaLabel(via) {
   if (via === "") return "the list";
   if (via === "#other") return "Not in a factor";
   if (via === "#all") return "All plants";
-  const st = NODE_DETAIL[currentPane()?.id]?.structure;
+  const st = NODE_DETAIL[shownNode()?.id]?.structure;
   const level = st?.factors.flatMap(f => f.levels).find(l => l.id === via);
   if (level) return level.label;
   const unset = st?.factors.find(f => via === `${f.id}#unset`);

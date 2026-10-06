@@ -2770,3 +2770,70 @@ test("e2e: the Overview's chart builder sets the selection and opens the grid; a
     assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Show chart grid/, "and the action bar offers the same button");
   });
 });
+
+test("e2e: the chart grid works when the experiment page was opened as a local view (the arrow), not only from the breadcrumb path", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, null);
+    await page.evaluate(() => { path = [path[0]]; detailPath = [{ id: "exp-1", type: "experiment", label: "Trial" }]; renderDetail(); renderActionbar(); });
+    await page.locator('button.dtab[data-dtab="variables"]').click();
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    await page.locator("#chartGrid .g-chart").first().waitFor();
+    assert.equal(await page.locator("#chartGrid .g-chart").count(), 2, "charts of the experiment on screen");
+  });
+});
+
+test("e2e: the Overview builder adds to the selection instead of replacing it, and says what is already picked", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "plants");
+    await page.locator('.hx-fac[data-fac="fac-g"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="overview"]').first().click();
+    assert.match((await page.locator("#detailBody").innerText()).replace(/\s+/g, " "), /already picked: 1 plant/i);
+    await page.locator('button.cb-factor[data-fac="fac-r"]').click();
+    await page.locator("#cbShow").click();
+    await page.locator("#chartGrid .g-chart").first().waitFor();
+    assert.deepEqual(await page.evaluate(() => [...selection.values()].map((v: any) => v.type).sort()), ["factor", "scientific_object", "variable"], "the plant pick is kept");
+    assert.deepEqual(await page.locator("#chartGrid .g-row").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.row)), ["GroupID", "Replicate"], "and charted: its level, plus the factor");
+  });
+});
+
+test("e2e: the chart detail dialog can open the level or plant it shows", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    await page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-ct').click();
+    await page.locator("#chartDetail button.g-open").click();
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator("#chartDetail").count(), 0, "the dialogs close");
+    assert.equal(await page.locator("#chartGrid").count(), 0);
+    assert.match(await page.locator("#selfChip").innerText(), /GroupID: 1/, "and the level's page is open");
+  });
+});
+
+test("e2e: scans that only differ by clock time show their time in the hover", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiment-overview*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      variable: { id: "var-1", name: "Plant Height", unit: "mm" },
+      columns: [{ key: "2025-10-22T10:00", times: ["10:00"] }, { key: "2025-10-22T15:30", times: ["15:30"] }],
+      plants: [{ id: "so-p1", values: [{ v: 1, at: "10:00" }, { v: 2, at: "15:30" }] }, { id: "so-p2", values: [{ v: 2, at: "10:00" }, { v: 3, at: "15:30" }] }, { id: "so-p3", values: [null, null] }],
+    }) }));
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const plot = page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-plot');
+    await plot.waitFor();
+    const box = (await plot.boundingBox())!;
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
+    assert.match(await plot.locator(".g-tip").innerText(), /22 Oct 2025 15:30/);
+  });
+});

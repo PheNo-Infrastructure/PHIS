@@ -2589,3 +2589,32 @@ test("the page carries the chart maths inline (no export keyword left, functions
     assert.doesNotMatch(html, /^export function meanSd/m);
   });
 });
+
+test("experiment-overview: one plant measured twice in a day keeps the day columns (its latest value counts); many such days switch to minute columns", async () => {
+  await withServer(async (base) => {
+    const mk = (rows: unknown[]) => (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/search")) return jsonResponse(200, { result: rows });
+      if (url.includes("/core/variables/by_uris")) return jsonResponse(200, { result: [{ uri: "var-1", name: "H" }] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    // 12 plants x 2 days, plus one extra value for p0 on day 1 (1 duplicate among 24 plant-days)
+    const base12 = Array.from({ length: 12 }, (_, i) => [
+      { date: `2025-10-22T10:${String(i).padStart(2, "0")}:00.000+0200`, target: `p${i}`, variable: "var-1", value: i },
+      { date: `2025-10-23T10:${String(i).padStart(2, "0")}:00.000+0200`, target: `p${i}`, variable: "var-1", value: 100 + i },
+    ]).flat();
+    globalThis.fetch = mk([...base12, { date: "2025-10-22T15:00:00.000+0200", target: "p0", variable: "var-1", value: 50 }]);
+    let body = await (await realFetch(`${base}/api/experiment-overview?experiment=e&variable=var-1`)).json();
+    assert.deepEqual(body.columns.map((c: any) => c.key), ["2025-10-22", "2025-10-23"], "still one column per day");
+    assert.equal(body.plants.find((p: any) => p.id === "p0").values[0].v, 50, "the later value of that day is the one kept");
+    assert.equal(body.plants.length, 12);
+
+    // every plant measured twice a day: that is a minute-level experiment
+    globalThis.fetch = mk(Array.from({ length: 6 }, (_, i) => [
+      { date: "2025-10-22T08:00:00.000+0200", target: `p${i}`, variable: "var-1", value: 1 },
+      { date: "2025-10-22T16:00:00.000+0200", target: `p${i}`, variable: "var-1", value: 2 },
+    ]).flat());
+    body = await (await realFetch(`${base}/api/experiment-overview?experiment=e&variable=var-1`)).json();
+    assert.deepEqual(body.columns.map((c: any) => c.key), ["2025-10-22T08:00", "2025-10-22T16:00"]);
+  });
+});

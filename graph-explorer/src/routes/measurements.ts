@@ -9,10 +9,15 @@ const unitSymbols = new Map<string, Promise<string>>();
 
 // Scans as columns: one per day, or per day and minute when a day holds several values of one variable
 // (for one object, or for the same plant: two plants measured the same day still share a column).
-export function buildColumns(rows: Row[]) {
+export function buildColumns(rows: Row[], tolerance = 0) {
   const day = (r: Row) => r.date.slice(0, 10);
   const minute = (r: Row) => r.date.slice(0, 16);
-  const perDay = new Set(rows.map((r) => `${r.variable}|${r.target ?? ""}|${day(r)}`)).size === rows.length;
+  // Day columns unless more than `tolerance` of the (variable, object, day) pairs hold two or more values: a few
+  // re-scans must not push the whole experiment onto minute columns where no two plants line up.
+  const counts = new Map<string, number>();
+  for (const r of rows) { const k = `${r.variable}|${r.target ?? ""}|${day(r)}`; counts.set(k, (counts.get(k) ?? 0) + 1); }
+  const duplicated = [...counts.values()].filter((n) => n > 1).length;
+  const perDay = duplicated <= tolerance * counts.size;
   const key = perDay ? day : minute;
   const keys = [...new Set(rows.map(key))].sort();
   const columns = keys.map((k) => ({ key: k, times: [...new Set(rows.filter((r) => key(r) === k).map((r) => r.date.slice(11, 16)))] }));

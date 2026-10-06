@@ -21,12 +21,12 @@ export async function experimentOverview(experiment: string, variable: string) {
   const head = { id: variable, name: String(info?.name ?? variable), unit };
   if (!rows.length) return { variable: head, columns: [], plants: [] };
 
-  const { columns, key, keys } = buildColumns(rows);
+  const { columns, key, keys } = buildColumns(rows, 0.1); // a few re-scans keep day columns; the latest value of a day counts
   const byPlant = new Map<string, Row[]>();
   for (const r of rows) byPlant.set(String(r.target), [...(byPlant.get(String(r.target)) ?? []), r]);
   const plants = [...byPlant].map(([id, mine]) => ({
     id,
-    values: keys.map((k) => { const r = mine.find((x) => key(x) === k); return r ? { v: Number(r.value), at: r.date.slice(11, 16) } : null; }),
+    values: keys.map((k) => { const r = mine.filter((x) => key(x) === k).at(-1); return r ? { v: Number(r.value), at: r.date.slice(11, 16) } : null; }),
   }));
   return { variable: head, columns, plants };
 }
