@@ -456,6 +456,26 @@ button { font-family: inherit; }
 .item-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .item-box-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .item-box-key { font-size: 12px; color: var(--ink-faint); }
+.meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
+.meas-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.meas-table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: max-content; min-width: 100%; }
+.meas-table th, .meas-table td { padding: 3px 10px; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.meas-table tr:last-child th, .meas-table tr:last-child td { border-bottom: none; }
+.meas-table thead th { font-weight: 500; color: var(--ink-muted); text-align: right; font-size: 12px; line-height: 1.25; }
+.meas-table thead th small { display: block; color: var(--ink-faint); font-size: 11px; }
+.meas-table .meas-var { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; font-weight: 400; color: var(--ink); border-right: 1px solid var(--border); }
+.meas-table .meas-var a { color: var(--ink); cursor: pointer; text-decoration: none; border-bottom: 1px dotted var(--ink-faint); }
+.meas-table .meas-var a:hover { border-bottom-color: var(--ink); }
+.meas-table .meas-unit { color: var(--ink-faint); margin-left: 4px; font-size: 11.5px; }
+.meas-table td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.meas-table td.none { color: var(--ink-faint); text-align: right; }
+.meas-table td.spark { padding: 0 10px; }
+.meas-table .col-on { background: var(--type-data-soft); }
+.meas-table .meas-var.col-on { background: var(--surface); }
+.meas-spark { display: block; }
+.meas-spark polyline { fill: none; stroke: var(--type-data); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.meas-spark circle { fill: var(--type-data); display: none; }
+.meas-spark circle.on { display: block; }
 .rel-empty { color: var(--ink-faint); font-size: 12.5px; }
 
 /* selection / CTA bar */
@@ -1345,6 +1365,7 @@ async function loadNodeDetail(item) {
 // and back — refetch it immediately instead when that's the case.
 function invalidateNodeDetail(id) {
   delete NODE_DETAIL[id];
+  Object.keys(MEASUREMENTS).filter(k => k.startsWith(`${id}|`)).forEach(k => delete MEASUREMENTS[k]);
   const p = currentPane();
   if (p && p.id === id) loadNodeDetail(p);
 }
@@ -1670,7 +1691,7 @@ function chipHtml(it, unlinkField, expId) {
 // boxes; empty rows say "none". A box row with a `field` gets × on its chips in unlink mode.
 // Adding goes through the selection (select the object and the value, then Link selection).
 // `unlinkable` decides per item whether it gets an × (unlink mode only).
-function relGroupHtml(rel, { unlinkable = () => false, unlinking = false } = {}) {
+function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, withMeasurements = false } = {}) {
   let h = `<div class="rel-group"><div class="rel-label">${escapeHtml(rel.label)}</div>`;
   if (!rel.items.length) return h + `<span class="rel-empty">${rel.emptyText || "None."}</span></div>`;
   const chip = it => chipHtml(it, rel.field && unlinkable(it) ? rel.field : null);
@@ -1685,7 +1706,10 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false } = {})
         const chips = g.items.map(x => chipHtml(x, unlinking && g.field ? g.field : null, it.id)).join("");
         h += `<span class="item-box-key">${escapeHtml(g.label)}</span><div class="chip-row">${chips || `<span class="rel-empty">none</span>`}</div>`;
       });
-      h += `</div></div>`;
+      h += `</div>`;
+      // Filled in after render by loadMeasurements; removed again when the object has no values here.
+      if (it.type === "experiment" && withMeasurements) h += `<div data-meas-exp="${escapeHtml(it.id)}"></div>`;
+      h += `</div>`;
     });
     return h + `</div>`;
   }
@@ -1796,7 +1820,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
       }
     } else {
-      node.relations.forEach(rel => { html += relGroupHtml(rel); });
+      node.relations.forEach(rel => { html += relGroupHtml(rel, { withMeasurements: type === "scientific_object" }); });
     }
   } else {
     // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely
@@ -1833,8 +1857,9 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   document.getElementById("deleteFixBtn")?.addEventListener("click", async () => {
     const item = focusNode;
     delete NODE_DETAIL[item.id];
+    Object.keys(MEASUREMENTS).filter(k => k.startsWith(`${item.id}|`)).forEach(k => delete MEASUREMENTS[k]);
     await loadNodeDetail(item);
-    const fix = NODE_DETAIL[item.id]?.deleteFix;
+    const fix =NODE_DETAIL[item.id]?.deleteFix;
     if (!fix) { deleteBlockedShown = null; renderDetail(); return; }
     if (!confirm(fix.confirm)) { renderDetail(); return; }
     const res = await fetch(`api/node/delete-fix?type=${encodeURIComponent(item.type)}&id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
@@ -1881,8 +1906,8 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     });
   }
 
-  els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => {
-    chip.addEventListener("click", (e) => {
+  const onChipClick = (chip, e) => {
+    {
       const id = chip.dataset.openid;
       const found = findItemById(id) || { id, type: chip.dataset.type, label: chip.textContent.trim(), ...(chip.dataset.factor ? { factor: chip.dataset.factor } : {}) };
       if (e.ctrlKey || e.metaKey) {
@@ -1899,7 +1924,75 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       } else {
         openRelatedNode(found);
       }
+    }
+  };
+  els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => chip.addEventListener("click", (e) => onChipClick(chip, e)));
+  if (type === "scientific_object" && !unlinking) loadMeasurements(focusNode.id, onChipClick);
+}
+
+// A plant's measured values in each experiment box: variables × scan dates, one row per variable
+// with a small trend line. Asked for per object|experiment and kept for the session; the box is
+// dropped when there is nothing to show. A variable's name behaves like a chip (onChipClick).
+const MEASUREMENTS = {};
+const UNIT_TEXT = { mm2: "mm²", mm3: "mm³" };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const sig4 = n => String(Number(n.toPrecision(4)));
+
+function measurementsTableHtml(data) {
+  const e = escapeHtml;
+  const dateOf = k => ({ day: Number(k.slice(8, 10)), month: MONTHS[Number(k.slice(5, 7)) - 1], year: k.slice(0, 4), time: k.length > 10 ? k.slice(11, 16) : "" });
+  let h = `<table class="meas-table"><thead><tr><th class="meas-var">Variable</th><th>Trend</th>`;
+  data.columns.forEach((c, i) => {
+    const d = dateOf(c.key), prev = i ? dateOf(data.columns[i - 1].key) : null;
+    h += `<th data-col="${i}">${d.day} ${d.month}${d.time ? `<small>${d.time}</small>` : ""}${!prev || prev.year !== d.year ? `<small>${d.year}</small>` : ""}</th>`;
+  });
+  h += `</tr></thead><tbody>`;
+  data.variables.forEach(v => {
+    const pts = v.values.map((x, i) => x && Number.isFinite(x.v) ? { i, v: x.v } : null).filter(Boolean);
+    const lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+    const W = 72, H = 20, n = Math.max(v.values.length - 1, 1);
+    const xy = p => `${(2 + p.i / n * (W - 4)).toFixed(1)},${(hi === lo ? H / 2 : H - 3 - (p.v - lo) / (hi - lo) * (H - 6)).toFixed(1)}`;
+    const spark = pts.length > 1
+      ? `<svg class="meas-spark" width="${W}" height="${H}" aria-hidden="true"><polyline points="${pts.map(xy).join(" ")}"/>${pts.map(p => `<circle class="" data-col="${p.i}" cx="${xy(p).split(",")[0]}" cy="${xy(p).split(",")[1]}" r="3"/>`).join("")}</svg>`
+      : "";
+    const unit = UNIT_TEXT[v.unit] || v.unit;
+    h += `<tr><th class="meas-var"><a data-openid="${e(v.id)}" data-type="variable">${e(v.name)}</a>${unit ? `<span class="meas-unit">${e(unit)}</span>` : ""}</th><td class="spark">${spark}</td>`;
+    v.values.forEach((x, i) => {
+      const c = data.columns[i], d = dateOf(c.key);
+      h += x && Number.isFinite(x.v)
+        ? `<td class="num" data-col="${i}" title="${e(`${x.v}${unit ? " " + unit : ""} · ${d.day} ${d.month} ${d.year} ${x.at}`)}">${sig4(x.v)}</td>`
+        : `<td class="none" data-col="${i}">–</td>`;
     });
+    h += `</tr>`;
+  });
+  return h + `</tbody></table>`;
+}
+
+function loadMeasurements(objectId, onChipClick) {
+  els.detailBody.querySelectorAll("[data-meas-exp]").forEach(async box => {
+    const exp = box.dataset.measExp, key = `${objectId}|${exp}`;
+    box.innerHTML = `<div class="meas-title">Measurements — loading…</div>`;
+    if (!MEASUREMENTS[key]) {
+      MEASUREMENTS[key] = fetch(`api/measurements?object=${encodeURIComponent(objectId)}&experiment=${encodeURIComponent(exp)}`)
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+        .catch(() => { delete MEASUREMENTS[key]; return null; });
+    }
+    const data = await MEASUREMENTS[key];
+    if (!box.isConnected) return;
+    if (!data) { box.innerHTML = `<div class="meas-title">Measurements couldn't be loaded.</div>`; return; }
+    if (!data.variables.length) { box.remove(); return; }
+    box.innerHTML = `<div class="meas-title">Measurements</div><div class="meas-scroll">${measurementsTableHtml(data)}</div>`;
+    box.querySelectorAll("a[data-openid]").forEach(a => a.addEventListener("click", ev => onChipClick(a, ev)));
+    // Hovering a value lights up its date and its point on the trend line.
+    const table = box.querySelector("table");
+    const light = col => {
+      table.querySelectorAll(".col-on").forEach(x => x.classList.remove("col-on"));
+      table.querySelectorAll("circle.on").forEach(x => x.classList.remove("on"));
+      if (col == null) return;
+      table.querySelectorAll(`[data-col="${col}"]`).forEach(x => x.classList.add(x.tagName === "circle" ? "on" : "col-on"));
+    };
+    table.addEventListener("mouseover", ev => light(ev.target.closest("[data-col]")?.dataset.col ?? null));
+    table.addEventListener("mouseleave", () => light(null));
   });
 }
 

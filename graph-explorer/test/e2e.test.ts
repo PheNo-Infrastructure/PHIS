@@ -465,6 +465,51 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
   });
 });
 
+test("e2e: a plant's experiment box shows its measurements as variables × dates; empty experiments show none; a variable's name opens its page; hover lights the date", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const box = (id: string, label: string) => ({ id, type: "experiment", label, name: "P1", groups: [] });
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "so-1", actions: [], relations: [{ label: "In experiments", field: "experiment", items: [box("exp-a", "Trial A"), box("exp-b", "Trial B")] }],
+    }) }));
+    const asked: string[] = [];
+    await page.route("**/api/measurements*", (r) => {
+      const exp = new URL(r.request().url()).searchParams.get("experiment")!;
+      asked.push(exp);
+      const body = exp === "exp-a"
+        ? { columns: [{ key: "2025-12-30", times: ["10:00"] }, { key: "2026-01-02", times: ["10:00"] }, { key: "2026-01-03", times: ["10:00"] }],
+            variables: [{ id: "var-1", name: "Plant height", unit: "mm", values: [{ v: 12.34567, at: "10:00" }, null, { v: 20, at: "10:00" }] },
+                        { id: "var-2", name: "Leaf area", unit: "mm2", values: [{ v: 1, at: "10:00" }, { v: 2, at: "10:00" }, { v: 3, at: "10:00" }] }] }
+        : { columns: [], variables: [] };
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
+    await page.waitForTimeout(600);
+    const boxA = page.locator(".item-box", { hasText: "Trial A" });
+    const text = await boxA.locator(".meas-table").innerText();
+    assert.match(text, /30 Dec\s+2025/, "the year shows where the table starts");
+    assert.match(text, /2 Jan\s+2026/, "and where it changes");
+    assert.doesNotMatch(text, /3 Jan\s+2026/, "but not on every column");
+    assert.match(text, /Plant height\s*mm/);
+    assert.match(text, /Leaf area\s*mm²/);
+    assert.match(text, /12\.35/, "four significant digits");
+    assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator(".meas-table").count(), 0, "nothing to show -> no table");
+    assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator("[data-meas-exp]").count(), 0, "and no leftover box");
+    assert.equal(await boxA.locator("td.none").count(), 1);
+
+    await boxA.locator("td.num", { hasText: "20" }).hover();
+    assert.equal(await boxA.locator("th.col-on").count(), 1, "the date column lights up");
+    assert.equal(await boxA.locator("circle.on").count(), 2, "and its point on each trend line");
+
+    await page.screenshot({ path: process.env.MEAS_SHOT || "measurements.png", fullPage: true }).catch(() => {});
+    await boxA.locator("a[data-openid='var-1']").click();
+    await page.waitForTimeout(300);
+    assert.match(await page.locator("#detailBody").innerText(), /Plant height/);
+    assert.deepEqual([...new Set(asked)].sort(), ["exp-a", "exp-b"]);
+  });
+});
+
 test("e2e: clicking a relation chip jumps to that resource's own canonical breadcrumb, instead of appending to the current trail", async () => {
   // Regression test for a real bug: opening Org A, following a relation chip to Facility X,
   // used to just push X onto whatever breadcrumb got you to A — so following a chip back from
