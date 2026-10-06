@@ -456,6 +456,17 @@ button { font-family: inherit; }
 .item-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .item-box-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .item-box-key { font-size: 12px; color: var(--ink-faint); }
+.hx-fac { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 8px 10px 10px; margin-bottom: 8px; }
+.hx-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-top: 6px; }
+.hx-level { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px 8px; }
+.hx-head { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12.5px; cursor: pointer; border-radius: 4px; padding: 1px 4px; margin-left: -4px; }
+.hx-head small { font-weight: 400; color: var(--ink-faint); }
+.hx-plants { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+.hx-plant { font-size: 11px; line-height: 16px; border: 1px solid var(--border); border-radius: 9px; padding: 0 7px; cursor: pointer; user-select: none; }
+.hx.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+.hx-plant.on { font-weight: 700; }
+.hx.also { border-style: dashed; border-color: var(--accent); }
+.hx-note { font-size: 12px; color: var(--ink-faint); margin: 4px 0; }
 .meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
 .meas-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); }
 .meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
@@ -1730,6 +1741,41 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, withMe
   return h + `<div class="chip-row">${rel.items.map(chip).join("")}</div></div>`;
 }
 
+// An experiment's structure: its variables and its plants in a box per factor and level (a plant is
+// listed under every factor it belongs to). The .hx elements are picked/opened by the pipeline in
+// setupSelection; `on` = picked from this box, `also` = picked, but from another box.
+function structureHtml(st) {
+  const e = escapeHtml;
+  const hx = (kind, it, extra, cls = "") => {
+    const picked = selection.get(it.id);
+    const state = kind === "plant"
+      ? (picked ? ((picked.vias ?? [""]).includes(extra.via) ? " on" : " also") : "")
+      : (picked ? " on" : "");
+    const data = Object.entries(extra).map(([k, v]) => ` data-${k}="${e(v)}"`).join("");
+    return `<span class="hx ${cls}${state}" data-hx="${kind}" data-id="${e(it.id)}" data-label="${e(it.label)}"${data}>`;
+  };
+  const plants = (list, via, fac) => list.length
+    ? `<div class="hx-plants">${list.map(p => `${hx("plant", p, { via, fac }, "hx-plant")}${e(p.label)}</span>`).join("")}</div>`
+    : `<div class="hx-note">no plants</div>`;
+  let h = "";
+  if (st.variables.length) {
+    h += `<div class="rel-group"><div class="rel-label">Variables measured</div><div class="chip-row">`
+      + st.variables.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en") })).join("") + `</div></div>`;
+  }
+  h += `<div class="rel-group"><div class="rel-label">Scientific objects — by factor</div>`;
+  if (st.truncated) h += `<div class="hx-note">PHIS returned only the first 500 objects, so some are missing here.</div>`;
+  st.factors.forEach(f => {
+    h += `<div class="hx-fac" data-fac="${e(f.id)}">${hx("factor", { id: f.id, label: f.label }, { fac: f.id }, "hx-head")}${e(f.label)} <small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small></span><div class="hx-levels">`;
+    f.levels.forEach(l => {
+      h += `<div class="hx-level" data-level="${e(l.id)}">${hx("level", l, { fac: f.id, factor: f.id }, "hx-head")}${e(l.label.replace(/^[^:]*:s*/, "Level "))} <small>${l.plants.length} plants</small></span>${plants(l.plants, l.id, f.id)}</div>`;
+    });
+    if (f.unset.length) h += `<div class="hx-level"><div class="hx-head" style="cursor:default">(unset) <small>${f.unset.length} without a level here</small></div>${plants(f.unset, `${f.id}#unset`, f.id)}</div>`;
+    h += `</div></div>`;
+  });
+  if (st.other.length) h += `<div class="hx-fac" data-fac="#other"><div class="hx-head" style="cursor:default">Not in a factor <small>${st.other.length}</small></div>${plants(st.other, "#other", "#other")}</div>`;
+  return h + `</div>`;
+}
+
 function renderNodeDetail(focusNode, { local } = { local: false }) {
   const node = NODE_DETAIL[focusNode.id] || null;
   const label = focusNode.label;
@@ -1834,7 +1880,11 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
       }
     } else {
-      node.relations.forEach(rel => { html += relGroupHtml(rel, { withMeasurements: type === "scientific_object" }); });
+      if (node.structure) html += structureHtml(node.structure);
+      node.relations.forEach(rel => {
+        if (node.structure && rel.field === "scientific_object") return; // shown as boxes above (unlink mode keeps the flat list)
+        html += relGroupHtml(rel, { withMeasurements: type === "scientific_object" });
+      });
     }
   } else {
     // Covers both "not loaded yet / unsupported type" (node === null) and "loaded, genuinely

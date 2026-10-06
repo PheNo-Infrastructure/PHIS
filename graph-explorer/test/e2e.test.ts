@@ -2341,3 +2341,44 @@ test("e2e: + New device from the Devices list asks name, type (OpenSILEX's devic
     assert.deepEqual(posted, { type: "device", name: "ZZ cam", links: [], fields: { rdf_type: "vocabulary:RGBCamera", brand: "Nikon" } }); // empty optional fields are left out
   });
 });
+
+const P = (n: number) => ({ id: `so-p${n}`, label: `PB00${n}` });
+const STRUCT = {
+  truncated: false,
+  variables: [{ id: "var-1", label: "Plant Height", count: 1200 }],
+  factors: [
+    { id: "fac-g", label: "GroupID", unset: [], levels: [
+      { id: "lv-g1", type: "factor_level", label: "GroupID: 1", factor: "fac-g", plants: [P(1), P(2)] },
+      { id: "lv-g2", type: "factor_level", label: "GroupID: 2", factor: "fac-g", plants: [P(3)] } ] },
+    { id: "fac-r", label: "Replicate", unset: [], levels: [
+      { id: "lv-r1", type: "factor_level", label: "Replicate: 1", factor: "fac-r", plants: [P(1), P(2), P(3)] } ] },
+  ],
+  other: [{ id: "so-t1", label: "Tray 31" }],
+};
+async function openStructuredExperiment(page: import("playwright").Page, base: string) {
+  await page.route("**/api/node-detail*", (r) => {
+    const id = new URL(r.request().url()).searchParams.get("id");
+    const body = id === "exp-1"
+      ? { uri: "exp-1", actions: ["rename", "delete", "link"], relations: [{ label: "Scientific objects", field: "scientific_object", items: [{ id: "so-p1", type: "scientific_object", label: "PB001" }] }], structure: STRUCT }
+      : { uri: String(id), actions: [], relations: [] };
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto(base);
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => openNode({ id: "exp-1", type: "experiment", label: "Trial" }));
+  await page.waitForTimeout(500);
+}
+
+test("e2e: an experiment's page lists its variables with counts and its plants in a box per factor and level; trays sit under 'Not in a factor'", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base);
+    const body = page.locator("#detailBody");
+    assert.match(await body.locator(".rel-group", { hasText: "Variables measured" }).innerText(), /Plant Height\s*·\s*1,200/);
+    assert.equal(await body.locator(".hx-fac").count(), 3, "two factors and 'Not in a factor'");
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-level').count(), 2);
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-plant').count(), 3);
+    assert.equal(await body.locator('.hx-plant[data-id="so-p1"]').count(), 2, "a plant is listed under every factor it belongs to");
+    assert.match(await body.locator('.hx-fac[data-fac="#other"]').innerText(), /Tray 31/);
+    assert.equal(await body.locator(".rel-group", { hasText: "Scientific objects" }).locator(".chip", { hasText: "PB001" }).count(), 0, "the flat list is replaced");
+  });
+});
