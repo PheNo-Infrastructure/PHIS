@@ -69,7 +69,7 @@ the full picture. Exploratory and descriptive (mean, SD, values) — no signific
   scan; one value only -> SD blank, not zero.
 - **Click a chart** -> dialog like the plant page's, for the group: larger chart, a mean/SD/n table per scan,
   the plants in it (click highlights, ctrl hides), links to the plant, level or factor page.
-- Several variables selected: one grid at a time with the variable switch (open question below).
+- Several variables selected: one grid per variable, paged — a pager above the grid (‹ Plant Height Max · 2 of 4 ›, plus the variable names as tabs) goes to the grid of that variable. The group selection is shared; only the variable changes. A plant with no values for the shown variable gets an empty chart saying so (a plant is tied to a variable only through its values).
 
 ### 4. Making it known
 - The experiment page gets a short "How charts work" note (collapsible, like "How scientific objects work")
@@ -103,8 +103,10 @@ the full picture. Exploratory and descriptive (mean, SD, values) — no signific
 3. The overview route.
 4. Grid and the click-for-detail dialog; then statistics; then discoverability pieces.
 
+## Decided with the user (2026-10-06)
+- Several variables: one grid per variable, paged (see 3).
+- A standalone plant gets its own chart per variable; plants are tied to variables only through their values.
+- Colours: left to the implementer — categorical palette from the dataviz skill, one colour per level, checked in light and dark, ~8 levels per chart.
+
 ## Open
-- Several variables: one grid at a time with a switch (recommended), stacked grids, or variables as a grid
-  dimension.
-- Whether a standalone plant gets its own chart each (assumed) or one shared "Plants" chart.
-- Exact colour palette and the ~8-level cap, to settle against the dataviz palette during step 4.
+- None blocking. Revisit stacked grids or variables as a grid dimension only if paging proves awkward.
