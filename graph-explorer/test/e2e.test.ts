@@ -465,7 +465,7 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
   });
 });
 
-test("e2e: a plant's experiment box shows its measurements as variables × dates; empty experiments show none; a variable's name opens its page; hover lights the date", async () => {
+test("e2e: a plant's experiment box shows its measurements as a trend line per variable; hover gives a value, click gives all of them; empty experiments show none; a variable's name opens its page", async () => {
   await withServerAndBrowser(async (base, page) => {
     const box = (id: string, label: string) => ({ id, type: "experiment", label, name: "P1", groups: [] });
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
@@ -487,21 +487,32 @@ test("e2e: a plant's experiment box shows its measurements as variables × dates
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await page.waitForTimeout(600);
     const boxA = page.locator(".item-box", { hasText: "Trial A" });
-    const text = await boxA.locator(".meas-table").innerText();
-    assert.match(text, /30 Dec\s+2025/, "the year shows where the table starts");
-    assert.match(text, /2 Jan\s+2026/, "and where it changes");
-    assert.doesNotMatch(text, /3 Jan\s+2026/, "but not on every column");
-    assert.match(text, /Plant height\s*mm/);
-    assert.match(text, /Leaf area\s*mm²/);
-    assert.match(text, /12\.35/, "four significant digits");
-    assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator(".meas-table").count(), 0, "nothing to show -> no table");
+    assert.equal(await boxA.locator(".meas-row").count(), 2, "one row per variable");
+    const text = await boxA.locator(".meas-list").innerText();
+    assert.match(text, /Plant heights*mm/);
+    assert.match(text, /Leaf areas*mm²/);
+    assert.equal(await boxA.locator(".meas-row", { hasText: "Plant height" }).locator(".meas-last").innerText(), "20", "latest value on the right");
+    assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator(".meas-list").count(), 0, "nothing to show -> no list");
     assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator("[data-meas-exp]").count(), 0, "and no leftover box");
-    assert.equal(await boxA.locator("td.none").count(), 1);
 
-    await boxA.locator("td.num", { hasText: "20" }).hover();
-    assert.equal(await boxA.locator("th.col-on").count(), 1, "the date column lights up");
-    assert.equal(await boxA.locator("circle.on").count(), 2, "and its point on each trend line");
+    const chart = boxA.locator(".meas-row", { hasText: "Plant height" }).locator(".meas-chart");
+    const r = (await chart.boundingBox())!;
+    await page.mouse.move(r.x + 2, r.y + r.height / 2);
+    assert.match(await chart.locator(".meas-tip").innerText(), /30 Dec 2025 10:00 · 12.35 mm/, "hover names the scan's time and value");
+    await page.mouse.move(r.x + r.width - 2, r.y + r.height / 2);
+    assert.match(await chart.locator(".meas-tip").innerText(), /3 Jan 2026 10:00 · 20 mm/);
 
+    await chart.click();
+    const dlg = page.locator("dialog.meas-dialog");
+    assert.equal(await dlg.count(), 1, "clicking the chart opens the full picture");
+    const dt = await dlg.innerText();
+    assert.match(dt, /Plant height/);
+    assert.match(dt, /12.34567/, "every value at full precision");
+    assert.equal(await dlg.locator(".meas-values tbody tr").count(), 2, "only scans that have a value");
+    await page.screenshot({ path: (process.env.MEAS_SHOT || "measurements.png").replace(".png", "-dialog.png") }).catch(() => {});
+    await dlg.locator("[data-close]").click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator("dialog.meas-dialog").count(), 0, "Close removes it");
     await page.screenshot({ path: process.env.MEAS_SHOT || "measurements.png", fullPage: true }).catch(() => {});
     await boxA.locator("a[data-openid='var-1']").click();
     await page.waitForTimeout(300);

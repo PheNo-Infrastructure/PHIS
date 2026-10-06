@@ -457,25 +457,40 @@ button { font-family: inherit; }
 .item-box-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .item-box-key { font-size: 12px; color: var(--ink-faint); }
 .meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
-.meas-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
-.meas-table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: max-content; min-width: 100%; }
-.meas-table th, .meas-table td { padding: 3px 10px; white-space: nowrap; border-bottom: 1px solid var(--border); }
-.meas-table tr:last-child th, .meas-table tr:last-child td { border-bottom: none; }
-.meas-table thead th { font-weight: 500; color: var(--ink-muted); text-align: right; font-size: 12px; line-height: 1.25; }
-.meas-table thead th small { display: block; color: var(--ink-faint); font-size: 11px; }
-.meas-table .meas-var { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; font-weight: 400; color: var(--ink); border-right: 1px solid var(--border); }
-.meas-table .meas-var a { color: var(--ink); cursor: pointer; text-decoration: none; border-bottom: 1px dotted var(--ink-faint); }
-.meas-table .meas-var a:hover { border-bottom-color: var(--ink); }
-.meas-table .meas-unit { color: var(--ink-faint); margin-left: 4px; font-size: 11.5px; }
-.meas-table td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
-.meas-table td.none { color: var(--ink-faint); text-align: right; }
-.meas-table td.spark { padding: 0 10px; }
-.meas-table .col-on { background: var(--type-data-soft); }
-.meas-table .meas-var.col-on { background: var(--surface); }
-.meas-spark { display: block; }
-.meas-spark polyline { fill: none; stroke: var(--type-data); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.meas-spark circle { fill: var(--type-data); display: none; }
-.meas-spark circle.on { display: block; }
+.meas-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); }
+.meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr 56px; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.meas-row:last-child { border-bottom: none; }
+.meas-name { min-width: 0; overflow-wrap: anywhere; }
+.meas-name a { color: var(--ink); cursor: pointer; border-bottom: 1px dotted var(--ink-faint); }
+.meas-name a:hover { border-bottom-color: var(--ink); }
+.meas-unit { color: var(--ink-faint); margin-left: 4px; font-size: 11.5px; }
+.meas-last { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.meas-chart { position: relative; height: 30px; cursor: pointer; }
+.meas-chart.none { cursor: default; color: var(--ink-faint); font-size: 11.5px; line-height: 30px; }
+.meas-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.meas-chart polyline { fill: none; stroke: var(--type-data); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.meas-pt, .meas-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--type-data); pointer-events: none; }
+.meas-dot { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; box-shadow: 0 0 0 3px var(--type-data-soft); }
+.meas-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: nowrap; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; }
+.meas-dialog { width: min(720px, 94vw); max-height: 90vh; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+.meas-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.meas-dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.meas-dlg-title { font-size: 16px; font-weight: 600; }
+.meas-dlg-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
+.meas-chart.big { height: 220px; cursor: default; border: 1px solid var(--border); border-radius: var(--radius); }
+.meas-axis { position: absolute; left: 6px; font-size: 11px; color: var(--ink-faint); }
+.meas-axis.top { top: 4px; }
+.meas-axis.bottom { bottom: 4px; }
+.meas-axis-x { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-faint); margin: 4px 2px 12px; }
+.meas-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.meas-stats div { display: flex; flex-direction: column; font-size: 11.5px; color: var(--ink-faint); }
+.meas-stats b { font-size: 14px; color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.meas-values { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.meas-values table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.meas-values th { position: sticky; top: 0; background: var(--surface); text-align: left; font-weight: 500; color: var(--ink-muted); }
+.meas-values th, .meas-values td { padding: 3px 10px; border-bottom: 1px solid var(--border); }
+.meas-values td:last-child, .meas-values th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.meas-dlg-foot { margin-top: 12px; text-align: right; }
 .rel-empty { color: var(--ink-faint); font-size: 12.5px; }
 
 /* selection / CTA bar */
@@ -1927,7 +1942,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     }
   };
   els.detailBody.querySelectorAll(".chip[data-openid]").forEach(chip => chip.addEventListener("click", (e) => onChipClick(chip, e)));
-  if (type === "scientific_object" && !unlinking) loadMeasurements(focusNode.id, onChipClick);
+  if (type === "scientific_object" && !unlinking) loadMeasurements(focusNode.id, focusNode.label, onChipClick);
 }
 
 // A plant's measured values in each experiment box: variables × scan dates, one row per variable
@@ -1938,37 +1953,81 @@ const UNIT_TEXT = { mm2: "mm²", mm3: "mm³" };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const sig4 = n => String(Number(n.toPrecision(4)));
 
-function measurementsTableHtml(data) {
-  const e = escapeHtml;
-  const dateOf = k => ({ day: Number(k.slice(8, 10)), month: MONTHS[Number(k.slice(5, 7)) - 1], year: k.slice(0, 4), time: k.length > 10 ? k.slice(11, 16) : "" });
-  let h = `<table class="meas-table"><thead><tr><th class="meas-var">Variable</th><th>Trend</th>`;
-  data.columns.forEach((c, i) => {
-    const d = dateOf(c.key), prev = i ? dateOf(data.columns[i - 1].key) : null;
-    h += `<th data-col="${i}">${d.day} ${d.month}${d.time ? `<small>${d.time}</small>` : ""}${!prev || prev.year !== d.year ? `<small>${d.year}</small>` : ""}</th>`;
+// One row per variable: name, a trend line that fills the row (hover = that scan's time and value,
+// click = the full picture in a dialog), and the latest value.
+const timeOf = k => Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10), k.length > 10 ? +k.slice(11, 13) : 0, k.length > 10 ? +k.slice(14, 16) : 0);
+const whenText = (key, at) => `${+key.slice(8, 10)} ${MONTHS[+key.slice(5, 7) - 1]} ${key.slice(0, 4)}${at ? " " + at : ""}`;
+const unitText = u => UNIT_TEXT[u] || u;
+
+// A variable's scans that have a value, placed 0-100 across and 0-100 down (0 = top) with a little margin.
+function measurementPoints(data, v) {
+  const pts = v.values.map((x, i) => x && Number.isFinite(x.v) ? { v: x.v, at: x.at, key: data.columns[i].key, t: timeOf(data.columns[i].key) } : null).filter(Boolean);
+  const t0 = Math.min(...pts.map(p => p.t)), t1 = Math.max(...pts.map(p => p.t));
+  const lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+  pts.forEach(p => {
+    p.x = 2 + 96 * (t1 === t0 ? 0.5 : (p.t - t0) / (t1 - t0));
+    p.y = 12 + 76 * (hi === lo ? 0.5 : 1 - (p.v - lo) / (hi - lo));
   });
-  h += `</tr></thead><tbody>`;
-  data.variables.forEach(v => {
-    const pts = v.values.map((x, i) => x && Number.isFinite(x.v) ? { i, v: x.v } : null).filter(Boolean);
-    const lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
-    const W = 72, H = 20, n = Math.max(v.values.length - 1, 1);
-    const xy = p => `${(2 + p.i / n * (W - 4)).toFixed(1)},${(hi === lo ? H / 2 : H - 3 - (p.v - lo) / (hi - lo) * (H - 6)).toFixed(1)}`;
-    const spark = pts.length > 1
-      ? `<svg class="meas-spark" width="${W}" height="${H}" aria-hidden="true"><polyline points="${pts.map(xy).join(" ")}"/>${pts.map(p => `<circle class="" data-col="${p.i}" cx="${xy(p).split(",")[0]}" cy="${xy(p).split(",")[1]}" r="3"/>`).join("")}</svg>`
-      : "";
-    const unit = UNIT_TEXT[v.unit] || v.unit;
-    h += `<tr><th class="meas-var"><a data-openid="${e(v.id)}" data-type="variable">${e(v.name)}</a>${unit ? `<span class="meas-unit">${e(unit)}</span>` : ""}</th><td class="spark">${spark}</td>`;
-    v.values.forEach((x, i) => {
-      const c = data.columns[i], d = dateOf(c.key);
-      h += x && Number.isFinite(x.v)
-        ? `<td class="num" data-col="${i}" title="${e(`${x.v}${unit ? " " + unit : ""} · ${d.day} ${d.month} ${d.year} ${x.at}`)}">${sig4(x.v)}</td>`
-        : `<td class="none" data-col="${i}">–</td>`;
-    });
-    h += `</tr>`;
-  });
-  return h + `</tbody></table>`;
+  return pts;
 }
 
-function loadMeasurements(objectId, onChipClick) {
+function chartHtml(pts, big) {
+  const line = pts.length > 1 ? `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline vector-effect="non-scaling-stroke" points="${pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}"/></svg>` : "";
+  const dots = big || pts.length === 1 ? pts.map(p => `<span class="meas-pt" style="left:${p.x}%;top:${p.y}%"></span>`).join("") : "";
+  return `${line}${dots}<span class="meas-dot"></span><span class="meas-tip"></span>`;
+}
+
+// Hovering a chart picks the nearest scan: its point lights up and a tip names the time and value.
+function wireChart(chart, pts, unit) {
+  const dot = chart.querySelector(".meas-dot"), tip = chart.querySelector(".meas-tip");
+  const off = () => { dot.style.display = tip.style.display = "none"; };
+  chart.addEventListener("mousemove", ev => {
+    const r = chart.getBoundingClientRect();
+    const fx = (ev.clientX - r.left) / r.width * 100;
+    const p = pts.reduce((a, b) => Math.abs(b.x - fx) < Math.abs(a.x - fx) ? b : a);
+    dot.style.cssText = `display:block;left:${p.x}%;top:${p.y}%`;
+    tip.textContent = `${whenText(p.key, p.at)} · ${sig4(p.v)}${unit ? " " + unit : ""}`;
+    tip.style.cssText = `display:block;left:${p.x}%;transform:translateX(-${p.x}%)`;
+  });
+  chart.addEventListener("mouseleave", off);
+  off();
+}
+
+function measurementsHtml(data) {
+  const e = escapeHtml;
+  return `<div class="meas-list">${data.variables.map((v, i) => {
+    const pts = measurementPoints(data, v), last = pts[pts.length - 1], unit = unitText(v.unit);
+    return `<div class="meas-row"><div class="meas-name"><a data-openid="${e(v.id)}" data-type="variable">${e(v.name)}</a>${unit ? `<span class="meas-unit">${e(unit)}</span>` : ""}</div>`
+      + (pts.length
+        ? `<div class="meas-chart" data-var="${i}" title="Click for all values">${chartHtml(pts)}</div><div class="meas-last" title="${e(`Latest: ${last.v}${unit ? " " + unit : ""}, ${whenText(last.key, last.at)}`)}">${sig4(last.v)}</div>`
+        : `<div class="meas-chart none">no values</div><div class="meas-last"></div>`)
+      + `</div>`;
+  }).join("")}</div>`;
+}
+
+// The full picture for one variable on one plant: a big chart, the numbers that summarise it, and every value.
+function openMeasurementDialog(data, v, plantLabel, expLabel, onOpenVariable) {
+  const e = escapeHtml, pts = measurementPoints(data, v), unit = unitText(v.unit);
+  const vals = pts.map(p => p.v), mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const stat = (k, x) => `<div><span>${k}</span><b>${e(x)}</b></div>`;
+  const dlg = document.createElement("dialog");
+  dlg.className = "meas-dialog";
+  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(v.name)}${unit ? `<span class="meas-unit">${e(unit)}</span>` : ""}</div>
+      <div class="meas-dlg-sub">${e(plantLabel)} · ${e(expLabel)}</div></div><button class="btn ghost small" data-close>Close</button></div>
+    <div class="meas-chart big">${chartHtml(pts, true)}<span class="meas-axis top">${sig4(Math.max(...vals))}</span><span class="meas-axis bottom">${sig4(Math.min(...vals))}</span></div>
+    <div class="meas-axis-x"><span>${e(whenText(pts[0].key))}</span><span>${e(whenText(pts[pts.length - 1].key))}</span></div>
+    <div class="meas-stats">${stat("Scans", pts.length)}${stat("Min", sig4(Math.min(...vals)))}${stat("Max", sig4(Math.max(...vals)))}${stat("Mean", sig4(mean))}${stat("First", sig4(vals[0]))}${stat("Latest", sig4(vals[vals.length - 1]))}</div>
+    <div class="meas-values"><table><thead><tr><th>Date</th><th>Time</th><th>Value${unit ? ` (${e(unit)})` : ""}</th></tr></thead><tbody>${pts.map(p => `<tr><td>${e(whenText(p.key))}</td><td>${e(p.at)}</td><td>${e(p.v)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="meas-dlg-foot"><button class="btn ghost small" data-var>Open ${e(v.name)}</button></div>`;
+  document.body.appendChild(dlg);
+  wireChart(dlg.querySelector(".meas-chart"), pts, unit);
+  dlg.addEventListener("click", ev => { if (ev.target === dlg || ev.target.closest("[data-close]")) dlg.close(); });
+  dlg.querySelector("[data-var]").addEventListener("click", ev => { dlg.close(); onOpenVariable(ev); });
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.showModal();
+}
+
+function loadMeasurements(objectId, objectLabel, onChipClick) {
   els.detailBody.querySelectorAll("[data-meas-exp]").forEach(async box => {
     const exp = box.dataset.measExp, key = `${objectId}|${exp}`;
     box.innerHTML = `<div class="meas-title">Measurements — loading…</div>`;
@@ -1981,18 +2040,15 @@ function loadMeasurements(objectId, onChipClick) {
     if (!box.isConnected) return;
     if (!data) { box.innerHTML = `<div class="meas-title">Measurements couldn't be loaded.</div>`; return; }
     if (!data.variables.length) { box.remove(); return; }
-    box.innerHTML = `<div class="meas-title">Measurements</div><div class="meas-scroll">${measurementsTableHtml(data)}</div>`;
+    box.innerHTML = `<div class="meas-title">Measurements — hover a line for a value, click it for all of them</div>${measurementsHtml(data)}`;
+    const expLabel = box.closest(".item-box")?.querySelector(".chip")?.textContent.trim() ?? "";
     box.querySelectorAll("a[data-openid]").forEach(a => a.addEventListener("click", ev => onChipClick(a, ev)));
-    // Hovering a value lights up its date and its point on the trend line.
-    const table = box.querySelector("table");
-    const light = col => {
-      table.querySelectorAll(".col-on").forEach(x => x.classList.remove("col-on"));
-      table.querySelectorAll("circle.on").forEach(x => x.classList.remove("on"));
-      if (col == null) return;
-      table.querySelectorAll(`[data-col="${col}"]`).forEach(x => x.classList.add(x.tagName === "circle" ? "on" : "col-on"));
-    };
-    table.addEventListener("mouseover", ev => light(ev.target.closest("[data-col]")?.dataset.col ?? null));
-    table.addEventListener("mouseleave", () => light(null));
+    box.querySelectorAll(".meas-chart[data-var]").forEach(chart => {
+      const v = data.variables[Number(chart.dataset.var)], pts = measurementPoints(data, v), unit = unitText(v.unit);
+      wireChart(chart, pts, unit);
+      const nameLink = chart.closest(".meas-row").querySelector("a[data-openid]");
+      chart.addEventListener("click", () => openMeasurementDialog(data, v, objectLabel, expLabel, ev => onChipClick(nameLink, ev)));
+    });
   });
 }
 
