@@ -3506,7 +3506,7 @@ function renderActionbar() {
       <span class="selection-names">${names}</span>
     </div>
     <button class="btn ghost" id="clearSel">Clear</button>
-    ${plan.why ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
+    ${plan.why && !(grid && grid.plan.variables.length && grid.plan.rows.length) ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${canLink && !plan.noUnlink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
     ${gridButtonHtml(grid)}

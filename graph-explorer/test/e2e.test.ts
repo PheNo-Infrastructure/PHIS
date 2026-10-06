@@ -2649,6 +2649,7 @@ test("e2e: Show chart grid appears once a variable and something chartable are p
       assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Pick plants, levels or a factor/, "a variable but nothing to chart: says what to pick");
       await page.locator('button.dtab[data-dtab="plants"]').click();
       await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+      assert.doesNotMatch((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /can't be linked/, "a chartable selection is not told it can't be linked");
       await page.locator("#showGridBtn").click();
 
       const grid = page.locator("#chartGrid");
