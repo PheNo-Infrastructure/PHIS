@@ -2619,3 +2619,91 @@ test("e2e: on the Variables tab, shift-click picks the range of the listed (filt
     STRUCT.variables.length -= extra.length;
   }
 });
+
+const OV = (name: string, base: number) => ({
+  variable: { id: name, name, unit: "mm" },
+  columns: [{ key: "2025-10-22", times: ["10:00"] }, { key: "2025-10-23", times: ["10:00"] }, { key: "2025-10-24", times: ["10:00"] }],
+  plants: [1, 2, 3].map((n) => ({ id: `so-p${n}`, values: [{ v: base + n, at: "10:00" }, { v: base * 2 + n * 2, at: "10:00" }, n === 3 ? null : { v: base * 3 + n * 3, at: "10:00" }] })),
+});
+async function routeOverview(page: import("playwright").Page, seen: string[] = []) {
+  await page.route("**/api/experiment-overview*", (r) => {
+    const v = new URL(r.request().url()).searchParams.get("variable")!;
+    seen.push(v);
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(OV(v, v === "var-1" ? 10 : 100)) });
+  });
+}
+async function withTwoVariables(fn: () => Promise<void>) {
+  STRUCT.variables.push({ id: "var-2", label: "NDVI", count: 9 });
+  try { await fn(); } finally { STRUCT.variables.length = 1; }
+}
+
+test("e2e: Show chart grid appears once a variable and something chartable are picked; the grid has a row per factor, a chart per level, and pages per variable", async () => {
+  await withTwoVariables(async () => {
+    await withServerAndBrowser(async (base, page) => {
+      const seen: string[] = [];
+      await routeOverview(page, seen);
+      await openStructuredExperiment(page, base, "variables");
+      assert.equal(await page.locator("#showGridBtn").count(), 0, "nothing picked yet");
+      await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+      await page.locator("#variablesBody .chip", { hasText: "NDVI" }).click({ modifiers: ["Control"] });
+      assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Pick plants, levels or a factor/, "a variable but nothing to chart: says what to pick");
+      await page.locator('button.dtab[data-dtab="plants"]').click();
+      await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+      await page.locator("#showGridBtn").click();
+
+      const grid = page.locator("#chartGrid");
+      await grid.locator(".g-chart").first().waitFor();
+      assert.equal(await grid.locator(".g-row").count(), 1);
+      assert.match(await grid.locator(".g-row").first().innerText(), /GroupID/);
+      assert.equal(await grid.locator(".g-chart").count(), 2, "a chart per level of the picked factor");
+      assert.equal(await grid.locator(".g-chart").first().locator(".g-line").count(), 2, "its plants as thin lines");
+      assert.equal(await grid.locator(".g-chart").first().locator(".g-mean").count(), 1);
+      assert.match(await grid.locator(".g-title").innerText(), /Plant Height/);
+
+      await grid.locator("#gridNext").click();
+      await grid.locator(".g-title", { hasText: "NDVI" }).waitFor();
+      assert.deepEqual(seen, ["var-1", "var-2"], "each variable fetched once, when paged to");
+      await grid.locator("#gridPrev").click();
+      await grid.locator(".g-title", { hasText: "Plant Height" }).waitFor();
+      assert.deepEqual(seen, ["var-1", "var-2"], "paging back reuses the cache");
+    });
+  });
+});
+
+test("e2e: the statistics toggle draws a mean ± SD band and fades the plant lines; a group of one plant has no band", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    assert.equal(await grid.locator(".g-band").count(), 0, "off by default");
+    await grid.locator("#gridStats").check();
+    assert.equal(await grid.locator(".g-chart").first().locator(".g-band").count(), 1, "level 1 has 2 plants: a band");
+    assert.equal(await grid.locator(".g-chart").nth(1).locator(".g-band").count(), 0, "level 2 has 1 plant: SD is null, no band");
+    assert.equal(await grid.locator(".g-chart.stats").count(), 2, "stats class fades the plant lines");
+  });
+});
+
+test("e2e: a standalone plant and a plant picked in a level box get their charts; empty values say so; hover names the scan", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-fac[data-fac="fac-g"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    await page.locator('.hx-fac[data-fac="#other"] .hx-plant').first().click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    assert.deepEqual(await grid.locator(".g-row").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.row)), ["GroupID", "Plants"]);
+    assert.match(await grid.locator('.g-chart[data-key="plant:so-t1"]').innerText(), /no values/i, "the tray has none for this variable");
+    const plot = grid.locator('.g-chart[data-key="lv-g1:picked"] .g-plot');
+    const box = (await plot.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    assert.match(await plot.locator(".g-tip").innerText(), /22 Oct 2025/);
+  });
+});
