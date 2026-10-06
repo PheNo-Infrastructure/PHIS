@@ -34,15 +34,26 @@ the full picture. Exploratory and descriptive (mean, SD, values) — no signific
 
 ## Design
 
-### 1. Experiment page
-- **Variables** group: the variables with values in this experiment, each chip with its value count
-  (this is also the "Measured in" reverse view planned for the variable page). Selectable chips.
-- **Scientific objects** group becomes **boxes per factor**: factor box (header selectable = whole factor)
-  > level boxes (header selectable = the level) > plant chips (selectable). Trays and any object with no
-  factor level: a "Not in a factor" box. A plant lacking a level in a factor: an "(unset)" box in that factor.
-- Boxes with many plants collapse to a header and count, expand on click.
-- Plain click on a plant, level or factor opens its page (chip rule). Ctrl toggles, shift ranges (reading
-  order within one factor's boxes), drag sweeps (plants within one factor's boxes only).
+### 1. Experiment page (tabs)
+Added 2026-10-06 after plan 1 showed the flat layout does not scale (21 variable chips + 200 plant chips + trays).
+The page gets tabs; a tab label always carries its count.
+- **Overview** (default): the experiment's facts; count cards (variables and values, plants and trays, factors, scan range);
+  the **chart builder** (Variable: one or more, searchable "add"; Compare: one factor = all its levels, or "a single plant…";
+  **Show chart grid**); the **Factors** with their levels as selectable chips (click opens, ctrl/shift pick). The Overview holds
+  only things that stay small; a variable shows as a chip only when there are at most ~8, otherwise through the builder's search.
+  Each factor card has a **Pick plants ›** button (Plants tab grouped by that factor); a level chip has a small › (same, scrolled to
+  and highlighting that level); the builder's "a single plant…" opens the Plants tab ungrouped with the filter focused.
+  Plain click on a factor/level name still opens its page; the buttons are separate. The Plants tab has a "‹ Overview" link.
+- **Variables**: filterable list with counts (plain click opens, ctrl picks).
+- **Plants**: "Group by" (a factor, or none = A-Z), a filter box, a box per level with plants as small tiles (name on hover; the
+  pick rules of section 2 apply unchanged); "Not in a factor" and "(unset)" boxes as before.
+- **Factors**, **Species**: the plain connected lists.
+- The builder is not a second mechanism: choosing a variable/factor there fills the same selection, and "Show chart grid" is the
+  same button as the action bar's; picks made on the Plants tab show in the builder ("Compare: Replicate - 3 plants picked").
+- Selection is global across tabs.
+- Tabs as a general rule: a node page gets tabs automatically when it has more than one connected group and the total is long
+  (~20 items); small pages stay as they are. (Assumed, to confirm with the user; experiments are the first user.)
+- Quick looks (miniature grids on the Overview) are later, not first version.
 
 ### 2. Selection
 - Normal case: unchanged. A plant is one pick keyed by its id. Each pick made in a box also records `via`
@@ -95,6 +106,9 @@ the full picture. Exploratory and descriptive (mean, SD, values) — no signific
   (instant toggling; custom groups need no new server logic).
 - Statistics maths in one small pure function with unit tests.
 - Grid and dialog reuse the plant page's chart code (`chartHtml`, `wireChart`, the dialog).
+
+## Separate small feature: back/forward
+Browser history for in-app navigation: `navigateTo` pushes a history entry and keeps the path in memory; `popstate` restores it (Alt+Left/Right and mouse buttons then work). Not part of the chart grid; build before plan 2.
 
 ## Out of scope (first version)
 - Significance tests, regression, exporting data or images.
