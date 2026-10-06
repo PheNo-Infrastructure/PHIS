@@ -2750,3 +2750,22 @@ test("e2e: an empty chart does not open a detail dialog", async () => {
     assert.equal(await page.locator("#chartDetail").count(), 0);
   });
 });
+
+test("e2e: the Overview's chart builder sets the selection and opens the grid; a note explains how charts work", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, null);
+    const body = page.locator("#detailBody");
+    assert.match(await body.locator("details.how-charts summary").innerText(), /How charts work/);
+    assert.equal(await body.locator("#cbVariable option").count(), 1);
+    await body.locator('button.cb-factor[data-fac="fac-r"]').click();
+    await body.locator("#cbShow").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    assert.match(await grid.locator(".g-row").first().innerText(), /Replicate/);
+    assert.deepEqual(await page.evaluate(() => [...selection.values()].map((v: any) => v.type).sort()), ["factor", "variable"], "the builder just fills the selection");
+    await grid.locator("#gridClose").click();
+    await page.waitForTimeout(100);
+    assert.match((await page.locator("#actionbar").innerText()).replace(/\s+/g, " "), /Show chart grid/, "and the action bar offers the same button");
+  });
+});
