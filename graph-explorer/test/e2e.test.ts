@@ -2572,3 +2572,19 @@ test("e2e: on the Overview, shift-click on a factor's level chips picks the rang
     assert.deepEqual((await sel()).map((s) => s[0]).sort(), ["lv-g2", "lv-r1"], "across factors it adds just that level instead of a nonsense range");
   });
 });
+
+test("e2e: the graph-only bar names the 'None (A-Z)' view properly, and tiles carry their full name as a hover title", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base);
+    const body = page.locator("#detailBody");
+    assert.equal(await body.locator('.hx-plant[data-id="so-p1"]').first().getAttribute("title"), "PB001", "a tile's title is its full name");
+    await body.locator('.hx-fac[data-fac="fac-g"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    await body.locator('button.pill[data-by="none"]').click();
+    await body.locator('.hx-fac[data-fac="#all"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
+    const text = (await page.locator("#actionbar").innerText()).replace(/\s+/g, " ");
+    assert.match(text, /PB001 is picked in GroupID: 1 and All plants/);
+    assert.doesNotMatch(text, /#all/);
+    await page.locator('button.dtab[data-dtab="overview"]').click();
+    assert.equal(await body.locator('.ov-lv', { hasText: "GroupID: 1" }).getAttribute("title"), "GroupID: 1", "an Overview level cell has its full label as a title");
+  });
+});
