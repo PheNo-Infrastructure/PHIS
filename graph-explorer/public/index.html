@@ -522,6 +522,10 @@ button { font-family: inherit; }
 .g-chart.stats .g-line { opacity: .12; }
 .g-mean { stroke-width: 2.4; }
 .g-band { opacity: .2; stroke: none; }
+.g-yh, .g-yl { position: absolute; left: 2px; font-size: 10px; color: var(--ink-faint); pointer-events: none; line-height: 1; }
+.g-yh { top: 12%; transform: translateY(-50%); }
+.g-yl { top: 88%; transform: translateY(-50%); }
+.g-xa { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
 .g-pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; }
 .g-empty { color: var(--ink-faint); font-size: 12px; line-height: var(--gh, 96px); text-align: center; }
 .g-plants { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -2029,7 +2033,7 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   const mean = path(stats.map(s => s ? s.mean : null));
   if (mean.length > 1) svg += `<polyline class="g-mean" stroke="${color}" points="${mean.join(" ")}"/>`;
   else if (mean.length === 1) { const [x, y] = mean[0].split(","); dots = `<span class="g-pt" style="left:${x}%;top:${y}%;background:${color}"></span>`; }
-  return `<div class="g-chart${opts.stats ? " stats" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:220px"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-tip"></span></div></div>`;
+  return `<div class="g-chart${opts.stats ? " stats" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:220px"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-yh">${sig4(range.hi)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div></div>`;
 }
 
 // Hover: the nearest scan of the chart: the mean (± SD, n) of a group, the value of a single plant.

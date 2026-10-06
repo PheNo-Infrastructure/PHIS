@@ -2875,3 +2875,16 @@ test("e2e: saved grid settings are applied when the grid opens", async () => {
     assert.equal(await grid.locator("#gridShared").isChecked(), false);
   });
 });
+
+test("e2e: every chart has a scale: the y range (with the unit) and the first and last scan dates", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openGridFor(page, base);
+    const chart = page.locator('#chartGrid .g-chart[data-key="lv-g1"]');
+    assert.match(await chart.locator(".g-yh").innerText(), /^36 mm$/, "top of the y-axis: the highest value in the grid, with the unit");
+    assert.equal((await chart.locator(".g-yl").innerText()).trim(), "11", "bottom of the y-axis");
+    const x = (await chart.locator(".g-xa").innerText()).replace(/\s+/g, " ");
+    assert.match(x, /22 Oct 2025.*24 Oct 2025/, "first and last scan");
+    await page.locator("#chartGrid #gridShared").uncheck();
+    assert.equal((await page.locator('#chartGrid .g-chart[data-key="lv-g2"] .g-yh').innerText()).trim(), "26 mm", "without the shared axis each chart has its own range (level 2's highest is 26)");
+  });
+});
