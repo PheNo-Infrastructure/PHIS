@@ -491,7 +491,6 @@ test("e2e: a plant's experiment box shows its measurements as a trend line per v
     const text = await boxA.locator(".meas-list").innerText();
     assert.match(text, /Plant heights*mm/);
     assert.match(text, /Leaf areas*mm²/);
-    assert.equal(await boxA.locator(".meas-row", { hasText: "Plant height" }).locator(".meas-last").innerText(), "20", "latest value on the right");
     assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator(".meas-list").count(), 0, "nothing to show -> no list");
     assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator("[data-meas-exp]").count(), 0, "and no leftover box");
 

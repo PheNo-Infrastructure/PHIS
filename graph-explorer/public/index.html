@@ -458,13 +458,12 @@ button { font-family: inherit; }
 .item-box-key { font-size: 12px; color: var(--ink-faint); }
 .meas-title { font-size: 12px; color: var(--ink-faint); margin-bottom: 4px; }
 .meas-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); }
-.meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr 56px; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.meas-row { display: grid; grid-template-columns: minmax(130px, 36%) 1fr; gap: 12px; align-items: center; padding: 3px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
 .meas-row:last-child { border-bottom: none; }
 .meas-name { min-width: 0; overflow-wrap: anywhere; }
 .meas-name a { color: var(--ink); cursor: pointer; border-bottom: 1px dotted var(--ink-faint); }
 .meas-name a:hover { border-bottom-color: var(--ink); }
 .meas-unit { color: var(--ink-faint); margin-left: 4px; font-size: 11.5px; }
-.meas-last { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
 .meas-chart { position: relative; height: 30px; cursor: pointer; }
 .meas-chart.none { cursor: default; color: var(--ink-faint); font-size: 11.5px; line-height: 30px; }
 .meas-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -1996,11 +1995,11 @@ function wireChart(chart, pts, unit) {
 function measurementsHtml(data) {
   const e = escapeHtml;
   return `<div class="meas-list">${data.variables.map((v, i) => {
-    const pts = measurementPoints(data, v), last = pts[pts.length - 1], unit = unitText(v.unit);
+    const pts = measurementPoints(data, v), unit = unitText(v.unit);
     return `<div class="meas-row"><div class="meas-name"><a data-openid="${e(v.id)}" data-type="variable">${e(v.name)}</a>${unit ? `<span class="meas-unit">${e(unit)}</span>` : ""}</div>`
       + (pts.length
-        ? `<div class="meas-chart" data-var="${i}" title="Click for all values">${chartHtml(pts)}</div><div class="meas-last" title="${e(`Latest: ${last.v}${unit ? " " + unit : ""}, ${whenText(last.key, last.at)}`)}">${sig4(last.v)}</div>`
-        : `<div class="meas-chart none">no values</div><div class="meas-last"></div>`)
+        ? `<div class="meas-chart" data-var="${i}" title="Click for all values">${chartHtml(pts)}</div>`
+        : `<div class="meas-chart none">no values</div>`)
       + `</div>`;
   }).join("")}</div>`;
 }
