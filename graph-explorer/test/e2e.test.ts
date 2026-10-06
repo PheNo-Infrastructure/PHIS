@@ -2888,3 +2888,17 @@ test("e2e: every chart has a scale: the y range (with the unit) and the first an
     assert.equal((await page.locator('#chartGrid .g-chart[data-key="lv-g2"] .g-yh').innerText()).trim(), "26 mm", "without the shared axis each chart has its own range (level 2's highest is 26)");
   });
 });
+
+test("e2e: hovering a scan in one chart marks the same scan in every chart and shows each chart's value there", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openGridFor(page, base);
+    const one = page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-plot'), two = page.locator('#chartGrid .g-chart[data-key="lv-g2"] .g-plot');
+    const box = (await one.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    assert.match(await one.locator(".g-tip").innerText(), /22 Oct 2025 · mean 11\.5/, "the hovered chart");
+    assert.match(await two.locator(".g-tip").innerText(), /22 Oct 2025 · mean 13 \(n=1\)/, "the other chart shows its own value at the same scan");
+    assert.equal(await page.locator("#chartGrid .g-cursor").evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== "none").length), 2, "a marker line in both charts");
+    await page.mouse.move(box.x - 40, box.y - 40);
+    assert.equal(await page.locator("#chartGrid .g-cursor").evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== "none").length), 0, "gone when the pointer leaves");
+  });
+});
