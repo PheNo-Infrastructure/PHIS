@@ -2902,3 +2902,41 @@ test("e2e: hovering a scan in one chart marks the same scan in every chart and s
     assert.equal(await page.locator("#chartGrid .g-cursor").evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== "none").length), 0, "gone when the pointer leaves");
   });
 });
+
+test("e2e: overlay puts a row's means in one chart with a clickable legend; plant lines never show; bands are faint; the setting is remembered", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openGridFor(page, base);
+    const grid = page.locator("#chartGrid");
+    assert.equal(await grid.locator(".g-chart").count(), 2);
+    await grid.locator("#gridOverlay").check();
+    assert.equal(await grid.locator(".g-row").count(), 1);
+    assert.equal(await grid.locator(".g-chart.overlay").count(), 1, "one chart for the row");
+    assert.equal(await grid.locator(".g-mean").count(), 2, "a mean line per level");
+    assert.equal(await grid.locator(".g-line").count(), 0, "no individual observations in an overlay");
+    assert.equal(await grid.locator("button.g-leg").count(), 2, "a legend entry per level");
+    assert.match((await grid.locator(".g-chart.overlay .g-yh").innerText()).trim(), /^34\.5 mm$/, "the scale fits the means (the highest mean, not the highest single plant)");
+
+    const plot = grid.locator(".g-chart.overlay .g-plot");
+    const box = (await plot.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    const tip = await plot.locator(".g-tip").innerText();
+    assert.match(tip, /22 Oct 2025/);
+    assert.match(tip, /GroupID: 1 · mean 11\.5/);
+    assert.match(tip, /GroupID: 2 · mean 13/);
+
+    await grid.locator("button.g-leg", { hasText: "GroupID: 2" }).click();
+    assert.equal(await grid.locator(".g-mean").count(), 1, "clicking a legend entry hides that line");
+    await grid.locator("button.g-leg", { hasText: "GroupID: 2" }).click();
+    assert.equal(await grid.locator(".g-mean").count(), 2, "and shows it again");
+
+    await grid.locator("#gridStats").check();
+    assert.equal(await grid.locator(".g-line").count(), 0);
+    const opacity = await grid.locator(".g-band").first().evaluate((e) => Number(getComputedStyle(e).opacity));
+    assert.ok(opacity > 0 && opacity <= 0.12, `bands are very faint in an overlay (${opacity})`);
+
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("ge.grid") ?? "null")).overlay, true);
+    await grid.locator("#gridOverlay").uncheck();
+    assert.equal(await grid.locator(".g-chart.overlay").count(), 0);
+    assert.equal(await grid.locator(".g-chart").count(), 2, "back to a chart per level");
+  });
+});

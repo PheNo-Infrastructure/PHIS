@@ -527,13 +527,23 @@ button { font-family: inherit; }
 .g-yl { top: 88%; transform: translateY(-50%); }
 .g-xa { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
 .g-cursor { position: absolute; top: 4%; bottom: 4%; width: 1px; background: var(--ink-faint); pointer-events: none; display: none; }
+.g-chart.overlay { grid-column: 1 / -1; cursor: default; }
+.g-chart.overlay:hover { border-color: var(--border); }
+.g-leg-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.g-leg { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 12px; font: inherit; font-size: 11.5px; padding: 1px 9px; cursor: pointer; }
+.g-leg i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.g-leg.off { opacity: .4; text-decoration: line-through; }
+.g-chart.overlay .g-band { opacity: .08; }
+.g-chart.overlay .g-plot { height: calc(var(--gh, 170px) * 1.6); }
+.g-chart.overlay .g-tip { bottom: auto; top: 6px; margin: 0; }
+.go-vars { display: inline-block; margin-top: 6px; }
 .g-pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; }
 .g-empty { color: var(--ink-faint); font-size: 12px; line-height: var(--gh, 96px); text-align: center; }
 .g-plants { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .g-plant { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 10px; font: inherit; font-size: 11.5px; padding: 0 8px; cursor: pointer; }
 .g-plant.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .g-plant.off { opacity: .4; text-decoration: line-through; }
-.g-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: nowrap; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; display: none; }
+.g-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: pre; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; display: none; }
 .how-charts { margin-top: 6px; font-size: 12.5px; color: var(--ink-muted); }
 .how-charts summary { cursor: pointer; }
 .ov-levels { display: grid; grid-template-columns: repeat(auto-fill, 172px); gap: 4px 8px; }
@@ -1971,7 +1981,7 @@ function tabbedExperimentHtml(id, node) {
 const OVERVIEW = {}; // "<experiment>|<variable>" -> promise of /api/experiment-overview
 // The grid's settings are remembered in this browser (size, shared y-axis, statistics, overlay).
 const GRID_KEY = "ge.grid";
-const gridState = { vi: 0, size: "m", stats: false, sharedY: true, overlay: false };
+const gridState = { vi: 0, size: "m", stats: false, sharedY: true, overlay: false, hiddenSeries: new Set() };
 try { Object.assign(gridState, JSON.parse(localStorage.getItem(GRID_KEY) ?? "{}")); } catch { /* storage blocked or unreadable: defaults */ }
 if (!["s", "m", "l"].includes(gridState.size)) gridState.size = "m";
 const saveGrid = () => { try { localStorage.setItem(GRID_KEY, JSON.stringify({ size: gridState.size, sharedY: gridState.sharedY, stats: gridState.stats, overlay: gridState.overlay })); } catch { /* not remembered, still works */ } };
@@ -2037,32 +2047,77 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   return `<div class="g-chart${opts.stats ? " stats" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:220px"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-yh">${sig4(range.hi)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div></div>`;
 }
 
-// Hover: the nearest scan. Every chart of a grid (the `group`) marks that same scan and shows its own value there: the mean
-// (± SD, n) of a group, the value of a single plant.
-function wireGridChart(plot, ch, data, group = []) {
-  const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
-  const ts = data.columns.map(c => timeOf(c.key)), t0 = Math.min(...ts), t1 = Math.max(...ts);
-  const entry = {
-    plot, ch, stats: groupColumns(plants, data.columns.length),
-    xs: ts.map(t => 2 + 96 * (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0))),
-    tip: plot.querySelector(".g-tip"), cursor: plot.querySelector(".g-cursor"),
-  };
+// Hover: the nearest scan. Every chart of a grid (the `group`) marks that same scan and shows its own text there.
+function hoverEntry(plot, xs, tipText, group) {
+  const entry = { xs, tipText, tip: plot.querySelector(".g-tip"), cursor: plot.querySelector(".g-cursor") };
   group.push(entry);
-  const clear = () => group.forEach(g => { g.tip.style.display = "none"; g.cursor.style.display = "none"; });
   plot.addEventListener("mousemove", ev => {
     const r = plot.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width * 100;
     let i = 0;
-    entry.xs.forEach((x, j) => { if (Math.abs(x - fx) < Math.abs(entry.xs[i] - fx)) i = j; });
-    const u = data.variable.unit ? " " + data.variable.unit : "";
+    xs.forEach((x, j) => { if (Math.abs(x - fx) < Math.abs(xs[i] - fx)) i = j; });
     group.forEach(g => {
       g.cursor.style.cssText = `display:block;left:${g.xs[i]}%`;
-      const st = g.stats[i];
-      if (!st) { g.tip.style.display = "none"; return; }
-      g.tip.textContent = `${whenText(data.columns[i].key)} · ${g.ch.kind === "plant" ? sig4(st.mean) : `mean ${sig4(st.mean)}${st.sd != null ? ` ± ${sig4(st.sd)}` : ""} (n=${st.n})`}${u}`;
+      const text = g.tipText(i);
+      if (!text) { g.tip.style.display = "none"; return; }
+      g.tip.textContent = text;
       g.tip.style.cssText = `display:block;left:${g.xs[i]}%;transform:translateX(-${g.xs[i]}%)`;
     });
   });
-  plot.addEventListener("mouseleave", clear);
+  plot.addEventListener("mouseleave", () => group.forEach(g => { g.tip.style.display = "none"; g.cursor.style.display = "none"; }));
+}
+const scanXs = data => {
+  const ts = data.columns.map(c => timeOf(c.key)), t0 = Math.min(...ts), t1 = Math.max(...ts);
+  return ts.map(t => 2 + 96 * (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0)));
+};
+const statText = (st, kind, unit) => kind === "plant" ? sig4(st.mean) : `mean ${sig4(st.mean)}${st.sd != null ? ` ± ${sig4(st.sd)}` : ""} (n=${st.n})${unit}`;
+
+// a normal chart: its own mean (± SD, n) of a group, or the value of a single plant
+function wireGridChart(plot, ch, data, group = []) {
+  const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
+  const stats = groupColumns(plants, data.columns.length), u = data.variable.unit ? " " + data.variable.unit : "";
+  hoverEntry(plot, scanXs(data), i => stats[i] ? `${whenText(data.columns[i].key)} · ${statText(stats[i], ch.kind, u)}` : null, group);
+}
+
+// An overlay row: every chart's mean in one chart (colours per level, or per plant in the Plants row), a legend that
+// hides/shows a line, bands very faint when statistics is on. Never draws individual observations.
+function overlayRowHtml(row, data, yr, opts) {
+  const e = escapeHtml, nCols = data.columns.length;
+  const series = row.charts.map((ch, i) => {
+    const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
+    return { ch, color: row.kind === "plants" ? colorVar(i) : colorVar(ch.colorIndex), stats: plants.length ? groupColumns(plants, nCols) : null, off: opts.hiddenSeries.has(`${row.label}|${ch.key}`), sk: `${row.label}|${ch.key}` };
+  });
+  const legend = `<div class="g-leg-row">${series.map(x => `<button class="g-leg${x.off ? " off" : ""}" data-sk="${e(x.sk)}"><i style="background:${x.color}"></i>${e(x.ch.title)}${x.stats ? "" : " (no values)"}</button>`).join("")}</div>`;
+  const live = series.filter(x => x.stats && !x.off);
+  const wrap = inner => `<div class="g-row" data-row="${e(row.label)}"><div class="g-row-label">${e(row.label)}</div><div class="g-row-charts"><div class="g-chart overlay">${legend}${inner}</div></div></div>`;
+  if (!nCols || !live.length) return wrap(`<div class="g-empty">nothing to show${series.some(x => x.stats) ? " — every line is hidden" : ""}</div>`);
+  const xs = scanXs(data), band = opts.stats;
+  // The scale fits the drawn means (and bands), not every single plant: an overlay shows means only.
+  const range = yRange([live.flatMap(x => x.stats.map(st => st ? st.mean : null)), band ? live.flatMap(x => x.stats.flatMap(st => st ? [st.mean - (st.sd ?? 0), st.mean + (st.sd ?? 0)] : [])) : []]);
+  const Y = v => 12 + 76 * (1 - (v - range.lo) / (range.hi - range.lo));
+  const pts = (vals) => vals.map((v, i) => v == null ? null : `${xs[i].toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean);
+  let svg = "";
+  live.forEach(x => {
+    if (band) {
+      const up = [], down = [];
+      x.stats.forEach((st, i) => { if (st && st.sd != null) { up.push(`${xs[i].toFixed(1)},${Y(st.mean + st.sd).toFixed(1)}`); down.unshift(`${xs[i].toFixed(1)},${Y(st.mean - st.sd).toFixed(1)}`); } });
+      if (up.length > 1) svg += `<polygon class="g-band" fill="${x.color}" points="${[...up, ...down].join(" ")}"/>`;
+    }
+    const m = pts(x.stats.map(st => st ? st.mean : null));
+    if (m.length > 1) svg += `<polyline class="g-mean" stroke="${x.color}" points="${m.join(" ")}"/>`;
+  });
+  const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "";
+  return wrap(`<div class="g-plot" data-row="${e(row.label)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg><span class="g-yh">${sig4(range.hi)}${unit}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div>`);
+}
+function wireOverlayRow(plot, row, data, hiddenSeries, group) {
+  const live = row.charts.map((ch, i) => {
+    const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
+    return { ch, stats: groupColumns(plants, data.columns.length), off: hiddenSeries.has(`${row.label}|${ch.key}`) };
+  }).filter(x => !x.off);
+  const u = data.variable.unit ? " " + data.variable.unit : "";
+  hoverEntry(plot, scanXs(data), i => {
+    const lines = live.filter(x => x.stats[i]).map(x => `${x.ch.title} · ${statText(x.stats[i], x.ch.kind, u)}`);
+    return lines.length ? [whenText(data.columns[i].key), ...lines].join("\n") : null;
+  }, group);
 }
 
 async function renderChartGrid() {
@@ -2078,6 +2133,7 @@ async function renderChartGrid() {
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><span class="g-title">${e(v.label)}</span>${pager}<span style="flex:1"></span>
       <span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
+      <label title="One chart per row with every line's mean"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay (means)</label>
       <label><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>
       <button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
@@ -2086,6 +2142,7 @@ async function renderChartGrid() {
   dlg.querySelector("#gridNext")?.addEventListener("click", () => { gridState.vi++; renderChartGrid(); });
   dlg.querySelectorAll("[data-gvar]").forEach(b => b.addEventListener("click", () => { gridState.vi = Number(b.dataset.gvar); renderChartGrid(); }));
   dlg.querySelectorAll("[data-size]").forEach(b => b.addEventListener("click", () => { gridState.size = b.dataset.size; saveGrid(); renderChartGrid(); }));
+  dlg.querySelector("#gridOverlay").addEventListener("change", ev => { gridState.overlay = ev.target.checked; saveGrid(); renderChartGrid(); });
   dlg.querySelector("#gridShared").addEventListener("change", ev => { gridState.sharedY = ev.target.checked; saveGrid(); renderChartGrid(); });
   dlg.querySelector("#gridStats").addEventListener("change", ev => { gridState.stats = ev.target.checked; saveGrid(); renderChartGrid(); });
   const body = dlg.querySelector("#gridBody");
@@ -2098,8 +2155,18 @@ async function renderChartGrid() {
   }
   if (!dlg.isConnected || dlg.querySelector("#gridBody") !== body) return; // closed, or a newer render took over
   const yr = yRange(plan.rows.flatMap(r => r.charts.flatMap(c => c.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean).map(p => p.values.map(x => x?.v ?? null)))));
-  body.innerHTML = plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}"><div class="g-row-label">${e(r.label)}</div><div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, gridState)).join("")}</div></div>`).join("");
+  body.innerHTML = plan.rows.map(r => gridState.overlay ? overlayRowHtml(r, data, yr, gridState)
+    : `<div class="g-row" data-row="${e(r.label)}"><div class="g-row-label">${e(r.label)}</div><div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, gridState)).join("")}</div></div>`).join("");
   const hoverGroup = [];
+  if (gridState.overlay) {
+    body.querySelectorAll(".g-chart.overlay .g-plot").forEach(plot => wireOverlayRow(plot, plan.rows.find(r => r.label === plot.dataset.row), data, gridState.hiddenSeries, hoverGroup));
+    body.querySelectorAll("button.g-leg").forEach(b => b.addEventListener("click", () => {
+      const k = b.dataset.sk;
+      if (gridState.hiddenSeries.has(k)) gridState.hiddenSeries.delete(k); else gridState.hiddenSeries.add(k);
+      renderChartGrid();
+    }));
+    return;
+  }
   body.querySelectorAll(".g-plot").forEach(plot => {
     const ch = plan.rows.flatMap(r => r.charts).find(c => c.key === plot.dataset.key);
     wireGridChart(plot, ch, data, hoverGroup);
