@@ -2389,9 +2389,12 @@ test("e2e: the Variables tab lists variables with counts; Plants has a box per f
     const body = page.locator("#detailBody");
     assert.match(await body.locator(".rel-group", { hasText: "Variables measured" }).innerText(), /Plant Height\s*·\s*1,200/);
     await page.locator('button.dtab[data-dtab="plants"]').click();
-    assert.equal(await body.locator(".hx-fac").count(), 3, "two factors and 'Not in a factor'");
+    assert.equal(await body.locator(".hx-fac").count(), 2, "the first factor and 'Not in a factor'");
     assert.equal(await body.locator('.hx-fac[data-fac="fac-g"] .hx-level').count(), 2);
-    assert.equal(await body.locator('.hx-plant[data-id="so-p1"]').count(), 2, "a plant is listed under every factor it belongs to");
+    assert.equal(await body.locator('.hx-plant[data-id="so-p1"]').count(), 1);
+    await body.locator('button.pill[data-by="fac-r"]').click();
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-r"] .hx-plant[data-id="so-p1"]').count(), 1, "a plant is listed under every factor it belongs to");
+    await body.locator('button.pill[data-by="fac-g"]').click();
     assert.match(await body.locator('.hx-fac[data-fac="#other"]').innerText(), /Tray 31/);
     await body.locator('.hx-fac[data-fac="fac-g"] .hx-plant[data-id="so-p1"]').click({ modifiers: ["Control"] });
     await page.locator('button.dtab[data-dtab="factors"]').click();
