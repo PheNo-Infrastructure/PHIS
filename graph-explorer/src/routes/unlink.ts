@@ -1,6 +1,6 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, personName, refUri, resolveLink, updateNode } from "../node-types.ts";
+import { NODE_TYPES, accountItem, personName, refUri, resolveLink, updateNode } from "../node-types.ts";
 import { PERSON_ROLES } from "../adjacency.js";
 
 // "Unlink selection" (selection-first design): every link that exists BETWEEN the selected
@@ -54,6 +54,18 @@ async function findLinks(items: Item[]): Promise<Found[]> {
       }
       const [a, b] = [items[i], items[j]];
       if (a.type === b.type) continue;
+      // An account in a group: every (account, profile) pair it has there goes, and the profiles are named.
+      if ((a.type === "group" && b.type === "account") || (a.type === "account" && b.type === "group")) {
+        const [grp, acc] = a.type === "group" ? [a, b] : [b, a];
+        const ups = (((await dto(grp)).user_profiles ?? []) as { user_uri: string; profile_name?: string; profile_uri: string }[]);
+        const mine = [];
+        for (const u of ups) if (await same(u.user_uri, acc.id)) mine.push(u);
+        if (mine.length) {
+          const who = accountItem((await authedGetOne(NODE_TYPES.account.getUrl(acc.id))).result).label;
+          out.push({ text: `${who} — member of ${await name(grp)} as ${mine.map((u) => u.profile_name ?? u.profile_uri).join(" and ")}`, run: () => NODE_TYPES.group.contextLinks!.member.unlink(grp.id, acc.id) });
+        }
+        continue;
+      }
       if (a.type === "account" || b.type === "account") continue; // a person's account is set once and stays
       // A person sits in an experiment or project under some role(s): every role holding them is listed.
       const [boss, person] = a.type === "person" ? [b, a] : [a, b];

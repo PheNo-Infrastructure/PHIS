@@ -141,10 +141,10 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     await page.locator("#newBtn").click();
     await page.waitForTimeout(150);
     const soloItems = await page.locator("#newList .newmenu-item").allTextContents();
-    // ADJACENT.experiment in full — 6 types, proving the solo case is unconstrained.
+    // ADJACENT.experiment in full — 7 types, proving the solo case is unconstrained.
     assert.deepEqual(
       new Set(soloItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())),
-      new Set(["organization", "facility", "project", "person", "factor", "scientific object"])
+      new Set(["organization", "facility", "project", "person", "factor", "scientific object", "group"])
     );
     // Types the app can't create yet stay listed, but greyed and saying where to do it.
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), false, "a factor can be created for one experiment");
@@ -3152,5 +3152,30 @@ test("e2e: overlay lays a row's charts on top of each other (plant lines and mea
     await grid.locator("#gridOverlay").uncheck();
     assert.equal(await grid.locator(".g-chart.overlay").count(), 0);
     assert.equal(await grid.locator(".g-chart").count(), 2, "back to a chart per level");
+  });
+});
+
+test("e2e: a group + people: one 'Add … to … as <profile>' button per PHIS profile (nothing defaulted), the pick sends that profile; a group with an experiment is an ordinary link", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/profiles", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "prof-d", type: "profile", label: "Default profile" }, { id: "prof-r", type: "profile", label: "Researcher profile" }]) }));
+    let linked: any = null;
+    await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
+    const grp = { id: "grp-1", type: "group", label: "Researchers" };
+    const thomas = { id: "acc-1", type: "account", label: "Thomas Bawin" };
+    await set([grp, thomas]);
+    await page.waitForTimeout(300);
+    assert.deepEqual(await page.locator("#actionbar button[data-profile]").allInnerTexts(), ["Add Thomas Bawin to Researchers as Default profile", "Add Thomas Bawin to Researchers as Researcher profile"]);
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0, "no generic Link button that would pick a profile for you");
+    await page.locator('#actionbar button[data-profile="prof-r"]').click();
+    await page.waitForTimeout(300);
+    assert.deepEqual(linked, { items: [{ type: "group", id: "grp-1" }, { type: "account", id: "acc-1" }], profile: "prof-r" });
+
+    await set([grp, { id: "exp-1", type: "experiment", label: "Trial" }]);
+    assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Link selection", "sharing an experiment with a group is a plain link");
+    await set([grp, thomas, { id: "exp-1", type: "experiment", label: "Trial" }]);
+    assert.match(await page.locator("#actionbar").innerText(), /Add people to a group on their own/);
   });
 });

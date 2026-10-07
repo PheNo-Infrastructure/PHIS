@@ -40,7 +40,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Devices | ✔ | create/rename/delete, move to a facility on a date, **person in charge (set/replace/clear)** |
 | Persons | ✔ | **separate from accounts** (see facts). Create (alone or for an account), rename, link into experiments/projects in a role, link to an account (once). No delete in PHIS |
 | Accounts | ◐ | read-only page. **Create/enable/disable/admin/password/language: ✖**; invite a researcher by email (`/security/invite`): ✖ |
-| **Groups** (membership + sharing) | ✖ **NEXT** | read-only pages only. See "Priority 1" |
+| **Groups** (membership + sharing) | ✔ 2026-10-07 | create/rename/delete (confirm says who loses access), add accounts with a chosen profile, remove them, share experiments/organizations/sites/germplasm with a group (and unshare). See "Priority 1" for what is left |
 | **Profiles** (credentials) | ✖ **NEXT** | read-only pages only. See "Priority 2" |
 | Favorites (per user) | ✖ | low value |
 | Ontology (classes/properties/RDF types, `Ontology`, `Vue.js - Ontology extension`) | ✖ | 25+9 endpoints; would let users add device/object classes. Large |
@@ -48,7 +48,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | BRAPI, Faidare, Staple, Agroportal | — | external/standard APIs, not editing |
 | The 2 Holt sites with an `address` | ⛔ | OpenSILEX bug: a PUT duplicates the location and breaks the whole Sites list |
 
-## Priority 1 — Groups: membership and sharing (user asked 2026-10-07)
+## Priority 1 — Groups: membership and sharing (user asked 2026-10-07) — BUILT, notes kept for reference
 What PHIS has (probed read-only, phis-test): two groups — *Researchers* (4 members, all with "Researcher profile") and *Users*
 (admin, guest with "Default profile"). A group = name + description + `user_profiles`, a list of **(account, profile)** pairs
 (`GroupDTO.user_profiles[]` = `{user_uri, profile_uri}`). Endpoints: `GET/POST/PUT /security/groups`, `GET/DELETE /security/groups/{uri}`.
@@ -61,8 +61,13 @@ To build (same selection-first pattern):
 - **Share things with a group** (`groups` field on **experiments, organizations, sites, germplasm**): select the thing + group →
   "Share Trial with Researchers"; unlink = stop sharing. This is how non-admin users see experiments (see the "visibility" notes).
 - Group page: members with their profile, and what is shared with it (exists, read-only today).
-- Probe before building: PUT semantics of `user_profiles` (does omitting a pair remove it? — for persons/accounts "omitted"
-  meant "kept" or "cleared" depending on the field), delete of a group that still has members or shared things.
+- **Probed and built (2026-10-07):** a group's `user_profiles` is REPLACED as a whole by every update (leave it out and everyone is removed — the app always
+  sends the full list); one account can hold two profiles in a group (two pairs); a group can be created without members; deleting a group is allowed while it
+  has members/shared things and removes the sharing (confirm says so). Sharing = the `groups` field of experiments/organizations/sites/germplasm ("Shared with").
+- Still open here: sharing from the account side (account page chips), "copy members from another group", showing a person's effective access (account → groups → profile → credentials).
+- **Performance rule learned the hard way:** the group page must scan experiments/organizations/sites/germplasm (no server-side `groups` filter exists in PHIS).
+  Doing that five times at once got phis-test's OpenSILEX pod OOMKilled (2 GiB limit). Scans are now one per page view, sequential, cached 4 s. Never fan out
+  parallel full-record reads; check `kubectl get pods -n phis-test` after any new heavy page.
 
 ## Priority 2 — Profiles: credentials (user: "setting the credentials in PHIS is extremely tedious")
 What PHIS has: two profiles — *Default profile* (0 credentials) and *Researcher profile* (59). A profile = name + `credentials[]`

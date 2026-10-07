@@ -3036,6 +3036,7 @@ function linkPlan() {
   if (types.length === 1) {
     return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${typeName(types[0], 2)} can't be linked to each other.` };
   }
+  if (types.includes("group") && types.includes("account")) return groupMemberPlan(items, types);
   if (types.includes("person")) return personPlan(items, types);
   // An object holds one level per factor.
   const levels = items.filter(v => v.type === "factor_level");
@@ -3047,6 +3048,22 @@ function linkPlan() {
     : { kind: "link" };
 }
 
+// Accounts go into a group with a PROFILE they're asked for (one button per profile, nothing defaulted). The profiles
+// come from PHIS once, the first time they're needed. A group together with things to share (an experiment, a site…)
+// is an ordinary link: those hold the group in their own `groups`.
+let profileList = null, profileLoad = null;
+function loadProfiles() {
+  if (profileLoad) return;
+  profileLoad = fetch("api/profiles").then(r => r.ok ? r.json() : []).catch(() => []).then(l => { profileList = l; profileLoad = null; renderActionbar(); });
+}
+function groupMemberPlan(items, types) {
+  const groups = items.filter(v => v.type === "group"), accounts = items.filter(v => v.type === "account");
+  if (types.length !== 2 || groups.length !== 1) return { kind: "none", why: "Add people to a group on their own: select one group and the people." };
+  if (!profileList) { loadProfiles(); return { kind: "link", profiles: [], loadingProfiles: true }; }
+  if (!profileList.length) return { kind: "none", why: "PHIS has no profiles to give them." };
+  const who = accounts.length <= 2 ? andList(accounts.map(v => v.label)) : `${accounts.length} people`;
+  return { kind: "link", profiles: profileList.map(p => ({ id: p.id, label: `Add ${who} to ${groups[0].label} as ${p.label}` })) };
+}
 // People go into an experiment or project in a ROLE they're asked for (one button per role, nothing defaulted).
 // Unlinking works from the chips, or "Unlink selection" (every role that holds the person).
 function personPlan(items, types) {
@@ -3116,7 +3133,9 @@ async function linkItems(items, experiments, extra = {}) {
     if (!res.ok) {
       // A person needs a role: the action bar has one button per role, "Link existing" has none.
       showToast(extra.role === undefined && items.some(it => it.type === "person") && /which role/.test(body.error || "")
-        ? `${body.error} Select the experiment or project and the person, then use the "Add … as …" buttons.` : `Failed to link: ${body.error || res.status}`);
+        ? `${body.error} Select the experiment or project and the person, then use the "Add … as …" buttons.`
+        : extra.profile === undefined && items.some(it => it.type === "group") && /which profile/.test(body.error || "")
+          ? `${body.error} Select the group and the people, then use the "Add … to … as …" buttons.` : `Failed to link: ${body.error || res.status}`);
       return;
     }
     if (body.needsExperiment) {
@@ -3728,7 +3747,8 @@ function renderActionbar() {
     <button class="btn ghost" id="clearSel">Clear</button>
     ${plan.why && !(grid && grid.plan.variables.length && grid.plan.rows.length) ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink && plan.roles ? plan.roles.map(r => `<button class="btn primary" data-role="${escapeHtml(r.field)}">${escapeHtml(r.label)}</button>`).join("") : ""}
-    ${canLink && !plan.roles ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
+    ${canLink && plan.profiles ? (plan.loadingProfiles ? `<div class="selection-summary link-why">Loading profiles…</div>` : plan.profiles.map(p => `<button class="btn primary" data-profile="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>`).join("")) : ""}
+    ${canLink && !plan.roles && !plan.profiles ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${canLink && !plan.noUnlink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
     ${gridButtonHtml(grid)}
     <div class="newmenu" id="newMenu">
@@ -3755,6 +3775,8 @@ function renderActionbar() {
     document.addEventListener("click", () => visMenu.classList.remove("open"), { once: true });
   }
   if (canLink) {
+    bar.querySelectorAll("[data-profile]").forEach(b => b.addEventListener("click", () =>
+      linkItems([...selection.values()].map(v => ({ type: v.type, id: v.id })), undefined, { profile: b.dataset.profile })));
     bar.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () =>
       linkItems([...selection.values()].map(v => ({ type: v.type, id: v.id })), undefined, { role: b.dataset.role })));
     document.getElementById("linkSelectionBtn")?.addEventListener("click", () => {
@@ -4061,7 +4083,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —

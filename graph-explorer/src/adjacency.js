@@ -43,19 +43,21 @@ export const ADJACENT = {
   // site/experiment: their CreationDTOs own the link (organizations / organisations+facilities),
   // not the org/facility — but creatableTypesFor only reads the SELECTED type's list, so they
   // have to be listed here too to be offered from an org or facility.
-  organization: ["facility", "organization", "site", "experiment"],
+  organization: ["facility", "organization", "site", "experiment", "group"],
   facility: ["organization", "site", "experiment", "device"],
-  site: ["organization", "facility"],
-  experiment: ["organization", "facility", "project", "person", "factor", "scientific_object"],
+  site: ["organization", "facility", "group"],
+  experiment: ["organization", "facility", "project", "person", "factor", "scientific_object", "group"],
   project: ["experiment", "project", "person"],
   scientific_object: ["experiment", "scientific_object", "germplasm", "factor"],
-  germplasm: ["scientific_object", "germplasm"],
+  germplasm: ["scientific_object", "germplasm", "group"],
   variable: ["entity", "entity_of_interest", "characteristic", "method", "unit"],
   factor: ["experiment", "factor_level"],
   device: ["facility", "person"],
   provenance: ["device", "person"],
   // A signed-up account has no person until one is made for it (+ New person), or linked (Link selection).
-  account: ["person"],
+  account: ["person", "group"],
+  // Sharing: a group is what an experiment, organization, site or germplasm is shared with; its members are accounts.
+  group: ["experiment", "organization", "site", "germplasm", "account"],
   event: ["scientific_object", "device", "facility"],
   data_file: ["scientific_object", "device", "provenance"],
 };

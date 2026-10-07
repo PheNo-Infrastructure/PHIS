@@ -1,6 +1,6 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, applyLink, moveDevices, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
+import { NODE_TYPES, addGroupMembers, applyLink, moveDevices, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
 import { PERSON_ROLES } from "../adjacency.js";
 
 // Links a whole selection of EXISTING nodes directly (no third node created) — the counterpart
@@ -15,7 +15,8 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // `experiments`: the user's pick for links that live inside an experiment (see below).
   // `date`: the day of the move, for devices + a facility.
   // `role`: the field a person goes into (an experiment's supervisors, a project's contacts).
-  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; role?: string };
+  // `profile`: the profile an account gets in a group (never defaulted).
+  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; role?: string; profile?: string };
   const items = (body.items ?? []).filter((it) => it?.type && it?.id);
   if (items.length < 2) {
     res.writeHead(400, { "Content-Type": "application/json" });
@@ -35,6 +36,21 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   if (types.length === 2 && idsByType.has("device") && idsByType.has("facility")) {
     await respondOpenSilexErrors(res, async () => {
       const r = await moveDevices(idsByType.get("device")!, idsByType.get("facility")!, body.date);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+    });
+    return true;
+  }
+
+  // Accounts in a group, each with a profile the user picks. (A group with things to share — an experiment, a site —
+  // goes through the generic pairs below: each of those holds the group in its own `groups` field.)
+  if (types.includes("group") && types.includes("account")) {
+    const bad = (error: string) => { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error })); return true; };
+    if (types.length !== 2 || idsByType.get("group")!.length !== 1) return bad("Add people to a group on their own: select one group and the people.");
+    if (!body.profile) return bad("Say which profile the people get in this group.");
+    await respondOpenSilexErrors(res, async () => {
+      await authedGetOne(`/security/profiles/${encodeURIComponent(body.profile!)}`); // a profile that doesn't exist is refused by PHIS (404)
+      const r = await addGroupMembers(idsByType.get("group")![0], idsByType.get("account")!, body.profile!);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
     });

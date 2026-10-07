@@ -1273,7 +1273,7 @@ test("PUT /api/node on an organization carries only its settable link fields (pa
     });
 
     assert.equal(res.status, 200);
-    assert.deepEqual(putBody, { uri: "org-1", name: "New Name", parents: ["parent-1"], facilities: ["fac-1"] });
+    assert.deepEqual(putBody, { uri: "org-1", name: "New Name", parents: ["parent-1"], facilities: ["fac-1"], groups: [] });
   });
 });
 
@@ -1428,7 +1428,7 @@ test("PUT /api/node with `link` (no name) adds the uri to that field, carries th
 
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { id: "org-a", type: "organization", label: "Org A" });
-    assert.deepEqual(putBody, { uri: "org-a", name: "Org A", parents: ["org-existing", "org-b"], facilities: [] });
+    assert.deepEqual(putBody, { uri: "org-a", name: "Org A", parents: ["org-existing", "org-b"], facilities: [], groups: [] });
   });
 });
 
@@ -1547,7 +1547,7 @@ test("POST /api/link with a 1:1 pair adds the other node's uri to the owning sid
     assert.deepEqual(await res.json(), { ok: true, linkedPairs: 1, alreadyLinked: 0 });
     // The organization owns the "facilities" field — its existing link (fac-existing) stays,
     // the new one (fac-new) is appended, and its own name is carried forward untouched.
-    assert.deepEqual(putBody, { uri: "org-1", name: "UiT", parents: [], facilities: ["fac-existing", "fac-new"] });
+    assert.deepEqual(putBody, { uri: "org-1", name: "UiT", parents: [], facilities: ["fac-existing", "fac-new"], groups: [] });
   });
 });
 
@@ -1581,7 +1581,7 @@ test("POST /api/link is a no-op on the wire if the two are already linked (no du
     // The uri was already linked, so the count reports it as such rather than claiming a fresh
     // link happened for what was actually a no-op PUT.
     assert.deepEqual(await res.json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
-    assert.deepEqual(putBody, { uri: "org-1", name: "UiT", parents: [], facilities: ["fac-1"] });
+    assert.deepEqual(putBody, { uri: "org-1", name: "UiT", parents: [], facilities: ["fac-1"], groups: [] });
   });
 });
 
@@ -1619,7 +1619,7 @@ test("POST /api/link with N facilities and 1 organization batches all N into ONE
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { ok: true, linkedPairs: 4, alreadyLinked: 0 });
     assert.equal(putCount, 1, "expected exactly one PUT to the organization, not one per facility");
-    assert.deepEqual(putBody, { uri: "org-1", name: "UiT", parents: [], facilities: ["fac-1", "fac-2", "fac-3", "fac-4"] });
+    assert.deepEqual(putBody, { uri: "org-1", name: "UiT", parents: [], facilities: ["fac-1", "fac-2", "fac-3", "fac-4"], groups: [] });
   });
 });
 
@@ -1683,7 +1683,7 @@ test("POST /api/link with an organization and a site PUTs to the SITE (org's `si
     });
 
     assert.equal(res.status, 200);
-    assert.deepEqual(putBody, { uri: "site-1", name: "Holt", organizations: ["org-1"], facilities: [] });
+    assert.deepEqual(putBody, { uri: "site-1", name: "Holt", organizations: ["org-1"], facilities: [], groups: [] });
   });
 });
 
@@ -2236,6 +2236,7 @@ function peopleStub() {
     if ((m = path.match(/^\/core\/experiments\/(.+)$/))) return one(people.experiments, m[1]);
     if (path === "/core/projects") return list(people.projects);
     if (path === "/core/germplasm") return list(people.germplasm);
+    if (path === "/core/organisations" || path === "/core/sites") return list([]);
     throw new Error(`unexpected fetch: ${url}`);
   }) as typeof fetch;
 }
@@ -2273,7 +2274,7 @@ test("group page: members with their profile; the experiments and germplasm shar
   await withServer(async (base) => {
     globalThis.fetch = peopleStub();
     const d = await detailOf(base, "group", G_RES);
-    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
     assert.deepEqual(d.facts, [{ label: "Description", value: "Authenticated users" }]);
     assert.deepEqual(groupItems(d, "Members"), [["account", "Anna Berg · Researcher profile"], ["account", "bob@nmbu.no · Researcher profile"]]);
     assert.deepEqual(groupItems(d, "Shared experiments"), [["experiment", "PBar1x4"]]);
@@ -2937,5 +2938,136 @@ test("a device's person in charge: set from a selection (replacing another, coun
     assert.equal("person_in_charge" in puts[0], false, "cleared by leaving it out");
     const none = await (await post("/api/unlink", { items: [dev("dev-1"), { type: "person", id: "per-1" }] })).json();
     assert.deepEqual(none.links, [], "a person who isn't in charge of that device is not listed");
+  });
+});
+
+// ---------- groups: members with a profile, sharing, create/rename/delete (probed on phis-test 2026-10-07) ----------
+function groupStub(log: { puts: any[]; posts: { url: string; body: any }[]; deletes: string[] }) {
+  void import("../src/node-types.ts").then((m) => m._resetSharedCacheForTests());
+  const groups: Record<string, any> = {
+    "grp-1": { uri: "grp-1", name: "Researchers", description: "Authenticated users", user_profiles: [{ user_uri: "acc-1", profile_uri: "prof-r", user_name: "a@uit.no", profile_name: "Researcher profile" }] },
+  };
+  const accounts: Record<string, any> = { "acc-1": { uri: "acc-1", email: "a@uit.no" }, "acc-2": { uri: "acc-2", email: "b@uit.no" }, "acc-3": { uri: "acc-3", email: "c@uit.no" } };
+  return (async (url: string, init?: RequestInit) => {
+    const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+    const method = init?.method ?? "GET";
+    const list = (rows: unknown[]) => jsonResponse(200, { result: rows });
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://phis.pheno.no/id/group/zz_made" }); }
+    if (method === "PUT") { log.puts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
+    if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+    let m: RegExpMatchArray | null;
+    if (path.startsWith("/security/groups?")) return list(Object.values(groups));
+    if ((m = path.match(/^\/security\/groups\/(.+)$/))) return jsonResponse(200, { result: groups[m[1]] });
+    if ((m = path.match(/^\/security\/accounts\/(.+)$/))) return jsonResponse(200, { result: accounts[m[1]] });
+    if (path.startsWith("/security/accounts?")) return list(Object.values(accounts));
+    if ((m = path.match(/^\/security\/profiles\/(.+)$/))) return m[1] === "prof-x" ? jsonResponse(404, { result: { message: "unknown" } }) : jsonResponse(200, { result: { uri: m[1], name: "P" } });
+    if (path.startsWith("/core/experiments?")) return list([{ uri: "exp-1", name: "Trial" }]);
+    if (path === "/core/experiments/exp-1") return jsonResponse(200, { result: { uri: "exp-1", name: "Trial", objective: "o", start_date: "2026-01-01", groups: ["grp-1"], scientific_supervisors: [], technical_supervisors: [], organisations: [], facilities: [], projects: [], factors: [] } });
+    if (path.startsWith("/core/germplasm?")) return list([]);
+    if (path.startsWith("/core/organisations?") || path.startsWith("/core/sites?")) return list([]);
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("group: the page lists members and what is shared; rename sends the members back (an update replaces them all); the delete confirm says who loses access", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = groupStub(log);
+    const d = await (await realFetch(`${base}/api/node-detail?type=group&id=grp-1`)).json();
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    assert.equal(d.deleteRemovesLinks, true);
+    assert.equal(d.deleteWarning, "Its 1 member loses the access it gives and 1 experiment stops being shared.");
+    assert.deepEqual(d.relations.find((r: any) => r.label === "Shared experiments").items.map((i: any) => i.label), ["Trial"]);
+    assert.equal(d.relations.find((r: any) => r.label === "Members").field, "member", "members have an × (unlink) like other links");
+
+    const put = (name: string) => realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "group", id: "grp-1", name }) });
+    assert.equal((await put("Scientists")).status, 200);
+    assert.deepEqual(log.puts[0].body, { uri: "grp-1", name: "Scientists", description: "Authenticated users", user_profiles: [{ user_uri: "acc-1", profile_uri: "prof-r" }] }, "the member list goes back — leaving it out would remove everyone");
+  });
+});
+
+test("add accounts to a group with a profile: the profile is required and checked, existing pairs are kept and counted, the whole list goes back; a mix with other things is refused", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = groupStub(log);
+    const link = (body: unknown) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const items = [{ type: "group", id: "grp-1" }, { type: "account", id: "acc-1" }, { type: "account", id: "acc-2" }];
+
+    const none = await link({ items });
+    assert.equal(none.status, 400);
+    assert.match((await none.json()).error, /which profile/);
+    assert.equal((await link({ items, profile: "prof-x" })).status, 404, "a profile that doesn't exist is refused");
+    assert.equal(log.puts.length, 0, "nothing written yet");
+
+    const ok = await link({ items, profile: "prof-r" });
+    assert.deepEqual(await ok.json(), { ok: true, linkedPairs: 1, alreadyLinked: 1 }, "acc-1 already had this profile; acc-2 is new");
+    assert.deepEqual(log.puts[0].body.user_profiles, [{ user_uri: "acc-1", profile_uri: "prof-r" }, { user_uri: "acc-2", profile_uri: "prof-r" }]);
+    assert.equal(log.puts[0].body.name, "Researchers");
+
+    log.puts.length = 0;
+    const second = await link({ items: [items[0], items[1]], profile: "prof-d" });
+    assert.deepEqual(await second.json(), { ok: true, linkedPairs: 1, alreadyLinked: 0 }, "the same person with another profile is a second pair, as PHIS allows");
+    assert.equal(log.puts[0].body.user_profiles.length, 2);
+
+    log.puts.length = 0;
+    const mixed = await link({ items: [...items, { type: "experiment", id: "exp-1" }], profile: "prof-r" });
+    assert.equal(mixed.status, 400);
+    assert.match((await mixed.json()).error, /on their own/);
+    assert.equal(log.puts.length, 0);
+  });
+});
+
+test("unlink a group and an account lists every profile the account has there and removes the account; share and unshare an experiment through its `groups`", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = groupStub(log);
+    const post = (path: string, body: unknown) => realFetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const items = [{ type: "group", id: "grp-1" }, { type: "account", id: "acc-1" }];
+    const preview = await (await post("/api/unlink", { items })).json();
+    assert.deepEqual(preview.links, ["a@uit.no — member of Researchers as Researcher profile"]);
+    assert.equal(log.puts.length, 0);
+    assert.equal((await post("/api/unlink", { items, confirm: true })).status, 200);
+    assert.deepEqual(log.puts[0].body.user_profiles, [], "the account's pairs are gone, the group stays");
+    assert.deepEqual((await (await post("/api/unlink", { items: [items[0], { type: "account", id: "acc-3" }] })).json()).links, [], "an account that isn't a member is not listed");
+
+    log.puts.length = 0;
+    const share = await post("/api/link", { items: [{ type: "experiment", id: "exp-1" }, { type: "group", id: "grp-2" }] });
+    assert.equal(share.status, 200, await share.clone().text());
+    const put = log.puts.find((p) => p.url === "/core/experiments")!;
+    assert.deepEqual(put.body.groups, ["grp-1", "grp-2"], "added to the groups it already has");
+  });
+});
+
+test("create group: name + description, created without members; from a selected experiment it is shared with it", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as { url: string; body: any }[], deletes: [] as string[] };
+    globalThis.fetch = groupStub(log);
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const none = await create({ type: "group", name: "Testers", links: [] });
+    assert.equal(none.status, 400);
+    assert.match((await none.json()).error, /Description is required/);
+    const ok = await create({ type: "group", name: "Testers", links: [], fields: { description: "Beta users" } });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts[0], { url: "/security/groups", body: { name: "Testers", description: "Beta users" } });
+    const shared = await create({ type: "group", name: "Trial team", links: [{ type: "experiment", id: "exp-1" }], fields: { description: "x" } });
+    assert.equal(shared.status, 201, await shared.clone().text());
+    assert.ok(log.puts.some((p) => p.url === "/core/experiments"), "the experiment is shared with the new group right after");
+  });
+});
+
+test("group page reads the shared things ONCE per view (the lists and the delete warning share one scan), so PHIS isn't hit five times over", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    const inner = groupStub(log);
+    let expReads = 0;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (/\/core\/experiments\/exp-1$/.test(url)) expReads++;
+      return inner(url, init);
+    }) as typeof fetch;
+    const d = await (await realFetch(`${base}/api/node-detail?type=group&id=grp-1`)).json();
+    assert.ok(d.deleteWarning && d.relations.length >= 2);
+    assert.equal(expReads, 1, "one read of the experiment for the whole page");
   });
 });

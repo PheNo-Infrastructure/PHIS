@@ -139,6 +139,13 @@ export const CREATABLE = {
       { key: "affiliation", label: "Affiliation" },
     ],
   },
+  // A group of accounts (members come afterwards, each with a profile): name + description. Created alone, or from a
+  // selected experiment, organization, site or germplasm — which is then shared with it.
+  group: {
+    url: "/security/groups",
+    linkFields: {},
+    fields: [{ key: "description", label: "Description", required: true }],
+  },
   // One more level of one factor: no POST of its own — the backend saves the factor with the
   // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
   // a selected factor reaches it.

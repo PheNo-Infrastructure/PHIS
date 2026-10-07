@@ -263,7 +263,9 @@ async function listedIn(rows: Record<string, unknown>[], field: string, id: stri
 // ponytail: one GET per experiment (7 on phis-test); needs a server-side query past a few hundred.
 async function experimentDetails() {
   const list = (await authedGet("/core/experiments?page_size=500")).result;
-  return Promise.all(list.map(async (e) => (await authedGetOne(`/core/experiments/${encodeURIComponent(e.uri)}`)).result));
+  const out: Record<string, unknown>[] = [];
+  for (const e of list) out.push((await authedGetOne(`/core/experiments/${encodeURIComponent(e.uri)}`)).result);
+  return out;
 }
 
 // A germplasm's kind, from its rdf_type (vocabulary:Variety or the full oeso#Variety); rank says
@@ -550,6 +552,8 @@ function variablePayload(dto: Record<string, unknown>, name: string) {
   return out;
 }
 
+// What a group can be shared with (each holds the group in its own `groups` field).
+const SHARE_LABEL = { experiment: "experiments", germplasm: "germplasm", organization: "organizations", site: "sites" } as const;
 // A provenance (where a batch of values came from: one per import). Its values counted over every experiment.
 const provenanceValueCount = async (id: string) =>
   Number((await authedPost(`/core/data/count?provenances=${encodeURIComponent(id)}&count_limit=10000000`, [])).result) || 0;
@@ -683,10 +687,11 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Facilities", field: "facilities", type: "facility" },
       { label: "Sites", field: "sites", type: "site" },
       { label: "Experiments", field: "experiments", type: "experiment" },
+      { label: "Shared with", field: "groups", type: "group" },
     ],
     // children/sites/experiments are read-only on OrganizationUpdateDTO (derived from the
-    // other side of the relation) — only parents and facilities are real settable fields.
-    updateLinkFields: ["parents", "facilities"],
+    // other side of the relation) — parents, facilities and the groups it is shared with are real settable fields.
+    updateLinkFields: ["parents", "facilities", "groups"],
   },
   // Supervisors/factors are plain uri strings in the GetDTO, not {uri, name} refs, so their chips
   // show the uri until persons get a label lookup. EVERY relation field is settable on its update
@@ -702,9 +707,10 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Projects", field: "projects", type: "project" },
       { label: "Scientific supervisors", field: "scientific_supervisors", type: "person" },
       { label: "Technical supervisors", field: "technical_supervisors", type: "person" },
+      { label: "Shared with", field: "groups", type: "group" },
     ],
     // `factors` stays in the PUT (or it'd be wiped) but is shown by name through the query below.
-    updateLinkFields: ["organisations", "facilities", "projects", "scientific_supervisors", "technical_supervisors", "factors"],
+    updateLinkFields: ["organisations", "facilities", "projects", "scientific_supervisors", "technical_supervisors", "factors", "groups"],
     deleteRemovesLinks: true,
     visibility: true,
     structure: experimentStructure,
@@ -818,8 +824,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Species", field: "species", type: "germplasm", nameField: "species_name", kind: "species" },
       { label: "Variety", field: "variety", type: "germplasm", nameField: "variety_name", kind: "variety" },
       { label: "Accession", field: "accession", type: "germplasm", nameField: "accession_name", kind: "accession" },
+      { label: "Shared with", field: "groups", type: "group" },
     ],
-    updateLinkFields: [],
+    updateLinkFields: ["groups"],
     // Species/variety are set through Link selection (setGermplasmParent), not unlinked: a
     // variety can't be without a species (probed).
     actions: ["rename", "delete", "link"],
@@ -1100,22 +1107,52 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       } },
     ],
   },
+  // Probed 2026-10-07: a group's `user_profiles` (account + profile pairs) is REPLACED as a whole by every update
+  // (leave it out and everyone is removed), one account may hold two profiles, a group can be created without members, and
+  // deleting a group removes the sharing it gave (experiments stop being shared) even while it has members.
   group: {
     getUrl: (id) => `/security/groups/${encodeURIComponent(id)}`,
-    putUrl: "",
-    deleteUrl: () => "",
+    putUrl: "/security/groups",
+    putPayload: (dto, name) => groupPayload(dto, name),
+    deleteUrl: (id) => `/security/groups/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: [],
+    actions: ["rename", "delete", "link"],
+    deleteRemovesLinks: true,
+    rename: async (id, name) => {
+      await refuseTakenName("/security/groups", name, "group", id);
+      await updateNode(NODE_TYPES.group, id, { name: name.trim() });
+      return name.trim();
+    },
+    deleteWarning: async (id, dto) => {
+      const members = new Set(((dto.user_profiles ?? []) as { user_uri: string }[]).map((u) => u.user_uri)).size;
+      const shared = await sharedWith(id);
+      const total = shared.reduce((n, s) => n + s.items.length, 0);
+      const what = shared.filter((s) => s.items.length).map((s) => (s.type === "germplasm" ? `${s.items.length} germplasm` : plural(s.items.length, s.type)));
+      const parts = [members ? `its ${plural(members, "member")} ${members === 1 ? "loses" : "lose"} the access it gives` : "", total ? `${what.join(", ")} ${total === 1 ? "stops" : "stop"} being shared` : ""].filter(Boolean);
+      return parts.length ? `${parts.join(" and ")}.`.replace(/^./, (c) => c.toUpperCase()) : "";
+    },
+    // A member is an (account, profile) pair; the profile is the user's choice (never defaulted), so linking goes
+    // through /api/link's `profile`, and this only removes: every pair the account has in the group.
+    contextLinks: {
+      member: {
+        otherType: "account",
+        current: async (id) => [...new Set(((await authedGetOne(`/security/groups/${encodeURIComponent(id)}`)).result.user_profiles as { user_uri: string }[] ?? []).map((u) => u.user_uri))],
+        link: async () => { throw new OpenSilexError(400, "Say which profile: select the group and the people, then use the “Add … to … as …” buttons."); },
+        unlink: async (id, accountId) => { await removeGroupMember(id, accountId); },
+      },
+    },
     facts: (g) => factsOf([["Description", typeof g.description === "string" ? g.description.trim() : null]]),
     queryRelations: [
-      { label: "Members", type: "account", url: () => "", load: async (id) => {
+      { label: "Members", type: "account", field: "member", url: () => "", load: async (id) => {
         const ups = ((await authedGetOne(`/security/groups/${encodeURIComponent(id)}`)).result.user_profiles ?? []) as { user_uri: string; user_name?: string; profile_name?: string }[];
         const names = new Map((await authedGet("/security/accounts?page_size=500")).result.map((a) => [String(a.uri), accountItem(a).label]));
         return ups.map((up) => ({ id: up.user_uri, label: `${names.get(up.user_uri) ?? up.user_name ?? up.user_uri}${up.profile_name ? ` · ${up.profile_name}` : ""}` }));
       } },
-      { label: "Shared experiments", type: "experiment", url: () => "", load: async (id) => listedIn(await experimentDetails(), "groups", id) },
-      { label: "Shared germplasm", type: "germplasm", url: () => "", load: async (id) => listedIn((await authedGet("/core/germplasm?page_size=500")).result, "groups", id) },
+      ...(["experiment", "germplasm", "organization", "site"] as const).map((type) => ({
+        label: `Shared ${SHARE_LABEL[type]}`, type, url: () => "",
+        load: async (id: string) => (await sharedWith(id)).find((s) => s.type === type)!.items,
+      })),
     ],
   },
   profile: {
@@ -1146,10 +1183,11 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     relationGroups: [
       { label: "Organizations", field: "organizations", type: "organization" },
       { label: "Facilities", field: "facilities", type: "facility" },
+      { label: "Shared with", field: "groups", type: "group" },
     ],
-    // Unlike an organization's derived `sites`, both of these are real SiteUpdateDTO fields —
-    // so org<->site links are owned (and unlinkable) from the site's side.
-    updateLinkFields: ["organizations", "facilities"],
+    // Unlike an organization's derived `sites`, these are real SiteUpdateDTO fields —
+    // so org<->site links (and the groups it is shared with) are owned (and unlinkable) from the site's side.
+    updateLinkFields: ["organizations", "facilities", "groups"],
   },
 };
 
@@ -1210,6 +1248,67 @@ async function setPersonInCharge(deviceId: string, personId: string | null) {
   delete body.person_in_charge;
   await authedPut("/core/devices", personId ? { ...body, person_in_charge: personId } : body);
 }
+// What is shared with a group: each type holds the group in its own `groups` field, and the lists don't carry it
+// (except germplasm's), so experiments, organizations and sites are read in full.
+// ponytail: one GET per experiment/organization/site (a handful on phis-test); needs a server-side query past a few hundred.
+// One scan per page view: the group page asks for each type's list and for the delete warning at the same moment, and every
+// scan reads whole records from PHIS (phis-test's OpenSILEX was OOM-killed when this ran five times at once), so
+// concurrent and immediately repeated asks share one result, and the records are read one at a time.
+const sharedCache = new Map<string, { at: number; scan: ReturnType<typeof scanShared> }>();
+export const _resetSharedCacheForTests = () => sharedCache.clear();
+function sharedWith(groupId: string) {
+  const hit = sharedCache.get(groupId);
+  if (hit && Date.now() - hit.at < 4000) return hit.scan;
+  const scan = scanShared(groupId);
+  sharedCache.set(groupId, { at: Date.now(), scan });
+  scan.catch(() => sharedCache.delete(groupId));
+  return scan;
+}
+async function scanShared(groupId: string) {
+  const full = async (list: string, one: string) => {
+    const out: Record<string, unknown>[] = [];
+    for (const r of (await authedGet(list)).result) out.push((await authedGetOne(`${one}/${encodeURIComponent(r.uri)}`)).result);
+    return out;
+  };
+  const rows: [keyof typeof SHARE_LABEL, Record<string, unknown>[]][] = [
+    ["experiment", await experimentDetails()],
+    ["germplasm", (await authedGet("/core/germplasm?page_size=500")).result],
+    ["organization", await full("/core/organisations?page_size=500", "/core/organisations")],
+    ["site", await full("/core/sites?page_size=500", "/core/sites")],
+  ];
+  const out = [];
+  for (const [type, list] of rows) out.push({ type, label: SHARE_LABEL[type], items: await listedIn(list, "groups", groupId) });
+  return out;
+}
+type Pair = { user_uri: string; profile_uri: string };
+const pairsOf = (dto: Record<string, unknown>): Pair[] => ((dto.user_profiles ?? []) as Pair[]).map((u) => ({ user_uri: u.user_uri, profile_uri: u.profile_uri }));
+function groupPayload(dto: Record<string, unknown>, name: string, pairs: Pair[] = pairsOf(dto)) {
+  return { uri: dto.uri, name, description: dto.description ?? "", user_profiles: pairs };
+}
+// Adds accounts to a group with one profile: only pairs that aren't there already; counts both.
+export async function addGroupMembers(groupId: string, accountIds: string[], profileId: string) {
+  const dto = (await authedGetOne(`/security/groups/${encodeURIComponent(groupId)}`)).result;
+  const pairs = pairsOf(dto);
+  const have = new Set(await Promise.all(pairs.map(async (p) => `${await compactUri(p.user_uri)}|${await compactUri(p.profile_uri)}`)));
+  const profile = await compactUri(profileId);
+  let linked = 0, already = 0;
+  for (const a of accountIds) {
+    const key = `${await compactUri(a)}|${profile}`;
+    if (have.has(key)) { already++; continue; }
+    pairs.push({ user_uri: a, profile_uri: profileId });
+    have.add(key);
+    linked++;
+  }
+  if (linked) await authedPut("/security/groups", groupPayload(dto, String(dto.name ?? ""), pairs));
+  return { linked, already };
+}
+async function removeGroupMember(groupId: string, accountId: string) {
+  const dto = (await authedGetOne(`/security/groups/${encodeURIComponent(groupId)}`)).result;
+  const key = await compactUri(accountId);
+  const keep: Pair[] = [];
+  for (const p of pairsOf(dto)) if ((await compactUri(p.user_uri)) !== key) keep.push(p);
+  await authedPut("/security/groups", groupPayload(dto, String(dto.name ?? ""), keep));
+}
 const splitName = (name: string) => {
   const parts = name.trim().split(/\s+/);
   if (parts.length < 2) throw new OpenSilexError(400, "Give a first and a last name, e.g. Ann Lee.");
@@ -1230,6 +1329,13 @@ async function personLabels() {
   } catch { /* names are a nicety: the uri stays when the list can't be read */ }
   return names;
 }
+async function groupLabels() {
+  const names = new Map<string, string>();
+  try {
+    for (const g of (await authedGet("/security/groups?page_size=500")).result) names.set(await compactUri(String(g.uri)), String(g.name ?? g.uri));
+  } catch { /* the uri stays */ }
+  return names;
+}
 export async function relationsFor(id: string, dto: Record<string, unknown>, config: NodeConfig) {
   const groups: { label: string; field?: string; blocksDelete?: true; emptyText?: string; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
   for (const q of config.queryRelations ?? []) {
@@ -1239,9 +1345,10 @@ export async function relationsFor(id: string, dto: Record<string, unknown>, con
       groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
     }
   }
-  if (groups.some((g) => g.items.some((it) => it.type === "person" && it.label === it.id))) {
-    const names = await personLabels();
-    for (const g of groups) for (const it of g.items) if (it.type === "person" && it.label === it.id) it.label = names.get(await compactUri(it.id)) ?? it.label;
+  for (const [type, labels] of [["person", personLabels], ["group", groupLabels]] as const) {
+    if (!groups.some((g) => g.items.some((it) => it.type === type && it.label === it.id))) continue;
+    const names = await labels();
+    for (const g of groups) for (const it of g.items) if (it.type === type && it.label === it.id) it.label = names.get(await compactUri(it.id)) ?? it.label;
   }
   return groups;
 }
