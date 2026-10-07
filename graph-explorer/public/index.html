@@ -578,6 +578,25 @@ button { font-family: inherit; }
 .chart-detail.full #detailPlot { cursor: zoom-out; }
 .chart-detail .g-chart { cursor: inherit; }
 .g-opt { font-size: 12px; margin-right: 8px; }
+.rights-editor { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.rights-head { font-size: 13px; margin-bottom: 6px; }
+.rights-count { color: var(--ink-faint); margin-left: 8px; font-size: 12px; }
+.rights-used { color: var(--ink-muted); margin-left: 8px; font-size: 12px; }
+.rights-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; margin-bottom: 8px; }
+.rights-tools select { font: inherit; font-size: 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px; }
+.rights-table { border-collapse: collapse; font-size: 12.5px; }
+.rights-table th, .rights-table td { padding: 2px 14px 2px 0; text-align: left; font-weight: 400; }
+.rights-table td { text-align: center; padding: 2px 16px; }
+.rights-table th.rt-kind { text-align: center; cursor: pointer; color: var(--ink-muted); font-weight: 500; padding: 2px 16px; }
+.rights-table th.rt-area { cursor: pointer; white-space: nowrap; }
+.rights-table th.rt-area:hover, .rights-table th.rt-kind:hover { color: var(--accent); }
+.rights-table tr:hover td, .rights-table tr:hover th.rt-area { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.rt-none { color: var(--ink-faint); }
+.rt-caution { font-size: 10.5px; color: var(--ink-faint); border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; margin-left: 4px; }
+.rt-caution.on { color: var(--warn, #b45309); border-color: var(--warn, #b45309); }
+.rights-foot { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.rights-foot .btn:disabled { opacity: .45; cursor: default; }
+
 .obs-bar { margin: 8px 0 4px; }
 .chart-detail .obs-wrap { max-height: calc(var(--big-h, 220px) * 0.9); overflow: auto; }
 .meas-values .obs-table th, .meas-values .obs-table td { text-align: right; white-space: nowrap; padding: 2px 8px; }
@@ -2405,6 +2424,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     </div>
   `;
   if (!isCategoryMembers) html += typeInfoHtml(type);
+  if (type === "profile" && node && !unlinking) html += `<div class="rights-editor" id="rightsEditor"></div>`;
   if (node?.deleteBlocked && deleteBlockedShown === focusNode.id) {
     html += `<div class="unlink-intro">
       <span class="unlink-intro-text"><b>CAN'T DELETE HERE</b> — ${escapeHtml(label)} ${escapeHtml(node.deleteBlocked)}</span>
@@ -2615,6 +2635,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   const wireChips = root => root.querySelectorAll(".chip[data-openid]").forEach(chip => chip.addEventListener("click", (e) => onChipClick(chip, e)));
   wireChips(els.detailBody);
   if (type === "scientific_object" && !unlinking) loadMeasurements(focusNode.id, focusNode.label, onChipClick);
+  if (type === "profile" && node && !unlinking) loadRightsEditor(focusNode.id);
 }
 
 // A plant's measured values in each experiment box: variables × scan dates, one row per variable
@@ -2699,6 +2720,119 @@ function openMeasurementDialog(data, v, plantLabel, expLabel, onOpenVariable) {
   dlg.addEventListener("close", () => { ro.disconnect(); dlg.remove(); });
   dlg.showModal();
   ro.observe(dlg);
+}
+
+// ---------------- profile rights editor ----------------
+// A profile is a list of rights; PHIS has 24 areas (accounts, data, devices…) with up to three each: see, change, delete. The
+// editor is a table of tick boxes with quick presets and "copy from another profile" (the tedious part in PHIS). Nothing is written
+// until Save, which says who is affected and what is added or removed. State survives re-renders of the page (an unsaved edit isn't lost
+// when the selection changes) and is dropped when another profile opens.
+let rightsState = null; // { id, data, base: Set, cur: Set }
+const rightLabel = (data, id) => {
+  for (const a of data.areas) { const r = a.rights.find(x => x.id === id); if (r) return `${a.label} (${(r.label || r.id).toLowerCase()})`; }
+  return id;
+};
+async function loadRightsEditor(id) {
+  const box = document.getElementById("rightsEditor");
+  if (!box) return;
+  if (rightsState?.id === id) { renderRightsEditor(); return; }
+  box.innerHTML = `<div class="meas-title">Rights — loading…</div>`;
+  try {
+    const res = await fetch(`api/profile-rights?profile=${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    rightsState = { id, data, base: new Set(data.credentials), cur: new Set(data.credentials) };
+  } catch {
+    if (box.isConnected) box.innerHTML = `<div class="import-warning">The rights couldn't be loaded. <button class="btn ghost small" id="rightsRetry">Retry</button></div>`;
+    box.querySelector("#rightsRetry")?.addEventListener("click", () => loadRightsEditor(id));
+    return;
+  }
+  renderRightsEditor();
+}
+function renderRightsEditor() {
+  const box = document.getElementById("rightsEditor");
+  const st = rightsState;
+  if (!box || !st) return;
+  const e = escapeHtml, { data, base, cur } = st;
+  const total = data.areas.reduce((n, a) => n + a.rights.length, 0);
+  const added = [...cur].filter(c => !base.has(c)), removed = [...base].filter(c => !cur.has(c));
+  const dirty = added.length || removed.length;
+  const kinds = [["access", "See"], ["modification", "Change"], ["delete", "Delete"]];
+  const cell = (a, kind) => {
+    const r = a.rights.find(x => x.kind === kind);
+    return r ? `<td><input type="checkbox" data-r="${e(r.id)}" ${cur.has(r.id) ? "checked" : ""} title="${e(r.id)}"></td>` : `<td class="rt-none">–</td>`;
+  };
+  const rows = data.areas.map(a => {
+    const risky = a.controlsAccess && a.rights.some(r => r.kind !== "access" && cur.has(r.id));
+    return `<tr><th scope="row" class="rt-area" data-area="${e(a.key)}" title="Tick or clear every right of this area">${e(a.label)}${a.controlsAccess ? ` <span class="rt-caution${risky ? " on" : ""}" title="Changing this area changes who may do what in PHIS">controls access</span>` : ""}</th>${kinds.map(([k]) => cell(a, k)).join("")}</tr>`;
+  }).join("");
+  const used = data.usedBy.length
+    ? `Held by ${data.usedBy.reduce((n, g) => n + g.members, 0)} ${data.usedBy.reduce((n, g) => n + g.members, 0) === 1 ? "person" : "people"} in ${andList(data.usedBy.map(g => e(g.label)))}.`
+    : "Nobody holds this profile yet.";
+  const extras = data.extra.length ? `<div class="hx-note">Also kept, not in PHIS's list of areas: ${data.extra.map(x => `<label><input type="checkbox" data-r="${e(x)}" ${cur.has(x) ? "checked" : ""}> ${e(x)}</label>`).join(" ")}</div>` : "";
+  box.innerHTML = `
+    <div class="rights-head"><b>What this profile allows</b> <span class="rights-count">${cur.size} of ${total} rights</span> <span class="rights-used">${used}</span></div>
+    <div class="rights-tools">
+      <span>Set to:</span>
+      <button class="btn ghost small" data-preset="none">Nothing</button>
+      <button class="btn ghost small" data-preset="access">See everything</button>
+      <button class="btn ghost small" data-preset="change">See and change</button>
+      <button class="btn ghost small" data-preset="all">Everything</button>
+      <select id="rightsCopy"><option value="">Copy from another profile…</option>${(profileList || []).filter(p => p.id !== st.id).map(p => `<option value="${e(p.id)}">${e(p.label)}</option>`).join("")}</select>
+    </div>
+    <table class="rights-table"><thead><tr><th></th>${kinds.map(([k, l]) => `<th class="rt-kind" data-kind="${k}" title="Tick or clear this right in every area">${l}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+    ${extras}
+    <div class="rights-foot">
+      <button class="btn primary small" id="rightsSave" ${dirty ? "" : "disabled"}>Save</button>
+      <button class="btn ghost small" id="rightsRevert" ${dirty ? "" : "disabled"}>Revert</button>
+      <span class="hx-note">${dirty ? `Not saved yet: ${added.length} added, ${removed.length} removed.` : "Saved."}</span>
+    </div>`;
+  if (!profileList) loadProfiles(); // the "copy from" list; the action bar refreshes when it arrives
+  wireRightsEditor(box);
+}
+function wireRightsEditor(box) {
+  const st = rightsState, ids = kind => st.data.areas.flatMap(a => a.rights.filter(r => r.kind === kind).map(r => r.id));
+  const set = (list, on) => { list.forEach(id => on ? st.cur.add(id) : st.cur.delete(id)); renderRightsEditor(); };
+  const toggleAll = list => set(list, !list.every(id => st.cur.has(id))); // all ticked -> clear them, else tick them all
+  box.querySelectorAll("input[data-r]").forEach(c => c.addEventListener("change", () => { c.checked ? st.cur.add(c.dataset.r) : st.cur.delete(c.dataset.r); renderRightsEditor(); }));
+  box.querySelectorAll("th.rt-area").forEach(th => th.addEventListener("click", () => toggleAll(st.data.areas.find(a => a.key === th.dataset.area).rights.map(r => r.id))));
+  box.querySelectorAll("th.rt-kind").forEach(th => th.addEventListener("click", () => toggleAll(ids(th.dataset.kind))));
+  const everyId = st.data.areas.flatMap(a => a.rights.map(r => r.id));
+  const keepExtras = () => st.data.extra.filter(x => st.cur.has(x));
+  box.querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => {
+    const p = b.dataset.preset;
+    st.cur = new Set([...(p === "none" ? [] : p === "access" ? ids("access") : p === "change" ? [...ids("access"), ...ids("modification")] : everyId), ...keepExtras()]);
+    renderRightsEditor();
+  }));
+  box.querySelector("#rightsCopy")?.addEventListener("change", async ev => {
+    const from = ev.target.value;
+    if (!from) return;
+    try {
+      const res = await fetch(`api/profile-rights?profile=${encodeURIComponent(from)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const other = await res.json();
+      const allowed = new Set([...everyId, ...st.data.extra]); // only rights this profile may hold
+      st.cur = new Set(other.credentials.filter(c => allowed.has(c)));
+      renderRightsEditor();
+      showToast(`Rights copied from ${(profileList.find(p => p.id === from) || {}).label || "the other profile"} — not saved yet`);
+    } catch { showToast("Couldn't read the other profile's rights"); }
+  });
+  box.querySelector("#rightsRevert")?.addEventListener("click", () => { st.cur = new Set(st.base); renderRightsEditor(); });
+  box.querySelector("#rightsSave")?.addEventListener("click", async () => {
+    const added = [...st.cur].filter(c => !st.base.has(c)), removed = [...st.base].filter(c => !st.cur.has(c));
+    const people = st.data.usedBy.reduce((n, g) => n + g.members, 0);
+    const list = (title, l) => l.length ? `\n${title}: ${l.slice(0, 12).map(id => rightLabel(st.data, id)).join(", ")}${l.length > 12 ? ` and ${l.length - 12} more` : ""}` : "";
+    const who = people ? `This changes what ${people} ${people === 1 ? "person" : "people"} can do (${st.data.usedBy.map(g => g.label).join(", ")}).` : "Nobody holds this profile yet.";
+    if (!confirm(`Save the rights of “${st.data.name}”?\n${who}${list("Added", added)}${list("Removed", removed)}`)) return;
+    try {
+      const res = await fetch("api/profile-rights", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile: st.id, credentials: [...st.cur] }) });
+      const body = await res.json();
+      if (!res.ok) { showToast(`Failed to save: ${body.error || res.status}`); return; }
+      rightsState = { id: st.id, data: body, base: new Set(body.credentials), cur: new Set(body.credentials) };
+      invalidateNodeDetail(st.id);
+      showToast(`Saved the rights of ${body.name}`);
+    } catch (err) { showToast(`Failed to save: ${err}`); }
+  });
 }
 
 function loadMeasurements(objectId, objectLabel, onChipClick) {
@@ -3054,7 +3188,7 @@ function linkPlan() {
 let profileList = null, profileLoad = null;
 function loadProfiles() {
   if (profileLoad) return;
-  profileLoad = fetch("api/profiles").then(r => r.ok ? r.json() : []).catch(() => []).then(l => { profileList = l; profileLoad = null; renderActionbar(); });
+  profileLoad = fetch("api/profiles").then(r => r.ok ? r.json() : []).catch(() => []).then(l => { profileList = l; profileLoad = null; renderActionbar(); if (document.getElementById("rightsEditor")) renderRightsEditor(); });
 }
 function groupMemberPlan(items, types) {
   const groups = items.filter(v => v.type === "group"), accounts = items.filter(v => v.type === "account");

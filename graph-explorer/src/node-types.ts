@@ -1155,15 +1155,42 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       })),
     ],
   },
+  // A profile = a name + the list of rights it holds (edited in the page's tick-box editor, see routes/profile-rights.ts).
+  // Probed 2026-10-07: an update replaces the whole list; deleting a profile that groups use silently REMOVES those members
+  // from their groups — so the delete is blocked while any group uses it, with the way forward.
   profile: {
     getUrl: (id) => `/security/profiles/${encodeURIComponent(id)}`,
-    putUrl: "",
-    deleteUrl: () => "",
+    putUrl: "/security/profiles",
+    putPayload: (dto, name) => ({ uri: dto.uri, name, credentials: dto.credentials ?? [] }),
+    deleteUrl: (id) => `/security/profiles/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: [],
-    // Rights are names (germplasm-access, …), not resources — a fact, not chips.
-    facts: (p) => factsOf([["Rights", Array.isArray(p.credentials) ? p.credentials.join(", ") : null]]),
+    actions: ["rename", "delete"],
+    rename: async (id, name) => {
+      await refuseTakenName("/security/profiles", name, "profile", id);
+      await updateNode(NODE_TYPES.profile, id, { name: name.trim() });
+      return name.trim();
+    },
+    // Starts empty, or with the rights of another profile (the tedious part of making one by hand).
+    create: async (p) => {
+      const name = String(p.name ?? "").trim();
+      await refuseTakenName("/security/profiles", name, "profile");
+      const credentials = p.copy_from ? (((await authedGetOne(`/security/profiles/${encodeURIComponent(String(p.copy_from))}`)).result.credentials ?? []) as string[]) : [];
+      const made = (await authedPost("/security/profiles", { name, credentials })).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: name };
+    },
+    deleteBlockedBy: async (_dto, id) => {
+      const key = await compactUri(id);
+      const used: string[] = [];
+      let people = 0;
+      for (const g of (await authedGet("/security/groups?page_size=500")).result) {
+        const mine = new Set<string>();
+        for (const u of (g.user_profiles ?? []) as { user_uri: string; profile_uri: string }[]) if ((await compactUri(u.profile_uri)) === key) mine.add(u.user_uri);
+        if (mine.size) { used.push(String(g.name ?? g.uri)); people += mine.size; }
+      }
+      return used.length ? `is the profile of ${people} ${people === 1 ? "person" : "people"} in ${used.join(", ")}, and deleting it would silently remove them from ${used.length === 1 ? "that group" : "those groups"}. Give them another profile first: select the group and the people, use Unlink selection, then add them with the profile you want.` : null;
+    },
+    facts: (p) => factsOf([["Rights", Array.isArray(p.credentials) ? `${p.credentials.length}` : null]]),
     queryRelations: [
       { label: "Used in groups", type: "group", url: () => "", load: async (id) => {
         const key = await compactUri(id);

@@ -2286,8 +2286,9 @@ test("profile page: its rights as a fact; the groups that use it", async () => {
   await withServer(async (base) => {
     globalThis.fetch = peopleStub();
     const d = await detailOf(base, "profile", PR_RES);
-    assert.deepEqual(d.actions, []);
-    assert.deepEqual(d.facts, [{ label: "Rights", value: "germplasm-access, data-modification" }]);
+    assert.deepEqual(d.actions, ["rename", "delete"]);
+    assert.deepEqual(d.facts, [{ label: "Rights", value: "2" }], "the rights themselves are ticked in the editor, not listed as a sentence");
+    assert.match(d.deleteBlocked, /^is the profile of 2 people in Researchers, and deleting it would silently remove them from that group\. Give them another profile first/);
     assert.deepEqual(groupItems(d, "Used in groups"), [["group", "Researchers"]]);
     assert.deepEqual((await (await realFetch(`${base}/api/groups`)).json()).map((r: any) => r.label), ["Researchers"]);
     assert.deepEqual((await (await realFetch(`${base}/api/profiles`)).json()).map((r: any) => r.label), ["Researcher profile"]);
@@ -3069,5 +3070,84 @@ test("group page reads the shared things ONCE per view (the lists and the delete
     const d = await (await realFetch(`${base}/api/node-detail?type=group&id=grp-1`)).json();
     assert.ok(d.deleteWarning && d.relations.length >= 2);
     assert.equal(expReads, 1, "one read of the experiment for the whole page");
+  });
+});
+
+// ---------- profiles: the rights editor's data, create (from another profile), rename (probed on phis-test 2026-10-07) ----------
+const CATALOGUE = {
+  "0": { group_id: "Accounts", group_key_name: "credential-groups.accounts", credentials: [{ id: "account-modification", name: "credential.default.modification" }, { id: "account-access", name: "credential.default.access" }] },
+  "1": { group_id: "Annotations", group_key_name: "credential-groups.annotations", credentials: [{ id: "annotation-modification", name: "credential.default.modification" }, { id: "annotation-delete", name: "credential.default.delete" }] },
+  "2": { group_id: "Scientific-objects", group_key_name: "credential-groups.scientific-objects", credentials: [{ id: "so-access", name: "credential.default.access" }] },
+};
+function profileStub(log: { puts: any[]; posts: { url: string; body: any }[] }) {
+  const profiles: Record<string, any> = {
+    "prof-r": { uri: "prof-r", name: "Researcher profile", credentials: ["account-access", "annotation-delete", "dataverse-modification"] },
+    "prof-d": { uri: "prof-d", name: "Default profile", credentials: [] },
+  };
+  return (async (url: string, init?: RequestInit) => {
+    const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+    const method = init?.method ?? "GET";
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://phis.pheno.no/id/profile/zz_made" }); }
+    if (method === "PUT") { const b = JSON.parse(String(init?.body)); log.puts.push(b); profiles[b.uri].credentials = b.credentials; return jsonResponse(200, { result: "ok" }); }
+    let m: RegExpMatchArray | null;
+    if (path === "/security/credentials") return jsonResponse(200, { result: CATALOGUE });
+    if (path.startsWith("/security/profiles?")) return jsonResponse(200, { result: Object.values(profiles) });
+    if ((m = path.match(/^\/security\/profiles\/(.+)$/))) return jsonResponse(200, { result: profiles[m[1]] });
+    if (path.startsWith("/security/groups?")) return jsonResponse(200, { result: [{ uri: "grp-1", name: "Researchers", user_profiles: [{ user_uri: "acc-1", profile_uri: "prof-r" }, { user_uri: "acc-2", profile_uri: "prof-r" }, { user_uri: "acc-1", profile_uri: "prof-d" }] }] });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("profile rights: the catalogue shaped as areas x see/change/delete (access-controlling areas flagged), the profile's rights, who holds it; rights PHIS doesn't list are kept as extras", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = profileStub({ puts: [], posts: [] });
+    const r = await (await realFetch(`${base}/api/profile-rights?profile=prof-r`)).json();
+    assert.deepEqual(r.areas.map((a: any) => [a.label, a.controlsAccess ?? false]), [["Accounts", true], ["Annotations", false], ["Scientific objects", false]]);
+    assert.deepEqual(r.areas[0].rights, [{ id: "account-modification", kind: "modification", label: "Change" }, { id: "account-access", kind: "access", label: "See" }]);
+    assert.deepEqual(r.credentials, ["account-access", "annotation-delete", "dataverse-modification"]);
+    assert.deepEqual(r.extra, ["dataverse-modification"], "a right the catalogue lacks isn't lost");
+    assert.deepEqual(r.usedBy, [{ id: "grp-1", label: "Researchers", members: 2 }], "2 accounts hold it");
+    assert.equal((await realFetch(`${base}/api/profile-rights`)).status, 400);
+  });
+});
+
+test("profile rights: saving replaces the whole list, only with rights PHIS knows (or the profile already has); a profile with no rights is allowed", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[] };
+    globalThis.fetch = profileStub(log);
+    const put = (body: unknown) => realFetch(`${base}/api/profile-rights`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, body: JSON.stringify(body) });
+    const bad = await put({ profile: "prof-r", credentials: ["account-access", "made-up-right"] });
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error, /Not a right PHIS knows: made-up-right/);
+    assert.equal(log.puts.length, 0);
+
+    const ok = await put({ profile: "prof-r", credentials: ["so-access", "so-access", "dataverse-modification"] });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    assert.deepEqual(log.puts[0], { uri: "prof-r", name: "Researcher profile", credentials: ["so-access", "dataverse-modification"] }, "deduplicated; the right the catalogue lacks stays allowed because the profile had it");
+    assert.deepEqual((await ok.json()).credentials, ["dataverse-modification", "so-access"], "the answer is the refreshed state");
+
+    assert.equal((await put({ profile: "prof-d", credentials: [] })).status, 200, "empty is allowed");
+  });
+});
+
+test("create profile: a name, empty or starting from another profile's rights; rename keeps the rights", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as { url: string; body: any }[] };
+    globalThis.fetch = profileStub(log);
+    const json = { "Content-Type": "application/json", "X-Graph-Explorer": "1" };
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: json, body: JSON.stringify(body) });
+    assert.equal((await create({ type: "profile", name: "Viewer", links: [] })).status, 201);
+    assert.deepEqual(log.posts[0], { url: "/security/profiles", body: { name: "Viewer", credentials: [] } });
+    assert.equal((await create({ type: "profile", name: "Contributor", links: [], fields: { copy_from: "prof-r" } })).status, 201);
+    assert.deepEqual(log.posts[1].body.credentials, ["account-access", "annotation-delete", "dataverse-modification"], "starts from the other profile's rights");
+    const dup = await create({ type: "profile", name: "default PROFILE", links: [] });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /There is already a profile named "Default profile"/);
+
+    const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: json, body: JSON.stringify({ type: "profile", id: "prof-r", name: "Researcher" }) });
+    assert.equal(put.status, 200);
+    assert.deepEqual(log.puts[0], { uri: "prof-r", name: "Researcher", credentials: ["account-access", "annotation-delete", "dataverse-modification"] });
   });
 });

@@ -41,7 +41,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Persons | ✔ | **separate from accounts** (see facts). Create (alone or for an account), rename, link into experiments/projects in a role, link to an account (once). No delete in PHIS |
 | Accounts | ◐ | read-only page. **Create/enable/disable/admin/password/language: ✖**; invite a researcher by email (`/security/invite`): ✖ |
 | **Groups** (membership + sharing) | ✔ 2026-10-07 | create/rename/delete (confirm says who loses access), add accounts with a chosen profile, remove them, share experiments/organizations/sites/germplasm with a group (and unshare). See "Priority 1" for what is left |
-| **Profiles** (credentials) | ✖ **NEXT** | read-only pages only. See "Priority 2" |
+| **Profiles** (credentials) | ✔ 2026-10-07 | tick-box rights editor (24 areas × see/change/delete, presets, copy from another profile, caution on access-controlling areas, Save names who is affected); create (empty or from another profile), rename, delete blocked while a group uses it. See "Priority 2" |
 | Favorites (per user) | ✖ | low value |
 | Ontology (classes/properties/RDF types, `Ontology`, `Vue.js - Ontology extension`) | ✖ | 25+9 endpoints; would let users add device/object classes. Large |
 | Species, Metrics, System, UriSearch | ✖ | read-only helpers |
@@ -69,7 +69,7 @@ To build (same selection-first pattern):
   Doing that five times at once got phis-test's OpenSILEX pod OOMKilled (2 GiB limit). Scans are now one per page view, sequential, cached 4 s. Never fan out
   parallel full-record reads; check `kubectl get pods -n phis-test` after any new heavy page.
 
-## Priority 2 — Profiles: credentials (user: "setting the credentials in PHIS is extremely tedious")
+## Priority 2 — Profiles: credentials (user: "setting the credentials in PHIS is extremely tedious") — BUILT, notes kept for reference
 What PHIS has: two profiles — *Default profile* (0 credentials) and *Researcher profile* (59). A profile = name + `credentials[]`
 (strings like `account-access`). The catalogue `GET /security/credentials` returns 24 groups
 (`{group_id, group_key_name, credentials:[{id, name}]}`, e.g. Accounts: `account-modification`, `account-access`).
@@ -83,8 +83,12 @@ To build:
 - **Create / rename / delete a profile** (delete blocked while a group uses it — probe the exact rule).
 - **Show what a profile lets a person do** ("Researcher profile: can edit experiments, can view devices, …") and, on an
   account page, the effective rights through its groups.
-- Probe: required fields (`ProfileCreationDTO` requires `uri`, `name`, `credentials`), uri conventions, whether changing a
-  profile takes effect for logged-in users immediately.
+- **Probed and built (2026-10-07):** create works without a uri (made from the name); an update REPLACES the whole `credentials` list and an empty list is accepted;
+  PHIS accepts unknown right ids silently (the app only lets catalogue ids through, plus ones the profile already has — "dataverse-modification" is on Researcher but not in the catalogue);
+  deleting a profile that groups use is allowed by PHIS and silently REMOVES those members from the groups — the app blocks it and explains. Rights are regular: `<area>-access|modification|delete`.
+- **Security finding to raise with the user:** the *Researcher profile* holds ALL 59 rights, including changing profiles, groups, accounts and users — so every researcher can edit everyone's access
+  (and delete them). The *Default profile* has none. The editor tags those four areas "controls access". A sensible next step is a narrower profile (e.g. "Contributor": see + change data areas, nothing under accounts/users/groups/profiles) made by copying Researcher and unticking — the user decides.
+- Still open: show an account's effective rights (account → groups → profiles → rights); "which profile can do X" search.
 
 ## Priority 3 — Accounts (credentials of people)
 Create an account (email, password, admin, enable, language, linked person), enable/disable, admin flag, reset password,

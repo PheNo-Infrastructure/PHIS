@@ -3179,3 +3179,64 @@ test("e2e: a group + people: one 'Add … to … as <profile>' button per PHIS p
     assert.match(await page.locator("#actionbar").innerText(), /Add people to a group on their own/);
   });
 });
+
+test("e2e: a profile page has a rights editor: tick boxes per area (see/change/delete), presets, copy from another profile, a caution on access-controlling areas, and Save says who is affected and what changes", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const rights = (credentials: string[]) => ({
+      id: "prof-1", name: "Researcher profile", credentials, extra: [],
+      usedBy: [{ id: "grp-1", label: "Researchers", members: 3 }],
+      areas: [
+        { key: "accounts", label: "Accounts", controlsAccess: true, rights: [{ id: "account-modification", kind: "modification", label: "Change" }, { id: "account-access", kind: "access", label: "See" }] },
+        { key: "devices", label: "Devices", rights: [{ id: "device-modification", kind: "modification", label: "Change" }, { id: "device-delete", kind: "delete", label: "Delete" }, { id: "device-access", kind: "access", label: "See" }] },
+      ],
+    });
+    await page.route("**/api/profiles", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "prof-1", type: "profile", label: "Researcher profile" }, { id: "prof-2", type: "profile", label: "Viewer" }]) }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "prof-1", actions: ["rename", "delete"], facts: [{ label: "Rights", value: "2" }], relations: [] }) }));
+    let saved: any = null;
+    await page.route("**/api/profile-rights*", async (r) => {
+      const url = new URL(r.request().url());
+      if (r.request().method() === "PUT") { saved = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rights(saved.credentials)) }); }
+      const id = url.searchParams.get("profile");
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(id === "prof-2" ? { ...rights(["device-access", "account-access"]), id: "prof-2", name: "Viewer" } : rights(["account-access", "device-access"])) });
+    });
+    let asked = "";
+    page.on("dialog", (d) => { asked = d.message(); return d.accept(); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => openNode({ id: "prof-1", type: "profile", label: "Researcher profile" }));
+    const ed = page.locator("#rightsEditor");
+    await ed.locator("table.rights-table").waitFor();
+    assert.match(await ed.locator(".rights-head").innerText(), /2 of 5 rights/);
+    assert.match(await ed.locator(".rights-used").innerText(), /Held by 3 people in Researchers/);
+    assert.equal(await ed.locator('input[data-r="account-access"]').isChecked(), true);
+    assert.equal(await ed.locator('input[data-r="device-modification"]').isChecked(), false);
+    assert.equal(await ed.locator("#rightsSave").isDisabled(), true, "nothing to save yet");
+    assert.equal(await ed.locator(".rt-caution.on").count(), 0, "no caution while accounts can only be seen");
+
+    await ed.locator('input[data-r="account-modification"]').check();
+    assert.equal(await ed.locator(".rt-caution.on").count(), 1, "changing accounts lights the caution");
+    await ed.locator('th.rt-area[data-area="devices"]').click();
+    assert.equal(await ed.locator('input[data-r="device-delete"]').isChecked(), true, "a row header ticks the whole area");
+    await ed.locator('th.rt-kind[data-kind="delete"]').click();
+    assert.equal(await ed.locator('input[data-r="device-delete"]').isChecked(), false, "a column header clears a kind everywhere (all were ticked)");
+    await ed.locator('[data-preset="access"]').click();
+    assert.equal(await ed.locator('input[data-r="account-modification"]').isChecked(), false);
+    assert.equal(await ed.locator('input[data-r="device-access"]').isChecked(), true);
+    await ed.locator('[data-preset="all"]').click();
+    assert.match(await ed.locator(".rights-head").innerText(), /5 of 5 rights/);
+    await ed.locator("#rightsRevert").click();
+    assert.match(await ed.locator(".rights-head").innerText(), /2 of 5 rights/, "revert restores the saved rights");
+
+    await ed.locator("#rightsCopy").selectOption("prof-2");
+    await page.waitForTimeout(300);
+    assert.match(await ed.locator(".rights-foot").innerText(), /Not saved yet: 0 added, 0 removed|Saved/, "copying the same rights changes nothing");
+    await ed.locator('input[data-r="device-modification"]').check();
+    await ed.locator("#rightsSave").click();
+    await page.waitForTimeout(400);
+    assert.match(asked, /This changes what 3 people can do \(Researchers\)/);
+    assert.match(asked, /Added: Devices \(change\)/);
+    assert.deepEqual([...saved.credentials].sort(), ["account-access", "device-access", "device-modification"]);
+    assert.equal(saved.profile, "prof-1");
+    assert.equal(await ed.locator("#rightsSave").isDisabled(), true, "saved: the editor is clean again");
+  });
+});

@@ -146,6 +146,12 @@ export const CREATABLE = {
     linkFields: {},
     fields: [{ key: "description", label: "Description", required: true }],
   },
+  // A profile: a name, optionally starting from another profile's rights; the rights themselves are ticked on its page.
+  profile: {
+    url: "/security/profiles",
+    linkFields: {},
+    fields: [{ key: "copy_from", label: "Start from the rights of", input: "select", options: "api/profiles" }],
+  },
   // One more level of one factor: no POST of its own — the backend saves the factor with the
   // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
   // a selected factor reaches it.
