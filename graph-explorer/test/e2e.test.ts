@@ -2536,10 +2536,15 @@ test("e2e: the Overview lists factors with their levels; 'Pick plants' jumps to 
     await openStructuredExperiment(page, base, null);
     const body = page.locator("#detailBody");
     assert.equal(await body.locator(".ov-fac").count(), 2);
-    assert.equal(await body.locator('.ov-fac[data-fac="fac-g"] .chip').count(), 2, "a chip per level");
+    assert.equal(await body.locator('.ov-fac[data-fac="fac-g"] .ov-levels .chip').count(), 2, "a chip per level");
 
     await body.locator('.ov-fac[data-fac="fac-g"] .chip', { hasText: "GroupID: 2" }).click({ modifiers: ["Control"] });
     assert.deepEqual(await page.evaluate(() => [...selection.keys()]), ["lv-g2"], "a level chip picks the level, like any chip");
+
+    await body.locator('.ov-fac[data-fac="fac-g"] .ov-fac-head .chip').click({ modifiers: ["Control"] });
+    assert.deepEqual(await page.evaluate(() => [...selection.values()].map((v: any) => [v.id, v.type])), [["lv-g2", "factor_level"], ["fac-g", "factor"]], "the factor name is a chip too: ctrl picks the whole factor");
+    await body.locator('.ov-fac[data-fac="fac-g"] .ov-fac-head .chip').click({ modifiers: ["Control"] });
+    assert.deepEqual(await page.evaluate(() => [...selection.keys()]), ["lv-g2"], "ctrl again unpicks it");
 
     await body.locator('.ov-fac[data-fac="fac-r"] button.go-plants:not([data-level])').click();
     assert.match((await page.locator("button.dtab.on").innerText()).trim(), /^Plants/);

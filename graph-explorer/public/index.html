@@ -1943,7 +1943,7 @@ function overviewHtml(node) {
   }
   if (st.factors.length) {
     h += `<div class="rel-group"><div class="rel-label">Factors</div>` + st.factors.map(f => `<div class="ov-fac" data-fac="${e(f.id)}">
-      <div class="ov-fac-head"><b>${e(f.label)}</b><small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small>
+      <div class="ov-fac-head">${chipHtml({ id: f.id, type: "factor", label: f.label, title: f.label })}<small>${f.levels.length} level${f.levels.length === 1 ? "" : "s"}</small>
         <button class="go-plants" data-by="${e(f.id)}" title="Pick plants grouped by ${e(f.label)}">Pick plants ›</button></div>
       <div class="chip-row ov-levels">${f.levels.map(l => `<span class="ov-lv" title="${e(l.label)}">` + chipHtml({ id: l.id, type: "factor_level", label: l.label, factor: f.id, count: l.plants.length })
         + `<button class="go-plants go-level" data-by="${e(f.id)}" data-level="${e(l.id)}" title="Pick plants in ${e(l.label)}">›</button></span>`).join("")}</div></div>`).join("") + `</div>`;
