@@ -931,15 +931,57 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
   },
   // People: who is who, and what links them — a person to an account, an account to groups (each membership
   // with a profile = its rights), a group to what is shared with it. Probed on phis-test 2026-10-01. The
-  // record is read-only; "link" means a person can be added to an experiment or project in a role the user
-  // picks (the experiment/project owns the field — see PERSON_ROLES and /api/link).
+  // name can change and persons can be made (PHIS has no delete for them); "link" means a person can be added to an
+  // experiment or project in a role the user picks (the experiment/project owns the field — see PERSON_ROLES and
+  // /api/link), or to an account.
   person: {
     getUrl: (id) => `/security/persons/${encodeURIComponent(id)}`,
-    putUrl: "",
+    putUrl: "/security/persons",
     deleteUrl: () => "",
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["link"],
+    actions: ["rename", "link"],
+    putPayload: (dto, name) => {
+      const { first, last } = splitName(name);
+      return personPayload(dto, { first_name: first, last_name: last });
+    },
+    // The new name is "First Last" (everything before the last space is the first name).
+    rename: async (id, name) => {
+      const { first, last } = splitName(name);
+      await updateNode(NODE_TYPES.person, id, { name: `${first} ${last}` });
+      return `${first} ${last}`;
+    },
+    // First name is the form's name; the account (when made from one) supplies the email if none is given.
+    create: async (p) => {
+      const first = String(p.name ?? "").trim(), last = String(p.last_name ?? "").trim();
+      if (!first || !last) throw new OpenSilexError(400, "A first and a last name are required.");
+      let email = String(p.email ?? "").trim();
+      const account = p.account ? String(p.account) : "";
+      if (account) {
+        const a = (await authedGetOne(`/security/accounts/${encodeURIComponent(account)}`)).result;
+        if (a.linked_person) throw new OpenSilexError(400, `${a.email} already has a person.`);
+        email ||= String(a.email ?? "");
+      }
+      if (!email) throw new OpenSilexError(400, "An email is required (or select the account this person belongs to).");
+      const made = (await authedPost("/security/persons", { first_name: first, last_name: last, email, ...(p.affiliation ? { affiliation: p.affiliation } : {}), ...(account ? { account } : {}) })).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: `${first} ${last}` };
+    },
+    // A person's account is set once (probed: PHIS keeps it through updates), from either side of the selection.
+    contextLinks: {
+      account: {
+        otherType: "account",
+        current: async (id) => { const a = (await authedGetOne(`/security/persons/${encodeURIComponent(id)}`)).result.account; return a ? [String(a)] : []; },
+        link: async (id, accountId) => {
+          const person = (await authedGetOne(`/security/persons/${encodeURIComponent(id)}`)).result;
+          if (person.account) throw new OpenSilexError(400, "This person already has an account, and an account can't be changed here.");
+          const acc = (await authedGetOne(`/security/accounts/${encodeURIComponent(accountId)}`)).result;
+          if (acc.linked_person) throw new OpenSilexError(400, `${acc.email} already has a person.`);
+          await authedPut("/security/persons", personPayload(person, { account: accountId }));
+        },
+        unlink: async () => { throw new OpenSilexError(400, "A person's account can't be unset in this app."); },
+      },
+    },
+    deleteUrl: () => "",
     facts: (p) => factsOf([["Email", p.email], ["Affiliation", p.affiliation], ["ORCID", p.orcid]]),
     queryRelations: [
       { label: "Account", type: "account", url: () => "", load: async (id) => {
@@ -1030,7 +1072,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteUrl: () => "",
     relationGroups: [],
     updateLinkFields: [],
-    actions: [],
+    actions: ["link"], // only to a person, set from the person's side (person.contextLinks)
     facts: (a) => factsOf([["Email", a.email], ["Admin", a.admin ? "yes" : "no"], ["Enabled", a.enable ? "yes" : "no"]]),
     queryRelations: [
       { label: "Person", type: "person", url: () => "", load: async (id) => {
@@ -1155,6 +1197,18 @@ export async function queryItems(q: QueryRelation, id: string) {
 
 // relationsFromDto plus any queryRelations groups — what node-detail (and an unlink response,
 // which replaces the frontend's cached relations wholesale) returns.
+const splitName = (name: string) => {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) throw new OpenSilexError(400, "Give a first and a last name, e.g. Ann Lee.");
+  return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1] };
+};
+// The PersonDTO from the GetDTO (they match; probed 2026-10-07), with some fields changed. PHIS keeps an account
+// link once set: leaving `account` out of an update does NOT unlink it.
+function personPayload(dto: Record<string, unknown>, changes: Record<string, unknown> = {}) {
+  const out: Record<string, unknown> = { uri: dto.uri };
+  for (const k of ["first_name", "last_name", "email", "affiliation", "phone_number", "orcid", "account"]) if (dto[k] != null) out[k] = dto[k];
+  return { ...out, ...changes };
+}
 // Supervisors and contacts are stored as bare uris, so their chips would read as uris: name them from the persons list.
 async function personLabels() {
   const names = new Map<string, string>();

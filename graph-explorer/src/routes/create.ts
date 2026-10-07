@@ -44,6 +44,13 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
     res.end(JSON.stringify({ error: `a ${type} belongs to one ${config.onlyOne}` }));
     return true;
   }
+  // E.g. a person is made alone or for an account: added to an experiment or project it needs a ROLE, which creating
+  // can't ask for.
+  if (config.fromOnly && links.some((l) => !config.fromOnly!.includes(l.type))) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: config.fromOnlyWhy ?? `a ${type} can't be created from that selection` }));
+    return true;
+  }
   const payload: Record<string, unknown> = { name };
   // Links the new node's own DTO can't carry in the POST — no field for that type (a project's
   // experiments live on each experiment), or a scalar field already used (a scientific object's

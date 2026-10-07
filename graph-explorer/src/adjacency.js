@@ -54,6 +54,8 @@ export const ADJACENT = {
   factor: ["experiment", "factor_level"],
   device: ["facility", "person"],
   provenance: ["device", "person"],
+  // A signed-up account has no person until one is made for it (+ New person), or linked (Link selection).
+  account: ["person"],
   event: ["scientific_object", "device", "facility"],
   data_file: ["scientific_object", "device", "provenance"],
 };

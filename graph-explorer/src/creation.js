@@ -121,6 +121,24 @@ export const CREATABLE = {
       { key: "description", label: "Description" },
     ],
   },
+  // A person: the record experiments and projects point at (an account alone, e.g. someone who signed up, is NOT a
+  // person). `name` is the first name. From a selected account the person is made for that account (the account's
+  // email is used when none is typed). PHIS has no delete for persons. Never created from an experiment or project:
+  // those need a role, so the person is made first and added with "Add … as …".
+  person: {
+    url: "/security/persons",
+    nameLabel: "First name",
+    // fromOnly: the only selected types it may be created from; fromOnlyWhy: what to do instead (greyed in "+ New").
+    fromOnly: ["account"],
+    fromOnlyWhy: "Make the person first, then select them with the experiment or project and use \"Add … as …\".",
+    linkFields: { account: "account" },
+    scalarLinkFields: ["account"],
+    fields: [
+      { key: "last_name", label: "Last name", required: true },
+      { key: "email", label: "Email, unless it is the account's" },
+      { key: "affiliation", label: "Affiliation" },
+    ],
+  },
   // One more level of one factor: no POST of its own — the backend saves the factor with the
   // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
   // a selected factor reaches it.

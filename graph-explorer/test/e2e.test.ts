@@ -143,13 +143,13 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     const soloItems = await page.locator("#newList .newmenu-item").allTextContents();
     // ADJACENT.experiment in full — 6 types, proving the solo case is unconstrained.
     assert.deepEqual(
-      new Set(soloItems.map((s) => s.replace("in PHIS for now", "").trim())),
+      new Set(soloItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())),
       new Set(["organization", "facility", "project", "person", "factor", "scientific object"])
     );
     // Types the app can't create yet stay listed, but greyed and saying where to do it.
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), false, "a factor can be created for one experiment");
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "person" }).isDisabled(), true);
-    assert.match(await page.locator("#newList .newmenu-item", { hasText: "person" }).textContent() ?? "", /in PHIS for now/);
+    assert.match(await page.locator("#newList .newmenu-item", { hasText: "person" }).textContent() ?? "", /make it first/, "a person needs a role in an experiment, so they are made first and added afterwards");
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "project" }).isDisabled(), false);
     await page.locator("#newBtn").click(); // close
 
@@ -166,7 +166,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment ∩ ADJACENT.project = {project, person} — strictly smaller than
     // either operand alone, which is what proves this is really an intersection and not,
     // say, "whichever set happens to come from the first selected item."
-    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").trim())), new Set(["project", "person"]));
+    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())), new Set(["project", "person"]));
   });
 });
 
@@ -2365,6 +2365,35 @@ test("e2e: an experiment + people: one 'Add … as <role> of …' button per rol
     await set([exp, ann, { id: "fac-1", type: "facility", label: "HOLT" }]);
     assert.equal(await page.locator("#actionbar button[data-role]").count(), 0);
     assert.match(await page.locator("#actionbar").innerText(), /People are linked on their own/);
+  });
+});
+
+test("e2e: + New person asks first name, last name, email; from an account it is offered, and person + account reads 'Give … the account …'", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "per-new", type: "person", label: "Ann Lee" }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "People");
+    await openRow(page, "Persons");
+    await page.locator("#newStandaloneBtn").click();
+    await page.waitForTimeout(300);
+    assert.match(await page.locator("dialog").innerText(), /First name[\s\S]*Last name[\s\S]*Email/i);
+    await page.locator("dialog input[name=name]").fill("Ann");
+    await page.locator("dialog input[name=last_name]").fill("Lee");
+    await page.locator("dialog input[name=email]").fill("ann@uit.no");
+    await page.locator("dialog button[value=ok]").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posted, { type: "person", name: "Ann", links: [], fields: { last_name: "Lee", email: "ann@uit.no" } });
+
+    const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
+    await set([{ id: "acc-1", type: "account", label: "thomas@nmbu.no" }]);
+    await page.locator("#newBtn").click();
+    assert.equal(await page.locator("#newList .newmenu-item", { hasText: "person" }).isDisabled(), false, "a person can be made for an account");
+    await page.locator("#newBtn").click();
+    await set([{ id: "per-1", type: "person", label: "Ann Lee" }, { id: "acc-1", type: "account", label: "thomas@nmbu.no" }]);
+    assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Give Ann Lee the account thomas@nmbu.no…");
+    assert.equal(await page.locator("#unlinkSelectionBtn").count(), 0, "an account can't be taken away again");
   });
 });
 

@@ -193,7 +193,7 @@ test("POST /api/create rejects a type with no creation config", async () => {
     const res = await realFetch(`${base}/api/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "person", name: "x", links: [] }),
+      body: JSON.stringify({ type: "account", name: "x", links: [] }),
     });
     assert.equal(res.status, 400);
     const body = await res.json();
@@ -579,6 +579,7 @@ test("the page's '+ New' rule never offers a link /api/create would refuse", asy
   for (const v of Object.keys(ADJACENT)) {
     for (const t of creatableTypesFor([v])) {
       if (!(t in CREATABLE)) continue;
+      if (CREATABLE[t].fromOnly && !CREATABLE[t].fromOnly.includes(v)) continue; // the page greys it out (a person needs a role first)
       const inExperimentOnly = NODE_TYPES[t]?.inExperiment?.byType[v] || NODE_TYPES[v]?.inExperiment?.byType[t];
       const offered = CREATABLE[t].linkFields[v] || (v !== t && linkable.has(t) && linkable.has(v) && !inExperimentOnly);
       if (offered) assert.ok(CREATABLE[t].linkFields[v] || resolveLink(t, v), `${v} -> new ${t} is offered but can't be linked`);
@@ -2245,7 +2246,7 @@ test("person page: read-only; facts (email, affiliation, ORCID); its account, th
   await withServer(async (base) => {
     globalThis.fetch = peopleStub();
     const d = await detailOf(base, "person", P_ANNA);
-    assert.deepEqual(d.actions, ["link"], "the record is read-only; a person can only be linked into an experiment or project");
+    assert.deepEqual(d.actions, ["rename", "link"], "a person can be renamed and linked (into experiments or projects, or to an account), not deleted: PHIS has no delete");
     assert.deepEqual(d.facts, [{ label: "Email", value: "anna@uit.no" }, { label: "Affiliation", value: "UiT" }, { label: "ORCID", value: P_ANNA }]);
     assert.deepEqual(groupItems(d, "Account"), [["account", "Anna Berg"]]);
     assert.deepEqual(groupItems(d, "Scientific supervisor of"), [["experiment", "PBar1x4"]]);
@@ -2259,7 +2260,7 @@ test("account page: facts (email, admin, enabled); its person and its groups wit
   await withServer(async (base) => {
     globalThis.fetch = peopleStub();
     const d = await detailOf(base, "account", A_ANNA);
-    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.actions, ["link"]);
     assert.deepEqual(d.facts, [{ label: "Email", value: "anna@uit.no" }, { label: "Admin", value: "no" }, { label: "Enabled", value: "yes" }]);
     assert.deepEqual(groupItems(d, "Person"), [["person", "Anna Berg"]]);
     assert.deepEqual(groupItems(d, "Groups"), [["group", "Researchers · Researcher profile"]]);
@@ -2795,5 +2796,100 @@ test("unlink selection of an experiment and a person removes the person from eve
     assert.equal(log.puts.length, 2);
     assert.deepEqual(log.puts[0].body.scientific_supervisors, []);
     assert.deepEqual(log.puts[1].body.technical_supervisors, ["per-2"], "only this person goes; the other supervisor stays");
+  });
+});
+
+// ---------- persons: create (alone or for an account), rename, give an account ----------
+function personStub(log: { posts: { url: string; body: any }[]; puts: any[] }) {
+  const persons: Record<string, any> = {
+    "per-1": { uri: "per-1", first_name: "Ann", last_name: "Lee", email: "ann@uit.no", affiliation: "UiT", phone_number: null, orcid: null, account: null },
+    "per-2": { uri: "per-2", first_name: "Bo", last_name: "Ek", email: "bo@uit.no", affiliation: null, phone_number: null, orcid: null, account: "acc-9" },
+  };
+  const accounts: Record<string, any> = {
+    "acc-1": { uri: "acc-1", email: "thomas@nmbu.no", linked_person: null },
+    "acc-2": { uri: "acc-2", email: "taken@uit.no", linked_person: "per-2" },
+    "acc-9": { uri: "acc-9", email: "bo@uit.no", linked_person: "per-2" },
+  };
+  return (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    const method = init?.method ?? "GET";
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://phis.pheno.no/id/user/person.made" }); }
+    if (method === "PUT") { log.puts.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: "ok" }); }
+    let m: RegExpMatchArray | null;
+    if ((m = path.match(/^\/security\/persons\/(.+)$/))) return jsonResponse(200, { result: persons[decodeURIComponent(m[1])] });
+    if ((m = path.match(/^\/security\/accounts\/(.+)$/))) return jsonResponse(200, { result: accounts[decodeURIComponent(m[1])] });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("create person: first name + last name + email; for an account it takes the account's email and refuses an account that has a person; from an experiment it is refused (a role is needed first)", async () => {
+  await withServer(async (base) => {
+    const log = { posts: [] as { url: string; body: any }[], puts: [] as any[] };
+    globalThis.fetch = personStub(log);
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const alone = await create({ type: "person", name: "Ann", links: [], fields: { last_name: "Lee", email: "ann@uit.no", affiliation: "UiT" } });
+    assert.equal(alone.status, 201, await alone.clone().text());
+    assert.equal((await alone.json()).label, "Ann Lee");
+    assert.deepEqual(log.posts[0], { url: "/security/persons", body: { first_name: "Ann", last_name: "Lee", email: "ann@uit.no", affiliation: "UiT" } });
+
+    assert.equal((await create({ type: "person", name: "Ann", links: [], fields: { last_name: "Lee" } })).status, 400, "an email is needed when there is no account");
+    assert.equal((await create({ type: "person", name: "Ann", links: [], fields: {} })).status, 400, "a last name is needed");
+
+    const forAcc = await create({ type: "person", name: "Thomas", links: [{ type: "account", id: "acc-1" }], fields: { last_name: "Bawin" } });
+    assert.equal(forAcc.status, 201, await forAcc.clone().text());
+    assert.deepEqual(log.posts[1].body, { first_name: "Thomas", last_name: "Bawin", email: "thomas@nmbu.no", account: "acc-1" }, "the account's email, and the account itself, go along");
+
+    const taken = await create({ type: "person", name: "X", links: [{ type: "account", id: "acc-2" }], fields: { last_name: "Y" } });
+    assert.equal(taken.status, 400);
+    assert.match((await taken.json()).error, /taken@uit.no already has a person/);
+
+    const n = log.posts.length;
+    const fromExp = await create({ type: "person", name: "Ann", links: [{ type: "experiment", id: "exp-1" }], fields: { last_name: "Lee", email: "a@b.no" } });
+    assert.equal(fromExp.status, 400);
+    assert.match((await fromExp.json()).error, /Make the person first/);
+    assert.equal(log.posts.length, n, "nothing written");
+  });
+});
+
+test("rename person: 'First Last' goes back as first and last name, the rest of the record kept; one word is refused", async () => {
+  await withServer(async (base) => {
+    const log = { posts: [] as { url: string; body: any }[], puts: [] as any[] };
+    globalThis.fetch = personStub(log);
+    const put = (name: string) => realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "person", id: "per-1", name }) });
+    assert.equal((await put("Mary Ann van Dijk")).status, 200);
+    assert.deepEqual(log.puts[0], { uri: "per-1", first_name: "Mary Ann van", last_name: "Dijk", email: "ann@uit.no", affiliation: "UiT" });
+    log.puts.length = 0;
+    const one = await put("Madonna");
+    assert.equal(one.status, 400);
+    assert.match((await one.json()).error, /first and a last name/);
+    assert.equal(log.puts.length, 0);
+    const del = await realFetch(`${base}/api/node?type=person&id=per-1`, { method: "DELETE" });
+    assert.notEqual(del.status, 200, "PHIS has no person delete");
+  });
+});
+
+test("link person + account: the person gets the account (set once); one of each; a person or account already linked is refused", async () => {
+  await withServer(async (base) => {
+    const log = { posts: [] as { url: string; body: any }[], puts: [] as any[] };
+    globalThis.fetch = personStub(log);
+    const link = (items: any[]) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
+    const ok = await link([{ type: "person", id: "per-1" }, { type: "account", id: "acc-1" }]);
+    assert.equal(ok.status, 200, await ok.clone().text());
+    assert.deepEqual(log.puts[0], { uri: "per-1", first_name: "Ann", last_name: "Lee", email: "ann@uit.no", affiliation: "UiT", account: "acc-1" });
+
+    log.puts.length = 0;
+    const hasAcc = await link([{ type: "person", id: "per-2" }, { type: "account", id: "acc-1" }]);
+    assert.equal(hasAcc.status, 400);
+    assert.match((await hasAcc.json()).error, /already has an account/);
+    const accTaken = await link([{ type: "person", id: "per-1" }, { type: "account", id: "acc-2" }]);
+    assert.equal(accTaken.status, 400);
+    assert.match((await accTaken.json()).error, /taken@uit.no already has a person/);
+    const two = await link([{ type: "person", id: "per-1" }, { type: "person", id: "per-2" }, { type: "account", id: "acc-1" }]);
+    assert.equal(two.status, 400);
+    assert.equal(log.puts.length, 0, "nothing written when refused");
+    const unlink = await (await realFetch(`${base}/api/unlink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: [{ type: "person", id: "per-2" }, { type: "account", id: "acc-9" }] }) })).json();
+    assert.deepEqual(unlink.links, [], "a person's account is not something Unlink selection lists or removes");
   });
 });

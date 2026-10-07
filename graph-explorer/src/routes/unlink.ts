@@ -54,6 +54,7 @@ async function findLinks(items: Item[]): Promise<Found[]> {
       }
       const [a, b] = [items[i], items[j]];
       if (a.type === b.type) continue;
+      if (a.type === "account" || b.type === "account") continue; // a person's account is set once and stays
       // A person sits in an experiment or project under some role(s): every role holding them is listed.
       const [boss, person] = a.type === "person" ? [b, a] : [a, b];
       const roles = person.type === "person" ? (PERSON_ROLES as Record<string, { field: string; label: string }[]>)[boss.type] : undefined;

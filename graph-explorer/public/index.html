@@ -2942,7 +2942,7 @@ async function askCreateValues(type) {
     dlg.className = "create-dialog";
     dlg.innerHTML = `<form method="dialog">
       <div class="ranking-header">New ${nice}</div>
-      <label>Name<input name="name" required autofocus></label>
+      <label>${CREATABLE[type].nameLabel || "Name"}<input name="name" required autofocus></label>
       ${extra.map(fd => `<label>${fd.label}${fd.required ? "" : " (optional)"}${input(fd)}</label>`).join("")}
       <div class="ranking-footer">
         <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
@@ -3045,6 +3045,11 @@ function linkPlan() {
 // Unlinking works from the chips, or "Unlink selection" (every role that holds the person).
 function personPlan(items, types) {
   const owner = types.find(t => t !== "person");
+  if (types.length === 2 && owner === "account") {
+    const people = items.filter(v => v.type === "person"), accounts = items.filter(v => v.type === "account");
+    if (people.length !== 1 || accounts.length !== 1) return { kind: "none", why: "A person has one account and an account one person: select exactly one of each." };
+    return { kind: "link", noUnlink: true, label: `Give ${people[0].label} the account ${accounts[0].label}…` };
+  }
   if (types.length !== 2 || !PERSON_ROLES[owner]) return { kind: "none", why: "People are linked on their own: select an experiment or a project and the people." };
   const people = items.filter(v => v.type === "person"), owners = items.filter(v => v.type === owner);
   const who = people.length <= 2 ? andList(people.map(v => v.label)) : `${people.length} people`;
@@ -3770,14 +3775,15 @@ function renderActionbar() {
     // shows what belongs here) but greyed, saying where to do it instead.
     // A link the new node's own DTO can't hold is linked right after, like "Link selection";
     // that works for any distinct pair of LINKABLE_TYPES (checked against the backend by a test).
-    const canLink = (v) => CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type) && !inExperimentOnly(t, v.type));
+    const canLink = (v) => CREATABLE[t].fromOnly ? CREATABLE[t].fromOnly.includes(v.type) : CREATABLE[t].linkFields[v.type] || (v.type !== t && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(v.type) && !inExperimentOnly(t, v.type));
     const one = CREATABLE[t]?.onlyOne;
     const tooMany = one && [...selection.values()].filter(v => v.type === one).length > 1;
     const can = t in CREATABLE && !tooMany && [...selection.values()].every(canLink);
-    item.innerHTML = `<span class="swatch"></span>${typeName(t)}${can ? "" : `<span class="newmenu-item-type">${tooMany ? `one ${typeName(one)} only` : "in PHIS for now"}</span>`}`;
+    const first = t in CREATABLE && CREATABLE[t].fromOnly && !tooMany && !can; // makeable, just not from this selection
+    item.innerHTML = `<span class="swatch"></span>${typeName(t)}${can ? "" : `<span class="newmenu-item-type">${tooMany ? `one ${typeName(one)} only` : first ? "make it first" : "in PHIS for now"}</span>`}`;
     if (!can) {
       item.disabled = true;
-      item.title = tooMany ? `A ${typeName(t)} belongs to one ${typeName(one)} — select just one.` : `This app can't create a ${typeName(t)} here yet. Create it in PHIS, then link it here.`;
+      item.title = tooMany ? `A ${typeName(t)} belongs to one ${typeName(one)} — select just one.` : first ? CREATABLE[t].fromOnlyWhy : `This app can't create a ${typeName(t)} here yet. Create it in PHIS, then link it here.`;
     }
     item.addEventListener("click", async () => {
       menu.classList.remove("open");
@@ -4044,7 +4050,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —

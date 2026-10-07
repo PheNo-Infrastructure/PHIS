@@ -45,6 +45,20 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // — nothing is linked without a role. People are only ever linked this way (never through the generic pairs below).
   if (types.includes("person")) {
     const owner = types.find((t) => t !== "person");
+    // A person and an account: the person gets that account (one each; set once).
+    if (types.length === 2 && owner === "account") {
+      if (idsByType.get("person")!.length !== 1 || idsByType.get("account")!.length !== 1) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "A person has one account and an account one person: select exactly one of each." }));
+        return true;
+      }
+      await respondOpenSilexErrors(res, async () => {
+        const r = await applyLink(resolveLink("person", "account")!, idsByType.get("person")!, idsByType.get("account")!);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+      });
+      return true;
+    }
     const roles = owner ? (PERSON_ROLES as Record<string, { field: string; label: string }[]>)[owner] : undefined;
     const bad = (error: string) => { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error })); return true; };
     if (types.length !== 2 || !roles) return bad("People are linked on their own: select an experiment or a project and the people.");
