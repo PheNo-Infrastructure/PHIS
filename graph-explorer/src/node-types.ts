@@ -550,6 +550,9 @@ function variablePayload(dto: Record<string, unknown>, name: string) {
   return out;
 }
 
+// A provenance (where a batch of values came from: one per import). Its values counted over every experiment.
+const provenanceValueCount = async (id: string) =>
+  Number((await authedPost(`/core/data/count?provenances=${encodeURIComponent(id)}&count_limit=10000000`, [])).result) || 0;
 const DATATYPES: Record<string, string> = {
   "http://www.w3.org/2001/XMLSchema#decimal": "decimal numbers", "http://www.w3.org/2001/XMLSchema#integer": "whole numbers",
   "http://www.w3.org/2001/XMLSchema#string": "text", "http://www.w3.org/2001/XMLSchema#boolean": "yes/no",
@@ -983,6 +986,38 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     updateLinkFields: [],
     actions: ["rename", "delete"],
     facts: (v) => factsOf([["Values", DATATYPES[String(v.datatype)] ?? v.datatype], ["Description", v.description]]),
+  },
+  // Made by the import (one per import). Probed 2026-10-07: renaming keeps the uri and the values; PHIS refuses
+  // deleting one that still has values; DELETE /core/data?provenance= removes exactly that provenance's values.
+  provenance: {
+    getUrl: (id) => `/core/provenances/${encodeURIComponent(id)}`,
+    putUrl: "/core/provenances",
+    putPayload: (dto, name) => ({
+      uri: dto.uri, name, description: dto.description ?? undefined, prov_activity: dto.prov_activity ?? undefined, prov_agent: dto.prov_agent ?? undefined,
+    }),
+    deleteUrl: (id) => `/core/provenances/${encodeURIComponent(id)}`,
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: ["rename", "delete"],
+    facts: (p) => {
+      const act = (p.prov_activity as { start_date?: string; end_date?: string }[] | null)?.[0];
+      const pub = p.publisher as { email?: string } | null;
+      return factsOf([["Description", p.description], ["Period", act?.start_date ? `${dateOf(act.start_date)} to ${dateOf(act.end_date ?? act.start_date)}` : ""], ["Published by", pub?.email]]);
+    },
+    deleteBlockedBy: async (_dto, id) => {
+      const n = await provenanceValueCount(id);
+      return n ? `has ${plural(n, "measured value")}. Delete them first.` : null;
+    },
+    deleteBlockFix: {
+      check: async (id, dto) => {
+        const n = await provenanceValueCount(id);
+        return n ? {
+          label: `Delete its ${plural(n, "measured value")}`,
+          confirm: `Delete all ${plural(n, "measured value")} of ${String(dto.name ?? id)}, in every experiment? This undoes the import that made them. Measured values are research data: they can't be recovered.`,
+        } : null;
+      },
+      run: async (id) => { await authedDelete(`/core/data?provenance=${encodeURIComponent(id)}`); },
+    },
   },
   entity: variablePart("entity", "entities"),
   characteristic: variablePart("characteristic", "characteristics"),

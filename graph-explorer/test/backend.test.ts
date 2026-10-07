@@ -2684,3 +2684,43 @@ test("delete variable: refused while it has measured values (counted over all ex
     assert.deepEqual(log.deletes, ["/core/variables/var-1"]);
   });
 });
+
+test("provenance page: description, period and publisher; rename sends the record back; delete is blocked while it has values, with 'delete its values' as its own step (only this provenance's)", async () => {
+  await withServer(async (base) => {
+    const writes: string[] = [];
+    const puts: any[] = [];
+    const counted: string[] = [];
+    let values = 18564;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/data/count")) { counted.push(url.replace(/^.*\/rest/, "")); return jsonResponse(200, { result: values }); }
+      if (method === "DELETE") { writes.push(`DELETE ${url.replace(/^.*\/rest/, "")}`); if (url.includes("/core/data?")) values = 0; return jsonResponse(200, { result: "ok" }); }
+      if (method === "PUT") { puts.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: "ok" }); }
+      if (url.includes("/core/provenances/prov-1")) return jsonResponse(200, { result: {
+        uri: "prov-1", name: "PBar1x4 import", description: "Imported from a TraitFinder export",
+        prov_activity: [{ rdf_type: "http://www.w3.org/ns/prov#Activity", uri: null, start_date: "2025-10-22T10:54:51Z", end_date: "2026-01-02T12:36:19Z", settings: null }],
+        prov_agent: null, publisher: { uri: "acc", email: "admin@opensilex.org" },
+      } });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+    const json = { "Content-Type": "application/json" };
+    const d = await (await realFetch(`${base}/api/node-detail?type=provenance&id=prov-1`)).json();
+    assert.deepEqual(d.facts, [{ label: "Description", value: "Imported from a TraitFinder export" }, { label: "Period", value: "2025-10-22 to 2026-01-02" }, { label: "Published by", value: "admin@opensilex.org" }]);
+    assert.deepEqual(d.actions, ["rename", "delete"]);
+    assert.equal(d.deleteBlocked, "has 18,564 measured values. Delete them first.");
+    assert.match(d.deleteFix.confirm, /Delete all 18,564 measured values of PBar1x4 import, in every experiment\? This undoes the import/);
+    assert.ok(counted[0].includes("provenances=prov-1"), "counted by provenance");
+
+    assert.equal((await realFetch(`${base}/api/node`, { method: "PUT", headers: json, body: JSON.stringify({ type: "provenance", id: "prov-1", name: "PBar1x4 – TraitFinder import" }) })).status, 200);
+    assert.deepEqual(puts[0], { uri: "prov-1", name: "PBar1x4 – TraitFinder import", description: "Imported from a TraitFinder export", prov_activity: [{ rdf_type: "http://www.w3.org/ns/prov#Activity", uri: null, start_date: "2025-10-22T10:54:51Z", end_date: "2026-01-02T12:36:19Z", settings: null }] });
+
+    assert.equal((await realFetch(`${base}/api/node?type=provenance&id=prov-1`, { method: "DELETE" })).status, 409);
+    assert.deepEqual(writes, []);
+    assert.equal((await realFetch(`${base}/api/node/delete-fix?type=provenance&id=prov-1`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(writes, ["DELETE /core/data?provenance=prov-1"], "only this provenance's values");
+    assert.equal((await realFetch(`${base}/api/node?type=provenance&id=prov-1`, { method: "DELETE" })).status, 200);
+    assert.equal(writes[1], "DELETE /core/provenances/prov-1");
+  });
+});
