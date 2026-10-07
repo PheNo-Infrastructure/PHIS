@@ -65,6 +65,7 @@ cluster on 2026-10-01.
   Restart after any backend change. Stopping the npm task can leave `node` holding
   :4000 — free the port explicitly (see the dev-loop memory).
 - Test: `npm test` (unit, adjacency, Playwright e2e, and a read-only live smoke test).
+- **A–Z workflow (the main line of work since 2026-10-07):** find everything PHIS allows us to implement, above all what can be linked. Living roadmap + status per area + probed facts + priorities (groups, then profiles/credentials, then accounts): `docs/superpowers/graph-explorer-a-z.md`. Generated facts about PHIS's API and every linkable DTO field: `docs/superpowers/phis-api-inventory.md` (refresh with `scripts/phis-inventory.ts`). Read the roadmap before starting any A–Z item and update it when one ships.
 - Design and status: `docs/superpowers/specs/2026-09-21-graph-explorer-unified-design.md`.
   Its "What's NOT built yet" list is where the next step comes from — pick ONE with the user.
 - **Live runs hit production PHIS** (`PHIS_HOST` in `.env`). Use a throwaway node for each
