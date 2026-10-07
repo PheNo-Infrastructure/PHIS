@@ -495,7 +495,7 @@ button { font-family: inherit; }
 .var-grid .chip { display: flex; align-items: center; margin: 0; white-space: nowrap; overflow: hidden; }
 .var-grid .chip-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .var-grid .chip > span:last-child { margin-left: auto; padding-left: 8px; flex: none; }
-.grid-dialog { --gw: 340px; --gh: 170px; width: min(2200px, 96vw); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
+.grid-dialog { --k: 1; --cols: 6; --gw: calc(340px * var(--k)); --gh: calc(170px * var(--k)); width: min(2200px, 96vw, max(780px, calc(var(--cols) * (var(--gw) + 8px) + 160px))); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .g-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
 .g-title { font-size: 16px; font-weight: 600; }
@@ -506,8 +506,8 @@ button { font-family: inherit; }
 .g-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; margin-bottom: 10px; }
 .g-row-label { font-weight: 600; font-size: 13px; padding-top: 4px; }
 .g-row-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--gw), 1fr)); gap: 8px; }
-.grid-dialog.size-s { --gw: 240px; --gh: 96px; }
-.grid-dialog.size-l { --gw: 520px; --gh: 260px; }
+.grid-dialog.size-s { --gw: calc(240px * var(--k)); --gh: calc(96px * var(--k)); }
+.grid-dialog.size-l { --gw: calc(520px * var(--k)); --gh: calc(260px * var(--k)); }
 .g-size { display: inline-flex; gap: 2px; }
 .g-size button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .g-chart { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px 6px; cursor: pointer; }
@@ -2126,6 +2126,10 @@ async function renderChartGrid() {
   if (!dlg || !sel || !sel.plan.variables.length) return;
   const { plan } = sel, e = escapeHtml;
   dlg.className = `grid-dialog size-${gridState.size}`;
+  // The window follows the content: a lone chart is drawn large, a few charts wide, many in the full grid.
+  const most = gridState.overlay ? 6 : Math.max(1, ...plan.rows.map(r => r.charts.length));
+  dlg.style.setProperty("--cols", String(Math.min(most, 6)));
+  dlg.style.setProperty("--k", String(gridState.overlay ? 1 : most === 1 ? 1.8 : most === 2 ? 1.4 : most === 3 ? 1.15 : 1));
   gridState.vi = Math.max(0, Math.min(gridState.vi, plan.variables.length - 1));
   const v = plan.variables[gridState.vi];
   const pager = plan.variables.length > 1

@@ -2676,6 +2676,32 @@ test("e2e: Show chart grid appears once a variable and something chartable are p
   });
 });
 
+test("e2e: the grid window adapts to the number of charts (one chart is drawn large, two wide, never past the screen)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    const size = () => page.evaluate(() => { const d = document.getElementById("chartGrid")!; const c = d.querySelector(".g-chart")!.getBoundingClientRect(); return { dlg: d.getBoundingClientRect().width, chart: c.width, k: d.style.getPropertyValue("--k") }; });
+    const two = await size();
+    assert.equal(two.k, "1.4", "two charts: wider columns");
+    assert.ok(two.dlg < (await page.evaluate(() => innerWidth)) * 0.96, "the window shrinks to its content");
+    await grid.locator("#gridClose").click();
+    await page.evaluate(() => { selection = new Map([...selection].filter(([k]) => k === "var-1")); refreshLeftPane(); renderDetail(); renderActionbar(); });
+    await page.locator('.hx-head[data-id="lv-g2"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    await grid.locator(".g-chart").first().waitFor();
+    assert.equal(await grid.locator(".g-chart").count(), 1);
+    const one = await size();
+    assert.equal(one.k, "1.8");
+    assert.ok(one.chart > two.chart, "a lone chart is larger than one among two");
+  });
+});
+
 test("e2e: the statistics toggle draws a mean ± SD band and fades the plant lines; a group of one plant has no band", async () => {
   await withServerAndBrowser(async (base, page) => {
     await routeOverview(page);
@@ -2861,7 +2887,7 @@ test("e2e: the grid has a size switch (S / M / L) that changes the charts' width
     const [wm, hm] = await size();
     await grid.locator('button[data-size="l"]').click();
     const [wl, hl] = await size();
-    assert.deepEqual([hs, hm, hl], [96, 170, 260], "plot heights per size");
+    assert.deepEqual([hs, hm, hl], [134, 238, 364], "plot heights per size (the base 96/170/260 times 1.4: the grid has two charts)");
     assert.ok(ws < wm && wm < wl, `widths grow with the size (${ws} < ${wm} < ${wl})`);
 
     await grid.locator("#gridStats").check();
