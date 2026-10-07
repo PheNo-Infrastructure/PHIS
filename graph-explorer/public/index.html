@@ -3030,6 +3030,7 @@ function linkPlan() {
   if (types.length === 1) {
     return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${typeName(types[0], 2)} can't be linked to each other.` };
   }
+  if (types.includes("person")) return personPlan(items, types);
   // An object holds one level per factor.
   const levels = items.filter(v => v.type === "factor_level");
   if (new Set(levels.map(l => l.factor)).size < levels.length) return { kind: "none", why: "Two levels of one factor can't both be on a scientific object — keep one." };
@@ -3040,6 +3041,16 @@ function linkPlan() {
     : { kind: "link" };
 }
 
+// People go into an experiment or project in a ROLE they're asked for (one button per role, nothing defaulted).
+// Unlinking works from the chips, or "Unlink selection" (every role that holds the person).
+function personPlan(items, types) {
+  const owner = types.find(t => t !== "person");
+  if (types.length !== 2 || !PERSON_ROLES[owner]) return { kind: "none", why: "People are linked on their own: select an experiment or a project and the people." };
+  const people = items.filter(v => v.type === "person"), owners = items.filter(v => v.type === owner);
+  const who = people.length <= 2 ? andList(people.map(v => v.label)) : `${people.length} people`;
+  const where = owners.length === 1 ? owners[0].label : `${owners.length} ${typeName(owner, owners.length)}`;
+  return { kind: "link", roles: PERSON_ROLES[owner].map(r => ({ field: r.field, label: `Add ${who} as ${r.label}${people.length === 1 ? "" : "s"} of ${where}` })) };
+}
 // Germplasm only: the one species (or variety) is set on the others — a species on varieties and
 // accessions, a variety on accessions. Not unlinkable: a variety can't be without a species. A
 // chip whose kind isn't known (from a plant's row) leaves the check to the server.
@@ -3086,7 +3097,12 @@ async function linkItems(items, experiments, extra = {}) {
       body: JSON.stringify({ items, ...(experiments ? { experiments } : {}), ...extra }),
     });
     const body = await res.json();
-    if (!res.ok) { showToast(`Failed to link: ${body.error || res.status}`); return; }
+    if (!res.ok) {
+      // A person needs a role: the action bar has one button per role, "Link existing" has none.
+      showToast(extra.role === undefined && items.some(it => it.type === "person") && /which role/.test(body.error || "")
+        ? `${body.error} Select the experiment or project and the person, then use the "Add … as …" buttons.` : `Failed to link: ${body.error || res.status}`);
+      return;
+    }
     if (body.needsExperiment) {
       const n = body.needsExperiment;
       const names = andList((n.notInAny || []).map(o => escapeHtml(o.label)));
@@ -3695,7 +3711,8 @@ function renderActionbar() {
     </div>
     <button class="btn ghost" id="clearSel">Clear</button>
     ${plan.why && !(grid && grid.plan.variables.length && grid.plan.rows.length) ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
-    ${canLink ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
+    ${canLink && plan.roles ? plan.roles.map(r => `<button class="btn primary" data-role="${escapeHtml(r.field)}">${escapeHtml(r.label)}</button>`).join("") : ""}
+    ${canLink && !plan.roles ? `<button class="btn primary" id="linkSelectionBtn">${escapeHtml(linkSelectionLabel())}</button>` : ""}
     ${canLink && !plan.noUnlink ? `<button class="btn ghost" id="unlinkSelectionBtn">Unlink selection</button>` : ""}
     ${gridButtonHtml(grid)}
     <div class="newmenu" id="newMenu">
@@ -3722,7 +3739,9 @@ function renderActionbar() {
     document.addEventListener("click", () => visMenu.classList.remove("open"), { once: true });
   }
   if (canLink) {
-    document.getElementById("linkSelectionBtn").addEventListener("click", () => {
+    bar.querySelectorAll("[data-role]").forEach(b => b.addEventListener("click", () =>
+      linkItems([...selection.values()].map(v => ({ type: v.type, id: v.id })), undefined, { role: b.dataset.role })));
+    document.getElementById("linkSelectionBtn")?.addEventListener("click", () => {
       const items = [...selection.values()];
       // Parent/child: the first selected starts as the anchor, the rest as its children.
       if (plan.kind === "rank") { enterLinkRanking(items[0], items.slice(1)); return; }
@@ -4025,7 +4044,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —

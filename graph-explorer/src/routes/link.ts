@@ -1,6 +1,7 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
 import { NODE_TYPES, applyLink, moveDevices, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
+import { PERSON_ROLES } from "../adjacency.js";
 
 // Links a whole selection of EXISTING nodes directly (no third node created) — the counterpart
 // to the unlink flow in routes/node.ts, and to /api/create's `links` (which links a NEW node to
@@ -13,7 +14,8 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
 
   // `experiments`: the user's pick for links that live inside an experiment (see below).
   // `date`: the day of the move, for devices + a facility.
-  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string };
+  // `role`: the field a person goes into (an experiment's supervisors, a project's contacts).
+  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; role?: string };
   const items = (body.items ?? []).filter((it) => it?.type && it?.id);
   if (items.length < 2) {
     res.writeHead(400, { "Content-Type": "application/json" });
@@ -33,6 +35,23 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   if (types.length === 2 && idsByType.has("device") && idsByType.has("facility")) {
     await respondOpenSilexErrors(res, async () => {
       const r = await moveDevices(idsByType.get("device")!, idsByType.get("facility")!, body.date);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+    });
+    return true;
+  }
+
+  // People: an experiment's supervisors or a project's contacts. Each role is its own field and the user says which
+  // — nothing is linked without a role. People are only ever linked this way (never through the generic pairs below).
+  if (types.includes("person")) {
+    const owner = types.find((t) => t !== "person");
+    const roles = owner ? (PERSON_ROLES as Record<string, { field: string; label: string }[]>)[owner] : undefined;
+    const bad = (error: string) => { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error })); return true; };
+    if (types.length !== 2 || !roles) return bad("People are linked on their own: select an experiment or a project and the people.");
+    const role = roles.find((r) => r.field === body.role);
+    if (!role) return bad(`Say which role: ${roles.map((r) => r.label).join(" or ")}.`);
+    await respondOpenSilexErrors(res, async () => {
+      const r = await applyLink({ ownerType: owner!, field: role.field }, idsByType.get(owner!)!, idsByType.get("person")!);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
     });

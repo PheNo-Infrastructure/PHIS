@@ -827,7 +827,7 @@ demands it.
   pages/create/rename/delete (7a294f2), and persons/accounts/groups/profiles have read-only pages. Variables got create / rename /
   delete 2026-10-07: "+ New variable" takes the four parts from OpenSILEX's lists; only the NAME can change afterwards (probed:
   PHIS lets a unit or entity change under existing values, silently relabelling them, so the app never offers it); delete is refused
-  while the variable has values. Still read-only: persons (linking), events other than moves, data files, provenances, documents.
+  while the variable has values. Provenances (2026-10-07): page with description/period, rename, delete blocked while values exist with "delete its values" as a separate confirmed step (PHIS: DELETE /core/data?provenance= removes exactly that provenance's values). People (2026-10-07): "Add X as <role> of Y" buttons — an experiment's scientific/technical supervisors, a project's coordinators/scientific/administrative contacts (PERSON_ROLES in adjacency.js; no role is ever defaulted; /api/link needs `role`); supervisor chips show names; "Unlink selection" removes a person from every role. Not built on purpose: creating/editing persons (they come with accounts), a device's person in charge, data files, documents and events other than moves (none in PHIS, nothing here produces them), the two Holt sites with an address (OpenSILEX bug).
   **Experiment sharing — built 2026-09-30 (1005a8c):** Public/Private line in the detail pane,
   "Visibility…" in the selection pane (experiments, germplasm), imports create public. Group
   sharing not built. Original note: A non-admin (Feide) user sees

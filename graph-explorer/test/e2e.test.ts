@@ -2342,6 +2342,32 @@ test("e2e: + New device from the Devices list asks name, type (OpenSILEX's devic
   });
 });
 
+test("e2e: an experiment + people: one 'Add … as <role> of …' button per role (nothing defaulted), and the pick sends that role; a person with other things says why not", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let linked: any = null;
+    await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const exp = { id: "exp-1", type: "experiment", label: "Trial" };
+    const ann = { id: "per-1", type: "person", label: "Ann Lee" };
+    const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
+    await set([exp, ann]);
+    const roles = await page.locator("#actionbar button[data-role]").allInnerTexts();
+    assert.deepEqual(roles, ["Add Ann Lee as scientific supervisor of Trial", "Add Ann Lee as technical supervisor of Trial"]);
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0, "no generic Link button that would pick a role for you");
+    await page.locator('#actionbar button[data-role="technical_supervisors"]').click();
+    await page.waitForTimeout(300);
+    assert.deepEqual(linked, { items: [{ type: "experiment", id: "exp-1" }, { type: "person", id: "per-1" }], role: "technical_supervisors" });
+
+    await set([{ id: "prj-1", type: "project", label: "Proj" }, ann, { id: "per-2", type: "person", label: "Bo Ek" }]);
+    assert.deepEqual(await page.locator("#actionbar button[data-role]").allInnerTexts(), ["Add Ann Lee and Bo Ek as coordinators of Proj", "Add Ann Lee and Bo Ek as scientific contacts of Proj", "Add Ann Lee and Bo Ek as administrative contacts of Proj"]);
+
+    await set([exp, ann, { id: "fac-1", type: "facility", label: "HOLT" }]);
+    assert.equal(await page.locator("#actionbar button[data-role]").count(), 0);
+    assert.match(await page.locator("#actionbar").innerText(), /People are linked on their own/);
+  });
+});
+
 test("e2e: + New variable from Data > Variables asks name and the four parts (entity, characteristic, method, unit) from OpenSILEX's lists, plus an optional description", async () => {
   await withServerAndBrowser(async (base, page) => {
     const list = (label: string) => JSON.stringify([{ id: `${label}-1`, type: label, label: `${label} one` }]);

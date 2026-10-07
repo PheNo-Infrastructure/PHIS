@@ -385,6 +385,7 @@ test("experiment: node-detail maps {uri,name} AND bare-uri refs and advertises i
       if (url.includes("/exp-1/factors")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/experiments/exp-1")) return jsonResponse(200, { result: dto });
       if (url.includes("/core/scientific_objects?experiment=")) return jsonResponse(200, { result: [] });
+      if (url.includes("/security/persons?")) return jsonResponse(200, { result: [{ uri: "https://orcid.org/0000-1", first_name: "Ann", last_name: "Lee" }] });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
 
@@ -392,8 +393,8 @@ test("experiment: node-detail maps {uri,name} AND bare-uri refs and advertises i
     assert.deepEqual(detail.actions, ["rename", "delete", "link"]);
     assert.equal(detail.deleteRemovesLinks, true);
     assert.deepEqual(detail.relations.find((r: any) => r.label === "Scientific supervisors").items, [
-      { id: "https://orcid.org/0000-1", type: "person", label: "https://orcid.org/0000-1" },
-    ]);
+      { id: "https://orcid.org/0000-1", type: "person", label: "Ann Lee" },
+    ], "a bare-uri supervisor is named from the persons list; the id stays the uri");
 
     const link = await realFetch(`${base}/api/link`, {
       method: "POST",
@@ -2244,7 +2245,7 @@ test("person page: read-only; facts (email, affiliation, ORCID); its account, th
   await withServer(async (base) => {
     globalThis.fetch = peopleStub();
     const d = await detailOf(base, "person", P_ANNA);
-    assert.deepEqual(d.actions, []);
+    assert.deepEqual(d.actions, ["link"], "the record is read-only; a person can only be linked into an experiment or project");
     assert.deepEqual(d.facts, [{ label: "Email", value: "anna@uit.no" }, { label: "Affiliation", value: "UiT" }, { label: "ORCID", value: P_ANNA }]);
     assert.deepEqual(groupItems(d, "Account"), [["account", "Anna Berg"]]);
     assert.deepEqual(groupItems(d, "Scientific supervisor of"), [["experiment", "PBar1x4"]]);
@@ -2722,5 +2723,77 @@ test("provenance page: description, period and publisher; rename sends the recor
     assert.deepEqual(writes, ["DELETE /core/data?provenance=prov-1"], "only this provenance's values");
     assert.equal((await realFetch(`${base}/api/node?type=provenance&id=prov-1`, { method: "DELETE" })).status, 200);
     assert.equal(writes[1], "DELETE /core/provenances/prov-1");
+  });
+});
+
+// ---------- people in an experiment or project, in a role the user picks ----------
+function roleStub(log: { puts: any[] }, dtos: Record<string, any>) {
+  return (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    const method = init?.method ?? "GET";
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (method === "PUT") { log.puts.push({ path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
+    if (path.startsWith("/security/persons/")) return jsonResponse(200, { result: { uri: decodeURIComponent(path.split("/").pop()!), first_name: "Ann", last_name: "Lee" } });
+    const m = path.match(/^\/core\/(experiments|projects)\/(.+)$/);
+    if (m && dtos[m[2]]) return jsonResponse(200, { result: dtos[m[2]] });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("link a person to an experiment or project: needs a role (never defaulted), writes only that field, counts one already there; people never go through the generic pairs", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[] };
+    globalThis.fetch = roleStub(log, {
+      "exp-1": { uri: "exp-1", name: "Trial", objective: "o", start_date: "2026-01-01", scientific_supervisors: ["per-1"], technical_supervisors: [], organisations: [], facilities: [], projects: [], factors: [], groups: [] },
+      "prj-1": { uri: "prj-1", name: "Proj", start_date: "2026-01-01", coordinators: [], scientific_contacts: [], administrative_contacts: [], related_projects: [] },
+    });
+    const link = (body: unknown) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const items = [{ type: "experiment", id: "exp-1" }, { type: "person", id: "per-2" }];
+
+    const none = await link({ items });
+    assert.equal(none.status, 400);
+    assert.match((await none.json()).error, /Say which role: scientific supervisor or technical supervisor/);
+    assert.equal((await link({ items, role: "coordinators" })).status, 400, "a role of another type is refused");
+    assert.equal(log.puts.length, 0, "nothing written without a valid role");
+
+    const ok = await link({ items, role: "technical_supervisors" });
+    assert.deepEqual(await ok.json(), { ok: true, linkedPairs: 1, alreadyLinked: 0 });
+    assert.deepEqual(log.puts[0].body.technical_supervisors, ["per-2"]);
+    assert.deepEqual(log.puts[0].body.scientific_supervisors, ["per-1"], "the other role is left as it was");
+
+    log.puts.length = 0;
+    const again = await link({ items: [{ type: "experiment", id: "exp-1" }, { type: "person", id: "per-1" }], role: "scientific_supervisors" });
+    assert.deepEqual(await again.json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
+
+    const proj = await link({ items: [{ type: "project", id: "prj-1" }, { type: "person", id: "per-2" }], role: "scientific_contacts" });
+    assert.equal(proj.status, 200);
+    assert.deepEqual(log.puts.at(-1).body.scientific_contacts, ["per-2"]);
+
+    log.puts.length = 0;
+    const mixed = await link({ items: [...items, { type: "project", id: "prj-1" }], role: "technical_supervisors" });
+    assert.equal(mixed.status, 400, "a person is linked on its own, not within a bigger mix");
+    const alone = await link({ items: [{ type: "person", id: "per-1" }, { type: "person", id: "per-2" }] });
+    assert.equal(alone.status, 400);
+    assert.equal(log.puts.length, 0);
+  });
+});
+
+test("unlink selection of an experiment and a person removes the person from every role that holds them, named in plain words", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[] };
+    globalThis.fetch = roleStub(log, {
+      "exp-1": { uri: "exp-1", name: "Trial", objective: "o", start_date: "2026-01-01", scientific_supervisors: ["per-1"], technical_supervisors: ["per-1", "per-2"], organisations: [], facilities: [], projects: [], factors: [], groups: [] },
+    });
+    const unlink = (body: unknown) => realFetch(`${base}/api/unlink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const items = [{ type: "experiment", id: "exp-1" }, { type: "person", id: "per-1" }];
+    const preview = await (await unlink({ items })).json();
+    assert.deepEqual(preview.links, ["Trial — scientific supervisors: Ann Lee", "Trial — technical supervisors: Ann Lee"]);
+    assert.equal(log.puts.length, 0, "the preview writes nothing");
+    const done = await unlink({ items, confirm: true });
+    assert.equal(done.status, 200);
+    assert.equal(log.puts.length, 2);
+    assert.deepEqual(log.puts[0].body.scientific_supervisors, []);
+    assert.deepEqual(log.puts[1].body.technical_supervisors, ["per-2"], "only this person goes; the other supervisor stays");
   });
 });

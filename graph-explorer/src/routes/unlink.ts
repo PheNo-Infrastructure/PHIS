@@ -1,6 +1,7 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, refUri, resolveLink, updateNode } from "../node-types.ts";
+import { NODE_TYPES, personName, refUri, resolveLink, updateNode } from "../node-types.ts";
+import { PERSON_ROLES } from "../adjacency.js";
 
 // "Unlink selection" (selection-first design): every link that exists BETWEEN the selected
 // items, whatever kind it is — a DTO field (site <-> organization, organization parents), an
@@ -53,6 +54,19 @@ async function findLinks(items: Item[]): Promise<Found[]> {
       }
       const [a, b] = [items[i], items[j]];
       if (a.type === b.type) continue;
+      // A person sits in an experiment or project under some role(s): every role holding them is listed.
+      const [boss, person] = a.type === "person" ? [b, a] : [a, b];
+      const roles = person.type === "person" ? (PERSON_ROLES as Record<string, { field: string; label: string }[]>)[boss.type] : undefined;
+      if (roles) {
+        const refs = await dto(boss);
+        const who = personName((await authedGetOne(NODE_TYPES.person.getUrl(person.id))).result);
+        for (const role of roles) {
+          const list = refs[role.field];
+          if (!Array.isArray(list) || !(await has((list as ({ uri: string } | string)[]).map(refUri), person.id))) continue;
+          out.push({ text: `${await name(boss)} — ${role.label}s: ${who}`, run: () => updateNode(NODE_TYPES[boss.type], boss.id, { unlink: { field: role.field, uri: person.id } }) });
+        }
+        continue;
+      }
       const r = resolveLink(a.type, b.type);
       if (!r) continue;
       const [owner, other] = r.ownerType === a.type ? [a, b] : [b, a];

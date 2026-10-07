@@ -25,6 +25,20 @@
    and its tests, so the adjacency rule exists in exactly one place instead of two copies that
    can silently drift out of sync. */
 
+/* Who may be linked to an experiment or a project, and in WHICH role (the DTO field). Each role is its own
+   field, so a person is never linked without the user saying which — the app never defaults one. */
+export const PERSON_ROLES = {
+  experiment: [
+    { field: "scientific_supervisors", label: "scientific supervisor" },
+    { field: "technical_supervisors", label: "technical supervisor" },
+  ],
+  project: [
+    { field: "coordinators", label: "coordinator" },
+    { field: "scientific_contacts", label: "scientific contact" },
+    { field: "administrative_contacts", label: "administrative contact" },
+  ],
+};
+
 export const ADJACENT = {
   // site/experiment: their CreationDTOs own the link (organizations / organisations+facilities),
   // not the org/facility — but creatableTypesFor only reads the SELECTED type's list, so they

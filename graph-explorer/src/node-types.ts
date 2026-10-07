@@ -929,16 +929,17 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       } },
     ],
   },
-  // People (read-only for now): who is who, and what links them — a person to an account, an
-  // account to groups (each membership with a profile = its rights), a group to what is shared
-  // with it. Probed on phis-test 2026-10-01. Linking and editing come in later steps.
+  // People: who is who, and what links them — a person to an account, an account to groups (each membership
+  // with a profile = its rights), a group to what is shared with it. Probed on phis-test 2026-10-01. The
+  // record is read-only; "link" means a person can be added to an experiment or project in a role the user
+  // picks (the experiment/project owns the field — see PERSON_ROLES and /api/link).
   person: {
     getUrl: (id) => `/security/persons/${encodeURIComponent(id)}`,
     putUrl: "",
     deleteUrl: () => "",
     relationGroups: [],
     updateLinkFields: [],
-    actions: [],
+    actions: ["link"],
     facts: (p) => factsOf([["Email", p.email], ["Affiliation", p.affiliation], ["ORCID", p.orcid]]),
     queryRelations: [
       { label: "Account", type: "account", url: () => "", load: async (id) => {
@@ -1154,6 +1155,14 @@ export async function queryItems(q: QueryRelation, id: string) {
 
 // relationsFromDto plus any queryRelations groups — what node-detail (and an unlink response,
 // which replaces the frontend's cached relations wholesale) returns.
+// Supervisors and contacts are stored as bare uris, so their chips would read as uris: name them from the persons list.
+async function personLabels() {
+  const names = new Map<string, string>();
+  try {
+    for (const p of (await authedGet("/security/persons?page_size=500")).result) names.set(await compactUri(String(p.uri)), personName(p));
+  } catch { /* names are a nicety: the uri stays when the list can't be read */ }
+  return names;
+}
 export async function relationsFor(id: string, dto: Record<string, unknown>, config: NodeConfig) {
   const groups: { label: string; field?: string; blocksDelete?: true; emptyText?: string; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
   for (const q of config.queryRelations ?? []) {
@@ -1162,6 +1171,10 @@ export async function relationsFor(id: string, dto: Record<string, unknown>, con
     if (items.length || q.emptyText) {
       groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
     }
+  }
+  if (groups.some((g) => g.items.some((it) => it.type === "person" && it.label === it.id))) {
+    const names = await personLabels();
+    for (const g of groups) for (const it of g.items) if (it.type === "person" && it.label === it.id) it.label = names.get(await compactUri(it.id)) ?? it.label;
   }
   return groups;
 }
