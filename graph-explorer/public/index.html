@@ -2000,10 +2000,10 @@ function tabbedExperimentHtml(id, node) {
 const OVERVIEW = {}; // "<experiment>|<variable>" -> promise of /api/experiment-overview
 // The grid's settings are remembered in this browser (size, shared y-axis, statistics, overlay).
 const GRID_KEY = "ge.grid";
-const gridState = { vi: 0, size: "m", stats: false, sharedY: true, overlay: false, hiddenSeries: new Set() };
+const gridState = { vi: 0, size: "m", stats: false, sharedY: true, overlay: false, norm: false, hiddenSeries: new Set() };
 try { Object.assign(gridState, JSON.parse(localStorage.getItem(GRID_KEY) ?? "{}")); } catch { /* storage blocked or unreadable: defaults */ }
 if (!["s", "m", "l"].includes(gridState.size)) gridState.size = "m";
-const saveGrid = () => { try { localStorage.setItem(GRID_KEY, JSON.stringify({ size: gridState.size, sharedY: gridState.sharedY, stats: gridState.stats, overlay: gridState.overlay })); } catch { /* not remembered, still works */ } };
+const saveGrid = () => { try { localStorage.setItem(GRID_KEY, JSON.stringify({ size: gridState.size, sharedY: gridState.sharedY, stats: gridState.stats, overlay: gridState.overlay, norm: gridState.norm })); } catch { /* not remembered, still works */ } };
 const colorVar = i => `var(--c${(i % 8) + 1})`;
 const sameId = (a, b) => a === b || String(a).split("/").pop() === String(b).split("/").pop(); // PHIS gives full or prefixed uris
 
@@ -2161,6 +2161,7 @@ async function renderChartGrid() {
   dlg.innerHTML = `<div class="g-head"><span class="g-title">${e(v.label)}</span>${pager}<span style="flex:1"></span>
       <span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
       <label title="One chart per row: the row's charts on top of each other"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
+      <label title="Every plant as a percentage of its own first scan, to compare growth shapes"><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
       <label><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>
       <button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
@@ -2170,11 +2171,12 @@ async function renderChartGrid() {
   dlg.querySelectorAll("[data-gvar]").forEach(b => b.addEventListener("click", () => { gridState.vi = Number(b.dataset.gvar); renderChartGrid(); }));
   dlg.querySelectorAll("[data-size]").forEach(b => b.addEventListener("click", () => { gridState.size = b.dataset.size; saveGrid(); renderChartGrid(); }));
   dlg.querySelector("#gridOverlay").addEventListener("change", ev => { gridState.overlay = ev.target.checked; saveGrid(); renderChartGrid(); });
+  dlg.querySelector("#gridNorm").addEventListener("change", ev => { gridState.norm = ev.target.checked; saveGrid(); renderChartGrid(); });
   dlg.querySelector("#gridShared").addEventListener("change", ev => { gridState.sharedY = ev.target.checked; saveGrid(); renderChartGrid(); });
   dlg.querySelector("#gridStats").addEventListener("change", ev => { gridState.stats = ev.target.checked; saveGrid(); renderChartGrid(); });
   const body = dlg.querySelector("#gridBody");
   let data;
-  try { data = await loadOverview(sel.experiment, v.id); }
+  try { data = await loadOverview(sel.experiment, v.id); if (gridState.norm) data = normaliseOverview(data); }
   catch (err) {
     body.innerHTML = `<div class="import-warning">Couldn't load ${e(v.label)}: ${e(String(err.message))} <button id="gridRetry">Retry</button></div>`;
     body.querySelector("#gridRetry").addEventListener("click", () => renderChartGrid());

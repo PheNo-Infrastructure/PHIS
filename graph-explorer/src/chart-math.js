@@ -15,6 +15,20 @@ export function groupColumns(plants, nCols) {
 }
 
 // The y span of every number in the lists; a flat line (or nothing) still gets some height.
+// Each plant's values as a percentage of its own first scan (so growth shapes compare across plants of different
+// size). A plant whose first value is 0 has no baseline and gets no values. The unit becomes "% of first scan".
+export function normaliseOverview(data) {
+  return {
+    ...data,
+    variable: { ...data.variable, unit: "% of first scan" },
+    plants: data.plants.map((p) => {
+      const base = p.values.find((x) => x && Number.isFinite(x.v));
+      const ok = base && base.v !== 0;
+      return { ...p, values: p.values.map((x) => (x && ok ? { ...x, v: (x.v / base.v) * 100 } : null)) };
+    }),
+  };
+}
+
 export function yRange(seriesLists) {
   const xs = seriesLists.flat().filter((x) => typeof x === "number" && Number.isFinite(x));
   if (!xs.length) return { lo: 0, hi: 1 };

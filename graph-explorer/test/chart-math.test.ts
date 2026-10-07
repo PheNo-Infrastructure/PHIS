@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { meanSd, groupColumns, yRange, arrangeCharts } from "../src/chart-math.js";
+import { meanSd, groupColumns, yRange, arrangeCharts, normaliseOverview } from "../src/chart-math.js";
 
 test("meanSd: mean and sample SD over the numbers present; one value has SD null; nothing gives null", () => {
   assert.deepEqual(meanSd([2, 4, 6]), { mean: 4, sd: 2, n: 3 });
@@ -74,4 +74,15 @@ test("arrangeCharts: a pick with no vias is standalone; plants unknown to this e
   const r = arrangeCharts([{ id: "zz", type: "scientific_object", label: "ZZ plant" }, plant(1)], ST);
   assert.deepEqual(r.rows[0].charts.map((c: any) => c.plantIds), [["p1"]], "p1 is in the experiment");
   assert.deepEqual(r.outside, ["ZZ plant"]);
+});
+
+test("normaliseOverview: every plant as % of its own first scan; no baseline (first value 0) means no values", () => {
+  const out = normaliseOverview({ variable: { name: "H", unit: "mm" }, columns: [{}, {}, {}], plants: [
+    { id: "a", values: [{ v: 10, at: "x" }, null, { v: 15, at: "y" }] },
+    { id: "b", values: [null, { v: 4, at: "x" }, { v: 2, at: "y" }] },
+    { id: "z", values: [{ v: 0, at: "x" }, { v: 3, at: "y" }, null] } ] } as any);
+  assert.deepEqual(out.plants[0].values, [{ v: 100, at: "x" }, null, { v: 150, at: "y" }]);
+  assert.deepEqual(out.plants[1].values, [null, { v: 100, at: "x" }, { v: 50, at: "y" }], "the first scan it HAS is the baseline");
+  assert.deepEqual(out.plants[2].values, [null, null, null]);
+  assert.equal(out.variable.unit, "% of first scan");
 });

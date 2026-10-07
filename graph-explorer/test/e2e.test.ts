@@ -2953,7 +2953,7 @@ test("e2e: the grid has a size switch (S / M / L) that changes the charts' width
 
     await grid.locator("#gridStats").check();
     const saved = JSON.parse(await page.evaluate(() => localStorage.getItem("ge.grid") ?? "null"));
-    assert.deepEqual(saved, { size: "l", sharedY: true, stats: true, overlay: false });
+    assert.deepEqual(saved, { size: "l", sharedY: true, stats: true, overlay: false, norm: false });
   });
 });
 
@@ -2965,6 +2965,21 @@ test("e2e: saved grid settings are applied when the grid opens", async () => {
     assert.equal(await grid.locator('button[data-size="s"].on').count(), 1);
     assert.equal(await grid.locator("#gridStats").isChecked(), true);
     assert.equal(await grid.locator("#gridShared").isChecked(), false);
+  });
+});
+
+test("e2e: '% of first scan' redraws every chart relative to each plant's first scan, and is remembered", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openGridFor(page, base);
+    const grid = page.locator("#chartGrid");
+    const yh = () => grid.locator('.g-chart[data-key="lv-g1"] .g-yh').innerText();
+    assert.match(await yh(), /^36 mm$/);
+    await grid.locator("#gridNorm").check();
+    await page.waitForFunction(() => /first scan/.test(document.querySelector('#chartGrid .g-chart[data-key="lv-g1"] .g-yh')?.textContent ?? ""));
+    assert.match(await yh(), /first scan/, "the scale is now in % of the first scan");
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("ge.grid") ?? "null")).norm, true);
+    await grid.locator("#gridNorm").uncheck();
+    await page.waitForFunction(() => /36 mm/.test(document.querySelector('#chartGrid .g-chart[data-key="lv-g1"] .g-yh')?.textContent ?? ""));
   });
 });
 
