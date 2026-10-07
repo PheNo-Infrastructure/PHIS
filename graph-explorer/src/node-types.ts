@@ -533,6 +533,23 @@ async function valuesOf(id: string) {
   return { count, text: `${plural(count, "measured value")} (from ${names.length > 2 ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more` : names.join(" and ")})` };
 }
 
+const variableValueCount = async (id: string) =>
+  Number((await authedPost(`/core/data/count?variables=${encodeURIComponent(id)}&count_limit=10000000`, [])).result) || 0;
+// The VariableUpdateDTO from the GetDTO: related resources go back as their uris (probed: the whole
+// record must be sent; entity, characteristic, method and unit are required).
+function variablePayload(dto: Record<string, unknown>, name: string) {
+  const uri = (x: unknown) => (x && typeof x === "object" ? (x as { uri?: unknown }).uri : x);
+  const out: Record<string, unknown> = { uri: dto.uri, name };
+  for (const k of ["alternative_name", "description", "entity", "entity_of_interest", "characteristic", "trait", "trait_name", "method", "unit", "datatype", "time_interval", "sampling_interval"]) {
+    const v = uri(dto[k]);
+    if (v != null) out[k] = v;
+  }
+  for (const k of ["species", "exact_match", "close_match", "broad_match", "narrow_match"]) {
+    if (Array.isArray(dto[k])) out[k] = (dto[k] as unknown[]).map(uri);
+  }
+  return out;
+}
+
 const DATATYPES: Record<string, string> = {
   "http://www.w3.org/2001/XMLSchema#decimal": "decimal numbers", "http://www.w3.org/2001/XMLSchema#integer": "whole numbers",
   "http://www.w3.org/2001/XMLSchema#string": "text", "http://www.w3.org/2001/XMLSchema#boolean": "yes/no",
@@ -933,11 +950,29 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     ],
   },
   // What is measured: a variable = entity + characteristic + method + unit, each its own resource
-  // shared by many variables. Read-only for now (created by the import, stage 2).
+  // shared by many variables. Created here or by the import; only the NAME is editable (probed
+  // 2026-10-07: the uri stays, and PHIS lets a unit or entity change even under existing values,
+  // silently relabelling the numbers — so those are never offered). Deleting is refused while it has values.
   variable: {
     getUrl: (id) => `/core/variables/${encodeURIComponent(id)}`,
-    putUrl: "",
-    deleteUrl: () => "",
+    putUrl: "/core/variables",
+    putPayload: variablePayload,
+    deleteUrl: (id) => `/core/variables/${encodeURIComponent(id)}`,
+    rename: async (id, name) => {
+      await refuseTakenName("/core/variables", name, "variable", id);
+      await updateNode(NODE_TYPES.variable, id, { name: name.trim() });
+      return name.trim();
+    },
+    create: async (p) => {
+      const name = String(p.name ?? "").trim();
+      await refuseTakenName("/core/variables", name, "variable");
+      const made = (await authedPost("/core/variables", { ...p, name, datatype: "http://www.w3.org/2001/XMLSchema#decimal" })).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: name };
+    },
+    deleteBlockedBy: async (_dto, id) => {
+      const n = await variableValueCount(id);
+      return n ? `has ${plural(n, "measured value")}. Measured values are research data, so this app doesn't delete a variable's values in bulk — delete them in PHIS if you really mean to.` : null;
+    },
     relationGroups: [
       { label: "Entity", field: "entity", type: "entity" },
       { label: "Characteristic", field: "characteristic", type: "characteristic" },
@@ -945,7 +980,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Unit", field: "unit", type: "unit" },
     ],
     updateLinkFields: [],
-    actions: [],
+    actions: ["rename", "delete"],
     facts: (v) => factsOf([["Values", DATATYPES[String(v.datatype)] ?? v.datatype], ["Description", v.description]]),
   },
   entity: variablePart("entity", "entities"),

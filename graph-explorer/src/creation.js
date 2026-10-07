@@ -107,6 +107,20 @@ export const CREATABLE = {
       { key: "serial_number", label: "Serial number" },
     ],
   },
+  // A variable: what is measured, made of four existing parts (each its own resource, picked from
+  // OpenSILEX's lists). The backend (NODE_TYPES.variable.create) adds the datatype (decimal numbers)
+  // and refuses a taken name. Its unit and parts can't be changed afterwards.
+  variable: {
+    url: "/core/variables",
+    linkFields: {},
+    fields: [
+      { key: "entity", label: "Entity (what is measured)", input: "select", options: "api/variable-entities", required: true },
+      { key: "characteristic", label: "Characteristic", input: "select", options: "api/variable-characteristics", required: true },
+      { key: "method", label: "Method", input: "select", options: "api/variable-methods", required: true },
+      { key: "unit", label: "Unit", input: "select", options: "api/variable-units", required: true },
+      { key: "description", label: "Description" },
+    ],
+  },
   // One more level of one factor: no POST of its own — the backend saves the factor with the
   // level added (NODE_TYPES.factor_level.create). Not a browsable category, so only + New from
   // a selected factor reaches it.

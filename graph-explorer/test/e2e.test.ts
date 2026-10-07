@@ -2342,6 +2342,31 @@ test("e2e: + New device from the Devices list asks name, type (OpenSILEX's devic
   });
 });
 
+test("e2e: + New variable from Data > Variables asks name and the four parts (entity, characteristic, method, unit) from OpenSILEX's lists, plus an optional description", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const list = (label: string) => JSON.stringify([{ id: `${label}-1`, type: label, label: `${label} one` }]);
+    for (const n of ["entities", "characteristics", "methods", "units"]) {
+      await page.route(`**/api/variable-${n}`, (r) => r.fulfill({ status: 200, contentType: "application/json", body: list(n) }));
+    }
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "var-new", type: "variable", label: "ZZ var" }) }); });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Data");
+    await openRow(page, "Variables");
+    await page.locator("#newStandaloneBtn").click();
+    await page.waitForTimeout(300);
+    await page.locator("dialog input[name=name]").fill("ZZ var");
+    await page.locator("dialog button[value=ok]").click();
+    await page.waitForTimeout(200);
+    assert.equal(posted, null, "the four parts are required: nothing is sent without them");
+    for (const [k, n] of [["entity", "entities"], ["characteristic", "characteristics"], ["method", "methods"], ["unit", "units"]]) await page.locator(`dialog select[name=${k}]`).selectOption(`${n}-1`);
+    await page.locator("dialog button[value=ok]").click();
+    await page.waitForTimeout(400);
+    assert.deepEqual(posted, { type: "variable", name: "ZZ var", links: [], fields: { entity: "entities-1", characteristic: "characteristics-1", method: "methods-1", unit: "units-1" } });
+  });
+});
+
 const P = (n: number) => ({ id: `so-p${n}`, label: `PB00${n}` });
 const STRUCT = {
   truncated: false,

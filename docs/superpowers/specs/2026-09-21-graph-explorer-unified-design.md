@@ -823,6 +823,11 @@ demands it.
      (empty on test) — stage 2, observations.
   6. The 2 Holt sites with an address stay uneditable (OpenSILEX PUT bug), so linking a facility or
      organization to them is refused with "Edit it in PHIS directly".
+  **Status 2026-10-07 (checked against the code):** gaps 1, 2 and 3 are closed (factors with levels, germplasm, honest "+ New"), devices have
+  pages/create/rename/delete (7a294f2), and persons/accounts/groups/profiles have read-only pages. Variables got create / rename /
+  delete 2026-10-07: "+ New variable" takes the four parts from OpenSILEX's lists; only the NAME can change afterwards (probed:
+  PHIS lets a unit or entity change under existing values, silently relabelling them, so the app never offers it); delete is refused
+  while the variable has values. Still read-only: persons (linking), events other than moves, data files, provenances, documents.
   **Experiment sharing — built 2026-09-30 (1005a8c):** Public/Private line in the detail pane,
   "Visibility…" in the selection pane (experiments, germplasm), imports create public. Group
   sharing not built. Original note: A non-admin (Feide) user sees

@@ -46,6 +46,11 @@ export const listRoutes: Record<string, ListRoute> = {
   // feed the create form's Type dropdown (CREATABLE.scientific_object.fields).
   // Not a browsable category: the device classes (camera, RGB camera, …) for the create form.
   "/api/device-types": { url: "/ontology/subclasses_of?parent_type=vocabulary%3ADevice&ignoreRootClasses=true", type: "rdf_type", label: byName, rows: flattenClasses },
+  // Not browsable categories: the parts a new variable is made of (create form).
+  "/api/variable-entities": { url: "/core/entities?page_size=1000", type: "entity", label: byName },
+  "/api/variable-characteristics": { url: "/core/characteristics?page_size=1000", type: "characteristic", label: byName },
+  "/api/variable-methods": { url: "/core/methods?page_size=1000", type: "method", label: byName },
+  "/api/variable-units": { url: "/core/units?page_size=1000", type: "unit", label: byName },
   "/api/scientific-object-types": { url: "/core/scientific_objects/used_types", type: "rdf_type", label: byName },
 };
 

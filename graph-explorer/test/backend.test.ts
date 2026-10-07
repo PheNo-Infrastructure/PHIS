@@ -193,7 +193,7 @@ test("POST /api/create rejects a type with no creation config", async () => {
     const res = await realFetch(`${base}/api/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "variable", name: "x", links: [] }),
+      body: JSON.stringify({ type: "person", name: "x", links: [] }),
     });
     assert.equal(res.status, 400);
     const body = await res.json();
@@ -1317,7 +1317,7 @@ test("PUT /api/node with `unlink` drops just that one uri from its field, keeps 
   });
 });
 
-test("GET /api/node-detail: a variable shows its four parts and what its values are; a unit lists the variables using it, with its symbol (both read-only)", async () => {
+test("GET /api/node-detail: a variable shows its four parts and what its values are; a unit lists the variables using it, with its symbol (the unit stays read-only)", async () => {
   await withServer(async (base) => {
     const calls: string[] = [];
     globalThis.fetch = (async (url: string) => {
@@ -1330,13 +1330,14 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
           method: { uri: "m-1", name: "PlantEye 3D scan" }, unit: { uri: "u-1", name: "Millimeter", symbol: "mm" }, entity_of_interest: null,
         } });
       }
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 });
       if (url.includes("/core/units/u-1")) return jsonResponse(200, { result: { uri: "u-1", name: "Millimeter", symbol: "mm", description: null } });
       if (url.includes("/core/variables?unit=u-1")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Plant Height Max" }] });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
 
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json(), {
-      uri: "var-1", actions: [],
+      uri: "var-1", actions: ["rename", "delete"],
       facts: [{ label: "Values", value: "decimal numbers" }, { label: "Description", value: "TraitFinder column" }],
       relations: [
         { label: "Entity", items: [{ id: "ent-1", type: "entity", label: "Plant" }] },
@@ -2616,5 +2617,69 @@ test("experiment-overview: one plant measured twice in a day keeps the day colum
     ]).flat());
     body = await (await realFetch(`${base}/api/experiment-overview?experiment=e&variable=var-1`)).json();
     assert.deepEqual(body.columns.map((c: any) => c.key), ["2025-10-22T08:00", "2025-10-22T16:00"]);
+  });
+});
+
+// ---------- variables: create, rename, delete (probed on phis-test 2026-10-07) ----------
+function variableStub(log: { puts: any[]; posts: { url: string; body: any }[]; deletes: string[] }, values: { n: number }) {
+  return (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    const method = init?.method ?? "GET";
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (method === "POST" && path.startsWith("/core/data/count")) { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: values.n }); }
+    if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://phis.pheno.no/id/variable/zz_made" }); }
+    if (method === "PUT") { log.puts.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: "ok" }); }
+    if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+    if (path.startsWith("/core/variables?")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Plant Height" }] });
+    if (path === "/core/variables/var-1") return jsonResponse(200, { result: {
+      uri: "var-1", name: "Plant Height", description: "d", datatype: "http://www.w3.org/2001/XMLSchema#decimal", alternative_name: null,
+      entity: { uri: "ent-1", name: "Plant" }, characteristic: { uri: "ch-1", name: "Height" }, method: { uri: "m-1", name: "Scan" },
+      unit: { uri: "u-1", name: "Millimeter", symbol: "mm" }, entity_of_interest: null, trait: null, species: [], exact_match: [], close_match: [], broad_match: [], narrow_match: [],
+      publisher: { uri: "acc" }, publication_date: "2026-01-01",
+    } });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("create variable: four parts required, datatype added, a taken name refused; rename sends the whole record with parts as uris (unit and parts never change)", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as { url: string; body: any }[], deletes: [] as string[] };
+    globalThis.fetch = variableStub(log, { n: 0 });
+    const json = { "Content-Type": "application/json" };
+    const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: json, body: JSON.stringify(body) });
+    const parts = { entity: "ent-1", characteristic: "ch-1", method: "m-1", unit: "u-1" };
+    const missing = await create({ type: "variable", name: "ZZ var", links: [], fields: { entity: "ent-1" } });
+    assert.equal(missing.status, 400);
+    assert.match((await missing.json()).error, /Characteristic is required/);
+    const ok = await create({ type: "variable", name: "ZZ var", links: [], fields: { ...parts, description: "mine" } });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts[0], { url: "/core/variables", body: { name: "ZZ var", ...parts, description: "mine", datatype: "http://www.w3.org/2001/XMLSchema#decimal" } });
+    const dup = await create({ type: "variable", name: "plant height", links: [], fields: parts });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /There is already a variable named "Plant Height"/);
+
+    const put = (body: unknown) => realFetch(`${base}/api/node`, { method: "PUT", headers: json, body: JSON.stringify(body) });
+    assert.equal((await put({ type: "variable", id: "var-1", name: "Plant Height Max" })).status, 200);
+    assert.deepEqual(log.puts[0], { uri: "var-1", name: "Plant Height Max", description: "d", entity: "ent-1", characteristic: "ch-1", method: "m-1", unit: "u-1", datatype: "http://www.w3.org/2001/XMLSchema#decimal", species: [], exact_match: [], close_match: [], broad_match: [], narrow_match: [] });
+    assert.equal((await put({ type: "variable", id: "var-1", link: { field: "unit", uris: ["u-2"] } })).status, 400, "no way to change the unit through the API");
+  });
+});
+
+test("delete variable: refused while it has measured values (counted over all experiments), allowed without", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as { url: string; body: any }[], deletes: [] as string[] };
+    const values = { n: 18564 };
+    globalThis.fetch = variableStub(log, values);
+    const detail = await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json();
+    assert.match(detail.deleteBlocked, /^has 18,564 measured values\. .*research data/);
+    assert.deepEqual(detail.actions, ["rename", "delete"]);
+    const refused = await realFetch(`${base}/api/node?type=variable&id=var-1`, { method: "DELETE" });
+    assert.equal(refused.status, 409);
+    assert.deepEqual(log.deletes, []);
+    assert.ok(log.posts.some((p) => p.url.includes("variables=var-1")), "counted by variable");
+    values.n = 0;
+    assert.equal((await realFetch(`${base}/api/node?type=variable&id=var-1`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(log.deletes, ["/core/variables/var-1"]);
   });
 });
