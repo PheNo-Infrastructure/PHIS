@@ -519,7 +519,8 @@ button { font-family: inherit; }
 .g-plot polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .g-line { stroke-width: 1; opacity: .35; }
 .g-line.em { stroke-width: 2.2; opacity: 1; }
-.g-chart.stats .g-line { opacity: .12; }
+.g-chart.stats .g-line, .g-chart.scatter .g-line { opacity: .12; }
+.g-chart.scatter .g-line.em { opacity: .5; }
 .g-mean { stroke-width: 2.4; }
 .g-band { opacity: .2; stroke: none; }
 .g-yh, .g-yl { position: absolute; left: 2px; font-size: 10px; color: var(--ink-faint); pointer-events: none; line-height: 1; }
@@ -569,6 +570,22 @@ button { font-family: inherit; }
 .meas-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: nowrap; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; }
 .meas-dialog { width: min(720px, 94vw); max-height: 90vh; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
 .meas-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.chart-detail { width: min(900px, 94vw); resize: both; overflow: auto; min-width: 460px; min-height: 380px; max-width: 100vw; }
+.chart-detail.full { width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; resize: none; }
+.chart-detail #detailPlot { cursor: zoom-in; }
+.chart-detail.full #detailPlot { cursor: zoom-out; }
+.chart-detail .g-chart { cursor: inherit; }
+.g-opt { font-size: 12px; margin-right: 8px; }
+.obs-bar { margin: 8px 0 4px; }
+.chart-detail .obs-wrap { max-height: calc(var(--big-h, 220px) * 0.9); overflow: auto; }
+.obs-table th, .obs-table td { text-align: right; white-space: nowrap; padding: 2px 8px; }
+.obs-table th:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.obs-table th.obs-row, .obs-table th.obs-col { cursor: pointer; }
+.obs-table td.obs { cursor: pointer; }
+.obs-table td.obs:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.obs-table td.obs.sel { background: color-mix(in srgb, var(--accent) 35%, transparent); font-weight: 600; }
+.obs-null { color: var(--ink-faint); }
+.g-obs { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border: 1px solid var(--surface); }
 .meas-dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .meas-dlg-title { font-size: 16px; font-weight: 600; }
 .meas-dlg-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
@@ -2036,15 +2053,17 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
     if (opts.stats && !view.big && !emph) return; // with statistics on, only the mean and its band are drawn
     if (d.length > 1) svg += `<polyline class="g-line${emph ? " em" : ""}" stroke="${color}" points="${d.join(" ")}"/>`;
   });
-  if (band) {
+  if (band && !(view.selected && view.selected.size)) {
     const up = [], down = [];
     stats.forEach((s, i) => { if (s && s.sd != null) { up.push(`${X(i).toFixed(1)},${Y(s.mean + s.sd).toFixed(1)}`); down.unshift(`${X(i).toFixed(1)},${Y(s.mean - s.sd).toFixed(1)}`); } });
     if (up.length > 1) svg += `<polygon class="g-band" fill="${color}" points="${[...up, ...down].join(" ")}"/>`;
   }
-  const mean = path(stats.map(s => s ? s.mean : null));
+  const scatter = !!(view.selected && view.selected.size);
+  const mean = scatter ? [] : path(stats.map(s => s ? s.mean : null));
+  if (scatter) pts.forEach(p => p.values.forEach((v, i) => { if (v && view.selected.has(`${p.id}|${i}`)) dots += `<span class="g-pt g-obs" style="left:${X(i).toFixed(1)}%;top:${Y(v.v).toFixed(1)}%;background:${color}" title="${e(`${v.v} · ${whenText(data.columns[i].key)}`)}"></span>`; }));
   if (mean.length > 1) svg += `<polyline class="g-mean" stroke="${color}" points="${mean.join(" ")}"/>`;
   else if (mean.length === 1) { const [x, y] = mean[0].split(","); dots = `<span class="g-pt" style="left:${x}%;top:${y}%;background:${color}"></span>`; }
-  return `<div class="g-chart${opts.stats ? " stats" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:220px"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-yh">${sig4(range.hi)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div></div>`;
+  return `<div class="g-chart${opts.stats ? " stats" : ""}${scatter ? " scatter" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-yh">${sig4(range.hi)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div></div>`;
 }
 
 // Hover: the nearest scan. Every chart of a grid (the `group`) marks that same scan and shows its own text there.
@@ -2078,21 +2097,22 @@ function wireGridChart(plot, ch, data, group = []) {
   hoverEntry(plot, scanXs(data), i => stats[i] ? `${whenText(data.columns[i].key)} · ${statText(stats[i], ch.kind, u)}` : null, group);
 }
 
-// An overlay row: every chart's mean in one chart (colours per level, or per plant in the Plants row), a legend that
-// hides/shows a line, bands very faint when statistics is on. Never draws individual observations.
+// An overlay row: the row's charts laid on top of each other as they are (colours per level, or per plant in the
+// Plants row) — each with its plant lines and mean, and with statistics on its mean ± SD band instead of the lines,
+// like the grid. A legend hides/shows a chart.
 function overlayRowHtml(row, data, yr, opts) {
   const e = escapeHtml, nCols = data.columns.length;
   const series = row.charts.map((ch, i) => {
     const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
-    return { ch, color: row.kind === "plants" ? colorVar(i) : colorVar(ch.colorIndex), stats: plants.length ? groupColumns(plants, nCols) : null, off: opts.hiddenSeries.has(`${row.label}|${ch.key}`), sk: `${row.label}|${ch.key}` };
+    return { ch, plants, color: row.kind === "plants" ? colorVar(i) : colorVar(ch.colorIndex), stats: plants.length ? groupColumns(plants, nCols) : null, off: opts.hiddenSeries.has(`${row.label}|${ch.key}`), sk: `${row.label}|${ch.key}` };
   });
   const legend = `<div class="g-leg-row">${series.map(x => `<button class="g-leg${x.off ? " off" : ""}" data-sk="${e(x.sk)}"><i style="background:${x.color}"></i>${e(x.ch.title)}${x.stats ? "" : " (no values)"}</button>`).join("")}</div>`;
   const live = series.filter(x => x.stats && !x.off);
   const wrap = inner => `<div class="g-row" data-row="${e(row.label)}"><div class="g-row-label">${e(row.label)}</div><div class="g-row-charts"><div class="g-chart overlay">${legend}${inner}</div></div></div>`;
   if (!nCols || !live.length) return wrap(`<div class="g-empty">nothing to show${series.some(x => x.stats) ? " — every line is hidden" : ""}</div>`);
   const xs = scanXs(data), band = opts.stats;
-  // The scale fits the drawn means (and bands), not every single plant: an overlay shows means only.
-  const range = yRange([live.flatMap(x => x.stats.map(st => st ? st.mean : null)), band ? live.flatMap(x => x.stats.flatMap(st => st ? [st.mean - (st.sd ?? 0), st.mean + (st.sd ?? 0)] : [])) : []]);
+  const lines = x => x.ch.kind !== "plant" && !band;
+  const range = opts.sharedY ? yr : yRange([live.flatMap(x => x.stats.map(st => st ? st.mean : null)), band ? live.flatMap(x => x.stats.flatMap(st => st ? [st.mean - (st.sd ?? 0), st.mean + (st.sd ?? 0)] : [])) : [], ...live.filter(lines).flatMap(x => x.plants.map(p => p.values.map(v => v?.v ?? null)))]);
   const Y = v => 12 + 76 * (1 - (v - range.lo) / (range.hi - range.lo));
   const pts = (vals) => vals.map((v, i) => v == null ? null : `${xs[i].toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean);
   let svg = "";
@@ -2102,6 +2122,7 @@ function overlayRowHtml(row, data, yr, opts) {
       x.stats.forEach((st, i) => { if (st && st.sd != null) { up.push(`${xs[i].toFixed(1)},${Y(st.mean + st.sd).toFixed(1)}`); down.unshift(`${xs[i].toFixed(1)},${Y(st.mean - st.sd).toFixed(1)}`); } });
       if (up.length > 1) svg += `<polygon class="g-band" fill="${x.color}" points="${[...up, ...down].join(" ")}"/>`;
     }
+    if (lines(x)) x.plants.forEach(p => { const d = pts(p.values.map(v => v?.v ?? null)); if (d.length > 1) svg += `<polyline class="g-line" stroke="${x.color}" points="${d.join(" ")}"/>`; });
     const m = pts(x.stats.map(st => st ? st.mean : null));
     if (m.length > 1) svg += `<polyline class="g-mean" stroke="${x.color}" points="${m.join(" ")}"/>`;
   });
@@ -2137,7 +2158,7 @@ async function renderChartGrid() {
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><span class="g-title">${e(v.label)}</span>${pager}<span style="flex:1"></span>
       <span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
-      <label title="One chart per row with every line's mean"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay (means)</label>
+      <label title="One chart per row: the row's charts on top of each other"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>
       <button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
@@ -2187,41 +2208,68 @@ function plantLabelIn(st, id) {
   return all.find(p => sameId(p.id, id))?.label ?? String(id).split("/").pop();
 }
 
-// One chart's full numbers: a big chart, the mean / SD / n of every scan (or the value, for one plant), and its plants
-// (click highlights a line, ctrl-click hides it).
+// One chart's full numbers: a big chart (click it for full screen; the window can be resized), the statistics toggle,
+// and the actual observations as a scan × plant table. Picking observations (click, ctrl, shift, row/column headers)
+// turns the chart into a scatter of just those points; mean ± SD of a scan shows when hovering the chart.
 function openChartDetail(ch, data, st) {
   document.getElementById("chartDetail")?.remove();
   const e = escapeHtml;
   const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
-  const stats = groupColumns(plants, data.columns.length);
-  const view = { highlight: new Set(), hidden: new Set(), big: true };
+  const view = { highlight: new Set(), hidden: new Set(), big: true, selected: new Set() };
   const unit = data.variable.unit ? ` (${e(data.variable.unit)})` : "";
   const single = ch.kind === "plant";
-  const rows = data.columns.map((c, i) => {
-    const s = stats[i];
-    return `<tr><td>${e(whenText(c.key))}</td>${single ? `<td>${s ? sig4(s.mean) : "–"}</td>` : `<td>${s ? sig4(s.mean) : "–"}</td><td>${s && s.sd != null ? sig4(s.sd) : "–"}</td><td>${s ? s.n : 0}</td>`}</tr>`;
-  }).join("");
+  let showStats = true, anchor = null;
+  const cell = (pi, ci) => { const v = plants[pi].values[ci]; return v == null ? `<td class="obs-null">–</td>` : `<td class="obs" data-p="${pi}" data-c="${ci}" title="${e(`${v.v} · ${whenText(data.columns[ci].key)} ${v.at ?? ""}`.trim())}">${sig4(v.v)}</td>`; };
+  const table = `<table class="obs-table"><thead><tr><th>Scan</th>${plants.map((p, pi) => `<th class="obs-col" data-p="${pi}">${e(plantLabelIn(st, p.id))}</th>`).join("")}</tr></thead><tbody>${data.columns.map((c, ci) => `<tr><th class="obs-row" data-c="${ci}">${e(whenText(c.key))}</th>${plants.map((p, pi) => cell(pi, ci)).join("")}</tr>`).join("")}</tbody></table>`;
   const dlg = document.createElement("dialog");
-  dlg.className = "meas-dialog";
+  dlg.className = "meas-dialog chart-detail";
   dlg.id = "chartDetail";
   dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(ch.title)}<span class="meas-unit">${e(data.variable.name)}${unit}</span></div>
-      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><span><button class="btn ghost small g-open">Open ${e(ch.title)}</button> <button class="btn ghost small g-close">Close</button></span></div>
-    <div id="detailPlot"></div>
-    <div class="meas-values" style="margin-top:12px"><table><thead><tr><th>Scan</th>${single ? "<th>Value</th>" : "<th>Mean</th><th>SD</th><th>n</th>"}</tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><span><label class="g-opt"><input type="checkbox" class="g-dstats" checked> show statistics (mean ± SD)</label> <button class="btn ghost small g-full" title="Full screen (or click the chart)">Full screen</button> <button class="btn ghost small g-open">Open ${e(ch.title)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+    <div id="detailPlot" title="Click for full screen"></div>
+    <div class="obs-bar hx-note"><span class="obs-count"></span> <button class="btn ghost small obs-clear" hidden>Clear selection</button></div>
+    <div class="meas-values obs-wrap">${table}</div>
     ${single ? "" : `<div class="hx-note" style="margin-top:10px">Plants — click highlights a line, ctrl-click hides it.</div><div class="g-plants">${plants.map(p => `<button class="g-plant" data-id="${e(p.id)}">${e(plantLabelIn(st, p.id))}</button>`).join("")}</div>`}`;
   document.body.appendChild(dlg);
+  const keyOf = (pi, ci) => `${plants[pi].id}|${ci}`;
+  const filled = (pi, ci) => plants[pi].values[ci] != null;
   const paint = () => {
     const box = dlg.querySelector("#detailPlot");
-    box.innerHTML = gridChartHtml(ch, data, null, { stats: true, sharedY: false }, view);
+    box.innerHTML = gridChartHtml(ch, data, null, { stats: showStats, sharedY: false }, view);
     const plot = box.querySelector(".g-plot");
     if (plot) wireGridChart(plot, ch, data);
     dlg.querySelectorAll(".g-plant").forEach(b => {
       b.classList.toggle("on", view.highlight.has(b.dataset.id));
       b.classList.toggle("off", view.hidden.has(b.dataset.id));
     });
+    dlg.querySelectorAll("td.obs").forEach(td => td.classList.toggle("sel", view.selected.has(keyOf(+td.dataset.p, +td.dataset.c))));
+    dlg.querySelector(".obs-count").textContent = view.selected.size ? `${view.selected.size} observation${view.selected.size === 1 ? "" : "s"} selected — the chart shows just these.` : "Observations — click one, ctrl-click to add, shift-click for a range; click a scan or plant name for a whole row or column.";
+    dlg.querySelector(".obs-clear").hidden = !view.selected.size;
   };
+  const setSel = (cells, add) => {
+    const keys = cells.filter(([pi, ci]) => filled(pi, ci)).map(([pi, ci]) => keyOf(pi, ci));
+    if (add) { const all = keys.length && keys.every(k => view.selected.has(k)); keys.forEach(k => all ? view.selected.delete(k) : view.selected.add(k)); }
+    else view.selected = keys.length === view.selected.size && keys.every(k => view.selected.has(k)) ? new Set() : new Set(keys);
+  };
+  const range = (a, b) => { const out = []; for (let pi = Math.min(a.pi, b.pi); pi <= Math.max(a.pi, b.pi); pi++) for (let ci = Math.min(a.ci, b.ci); ci <= Math.max(a.ci, b.ci); ci++) out.push([pi, ci]); return out; };
+  const fit = () => dlg.style.setProperty("--big-h", `${Math.max(160, Math.round(dlg.clientHeight * (dlg.classList.contains("full") ? 0.5 : 0.36)))}px`);
+  const toggleFull = () => { dlg.classList.toggle("full"); fit(); };
   dlg.addEventListener("click", ev => {
     if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
+    if (ev.target.closest(".g-full") || ev.target.closest("#detailPlot")) { toggleFull(); return; }
+    if (ev.target.closest(".g-dstats")) { showStats = ev.target.closest(".g-dstats").checked; paint(); return; }
+    if (ev.target.closest(".obs-clear")) { view.selected = new Set(); paint(); return; }
+    const add = ev.ctrlKey || ev.metaKey;
+    const td = ev.target.closest("td.obs");
+    if (td) {
+      const at = { pi: +td.dataset.p, ci: +td.dataset.c };
+      if (ev.shiftKey && anchor) setSel(range(anchor, at), false);
+      else { setSel([[at.pi, at.ci]], add); anchor = at; }
+      paint(); return;
+    }
+    const rh = ev.target.closest(".obs-row"), chd = ev.target.closest(".obs-col");
+    if (rh) { setSel(plants.map((_, pi) => [pi, +rh.dataset.c]), add); paint(); return; }
+    if (chd) { setSel(data.columns.map((_, ci) => [+chd.dataset.p, ci]), add); paint(); return; }
     if (ev.target.closest(".g-open")) {
       const levelId = ch.key.replace(/:picked$/, "");
       const item = single ? { id: ch.plantIds[0], type: "scientific_object", label: ch.title }
@@ -2233,12 +2281,15 @@ function openChartDetail(ch, data, st) {
     }
     const b = ev.target.closest(".g-plant");
     if (!b) return;
-    const id = b.dataset.id, set = ev.ctrlKey || ev.metaKey ? view.hidden : view.highlight;
+    const id = b.dataset.id, set = add ? view.hidden : view.highlight;
     if (set.has(id)) set.delete(id); else set.add(id);
     paint();
   });
-  dlg.addEventListener("close", () => dlg.remove());
+  const ro = new ResizeObserver(() => fit());
+  dlg.addEventListener("close", () => { ro.disconnect(); dlg.remove(); });
   dlg.showModal();
+  ro.observe(dlg);
+  fit();
   paint();
 }
 

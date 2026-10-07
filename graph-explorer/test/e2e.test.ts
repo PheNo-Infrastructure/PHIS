@@ -2743,7 +2743,7 @@ test("e2e: a standalone plant and a plant picked in a level box get their charts
   });
 });
 
-test("e2e: clicking a chart opens its numbers: a scan table with mean, SD and n, and the plants of the group (click highlights, ctrl hides)", async () => {
+test("e2e: clicking a chart opens its numbers: the observations (scan x plant), and the plants of the group (click highlights, ctrl hides)", async () => {
   await withServerAndBrowser(async (base, page) => {
     await routeOverview(page);
     await openStructuredExperiment(page, base, "variables");
@@ -2758,8 +2758,13 @@ test("e2e: clicking a chart opens its numbers: a scan table with mean, SD and n,
     await d.waitFor();
     const text = (await d.innerText()).replace(/\s+/g, " ");
     assert.match(text, /GroupID: 1/);
-    assert.match(text, /22 Oct 2025 11\.5 0\.7071 2/, "scan row: mean 11.5, SD 0.7071, n 2 (values 11 and 12)");
-    assert.match(text, /24 Oct 2025 34\.5 2\.121 2/, "another scan: mean 34.5, SD 2.121, n 2 (values 33 and 36)");
+    assert.match(text, /22 Oct 2025 11 12/, "scan row: the actual observations of both plants (11 and 12), not their mean");
+    assert.match(text, /24 Oct 2025 33 36/);
+    assert.doesNotMatch(await d.locator(".obs-table").innerText(), /Mean|SD/, "mean and SD are not in the list");
+    const plot = d.locator(".g-plot");
+    const box = (await plot.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    assert.match(await plot.locator(".g-tip").innerText(), /mean 11\.5 ± 0\.7071 \(n=2\)/, "mean ± SD shows when hovering the chart");
     assert.equal(await d.locator("button.g-plant").count(), 2);
     await d.locator('button.g-plant[data-id="so-p1"]').click();
     assert.equal(await d.locator(".g-line.em").count(), 1, "click highlights that plant's line");
@@ -2769,6 +2774,48 @@ test("e2e: clicking a chart opens its numbers: a scan table with mean, SD and n,
     await page.waitForTimeout(100);
     assert.equal(await page.locator("#chartDetail").count(), 0);
     assert.equal(await page.locator("#chartGrid").count(), 1, "the grid is still there behind it");
+  });
+});
+
+test("e2e: the chart detail: statistics toggle, observations can be picked into a scatter, full screen, resizable", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    await page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-ct').click();
+    const d = page.locator("#chartDetail");
+    await d.waitFor();
+    assert.equal(await d.locator(".g-band").count(), 1, "statistics on by default");
+    assert.equal(await d.locator(".g-line").count(), 2, "and the plants' own lines stay");
+    await d.locator(".g-dstats").uncheck();
+    assert.equal(await d.locator(".g-band").count(), 0);
+    assert.equal(await d.locator(".g-line").count(), 2);
+    await d.locator(".g-dstats").check();
+
+    assert.equal(await d.evaluate((el) => getComputedStyle(el).resize), "both", "the window can be resized");
+    const cell = (p: number, c: number) => d.locator(`td.obs[data-p="${p}"][data-c="${c}"]`);
+    await cell(0, 0).click();
+    assert.equal(await d.locator(".g-obs").count(), 1, "one picked observation is drawn as a point");
+    assert.equal(await d.locator(".g-mean").count(), 0, "a scatter shows just the picked points");
+    await cell(1, 1).click({ modifiers: ["Control"] });
+    assert.equal(await d.locator(".g-obs").count(), 2, "ctrl adds");
+    await cell(1, 2).click({ modifiers: ["Shift"] });
+    assert.equal(await d.locator("td.obs.sel").count(), 2, "shift picks the range from the last click: plant 2, scans 2 to 3");
+    await d.locator('th.obs-row[data-c="0"]').click();
+    assert.equal(await d.locator("td.obs.sel").count(), 2, "a scan name picks that scan's observations of every plant");
+    await d.locator(".obs-clear").click();
+    assert.equal(await d.locator(".g-obs").count(), 0);
+    assert.ok(await d.locator(".g-mean").count() > 0, "clearing brings the mean back");
+
+    const h1 = (await d.locator(".g-plot").boundingBox())!.height;
+    await d.locator("#detailPlot").click();
+    assert.equal(await d.evaluate((el) => el.classList.contains("full")), true, "clicking the chart goes full screen");
+    assert.ok((await d.locator(".g-plot").boundingBox())!.height > h1, "and the chart grows");
+    await d.locator("#detailPlot").click();
+    assert.equal(await d.evaluate((el) => el.classList.contains("full")), false, "click again to leave");
   });
 });
 
@@ -2934,7 +2981,7 @@ test("e2e: hovering a scan in one chart marks the same scan in every chart and s
   });
 });
 
-test("e2e: overlay puts a row's means in one chart with a clickable legend; plant lines never show; bands are faint; the setting is remembered", async () => {
+test("e2e: overlay lays a row's charts on top of each other (plant lines and means) with a clickable legend; statistics swaps the lines for faint bands; the setting is remembered", async () => {
   await withServerAndBrowser(async (base, page) => {
     await openGridFor(page, base);
     const grid = page.locator("#chartGrid");
@@ -2943,9 +2990,10 @@ test("e2e: overlay puts a row's means in one chart with a clickable legend; plan
     assert.equal(await grid.locator(".g-row").count(), 1);
     assert.equal(await grid.locator(".g-chart.overlay").count(), 1, "one chart for the row");
     assert.equal(await grid.locator(".g-mean").count(), 2, "a mean line per level");
-    assert.equal(await grid.locator(".g-line").count(), 0, "no individual observations in an overlay");
+    assert.equal(await grid.locator(".g-line").count(), 3, "every plant's line, as in the separate charts");
     assert.equal(await grid.locator("button.g-leg").count(), 2, "a legend entry per level");
-    assert.match((await grid.locator(".g-chart.overlay .g-yh").innerText()).trim(), /^34\.5 mm$/, "the scale fits the means (the highest mean, not the highest single plant)");
+    const hi = Number((await grid.locator(".g-chart.overlay .g-yh").innerText()).trim().replace(/ mm$/, ""));
+    assert.ok(hi > 34.5, `the scale now fits the plant lines too, not only the means (${hi})`);
 
     const plot = grid.locator(".g-chart.overlay .g-plot");
     const box = (await plot.boundingBox())!;
