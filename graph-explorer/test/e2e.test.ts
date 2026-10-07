@@ -2810,6 +2810,20 @@ test("e2e: the chart detail: statistics toggle, observations can be picked into 
     assert.equal(await d.locator(".g-obs").count(), 0);
     assert.ok(await d.locator(".g-mean").count() > 0, "clearing brings the mean back");
 
+    const th = (await d.locator('th.obs-col[data-p="0"]').boundingBox())!, td = (await cell(0, 0).boundingBox())!;
+    assert.ok(Math.abs((th.x + th.width) - (td.x + td.width)) < 1, "a plant's name sits over its column of values, not beside it");
+    for (const sel of [".chart-detail", ".grid-dialog"]) {
+      const rs = await page.evaluate((q) => getComputedStyle(document.querySelector(q)!).resize, sel);
+      assert.equal(rs, "both", `${sel} can be resized`);
+    }
+
+    const plot = d.locator(".g-plot"), pb = (await plot.boundingBox())!;
+    const lineY = await d.locator('.g-line[data-id="so-p1"]').evaluate((el) => Number(el.getAttribute("points")!.split(" ")[0].split(",")[1]));
+    await page.mouse.move(pb.x + pb.width * 0.03, pb.y + pb.height * lineY / 100);
+    assert.equal(await d.locator(".g-line.hov").count(), 1, "hovering on a line highlights just that line");
+    assert.equal(await d.locator(".g-line.hov").getAttribute("data-id"), "so-p1");
+    assert.match(await plot.locator(".g-tip").innerText(), /^PB001 · 22 Oct 2025 · 11 mm$/, "and names the plant with its value");
+
     const h1 = (await d.locator(".g-plot").boundingBox())!.height;
     await d.locator("#detailPlot").click();
     assert.equal(await d.evaluate((el) => el.classList.contains("full")), true, "clicking the chart goes full screen");

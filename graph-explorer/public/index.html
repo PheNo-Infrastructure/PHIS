@@ -496,6 +496,7 @@ button { font-family: inherit; }
 .var-grid .chip-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .var-grid .chip > span:last-child { margin-left: auto; padding-left: 8px; flex: none; }
 .grid-dialog { --k: 1; --cols: 6; --gw: calc(340px * var(--k)); --gh: calc(170px * var(--k)); width: min(2200px, 96vw, max(780px, calc(var(--cols) * (var(--gw) + 8px) + 160px))); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
+.grid-dialog { resize: both; max-width: 100vw; max-height: 100vh; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .g-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
 .g-title { font-size: 16px; font-weight: 600; }
@@ -519,6 +520,7 @@ button { font-family: inherit; }
 .g-plot polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .g-line { stroke-width: 1; opacity: .35; }
 .g-line.em { stroke-width: 2.2; opacity: 1; }
+.g-line.hov { stroke-width: 2.8; opacity: 1 !important; }
 .g-chart.stats .g-line, .g-chart.scatter .g-line { opacity: .12; }
 .g-chart.scatter .g-line.em { opacity: .5; }
 .g-mean { stroke-width: 2.4; }
@@ -568,9 +570,9 @@ button { font-family: inherit; }
 .meas-pt, .meas-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--type-data); pointer-events: none; }
 .meas-dot { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; box-shadow: 0 0 0 3px var(--type-data-soft); }
 .meas-tip { position: absolute; bottom: 100%; margin-bottom: 4px; padding: 2px 7px; white-space: nowrap; font-size: 11.5px; background: var(--ink); color: var(--surface); border-radius: 4px; pointer-events: none; z-index: 5; }
-.meas-dialog { width: min(720px, 94vw); max-height: 90vh; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+.meas-dialog { width: min(720px, 94vw); max-height: 90vh; resize: both; overflow: auto; min-width: 380px; max-width: 100vw; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
 .meas-dialog::backdrop { background: rgba(0, 0, 0, .45); }
-.chart-detail { width: min(900px, 94vw); resize: both; overflow: auto; min-width: 460px; min-height: 380px; max-width: 100vw; }
+.chart-detail { width: min(900px, 94vw); resize: both; overflow: auto; min-width: 460px; min-height: 380px; max-width: 100vw; max-height: 100vh; }
 .chart-detail.full { width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; resize: none; }
 .chart-detail #detailPlot { cursor: zoom-in; }
 .chart-detail.full #detailPlot { cursor: zoom-out; }
@@ -578,8 +580,8 @@ button { font-family: inherit; }
 .g-opt { font-size: 12px; margin-right: 8px; }
 .obs-bar { margin: 8px 0 4px; }
 .chart-detail .obs-wrap { max-height: calc(var(--big-h, 220px) * 0.9); overflow: auto; }
-.obs-table th, .obs-table td { text-align: right; white-space: nowrap; padding: 2px 8px; }
-.obs-table th:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.meas-values .obs-table th, .meas-values .obs-table td { text-align: right; white-space: nowrap; padding: 2px 8px; }
+.meas-values .obs-table th:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1; }
 .obs-table th.obs-row, .obs-table th.obs-col { cursor: pointer; }
 .obs-table td.obs { cursor: pointer; }
 .obs-table td.obs:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
@@ -589,7 +591,7 @@ button { font-family: inherit; }
 .meas-dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .meas-dlg-title { font-size: 16px; font-weight: 600; }
 .meas-dlg-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
-.meas-chart.big { height: 220px; cursor: default; border: 1px solid var(--border); border-radius: var(--radius); }
+.meas-chart.big { height: var(--big-h, 220px); cursor: default; border: 1px solid var(--border); border-radius: var(--radius); }
 .meas-axis { position: absolute; left: 6px; font-size: 11px; color: var(--ink-faint); }
 .meas-axis.top { top: 4px; }
 .meas-axis.bottom { bottom: 4px; }
@@ -2051,7 +2053,7 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
     if (view.hidden.has(p.id)) return;
     const emph = ch.emphasis.some(x => sameId(x, p.id)) || view.highlight.has(p.id);
     if (opts.stats && !view.big && !emph) return; // with statistics on, only the mean and its band are drawn
-    if (d.length > 1) svg += `<polyline class="g-line${emph ? " em" : ""}" stroke="${color}" points="${d.join(" ")}"/>`;
+    if (d.length > 1) svg += `<polyline class="g-line${emph ? " em" : ""}" data-id="${e(p.id)}" stroke="${color}" points="${d.join(" ")}"/>`;
   });
   if (band && !(view.selected && view.selected.size)) {
     const up = [], down = [];
@@ -2208,6 +2210,38 @@ function plantLabelIn(st, id) {
   return all.find(p => sameId(p.id, id))?.label ?? String(id).split("/").pop();
 }
 
+// Hovering near one of a chart's plant lines highlights it and names the plant and its value at the nearest scan.
+function wireLineHover(plot, plants, data, labelOf) {
+  const xs = scanXs(data), svg = plot.querySelector("svg");
+  const tip = plot.querySelector(".g-tip");
+  plot.addEventListener("mousemove", ev => {
+    const r = plot.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width * 100;
+    const lines = [...svg.querySelectorAll(".g-line")];
+    if (!lines.length) return;
+    let best = null;
+    lines.forEach(l => {
+      const p = l.getAttribute("points").split(" ").map(pt => pt.split(",").map(Number));
+      for (let i = 0; i + 1 < p.length; i++) {
+        const [x0, y0] = p[i], [x1, y1] = p[i + 1];
+        if (fx < x0 || fx > x1) continue;
+        const y = y0 + (y1 - y0) * (x1 === x0 ? 0 : (fx - x0) / (x1 - x0));
+        const dist = Math.abs(y / 100 * r.height - (ev.clientY - r.top));
+        if (!best || dist < best.dist) best = { l, dist };
+      }
+    });
+    lines.forEach(l => l.classList.remove("hov"));
+    if (!best || best.dist > 14) return;
+    best.l.classList.add("hov");
+    svg.appendChild(best.l);
+    const id = best.l.dataset.id, pl = plants.find(p => sameId(p.id, id));
+    let i = 0;
+    xs.forEach((x, j) => { if (Math.abs(x - fx) < Math.abs(xs[i] - fx)) i = j; });
+    const v = pl?.values[i];
+    if (v && tip) { tip.textContent = `${labelOf(id)} · ${whenText(data.columns[i].key)} · ${sig4(v.v)}${data.variable.unit ? " " + data.variable.unit : ""}`; tip.style.display = "block"; }
+  });
+  plot.addEventListener("mouseleave", () => svg.querySelectorAll(".g-line.hov").forEach(l => l.classList.remove("hov")));
+}
+
 // One chart's full numbers: a big chart (click it for full screen; the window can be resized), the statistics toggle,
 // and the actual observations as a scan × plant table. Picking observations (click, ctrl, shift, row/column headers)
 // turns the chart into a scatter of just those points; mean ± SD of a scan shows when hovering the chart.
@@ -2237,7 +2271,7 @@ function openChartDetail(ch, data, st) {
     const box = dlg.querySelector("#detailPlot");
     box.innerHTML = gridChartHtml(ch, data, null, { stats: showStats, sharedY: false }, view);
     const plot = box.querySelector(".g-plot");
-    if (plot) wireGridChart(plot, ch, data);
+    if (plot) { wireGridChart(plot, ch, data); if (!single) wireLineHover(plot, plants, data, id => plantLabelIn(st, id)); }
     dlg.querySelectorAll(".g-plant").forEach(b => {
       b.classList.toggle("on", view.highlight.has(b.dataset.id));
       b.classList.toggle("off", view.hidden.has(b.dataset.id));
@@ -2653,8 +2687,10 @@ function openMeasurementDialog(data, v, plantLabel, expLabel, onOpenVariable) {
   wireChart(dlg.querySelector(".meas-chart"), pts, unit);
   dlg.addEventListener("click", ev => { if (ev.target === dlg || ev.target.closest("[data-close]")) dlg.close(); });
   dlg.querySelector("[data-var]").addEventListener("click", ev => { dlg.close(); onOpenVariable(ev); });
-  dlg.addEventListener("close", () => dlg.remove());
+  const ro = new ResizeObserver(() => dlg.style.setProperty("--big-h", `${Math.max(140, Math.round(dlg.clientHeight * 0.34))}px`));
+  dlg.addEventListener("close", () => { ro.disconnect(); dlg.remove(); });
   dlg.showModal();
+  ro.observe(dlg);
 }
 
 function loadMeasurements(objectId, objectLabel, onChipClick) {
