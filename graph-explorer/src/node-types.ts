@@ -958,6 +958,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     putUrl: "/core/variables",
     putPayload: variablePayload,
     deleteUrl: (id) => `/core/variables/${encodeURIComponent(id)}`,
+    deleteRemovesLinks: true, // the four parts are shared resources that stay; nothing to unlink first
     rename: async (id, name) => {
       await refuseTakenName("/core/variables", name, "variable", id);
       await updateNode(NODE_TYPES.variable, id, { name: name.trim() });

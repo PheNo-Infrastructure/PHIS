@@ -1337,7 +1337,7 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
     }) as typeof fetch;
 
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json(), {
-      uri: "var-1", actions: ["rename", "delete"],
+      uri: "var-1", actions: ["rename", "delete"], deleteRemovesLinks: true,
       facts: [{ label: "Values", value: "decimal numbers" }, { label: "Description", value: "TraitFinder column" }],
       relations: [
         { label: "Entity", items: [{ id: "ent-1", type: "entity", label: "Plant" }] },
@@ -2674,6 +2674,7 @@ test("delete variable: refused while it has measured values (counted over all ex
     const detail = await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json();
     assert.match(detail.deleteBlocked, /^has 18,564 measured values\. .*research data/);
     assert.deepEqual(detail.actions, ["rename", "delete"]);
+    assert.equal(detail.deleteRemovesLinks, true, "its parts can't be unlinked, so Delete must not route through unlink mode");
     const refused = await realFetch(`${base}/api/node?type=variable&id=var-1`, { method: "DELETE" });
     assert.equal(refused.status, 409);
     assert.deepEqual(log.deletes, []);
