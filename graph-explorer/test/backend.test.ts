@@ -2893,3 +2893,49 @@ test("link person + account: the person gets the account (set once); one of each
     assert.deepEqual(unlink.links, [], "a person's account is not something Unlink selection lists or removes");
   });
 });
+
+test("a device's person in charge: set from a selection (replacing another, counting one already there), listed and cleared by Unlink selection; one person only", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    const devices: Record<string, any> = {
+      "dev-1": { uri: "dev-1", name: "Cam A", rdf_type: "vocabulary:RGBCamera", brand: "Nikon", person_in_charge: null },
+      "dev-2": { uri: "dev-2", name: "Cam B", rdf_type: "vocabulary:RGBCamera", person_in_charge: "per-1" },
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = url.replace(/^.*\/rest/, "");
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "PUT") { puts.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: "ok" }); }
+      let m: RegExpMatchArray | null;
+      if ((m = path.match(/^\/core\/devices\/(.+)$/))) return jsonResponse(200, { result: devices[decodeURIComponent(m[1])] });
+      if ((m = path.match(/^\/security\/persons\/(.+)$/))) return jsonResponse(200, { result: { uri: decodeURIComponent(m[1]), first_name: "Ann", last_name: "Lee" } });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+    const post = (path: string, body: unknown) => realFetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const dev = (id: string) => ({ type: "device", id });
+
+    const set = await post("/api/link", { items: [dev("dev-1"), dev("dev-2"), { type: "person", id: "per-2" }] });
+    assert.deepEqual(await set.json(), { ok: true, linkedPairs: 2, alreadyLinked: 0 });
+    assert.deepEqual(puts.map((b) => [b.uri, b.person_in_charge]), [["dev-1", "per-2"], ["dev-2", "per-2"]], "the other person is replaced");
+    assert.equal(puts[0].brand, "Nikon", "the rest of the record goes back");
+
+    puts.length = 0;
+    const same = await post("/api/link", { items: [dev("dev-2"), { type: "person", id: "per-1" }] });
+    assert.deepEqual(await same.json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
+    assert.equal(puts.length, 0);
+
+    const two = await post("/api/link", { items: [dev("dev-1"), { type: "person", id: "per-1" }, { type: "person", id: "per-2" }] });
+    assert.equal(two.status, 400);
+    assert.match((await two.json()).error, /one person in charge/);
+
+    const preview = await (await post("/api/unlink", { items: [dev("dev-2"), { type: "person", id: "per-1" }] })).json();
+    assert.deepEqual(preview.links, ["Cam B — person in charge: Ann Lee"]);
+    assert.equal(puts.length, 0, "the preview writes nothing");
+    assert.equal((await post("/api/unlink", { items: [dev("dev-2"), { type: "person", id: "per-1" }], confirm: true })).status, 200);
+    assert.equal(puts.length, 1);
+    assert.equal("person_in_charge" in puts[0], false, "cleared by leaving it out");
+    const none = await (await post("/api/unlink", { items: [dev("dev-1"), { type: "person", id: "per-1" }] })).json();
+    assert.deepEqual(none.links, [], "a person who isn't in charge of that device is not listed");
+  });
+});

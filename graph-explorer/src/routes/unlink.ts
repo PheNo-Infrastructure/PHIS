@@ -58,6 +58,14 @@ async function findLinks(items: Item[]): Promise<Found[]> {
       // A person sits in an experiment or project under some role(s): every role holding them is listed.
       const [boss, person] = a.type === "person" ? [b, a] : [a, b];
       const roles = person.type === "person" ? (PERSON_ROLES as Record<string, { field: string; label: string }[]>)[boss.type] : undefined;
+      if (person.type === "person" && boss.type === "device") {
+        const ctx = NODE_TYPES.device.contextLinks!.person_in_charge;
+        if (await has(await ctx.current(boss.id), person.id)) {
+          const who = personName((await authedGetOne(NODE_TYPES.person.getUrl(person.id))).result);
+          out.push({ text: `${await name(boss)} — person in charge: ${who}`, run: () => ctx.unlink(boss.id, person.id) });
+        }
+        continue;
+      }
       if (roles) {
         const refs = await dto(boss);
         const who = personName((await authedGetOne(NODE_TYPES.person.getUrl(person.id))).result);

@@ -1252,6 +1252,12 @@ function emptyHint(text) {
   els.rowlist.appendChild(div);
 }
 
+// What an empty category says instead of "Nothing here yet" — where the thing is, or why there is nothing.
+const EMPTY_HINTS = {
+  "cat-tabular": "Measured values aren't listed on their own: open an experiment — its Variables tab and chart grid show them — or a plant, whose page lists its measurements.",
+  "cat-datafiles": "PHIS holds no data files yet, and this app doesn't import them. Look in PHIS if you expect some.",
+  "cat-documents": "PHIS holds no documents yet, and this app doesn't manage them. Look in PHIS if you expect some.",
+};
 function renderRows() {
   if (search) return renderSearchRows();
   const items = itemsForPane();
@@ -1261,7 +1267,7 @@ function renderRows() {
   els.rowlist.innerHTML = "";
   rowOrder = items.map(it => it.id);
   addressableItems = new Map(items.map(it => [it.id, it]));
-  if (!items.length) return emptyHint("Nothing here yet.");
+  if (!items.length) return emptyHint(EMPTY_HINTS[p.id] || "Nothing here yet.");
   items.forEach(item => els.rowlist.appendChild(rowEl(item)));
 }
 
@@ -3045,6 +3051,11 @@ function linkPlan() {
 // Unlinking works from the chips, or "Unlink selection" (every role that holds the person).
 function personPlan(items, types) {
   const owner = types.find(t => t !== "person");
+  if (types.length === 2 && owner === "device") {
+    const people = items.filter(v => v.type === "person"), devices = items.filter(v => v.type === "device");
+    if (people.length !== 1) return { kind: "none", why: "A device has one person in charge: select exactly one person." };
+    return { kind: "link", label: `Set ${people[0].label} as person in charge of ${devices.length <= 2 ? andList(devices.map(v => v.label)) : `${devices.length} devices`}…` };
+  }
   if (types.length === 2 && owner === "account") {
     const people = items.filter(v => v.type === "person"), accounts = items.filter(v => v.type === "account");
     if (people.length !== 1 || accounts.length !== 1) return { kind: "none", why: "A person has one account and an account one person: select exactly one of each." };

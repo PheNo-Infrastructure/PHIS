@@ -1692,7 +1692,8 @@ test("e2e: Tabular Data (deliberately unwired) shows honest empty state, not fak
     await openRow(page, "Tabular Data");
 
     const text = await page.locator("#rowlist").textContent();
-    assert.match(text ?? "", /Nothing here yet/);
+    assert.match(text ?? "", /Measured values aren't listed on their own/, "honest, and says where the values are");
+    assert.doesNotMatch(text ?? "", /Nothing here yet/);
   });
 });
 
@@ -2394,6 +2395,31 @@ test("e2e: + New person asks first name, last name, email; from an account it is
     await set([{ id: "per-1", type: "person", label: "Ann Lee" }, { id: "acc-1", type: "account", label: "thomas@nmbu.no" }]);
     assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Give Ann Lee the account thomas@nmbu.no…");
     assert.equal(await page.locator("#unlinkSelectionBtn").count(), 0, "an account can't be taken away again");
+  });
+});
+
+test("e2e: an empty category says where its things are instead of 'Nothing here yet' (Tabular Data points to experiments and plants)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Data");
+    await openRow(page, "Tabular Data");
+    assert.match(await page.locator("#rowlist .empty-hint").innerText(), /open an experiment .* chart grid .* a plant/);
+  });
+});
+
+test("e2e: a device + one person reads 'Set … as person in charge of …' and can be unlinked; two people say why not", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
+    const cam = { id: "dev-1", type: "device", label: "Cam A" }, ann = { id: "per-1", type: "person", label: "Ann Lee" };
+    await set([cam, ann]);
+    assert.equal(await page.locator("#linkSelectionBtn").innerText(), "Set Ann Lee as person in charge of Cam A…");
+    assert.equal(await page.locator("#unlinkSelectionBtn").count(), 1);
+    await set([cam, ann, { id: "per-2", type: "person", label: "Bo Ek" }]);
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
+    assert.match(await page.locator("#actionbar").innerText(), /A device has one person in charge/);
   });
 });
 

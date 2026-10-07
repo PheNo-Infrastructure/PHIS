@@ -45,6 +45,20 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // — nothing is linked without a role. People are only ever linked this way (never through the generic pairs below).
   if (types.includes("person")) {
     const owner = types.find((t) => t !== "person");
+    // A person and devices: the person becomes each device's person in charge (one person; it replaces another).
+    if (types.length === 2 && owner === "device") {
+      if (idsByType.get("person")!.length !== 1) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "A device has one person in charge: select exactly one person." }));
+        return true;
+      }
+      await respondOpenSilexErrors(res, async () => {
+        const r = await applyLink(resolveLink("device", "person")!, idsByType.get("device")!, idsByType.get("person")!);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+      });
+      return true;
+    }
     // A person and an account: the person gets that account (one each; set once).
     if (types.length === 2 && owner === "account") {
       if (idsByType.get("person")!.length !== 1 || idsByType.get("account")!.length !== 1) {

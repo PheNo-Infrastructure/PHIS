@@ -625,6 +625,13 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         link: async (id, facilityId) => { await moveDevices([id], [facilityId]); },
         unlink: async () => { throw new OpenSilexError(400, "A device leaves a facility by moving to another one — select it with the new facility and Link selection."); },
       },
+      // One person in charge: setting another replaces it; clearing is leaving the field out of the update (probed 2026-10-07).
+      person_in_charge: {
+        otherType: "person",
+        current: async (id) => { const p = (await authedGetOne(`/core/devices/${encodeURIComponent(id)}`)).result.person_in_charge; return p ? [String(p)] : []; },
+        link: async (id, personId) => { await setPersonInCharge(id, personId); },
+        unlink: async (id) => { await setPersonInCharge(id, null); },
+      },
     },
     deleteRemovesLinks: true,
     deleteFirst: async (id) => (await movesOf(id)).map((m) => `/core/events/moves/${encodeURIComponent(m.uri)}`),
@@ -1197,6 +1204,12 @@ export async function queryItems(q: QueryRelation, id: string) {
 
 // relationsFromDto plus any queryRelations groups — what node-detail (and an unlink response,
 // which replaces the frontend's cached relations wholesale) returns.
+async function setPersonInCharge(deviceId: string, personId: string | null) {
+  const dto = (await authedGetOne(`/core/devices/${encodeURIComponent(deviceId)}`)).result;
+  const body = updatePayloadFromDto(deviceId, String(dto.name ?? ""), dto, NODE_TYPES.device, {});
+  delete body.person_in_charge;
+  await authedPut("/core/devices", personId ? { ...body, person_in_charge: personId } : body);
+}
 const splitName = (name: string) => {
   const parts = name.trim().split(/\s+/);
   if (parts.length < 2) throw new OpenSilexError(400, "Give a first and a last name, e.g. Ann Lee.");
