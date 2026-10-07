@@ -1,4 +1,6 @@
-# Graph Explorer — next steps (written 2026-10-06, end of session)
+# Graph Explorer — next steps (written 2026-10-06; updated 2026-10-07)
+
+> **2026-10-07:** items 1–3 below are DONE. The main line of work is now the A–Z workflow: see `graph-explorer-a-z.md` (status by area, Priority 1 = groups, Priority 2 = profiles/credentials) and the generated `phis-api-inventory.md`.
 
 State: experiment page tabs, factor boxes and picks, chart grid with detail dialog, back/forward — built on branch
 `graph-explorer/project` (last code commit `2625f2e`, 253 tests). Not merged to `main`, not deployed (live site still
