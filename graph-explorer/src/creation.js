@@ -146,6 +146,17 @@ export const CREATABLE = {
     linkFields: {},
     fields: [{ key: "description", label: "Description", required: true }],
   },
+  // A named set of variables / of germplasm: a name and a description, created alone or from a selection of its members.
+  variable_group: {
+    url: "/core/variables_group",
+    linkFields: { variable: "variables" },
+    fields: [{ key: "description", label: "Description" }],
+  },
+  germplasm_group: {
+    url: "/core/germplasm_group",
+    linkFields: { germplasm: "germplasm_list" },
+    fields: [{ key: "description", label: "Description" }],
+  },
   // A profile: a name, optionally starting from another profile's rights; the rights themselves are ticked on its page.
   profile: {
     url: "/security/profiles",

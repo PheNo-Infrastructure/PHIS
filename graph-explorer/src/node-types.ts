@@ -864,6 +864,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Varieties and accessions", type: "germplasm", url: (id) => `/core/germplasm?species=${encodeURIComponent(id)}&page_size=500`, skipSelf: true,
         item: (r) => ({ id: String(r.uri), label: String(r.name ?? r.uri), kind: germplasmKind(r.rdf_type) }) },
       { label: "Experiments", type: "experiment", url: (id) => `/core/germplasm/${encodeURIComponent(id)}/experiments?page_size=500` },
+      { label: "In germplasm groups", type: "germplasm_group", url: () => "", emptyText: "In no germplasm group.", load: async (id) =>
+        (await authedPost(`/core/germplasm_group/search?germplasm=${encodeURIComponent(id)}&page_size=200`, {}) as unknown as { result: Record<string, unknown>[] }).result
+          .map((g) => ({ id: String(g.uri), label: String(g.name ?? g.uri) })) },
     ],
   },
   // A factor belongs to one experiment; its levels are listed as selectable items. Rename sends
@@ -1041,8 +1044,11 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Unit", field: "unit", type: "unit" },
     ],
     updateLinkFields: [],
-    actions: ["rename", "delete"],
+    actions: ["rename", "delete", "link"], // link: into a variable group (the group owns the field); the variable has no link fields of its own
     facts: (v) => factsOf([["Values", DATATYPES[String(v.datatype)] ?? v.datatype], ["Description", v.description]]),
+    queryRelations: [
+      { label: "In variable groups", type: "variable_group", url: (id) => `/core/variables_group?variableUri=${encodeURIComponent(id)}&page_size=200`, emptyText: "In no variable group." },
+    ],
   },
   // Made by the import (one per import). Probed 2026-10-07: renaming keeps the uri and the values; PHIS refuses
   // deleting one that still has values; DELETE /core/data?provenance= removes exactly that provenance's values.
@@ -1075,6 +1081,73 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       },
       run: async (id) => { await authedDelete(`/core/data?provenance=${encodeURIComponent(id)}`); },
     },
+  },
+  // A named set of variables. Probed 2026-10-08: the members are the group's own `variables` field (an update REPLACES the list),
+  // deleting the group leaves the variables alone, and the list can be filtered by member (?variableUri=).
+  variable_group: {
+    getUrl: (id) => `/core/variables_group/${encodeURIComponent(id)}`,
+    putUrl: "/core/variables_group",
+    deleteUrl: (id) => `/core/variables_group/${encodeURIComponent(id)}`,
+    relationGroups: [{ label: "Variables", field: "variables", type: "variable" }],
+    updateLinkFields: ["variables"],
+    deleteRemovesLinks: true, // only the grouping goes; the variables stay
+    rename: async (id, name) => {
+      await refuseTakenName("/core/variables_group", name, "variable group", id);
+      await updateNode(NODE_TYPES.variable_group, id, { name: name.trim() });
+      return name.trim();
+    },
+    create: async (p) => {
+      const name = String(p.name ?? "").trim();
+      await refuseTakenName("/core/variables_group", name, "variable group");
+      const made = (await authedPost("/core/variables_group", { ...p, name })).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: name };
+    },
+    facts: (g) => factsOf([["Description", typeof g.description === "string" ? g.description.trim() : null]]),
+  },
+  // A named set of germplasm. Probed 2026-10-08: the record only says how many (`germplasm_count`); the members come from
+  // `/germplasm` and are written back as `germplasm_list`, which an update REPLACES. Deleting the group leaves the germplasm alone.
+  germplasm_group: {
+    getUrl: (id) => `/core/germplasm_group/${encodeURIComponent(id)}`,
+    putUrl: "/core/germplasm_group",
+    deleteUrl: (id) => `/core/germplasm_group/${encodeURIComponent(id)}`,
+    relationGroups: [],
+    updateLinkFields: [],
+    deleteRemovesLinks: true,
+    rename: async (id, name) => {
+      await refuseTakenGermplasmGroupName(name, id);
+      const dto = (await authedGetOne(`/core/germplasm_group/${encodeURIComponent(id)}`)).result;
+      await putGermplasmGroup(dto, name.trim(), (await germplasmGroupMembers(id)).map((m) => String(m.uri)));
+      return name.trim();
+    },
+    create: async (p) => {
+      const name = String(p.name ?? "").trim();
+      await refuseTakenGermplasmGroupName(name);
+      const made = (await authedPost("/core/germplasm_group", { ...p, name })).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: name };
+    },
+    contextLinks: {
+      member: {
+        otherType: "germplasm",
+        current: async (id) => Promise.all((await germplasmGroupMembers(id)).map((m) => compactUri(String(m.uri)))),
+        link: async (id, germplasmId) => {
+          const dto = (await authedGetOne(`/core/germplasm_group/${encodeURIComponent(id)}`)).result;
+          const have = (await germplasmGroupMembers(id)).map((m) => String(m.uri));
+          await putGermplasmGroup(dto, String(dto.name ?? ""), [...have, germplasmId]);
+        },
+        unlink: async (id, germplasmId) => {
+          const dto = (await authedGetOne(`/core/germplasm_group/${encodeURIComponent(id)}`)).result;
+          const drop = await compactUri(germplasmId);
+          const keep: string[] = [];
+          for (const m of await germplasmGroupMembers(id)) if ((await compactUri(String(m.uri))) !== drop) keep.push(String(m.uri));
+          await putGermplasmGroup(dto, String(dto.name ?? ""), keep);
+        },
+      },
+    },
+    facts: (g) => factsOf([["Description", typeof g.description === "string" ? g.description.trim() : null]]),
+    queryRelations: [
+      { label: "Germplasm", type: "germplasm", field: "member", url: () => "", emptyText: "No germplasm in this group yet.", load: async (id) =>
+        Promise.all((await germplasmGroupMembers(id)).map(async (m) => ({ id: await compactUri(String(m.uri)), label: String(m.name ?? m.uri), kind: germplasmKind(m.rdf_type) }))) },
+    ],
   },
   entity: variablePart("entity", "entities"),
   characteristic: variablePart("characteristic", "characteristics"),
@@ -1306,6 +1379,36 @@ async function scanShared(groupId: string) {
   const out = [];
   for (const [type, list] of rows) out.push({ type, label: SHARE_LABEL[type], items: await listedIn(list, "groups", groupId) });
   return out;
+}
+// A germplasm group's members: its record only counts them, so they are read page by page.
+async function germplasmGroupMembers(id: string) {
+  const out: Record<string, unknown>[] = [];
+  for (let page = 0; ; page++) {
+    const rows = (await authedGet(`/core/germplasm_group/${encodeURIComponent(id)}/germplasm?page_size=500&page=${page}`)).result;
+    out.push(...rows);
+    if (rows.length < 500) return out;
+  }
+}
+// The update replaces the whole member list, so it always goes back complete (duplicates in either spelling of a uri dropped).
+async function putGermplasmGroup(dto: Record<string, unknown>, name: string, members: string[]) {
+  const seen = new Set<string>();
+  const list: string[] = [];
+  for (const m of members) {
+    const key = await compactUri(m);
+    if (!seen.has(key)) { seen.add(key); list.push(m); }
+  }
+  await authedPut("/core/germplasm_group", { uri: dto.uri, name, description: dto.description ?? "", germplasm_list: list });
+}
+// Germplasm groups have no GET list: the name filter lives on the search (POST).
+async function refuseTakenGermplasmGroupName(name: string, self?: string) {
+  const want = name.trim().toLowerCase();
+  if (!want) throw new OpenSilexError(400, "A name is required.");
+  const rows = (await authedPost(`/core/germplasm_group/search?name=${encodeURIComponent(`^${escapeRegex(name.trim())}$`)}&page_size=50`, {}) as unknown as { result: Record<string, unknown>[] }).result;
+  const selfKey = self ? await compactUri(self) : null;
+  for (const r of rows) {
+    if (String(r.name).toLowerCase() !== want || (selfKey && (await compactUri(String(r.uri))) === selfKey)) continue;
+    throw new OpenSilexError(400, `There is already a germplasm group named "${r.name}".`);
+  }
 }
 type Pair = { user_uri: string; profile_uri: string };
 const pairsOf = (dto: Record<string, unknown>): Pair[] => ((dto.user_profiles ?? []) as Pair[]).map((u) => ({ user_uri: u.user_uri, profile_uri: u.profile_uri }));

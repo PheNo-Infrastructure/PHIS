@@ -1,4 +1,4 @@
-import { authedGet, compactUri, type RawItem } from "../opensilex.ts";
+import { authedGet, authedPost, compactUri, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 import { accountItem, germplasmKind, personName } from "../node-types.ts";
 
@@ -16,7 +16,8 @@ const flattenClasses = (tree: RawItem[]): RawItem[] => {
 // under it. Only for strictly single-parent relations; many-to-many ones stay relation chips.
 // kind: what the item is within its type (a germplasm's species/variety/accession).
 // rows: reshapes the answer first (a class tree flattened to a list).
-export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; rows?: (result: RawItem[]) => RawItem[] };
+// post: the list is a search (POST with an empty filter), as for germplasm groups.
+export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; rows?: (result: RawItem[]) => RawItem[]; post?: true };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
@@ -32,6 +33,8 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/accounts": { url: "/security/accounts?page_size=500", type: "account", label: (i) => accountItem(i).label },
   "/api/groups": { url: "/security/groups?page_size=500", type: "group", label: byName },
   "/api/profiles": { url: "/security/profiles?page_size=500", type: "profile", label: byName },
+  "/api/variable-groups": { url: "/core/variables_group?page_size=500", type: "variable_group", label: byName },
+  "/api/germplasm-groups": { url: "/core/germplasm_group/search?page_size=500", type: "germplasm_group", label: byName, post: true },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
   "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species, kind: (i) => germplasmKind(i.rdf_type) },
@@ -78,7 +81,7 @@ export const handleList: RouteHandler = async (req, res, { pathname }) => {
   const route = req.method === "GET" ? listRoutes[pathname] : undefined;
   if (!route) return false;
 
-  const raw = (await authedGet(route.url)).result;
+  const raw = route.post ? ((await authedPost(route.url, {})) as unknown as { result: RawItem[] }).result : (await authedGet(route.url)).result;
   const items = route.rows && Array.isArray(raw) ? route.rows(raw) : raw;
   if (!Array.isArray(items)) throw new Error(`OpenSILEX response for ${req.url} did not contain a result list`);
   // Body is fully built BEFORE writeHead so a bad shape here still lands in the catch block

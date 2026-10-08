@@ -464,6 +464,7 @@ test("germplasm node-detail: single-uri species labelled from species_name, memb
         return jsonResponse(200, { result: [{ uri: "https://phis.pheno.no/id/sp", name: "Barley" }, { uri: "https://phis.pheno.no/id/acc", name: "A1" }] });
       }
       if (url.includes("/experiments?")) return jsonResponse(200, { result: [{ uri: "exp-1", name: "E" }] });
+      if (url.includes("/core/germplasm_group/search")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/germplasm/")) {
         return jsonResponse(200, { result: { uri: "phis:id/sp", name: "Barley", rdf_type_name: "Species", species: "phis:id/parent", species_name: "Parent", variety: null } });
       }
@@ -475,6 +476,7 @@ test("germplasm node-detail: single-uri species labelled from species_name, memb
       { label: "Species", items: [{ id: "phis:id/parent", type: "germplasm", label: "Parent", kind: "species" }] },
       { label: "Varieties and accessions", items: [{ id: "phis:id/acc", type: "germplasm", label: "A1" }] },
       { label: "Experiments", items: [{ id: "exp-1", type: "experiment", label: "E" }] },
+      { label: "In germplasm groups", items: [], emptyText: "In no germplasm group." },
     ]);
   });
 });
@@ -485,7 +487,7 @@ test("visibility: node-detail says isPublic for germplasm; PUT isPublic keeps th
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
       if (url.endsWith("/core/germplasm") && init?.method === "PUT") { putBody = JSON.parse(String(init.body)); return jsonResponse(200, { result: "g-1" }); }
-      if (url.includes("/core/germplasm?species=") || url.includes("/experiments?")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/germplasm?species=") || url.includes("/experiments?") || url.includes("/core/germplasm_group/search")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/germplasm/")) {
         return jsonResponse(200, { result: { uri: "g-1", name: "Tiril", rdf_type: "vocabulary:Variety", species: "sp-1", species_name: "Barley", variety: null, is_public: false, groups: [] } });
       }
@@ -1333,19 +1335,21 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
         } });
       }
       if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 });
+      if (url.includes("/core/variables_group?")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/units/u-1")) return jsonResponse(200, { result: { uri: "u-1", name: "Millimeter", symbol: "mm", description: null } });
       if (url.includes("/core/variables?unit=u-1")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Plant Height Max" }] });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
 
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json(), {
-      uri: "var-1", actions: ["rename", "delete"], deleteRemovesLinks: true,
+      uri: "var-1", actions: ["rename", "delete", "link"], deleteRemovesLinks: true,
       facts: [{ label: "Values", value: "decimal numbers" }, { label: "Description", value: "TraitFinder column" }],
       relations: [
         { label: "Entity", items: [{ id: "ent-1", type: "entity", label: "Plant" }] },
         { label: "Characteristic", items: [{ id: "ch-1", type: "characteristic", label: "Plant Height Max" }] },
         { label: "Method", items: [{ id: "m-1", type: "method", label: "PlantEye 3D scan" }] },
         { label: "Unit", items: [{ id: "u-1", type: "unit", label: "Millimeter" }] },
+        { label: "In variable groups", items: [], emptyText: "In no variable group." },
       ],
     });
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=unit&id=u-1`)).json(), {
@@ -2636,6 +2640,7 @@ function variableStub(log: { puts: any[]; posts: { url: string; body: any }[]; d
     if (method === "PUT") { log.puts.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: "ok" }); }
     if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
     if (path.startsWith("/core/variables?")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Plant Height" }] });
+    if (path.startsWith("/core/variables_group?")) return jsonResponse(200, { result: [] });
     if (path === "/core/variables/var-1") return jsonResponse(200, { result: {
       uri: "var-1", name: "Plant Height", description: "d", datatype: "http://www.w3.org/2001/XMLSchema#decimal", alternative_name: null,
       entity: { uri: "ent-1", name: "Plant" }, characteristic: { uri: "ch-1", name: "Height" }, method: { uri: "m-1", name: "Scan" },
@@ -2677,7 +2682,7 @@ test("delete variable: refused while it has measured values (counted over all ex
     globalThis.fetch = variableStub(log, values);
     const detail = await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json();
     assert.match(detail.deleteBlocked, /^has 18,564 measured values\. .*research data/);
-    assert.deepEqual(detail.actions, ["rename", "delete"]);
+    assert.deepEqual(detail.actions, ["rename", "delete", "link"]);
     assert.equal(detail.deleteRemovesLinks, true, "its parts can't be unlinked, so Delete must not route through unlink mode");
     const refused = await realFetch(`${base}/api/node?type=variable&id=var-1`, { method: "DELETE" });
     assert.equal(refused.status, 409);
@@ -3149,5 +3154,110 @@ test("create profile: a name, empty or starting from another profile's rights; r
     const put = await realFetch(`${base}/api/node`, { method: "PUT", headers: json, body: JSON.stringify({ type: "profile", id: "prof-r", name: "Researcher" }) });
     assert.equal(put.status, 200);
     assert.deepEqual(log.puts[0], { uri: "prof-r", name: "Researcher", credentials: ["account-access", "annotation-delete", "dataverse-modification"] });
+  });
+});
+
+// ---------- variable groups and germplasm groups (probed on phis-test 2026-10-08) ----------
+function collectionStub(log: { puts: any[]; posts: { url: string; body: any }[]; deletes: string[] }) {
+  const vg = { uri: "vg-1", name: "Drone traits", description: "From the drone", variables: [{ uri: "var-1", name: "Height" }] };
+  const gg = { uri: "gg-1", name: "Panel A", description: "Core panel", germplasm_count: 2 };
+  const members = [{ uri: "g-1", name: "Annika", rdf_type: "vocabulary:Variety" }, { uri: "g-2", name: "Bjorke", rdf_type: "vocabulary:Variety" }];
+  return (async (url: string, init?: RequestInit) => {
+    const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+    const method = init?.method ?? "GET";
+    const list = (rows: unknown[]) => jsonResponse(200, { result: rows });
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (path.startsWith("/core/germplasm_group/search")) return list(path.includes("germplasm=g-1") ? [gg] : path.includes("name=") ? [] : [gg]);
+    if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://phis.pheno.no/id/made" }); }
+    if (method === "PUT") { log.puts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
+    if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+    if (path.startsWith("/core/variables_group?")) return list(path.includes("variableUri=var-1") ? [vg] : path.includes("name=") ? [] : [vg]);
+    if (path === "/core/variables_group/vg-1") return jsonResponse(200, { result: vg });
+    if (path === "/core/germplasm_group/gg-1") return jsonResponse(200, { result: gg });
+    if (path.startsWith("/core/germplasm_group/gg-1/germplasm")) return list(members);
+    if (path === "/core/variables/var-1") return jsonResponse(200, { result: { uri: "var-1", name: "Height", datatype: "http://www.w3.org/2001/XMLSchema#decimal" } });
+    if (path.startsWith("/core/data/count")) return jsonResponse(200, { result: 0 });
+    if (path === "/core/germplasm/g-1") return jsonResponse(200, { result: { uri: "g-1", name: "Annika", rdf_type: "vocabulary:Variety" } });
+    if (path.startsWith("/core/germplasm/g-1/experiments") || path.startsWith("/core/germplasm?species=")) return list([]);
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+const sendJson = (base: string, path: string, method: string, body: unknown) =>
+  realFetch(`${base}${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+test("variable group: members are its own `variables`; link adds and keeps the rest, unlink removes one, rename sends everything back; a variable lists its groups", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = collectionStub(log);
+    const d = await detailOf(base, "variable_group", "vg-1");
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    assert.deepEqual(groupItems(d, "Variables"), [["variable", "Height"]]);
+    assert.deepEqual(groupItems(await detailOf(base, "variable", "var-1"), "In variable groups"), [["variable_group", "Drone traits"]]);
+
+    const linked = await (await sendJson(base, "/api/link", "POST", { items: [{ type: "variable_group", id: "vg-1" }, { type: "variable", id: "var-2" }, { type: "variable", id: "var-1" }] })).json();
+    assert.deepEqual(linked, { ok: true, linkedPairs: 1, alreadyLinked: 1 });
+    assert.deepEqual(log.puts[0].body.variables, ["var-1", "var-2"], "the whole list goes back — an update replaces it");
+
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "variable_group", id: "vg-1", unlink: { field: "variables", uri: "var-1" } });
+    assert.deepEqual(log.puts[0].body.variables, []);
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "variable_group", id: "vg-1", name: "Drone" });
+    assert.deepEqual([log.puts[0].body.name, log.puts[0].body.variables, log.puts[0].body.description], ["Drone", ["var-1"], "From the drone"]);
+  });
+});
+
+test("create variable group: from selected variables or alone; a taken name is refused; delete removes only the group", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = collectionStub(log);
+    const ok = await sendJson(base, "/api/create", "POST", { type: "variable_group", name: "New set", links: [{ type: "variable", id: "var-1" }, { type: "variable", id: "var-2" }], fields: { description: "d" } });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts[0], { url: "/core/variables_group", body: { name: "New set", variables: ["var-1", "var-2"], description: "d" } });
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) =>
+      /variables_group\?.*name=/.test(decodeURIComponent(url)) ? jsonResponse(200, { result: [{ uri: "vg-9", name: "Drone traits" }] }) : inner(url, init)) as typeof fetch;
+    const dup = await sendJson(base, "/api/create", "POST", { type: "variable_group", name: "drone traits", links: [] });
+    assert.equal(dup.status, 400);
+    assert.match((await dup.json()).error, /already a variable group named "Drone traits"/);
+    assert.equal((await realFetch(`${base}/api/node?type=variable_group&id=vg-1`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(log.deletes, ["/core/variables_group/vg-1"]);
+  });
+});
+
+test("germplasm group: members come from /germplasm and go back as `germplasm_list`; link keeps the rest and skips duplicates, unlink removes one; a germplasm lists its groups", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = collectionStub(log);
+    const d = await detailOf(base, "germplasm_group", "gg-1");
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    assert.deepEqual(groupItems(d, "Germplasm"), [["germplasm", "Annika"], ["germplasm", "Bjorke"]]);
+    assert.equal(d.relations.find((r: any) => r.label === "Germplasm").field, "member", "members have an × like other links");
+    assert.deepEqual(groupItems(await detailOf(base, "germplasm", "g-1"), "In germplasm groups"), [["germplasm_group", "Panel A"]]);
+
+    const items = (...ids: string[]) => [{ type: "germplasm_group", id: "gg-1" }, ...ids.map((id) => ({ type: "germplasm", id }))];
+    const linked = await (await sendJson(base, "/api/link", "POST", { items: items("g-1", "g-3") })).json();
+    assert.deepEqual(linked, { ok: true, linkedPairs: 1, alreadyLinked: 1 });
+    assert.deepEqual(log.puts[0].body, { uri: "gg-1", name: "Panel A", description: "Core panel", germplasm_list: ["g-1", "g-2", "g-3"] });
+
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "germplasm_group", id: "gg-1", unlink: { field: "member", uri: "g-1" } });
+    assert.deepEqual(log.puts[0].body.germplasm_list, ["g-2"]);
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "germplasm_group", id: "gg-1", name: "Panel B" });
+    assert.deepEqual([log.puts[0].body.name, log.puts[0].body.germplasm_list], ["Panel B", ["g-1", "g-2"]], "a rename must not drop the members");
+  });
+});
+
+test("create germplasm group: from selected germplasm or alone; the lists are browsable", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    globalThis.fetch = collectionStub(log);
+    const ok = await sendJson(base, "/api/create", "POST", { type: "germplasm_group", name: "Panel C", links: [{ type: "germplasm", id: "g-1" }] });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts.find((p) => p.url === "/core/germplasm_group"), { url: "/core/germplasm_group", body: { name: "Panel C", germplasm_list: ["g-1"] } });
+    assert.deepEqual(await (await realFetch(`${base}/api/germplasm-groups`)).json(), [{ id: "gg-1", type: "germplasm_group", label: "Panel A" }]);
+    assert.deepEqual(await (await realFetch(`${base}/api/variable-groups`)).json(), [{ id: "vg-1", type: "variable_group", label: "Drone traits" }]);
   });
 });

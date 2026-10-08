@@ -135,6 +135,13 @@ export const handleNodeMutation: RouteHandler = async (req, res, { pathname, sea
       return true;
     }
     await respondOpenSilexErrors(res, async () => {
+      // A link or unlink only goes to a field this type owns; otherwise the update would resend the record and look like it worked.
+      const linkField = (unlink ?? link)?.field;
+      if (linkField !== undefined && !config.updateLinkFields.includes(linkField)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `${linkField || "this"} can't be linked or unlinked on this type` }));
+        return;
+      }
       const current = await updateNode(config, id, { name, unlink, link, isPublic });
       const finalName = name ?? String(current.name ?? "");
       // Unlink responses include the refreshed relations so the frontend can update its

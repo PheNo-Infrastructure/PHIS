@@ -28,8 +28,8 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Factors and levels | ✔ | create with levels, rename, delete |
 | Germplasm | ✔ | species/variety/accession; `isPublic` set at creation |
 | Variables | ◐ | create/rename/delete (name only; unit/parts never editable — PHIS would relabel values silently). Parts (entity, characteristic, method, unit) are read-only; **create parts, entity_of_interest, trait, species, match fields: ✖** |
-| Variable groups (`VariablesGroup`) | ✖ | a named list of variables; facilities point at them (`variableGroups`) |
-| Germplasm groups (`GermplasmGroup`) | ✖ | a named list of germplasm |
+| Variable groups (`VariablesGroup`) | ✔ 2026-10-08 | Data > Variable groups: create (alone or from selected variables), rename, delete (variables stay), link/unlink variables; a variable's page lists its groups. Facility `variableGroups` still ✖ |
+| Germplasm groups (`GermplasmGroup`) | ✔ 2026-10-08 | Trials > Germplasm groups: same as variable groups; a germplasm's page lists its groups |
 | Data (measured values) | ◐ | import + read (tables, charts); no manual add/edit/delete of single values; confidence, raw data ✖ |
 | Provenances | ✔ | page, rename, delete (blocked while values; "delete its values" separately). **prov_agent (device/person that produced the data): ✖** |
 | Data files | ✖ | none in PHIS; empty-state says so |
@@ -39,7 +39,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Areas, positions, locations (maps, plots in a greenhouse) | ✖ | `Area` (structural or event area), `Position` (x/y/z or point), facility `locations` |
 | Devices | ✔ | create/rename/delete, move to a facility on a date, **person in charge (set/replace/clear)** |
 | Persons | ✔ | **separate from accounts** (see facts). Create (alone or for an account), rename, link into experiments/projects in a role, link to an account (once). No delete in PHIS |
-| Accounts | ◐ | read-only page. **Create/enable/disable/admin/password/language: ✖**; invite a researcher by email (`/security/invite`): ✖ |
+| Accounts | ◐ | **deferred: user unsure accounts/passwords belong in the portal (2026-10-08), revisit once real login is decided.** Read-only page. **Create/enable/disable/admin/password/language: ✖**; invite a researcher by email (`/security/invite`): ✖ |
 | **Groups** (membership + sharing) | ✔ 2026-10-07 | create/rename/delete (confirm says who loses access), add accounts with a chosen profile, remove them, share experiments/organizations/sites/germplasm with a group (and unshare). See "Priority 1" for what is left |
 | **Profiles** (credentials) | ✔ 2026-10-07 | tick-box rights editor (24 areas × see/change/delete, presets, copy from another profile, caution on access-controlling areas, Save names who is affected); create (empty or from another profile), rename, delete blocked while a group uses it. See "Priority 2" |
 | Favorites (per user) | ✖ | low value |
@@ -90,7 +90,8 @@ To build:
   (and delete them). The *Default profile* has none. The editor tags those four areas "controls access". A sensible next step is a narrower profile (e.g. "Contributor": see + change data areas, nothing under accounts/users/groups/profiles) made by copying Researcher and unticking — the user decides.
 - Still open: show an account's effective rights (account → groups → profiles → rights); "which profile can do X" search.
 
-## Priority 3 — Accounts (credentials of people)
+## Priority 3 — Accounts (credentials of people) — DEFERRED 2026-10-08
+User: "very unsure this should even be in the portal". Not built until login is decided; nothing below is started.
 Create an account (email, password, admin, enable, language, linked person), enable/disable, admin flag, reset password,
 `/security/invite` (invite a researcher by email — admin only), `/security/register` flow. Safety: the Guest account on
 phis-test has `admin=true` (flagged, not acted on). Passwords never travel through this app's logs/pages — design this one with the user.
@@ -101,6 +102,7 @@ creating variable parts, provenance `prov_agent`, annotations on anything, non-m
 Order by what researchers ask for; each is small once the pattern is known.
 
 ## Probed facts that shape the work (all on phis-test, 2026-10-07 unless dated)
+- **Variable/germplasm groups (2026-10-08)**: `variables_group` holds `variables` (objects on GET, uris on POST/PUT); `germplasm_group` GET only says `germplasm_count` — members come from `GET .../{uri}/germplasm` (paged) and go back as `germplasm_list`. An update REPLACES the list in both. The germplasm-group list is a POST search (`/core/germplasm_group/search`, filters `name`, `germplasm`); variables groups filter by `variableUri`. Deleting a group leaves members alone.
 - **Persons and accounts are separate records.** A signed-up (Feide) user has an **account only**; a person must be created for
   them (the app does it: select the account → + New person). 3 of 6 accounts on phis-test had no person.
 - **Persons cannot be deleted** (no endpoint; DELETE answers 405). A person's **account link is set once**: leaving `account`

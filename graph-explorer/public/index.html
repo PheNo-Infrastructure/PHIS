@@ -1011,6 +1011,8 @@ const TYPES = {
   account:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "account" },
   group:      { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "group" },
   profile:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "profile" },
+  variable_group: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "variable group" },
+  germplasm_group: { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "germplasm group" },
   data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "data file" },
   provenance: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "provenance" },
   event:      { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "event" },
@@ -1039,10 +1041,12 @@ const CATEGORY_ITEMS = {
     { id: "cat-experiments", type: "category", label: "Experiments", hint: "your trials, in greenhouse or field" },
     { id: "cat-scientificobjects", type: "category", label: "Scientific Objects", hint: "what you measure: plants, plots, pots, samples" },
     { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
+    { id: "cat-germplasmgroups", type: "category", label: "Germplasm groups", hint: "named sets of germplasm, e.g. a panel" },
     { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought, replicate" },
   ],
   "cat-data": [
     { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
+    { id: "cat-variablegroups", type: "category", label: "Variable groups", hint: "named sets of variables, e.g. all drone traits" },
     { id: "cat-tabular", type: "category", label: "Tabular Data", hint: "the measured values" },
     { id: "cat-datafiles", type: "category", label: "Data files", hint: "images and raw files" },
     { id: "cat-provenances", type: "category", label: "Provenances", hint: "how data was collected: device, software, who" },
@@ -1079,6 +1083,8 @@ const CATEGORY_ITEMS = {
   "cat-scientificobjects": [],
   "cat-variables": [],
   "cat-germplasm": [],
+  "cat-germplasmgroups": [],
+  "cat-variablegroups": [],
   // Tabular Data has no direct wiring here: OpenSILEX's /core/data endpoint returns
   // individual measurement rows (value/variable/target/date), not named browsable
   // nodes — it needs a different UI (a table scoped to one scientific object/variable),
@@ -4217,7 +4223,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —
@@ -4243,6 +4249,8 @@ const CATEGORY_FOR_TYPE = {
   scientific_object: "cat-scientificobjects",
   variable: "cat-variables",
   germplasm: "cat-germplasm",
+  germplasm_group: "cat-germplasmgroups",
+  variable_group: "cat-variablegroups",
   data_file: "cat-datafiles",
   provenance: "cat-provenances",
   event: "cat-events",
@@ -4269,6 +4277,8 @@ const BACKED_CATEGORIES = {
   "cat-scientificobjects": "api/scientific-objects",
   "cat-variables": "api/variables",
   "cat-germplasm": "api/germplasm",
+  "cat-germplasmgroups": "api/germplasm-groups",
+  "cat-variablegroups": "api/variable-groups",
   "cat-datafiles": "api/datafiles",
   "cat-provenances": "api/provenances",
   "cat-events": "api/events",
