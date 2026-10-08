@@ -78,6 +78,14 @@ const SHEET = [
   '"32",1,1,"2025-10-29 13:19:34","PB_3","Annika","TraitFinder",12,0.4,1.3,5,"32"',
 ].join("\n");
 
+// The lists the review offers besides the data (who made it, who can see it).
+function choiceLists(url: string) {
+  if (/\/core\/devices\?/.test(url)) return jsonResponse(200, { result: [{ uri: "dev-tf", name: "UiT-TraitFinder" }, { uri: "dev-other", name: "Nikon Z6III" }] });
+  if (/\/security\/persons\?/.test(url)) return jsonResponse(200, { result: [{ uri: "per-1", first_name: "Anna", last_name: "Berg" }] });
+  if (/\/security\/groups\?/.test(url)) return jsonResponse(200, { result: [{ uri: "grp-1", name: "Researchers" }] });
+  return null;
+}
+
 // The vocabulary checks (Tray type, a plant's position): `present` = this PHIS already has them.
 function ontologyAnswer(url: string, present: boolean) {
   if (url.includes("/ontology/rdf_type?") || url.includes("/ontology/property?")) {
@@ -101,7 +109,7 @@ function mockPhis(calls: string[], olveCode: string | null = null) {
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     calls.push(`${init?.method ?? "GET"} ${url}`);
     if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
-    const known = ontologyAnswer(url, false) ?? variablesAnswer(url);
+    const known = ontologyAnswer(url, false) ?? variablesAnswer(url) ?? choiceLists(url);
     if (known) return known;
     if (url.includes("/core/germplasm/g%3Aolve")) return jsonResponse(200, { result: { uri: "g:olve", name: "Olve", code: olveCode } });
     if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [{ uri: "e1", name: "PBar1x4 – TraitFinder – 2025-10-22 (old)" }] });
@@ -187,10 +195,11 @@ function mockPhisForRun(writes: { method: string; path: string; body: any }[], f
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
-    const known = method === "GET" && (ontologyAnswer(url, false) ?? variablesAnswer(url));
+    const known = method === "GET" && (ontologyAnswer(url, false) ?? variablesAnswer(url) ?? choiceLists(url));
     if (known) return known;
     if (method !== "GET") {
       writes.push({ method, path, body });
+      if (path === "/core/annotations") return jsonResponse(201, { result: "note:new" });
       if (failOn && body.name === failOn) return jsonResponse(400, { result: { title: "Bad request", message: "name clash" } });
       if (path.startsWith("/vuejs/") || path.startsWith("/ontology/")) return jsonResponse(201, { result: body.uri ?? "ok" });
       if (path === "/core/germplasm" && method === "PUT") return jsonResponse(200, { result: body.uri });
@@ -353,7 +362,7 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
-    if (method === "GET") { const known = ontologyAnswer(url, true); if (known) return known; }
+    if (method === "GET") { const known = ontologyAnswer(url, true) ?? choiceLists(url); if (known) return known; }
     if (path.startsWith("/core/data/search")) return jsonResponse(200, { result: [
       { target: "so:old1", variable: "var:Height", date: "2025-10-29T13:19:34.000+0100", value: 10 },
       { target: "so:old1", variable: "var:NDVI Average", date: "2025-10-29T13:19:34.000+0100", value: 0.9 },
@@ -452,5 +461,56 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
     assert.equal(data.length, 7);
     assert.ok(!data.some((d: any) => d.target === "so:old1" && d.date === "2025-10-29T13:19:34" && ["var:Height", "var:NDVI Average"].includes(d.variable)), "neither the equal nor the differing value is written");
     assert.ok(data.some((d: any) => d.target === "so:PB003"), "a new plant's values go to its new uri");
+  });
+});
+
+test("POST /api/import/plan offers who made it and who can see it: the device is matched from the instrument's own name, no person is guessed", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(plan.options, {
+      devices: [{ id: "dev-other", label: "Nikon Z6III" }, { id: "dev-tf", label: "UiT-TraitFinder" }],
+      persons: [{ id: "per-1", label: "Anna Berg" }],
+      groups: [{ id: "grp-1", label: "Researchers" }],
+      matchedDevice: "dev-tf", matchedBecause: "TraitFinder",
+    });
+  });
+});
+
+test("POST /api/import/run with choices: the provenance names its device and person, a new experiment is shared as chosen, a note of the import goes on the experiment and the provenance", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    const q = new URLSearchParams({ species: "agrovoc:barley", device: "dev-tf", person: "per-1", share: "grp-1", note: "1" });
+    const res = await realFetch(`${base}/api/import/run?${q}`, { method: "POST", body: EXPORT() });
+    assert.equal(res.status, 200, await res.clone().text());
+    const result = (await res.text()).trim().split("\n").map((l) => JSON.parse(l)).at(-1).result;
+    assert.equal(result.created.note, true);
+    const exp = writes.find((w) => w.path === "/core/experiments")!.body;
+    assert.deepEqual([exp.is_public, exp.groups], [false, ["grp-1"]], "shared with the group only, not public");
+    assert.deepEqual(writes.find((w) => w.path === "/core/provenances")!.body.prov_agent, [{ uri: "dev-tf", rdf_type: "vocabulary:Device" }, { uri: "per-1", rdf_type: "vocabulary:Operator" }]);
+    const note = writes.find((w) => w.path === "/core/annotations")!.body;
+    assert.deepEqual(note.targets, ["exp:new", "prov:new"]);
+    assert.equal(note.motivation, "http://www.w3.org/ns/oa#describing");
+    assert.match(note.description, /^Imported from a TraitFinder \(PlantEye\) export by the Graph Explorer on \d{4}-\d\d-\d\d\. Files: PBar1x4_Metadata\.csv, Sheets\/PBar1x4_TraitFinder_20260107_PHIS\.csv\. Written: 5 scientific objects, 1 new germplasm, 2 factors, 3 variables, 9 measured values\./);
+  });
+});
+
+test("POST /api/import/run without choices behaves as before (public, no agents, no note); private is allowed; an unknown device or group is refused before anything is written", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    const run = (extra: Record<string, string>) => realFetch(`${base}/api/import/run?${new URLSearchParams({ species: "agrovoc:barley", ...extra })}`, { method: "POST", body: EXPORT() });
+    assert.equal((await run({})).status, 200);
+    assert.equal(writes.find((w) => w.path === "/core/experiments")!.body.is_public, true);
+    assert.equal(writes.find((w) => w.path === "/core/provenances")!.body.prov_agent, undefined);
+    assert.equal(writes.some((w) => w.path === "/core/annotations"), false);
+    writes.length = 0;
+    assert.equal((await run({ share: "private" })).status, 200);
+    const exp = writes.find((w) => w.path === "/core/experiments")!.body;
+    assert.deepEqual([exp.is_public, exp.groups], [false, undefined]);
+    writes.length = 0;
+    for (const bad of [{ device: "nope" }, { person: "nope" }, { share: "nope" }]) assert.equal((await run(bad)).status, 409);
+    assert.deepEqual(writes, []);
   });
 });

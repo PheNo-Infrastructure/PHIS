@@ -4397,7 +4397,25 @@ function importPlanHtml(p) {
       ${m.skipped.notNumbers.count ? `<div class="import-warning">Left out: ${m.skipped.notNumbers.count} ${m.skipped.notNumbers.count === 1 ? "value that isn't a number" : "values that aren't numbers"} (e.g. ${escapeHtml(m.skipped.notNumbers.examples.join("; "))}).</div>` : ""}
       ${m.skipped.contradictions.count ? `<div class="import-warning">Left out: ${m.skipped.contradictions.count} ${m.skipped.contradictions.count === 1 ? "place where" : "places where"} the file gives two different values for the same plant, variable and time (e.g. ${escapeHtml(m.skipped.contradictions.examples.join("; "))}). Fix the file and import again to include them.</div>` : ""}
     </div>` : ""}
+    ${importChoicesHtml(p)}
     <div class="import-footer" id="importFooter">${importFooterHtml(p)}</div>`;
+}
+
+// Who made the data and who can see it — all optional. The device is only PRE-selected when its name holds the instrument's
+// own name (and says so); the person is never guessed; a new experiment stays public unless another choice is made.
+function importChoicesHtml(p) {
+  const o = p.options;
+  if (!o) return "";
+  const opts = (list, picked) => list.map(x => `<option value="${escapeHtml(x.id)}"${x.id === picked ? " selected" : ""}>${escapeHtml(x.label)}</option>`).join("");
+  return `<div class="import-section">
+    <h3>Made by${p.experiment.exists ? "" : " and visible to"}<small>so the data can be traced${p.experiment.exists ? "" : " and shared"}</small></h3>
+    <p><label>Measured with: <select id="importDevice"><option value="">No device</option>${opts(o.devices, o.matchedDevice)}</select></label>
+      ${o.matchedDevice ? `<span class="import-names">pre-selected because its name holds "${escapeHtml(o.matchedBecause)}", the instrument named in the file</span>` : ""}</p>
+    <p><label>Run by: <select id="importPerson"><option value="">No one</option>${opts(o.persons)}</select></label></p>
+    ${p.experiment.exists ? "" : `<p><label>Who can see the new experiment: <select id="importShare">
+      <option value="public">Everyone in PHIS (public)</option><option value="private">Only this app's account (private)</option>${o.groups.map(g => `<option value="${escapeHtml(g.id)}">Only the group ${escapeHtml(g.label)}</option>`).join("")}</select></label></p>`}
+    <p><label><input type="checkbox" id="importNote" checked> Keep a note of this import on the experiment${p.measurements?.count ? " and the provenance" : ""} (files, what was written, what was left out, warnings)</label></p>
+  </div>`;
 }
 
 // What existing objects get filled in: "their tray (100), position (100)".
@@ -4438,7 +4456,7 @@ function importFooterHtml(p) {
     : [`create ${andList(parts)}`];
   if (!label.length) return `<span>Everything in these files is already in PHIS. Nothing to do.</span>`;
   const text = andList(label);
-  return `<span>Nothing has been written to PHIS yet. What it creates will be public: every PHIS user can see it.</span><button class="btn primary" id="importRunBtn">${escapeHtml(text[0].toUpperCase() + text.slice(1))}</button>`;
+  return `<span>Nothing has been written to PHIS yet.${p.experiment.exists ? "" : " A new experiment is public unless you choose otherwise above."}</span><button class="btn primary" id="importRunBtn">${escapeHtml(text[0].toUpperCase() + text.slice(1))}</button>`;
 }
 
 function wireImportRun(file, plan, close) {
@@ -4455,7 +4473,17 @@ function wireImportRun(file, plan, close) {
     // dialog or the page doesn't stop the import on the server.
     footer.innerHTML = `<div class="import-progress"><span id="importStep">Starting…</span><progress id="importBar" max="1" value="0"></progress><span class="import-names">It keeps going on the server even if you close this.</span></div>`;
     try {
-      const res = await fetch(`api/import/run${species ? `?species=${encodeURIComponent(species.value)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
+      const q = new URLSearchParams();
+      if (species) q.set("species", species.value);
+      for (const [id, key] of [["importDevice", "device"], ["importPerson", "person"], ["importShare", "share"]]) {
+        const el = document.getElementById(id);
+        if (el && el.value) q.set(key, el.value);
+        if (el) el.disabled = true;
+      }
+      const noteBox = document.getElementById("importNote");
+      if (noteBox?.checked) q.set("note", "1");
+      if (noteBox) noteBox.disabled = true;
+      const res = await fetch(`api/import/run${q.size ? `?${q}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
         footer.innerHTML = `<div class="import-warning">${escapeHtml(b.error || `The import failed (${res.status}).`)}</div>`;
@@ -4485,6 +4513,7 @@ function wireImportRun(file, plan, close) {
         ...(c.codes ? [`set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}`] : []),
         ...(c.variables ? [`created ${c.variables} ${c.variables === 1 ? "variable" : "variables"}`] : []),
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
+        ...(c.note === true ? ["kept a note of the import"] : c.note === false ? ["could not save the note of the import (the data is in PHIS)"] : []),
       ];
       footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });

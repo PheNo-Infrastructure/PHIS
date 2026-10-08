@@ -2,6 +2,7 @@
 // matched against PHIS by name and summarised as "exists / will be created / needs a choice" —
 // nothing is written here.
 import { OpenSilexError, authedGet, authedGetOne, escapeRegex } from "../opensilex.ts";
+import { personName } from "../node-types.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
 import { POSITION_IN_TRAY, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
@@ -90,6 +91,15 @@ export async function prepare(files: Files) {
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
 
+  // What the review lets the user decide besides the data: who made it (the device is matched from the instrument's own name
+  // and only pre-selected; the person is never guessed) and who can see a NEW experiment.
+  const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
+  const devices = (await authedGet("/core/devices?page_size=500")).result.map((d) => ({ id: String(d.uri), label: String(d.name ?? d.uri) })).sort(byLabel);
+  const persons = (await authedGet("/security/persons?page_size=500")).result.map((p) => ({ id: String(p.uri), label: personName(p) })).sort(byLabel);
+  const groups = (await authedGet("/security/groups?page_size=500")).result.map((g) => ({ id: String(g.uri), label: String(g.name ?? g.uri) })).sort(byLabel);
+  const source = (trial.source ?? "").trim().toLowerCase();
+  const matched = source ? devices.filter((d) => d.label.toLowerCase().includes(source)) : [];
+
   const plan = {
     instrument: plugin.label,
     experiment: { ...trial.experiment, exists: !!experiment, ...(sameName.length > 1 ? { sameName: sameName.length } : {}) },
@@ -126,6 +136,7 @@ export async function prepare(files: Files) {
         conflicts: { count: compared.conflicts.length, examples: compared.conflicts.slice(0, 3) },
       } : {}),
     },
+    options: { devices, persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
     warnings,
   };
   return { trial, plan, variables, values: against.fresh, experiment, fills: compared.fills };

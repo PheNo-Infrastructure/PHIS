@@ -53,10 +53,12 @@ export function checkMeasurements(raw: Raw[]) {
 
 const firstUri = (r: { result: unknown }) => String([r.result].flat()[0]);
 // One provenance per import: where the values came from and the period they cover.
-export async function createProvenance(name: string, description: string, first: string, last: string, timezone: string) {
+// agents: the device that measured and the person who ran it (their rdf_types as PHIS keeps them).
+export async function createProvenance(name: string, description: string, first: string, last: string, timezone: string, agents: { uri: string; rdf_type: string }[] = []) {
   return firstUri(await authedPost("/core/provenances", {
     name, description,
     prov_activity: [{ rdf_type: "http://www.w3.org/ns/prov#Activity", start_date: first, end_date: last, timezone }],
+    ...(agents.length ? { prov_agent: agents } : {}),
   }));
 }
 
