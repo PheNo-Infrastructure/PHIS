@@ -3460,3 +3460,57 @@ test("link device + facility with a position: it goes on the move as text; the s
     assert.equal(log.posts.length, 0);
   });
 });
+
+test("delete an experiment and everything in it: the preview counts, the name must be typed, then values (per variable), empty provenances, plants then trays (a shared object only leaves this experiment), factors, tidied notes, the experiment — in that order", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    const E = "exp-1";
+    const objs = [
+      { uri: "so-tray", name: "Tray 31", rdf_type_name: "Tray" }, { uri: "so-a", name: "PB001", rdf_type_name: "Plant" }, { uri: "so-b", name: "PB002", rdf_type_name: "Plant" },
+    ];
+    const notes = [
+      { uri: "n-only", description: "import note", motivation: { uri: "oa:describing" }, targets: [E, "prov-1"] },
+      { uri: "n-both", description: "also a device", motivation: { uri: "oa:commenting" }, targets: [E, "dev-1"] },
+    ];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+      const method = init?.method ?? "GET";
+      const list = (rows: unknown[]) => jsonResponse(200, { result: rows });
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method !== "GET" && !path.startsWith("/core/data/count")) { calls.push(`${method} ${path}${method === "PUT" ? ` ${JSON.stringify(JSON.parse(String(init?.body)).targets)}` : ""}`); return jsonResponse(200, { result: "ok" }); }
+      if (path.startsWith("/core/data/count")) return jsonResponse(200, { result: path.includes("provenances=") ? 0 : 336 });
+      if (path === `/core/experiments/${E}`) return jsonResponse(200, { result: { uri: E, name: "Trial" } });
+      if (path.startsWith(`/core/scientific_objects?experiment=${E}`)) return list(objs);
+      if (path.startsWith("/core/scientific_objects?experiment=")) return list([objs[1]]); // exp-2 also holds PB001
+      if (path.startsWith("/core/experiments?")) return list([{ uri: E, name: "Trial" }, { uri: "exp-2", name: "Other" }]);
+      if (path === `/core/experiments/${E}/factors`) return list([{ uri: "f-1", name: "Replicate" }]);
+      if (path.startsWith(`/core/experiments/${E}/provenances`)) return list([{ uri: "prov-1", name: "Import" }]);
+      if (path === `/core/experiments/${E}/variables`) return list([{ uri: "var-1" }, { uri: "var-2" }]);
+      if (path.startsWith("/core/annotations?target=")) return list(path.includes(`target=${E}`) ? notes : path.includes("target=prov-1") ? [notes[0]] : []);
+      if (path.match(/^\/core\/scientific_objects\/so-[a-z]+\/experiments/)) return list([{ experiment: E, experiment_name: "Trial" }]);
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+
+    const prev = await (await realFetch(`${base}/api/experiment-delete/preview?id=${E}`)).json();
+    assert.deepEqual(prev, { name: "Trial", objects: 3, trays: 1, shared: 1, values: 336, factors: 1, provenances: ["Import"], notes: 2 });
+    assert.equal((await realFetch(`${base}/api/experiment-delete?id=${E}&name=nope`, { method: "DELETE" })).status, 400, "the name has to be typed");
+    assert.deepEqual(calls, [], "nothing deleted yet");
+
+    const res = await realFetch(`${base}/api/experiment-delete?id=${E}&name=${encodeURIComponent("Trial")}`, { method: "DELETE" });
+    assert.equal(res.status, 200, await res.clone().text());
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(lines.at(-1), { result: { name: "Trial", variables: 2, values: 336, provenances: 1, kept: [], removed: 1, deleted: 2, factors: 1, notes: 1 } });
+    assert.deepEqual(calls, [
+      `DELETE /core/data?experiment=${E}&variable=var-1`, `DELETE /core/data?experiment=${E}&variable=var-2`,
+      "DELETE /core/provenances/prov-1",
+      `DELETE /core/scientific_objects/so-a?experiment=${E}`, // also in exp-2: leaves this experiment only
+      `DELETE /core/scientific_objects/so-b?experiment=${E}`, "DELETE /core/scientific_objects/so-b", // only here: its copy, then the object
+      `DELETE /core/scientific_objects/so-tray?experiment=${E}`, "DELETE /core/scientific_objects/so-tray",
+      "DELETE /core/experiments/factors/f-1",
+      "DELETE /core/annotations/n-only", // only about what is gone
+      `PUT /core/annotations ${JSON.stringify(["dev-1"])}`, // also about a device: loses just the experiment
+      `DELETE /core/experiments/${E}`,
+    ]);
+  });
+});

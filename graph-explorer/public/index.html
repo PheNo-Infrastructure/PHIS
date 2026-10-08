@@ -1740,6 +1740,72 @@ async function deleteBlockers(item) {
   else render();
 }
 
+// "Delete it and everything in it": an experiment with its objects, factors and measured values, in one counted step.
+// A separate, deliberate action (plain Delete never removes values): it shows what goes and what stays, and the experiment's
+// name has to be typed. The server does it in order and streams progress; what is also used by another experiment stays there.
+async function deleteExperimentEverything(item) {
+  let p;
+  try {
+    showToast("Counting what is in it…", 60000);
+    const res = await fetch(`api/experiment-delete/preview?id=${encodeURIComponent(item.id)}`);
+    p = await res.json();
+    if (!res.ok) throw new Error(p.error || res.status);
+  } catch (err) { showToast(`Couldn't count what is in it: ${err.message || err}`); return; }
+  els.toast.classList.remove("show");
+  const lines = [
+    `${p.objects.toLocaleString("en")} ${typeName("scientific_object", p.objects)}${p.trays ? ` (${p.trays} ${p.trays === 1 ? "is a tray" : "are trays"})` : ""}${p.shared ? ` — ${p.shared} also in other experiments, only taken out of this one` : ""}`,
+    ...(p.values ? [`${p.values.toLocaleString("en")} measured ${p.values === 1 ? "value" : "values"} — research data, gone for good`] : []),
+    ...(p.factors ? [`${p.factors} ${p.factors === 1 ? "factor" : "factors"} with their levels`] : []),
+    ...(p.provenances.length ? [`provenance${p.provenances.length === 1 ? "" : "s"} ${p.provenances.join("; ")} — unless still used by another experiment`] : []),
+    ...(p.notes ? [`${p.notes} ${p.notes === 1 ? "note" : "notes"} about it (a note that also concerns other things only loses this one)`] : []),
+    "the experiment itself",
+  ];
+  const typed = prompt(`DELETE ${p.name} AND EVERYTHING IN IT
+
+This permanently deletes:
+${lines.map(l => `• ${l}`).join("\n")}
+
+Stays: germplasm, variables, people, groups.
+This cannot be undone.
+
+Type the experiment's name to confirm:`, "");
+  if (typed === null) return;
+  if (typed.trim() !== p.name.trim()) { showToast("That isn't the experiment's name. Nothing was deleted."); return; }
+  try {
+    showToast("Starting…", 600000);
+    const res = await fetch(`api/experiment-delete?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(p.name)}`, { method: "DELETE" });
+    if (!res.ok) { const b = await res.json().catch(() => ({})); showToast(`Not deleted: ${b.error || res.status}`); return; }
+    let result = null, failed = null, buf = "";
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      for (let i; (i = buf.indexOf("\n")) >= 0; buf = buf.slice(i + 1)) {
+        const msg = JSON.parse(buf.slice(0, i));
+        if (msg.progress) showToast(`${msg.progress.step} (${Math.round(100 * msg.progress.done / msg.progress.total)}%)`, 600000);
+        else if (msg.result) result = msg.result;
+        else if (msg.error) failed = msg.error;
+      }
+    }
+    delete NODE_DETAIL[item.id];
+    if (failed || !result) {
+      await loadNodeDetail(item).catch(() => {});
+      renderDetail();
+      showToast(failed || "It ended without an answer.", 12000);
+      return;
+    }
+    forgetNode(item);
+    unlinkTargetId = null;
+    if (path[path.length - 1]?.id === item.id) { path = path.slice(0, -1); historyPaths.set(history.state?.n, path); }
+    await reloadCategories(["cat-experiments", "cat-scientificobjects", "cat-factors", "cat-provenances"]);
+    render();
+    showToast(`Deleted ${result.name}: ${result.deleted + result.removed} scientific objects, ${result.factors} factors${result.kept.length ? `; kept ${result.kept.join(", ")} (still used elsewhere)` : ""}.`, 8000);
+  } catch (err) {
+    showToast(`The delete failed: ${err}`, 8000);
+  }
+}
+
 async function unlinkOne(item, field, uri, experiment) {
   try {
     const res = await fetch("api/node", {
@@ -2471,6 +2537,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
           : `<b>UNLINK MODE</b> — delete is blocked while ${escapeHtml(label)} is still linked to the items below.`}</span>
         <span class="unlink-intro-actions">
           ${blockers.length ? `<button class="btn warn small" id="deleteBlockersBtn">Clear ${blockerWhat}…</button>` : ""}
+          ${blockers.length && type === "experiment" ? `<button class="btn warn small" id="deleteEverythingBtn" title="Deletes the experiment with its objects and measured values, after showing exactly what and asking you to type its name">Delete it and everything in it…</button>` : ""}
           ${lastReq && !blockers.length ? `<button class="btn warn small" id="forceDeleteBtn">Delete ${niceType}</button>` : ""}
           ${anyUnlinkable ? `<button class="btn warn small" id="unlinkAllBtn">Unlink all</button>` : ""}
           <button class="btn warn small" id="cancelUnlinkBtn">Cancel</button>
@@ -2588,6 +2655,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     document.getElementById("unlinkAllBtn")?.addEventListener("click", () => unlinkAll(focusNode));
     document.getElementById("forceDeleteBtn")?.addEventListener("click", () => deleteNode(focusNode, true));
     document.getElementById("deleteBlockersBtn")?.addEventListener("click", () => deleteBlockers(focusNode));
+    document.getElementById("deleteEverythingBtn")?.addEventListener("click", () => deleteExperimentEverything(focusNode));
     document.getElementById("cancelUnlinkBtn").addEventListener("click", () => {
       unlinkTargetId = null;
       renderDetail();

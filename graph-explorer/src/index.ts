@@ -10,6 +10,7 @@ import { handleParent } from "./routes/parent.ts";
 import { handleUnlink } from "./routes/unlink.ts";
 import { handleImport } from "./routes/import.ts";
 import { handleElsewhere } from "./routes/elsewhere.ts";
+import { handleExperimentDelete } from "./routes/experiment-delete.ts";
 import { handleSearch } from "./routes/search.ts";
 import { handleMeasurements } from "./routes/measurements.ts";
 import { handleExperimentOverview } from "./routes/experiment-overview.ts";
@@ -36,6 +37,7 @@ const routeHandlers: RouteHandler[] = [
   handleUnlink,
   handleImport,
   handleElsewhere,
+  handleExperimentDelete,
 ];
 
 // Exported for tests. Every branch is wrapped so a failure anywhere (a bad
