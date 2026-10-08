@@ -45,7 +45,7 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/germplasm-groups": { url: "/core/germplasm_group/search?page_size=500", type: "germplasm_group", label: byName, post: true },
   // Not a browsable category: the kinds of event a new event can be (create form); moves are made by moving a device.
   "/api/event-types": { url: "/ontology/subclasses_of?parent_type=oeev%3AEvent&ignoreRootClasses=true", type: "rdf_type", label: byName, rows: leafClasses },
-  "/api/annotations": { url: "/core/annotations?page_size=500", type: "annotation", label: (i) => { const t = String(i.description ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > 80 ? `${t.slice(0, 79)}…` : t) : "(empty note)"; } },
+  "/api/annotations": { url: "/core/annotations?page_size=500", type: "annotation", label: (i) => { const t = String(i.description ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > 80 ? `${t.slice(0, 79)}…` : t) : "(empty annotation)"; } },
   // Not a browsable category: the kinds of note (create form).
   "/api/motivations": { url: "/core/annotations/motivations", type: "motivation", label: byName },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },

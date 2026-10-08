@@ -592,7 +592,7 @@ async function changeProvenanceAgents(id: string, change: (have: Record<string, 
 const NOTE_TYPES = ["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group", "person", "event"] as const;
 const NOTE_LABEL: Record<string, string> = { experiment: "Experiments", project: "Projects", organization: "Organizations", site: "Sites", facility: "Facilities", device: "Devices", variable: "Variables", scientific_object: "Scientific objects", germplasm: "Germplasm", provenance: "Provenances", variable_group: "Variable groups", person: "People", event: "Events" };
 const NOTE_GRAPHS: Record<string, string> = { experiment: "experiment", project: "project", device: "device", variable: "variable", "scientific-object": "scientific_object", germplasm: "germplasm", variablesGroup: "variable_group", user: "person", event: "event" };
-const noteText = (d: unknown, max = 80) => { const t = String(d ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > max ? `${t.slice(0, max - 1)}…` : t) : "(empty note)"; };
+const noteText = (d: unknown, max = 80) => { const t = String(d ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > max ? `${t.slice(0, max - 1)}…` : t) : "(empty annotation)"; };
 const memo = new Map<string, { at: number; p: Promise<unknown> }>();
 // One answer shared by the several groups of a page (they are loaded together), dropped after a few seconds.
 function shortLived<T>(key: string, make: () => Promise<T>): Promise<T> {
@@ -633,7 +633,7 @@ async function noteTargetsOf(id: string) {
 async function changeNoteTargets(id: string, change: (have: string[]) => string[] | Promise<string[]>) {
   const dto = (await authedGetOne(`/core/annotations/${encodeURIComponent(id)}`)).result;
   const targets = [...new Set(await change(((dto.targets ?? []) as string[]).map(String)))];
-  if (!targets.length) throw new OpenSilexError(400, "A note has to be about at least one thing. Delete the note instead.");
+  if (!targets.length) throw new OpenSilexError(400, "An annotation has to be about at least one thing. Delete the annotation instead.");
   await putNote(dto, String(dto.description ?? ""), targets);
   memo.delete(`note-targets:${id}`);
 }
@@ -1334,20 +1334,20 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteRemovesLinks: true,
     rename: async (id, text) => {
       const dto = (await authedGetOne(`/core/annotations/${encodeURIComponent(id)}`)).result;
-      if (!text.trim()) throw new OpenSilexError(400, "A note needs some text.");
+      if (!text.trim()) throw new OpenSilexError(400, "An annotation needs some text.");
       await putNote(dto, text.trim(), ((dto.targets ?? []) as string[]).map(String));
       return noteText(text);
     },
     create: async (p) => {
       const targets = (Array.isArray(p.targets) ? p.targets : []) as string[];
-      if (!targets.length) throw new OpenSilexError(400, "Select what the note is about first, then use + New.");
+      if (!targets.length) throw new OpenSilexError(400, "Select what the annotation is about first, then use + New.");
       const text = String(p.name ?? "").trim();
-      if (!text) throw new OpenSilexError(400, "A note needs some text.");
-      if (!p.motivation) throw new OpenSilexError(400, "Say what kind of note it is.");
+      if (!text) throw new OpenSilexError(400, "An annotation needs some text.");
+      if (!p.motivation) throw new OpenSilexError(400, "Say what kind of annotation it is.");
       const made = (await authedPost("/core/annotations", { description: text, motivation: p.motivation, targets })).result as unknown;
       return { id: String(Array.isArray(made) ? made[0] : made), label: noteText(text) };
     },
-    facts: (a) => factsOf([["Kind", (a.motivation as { name?: string } | null)?.name], ["Note", a.description], ["Written", dateOf(a.published)]]),
+    facts: (a) => factsOf([["Kind", (a.motivation as { name?: string } | null)?.name], ["Text", a.description], ["Written", dateOf(a.published)]]),
     contextLinks: Object.fromEntries((NOTE_TYPES as readonly string[]).map((type) => [`targets_${type}`, {
       otherType: type,
       current: async (id: string) => (await noteTargetsOf(id)).filter((t) => t.type === type).map((t) => t.id),
@@ -1505,7 +1505,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
 
 // "Notes" on the page of anything a note can be about: shown only when there are some, and a failing lookup just hides it.
 for (const type of NOTE_TYPES) {
-  (NODE_TYPES[type].queryRelations ??= []).push({ label: "Notes", type: "annotation", url: () => "", load: notesAbout });
+  (NODE_TYPES[type].queryRelations ??= []).push({ label: "Annotations", type: "annotation", url: () => "", load: notesAbout });
 }
 
 type NamedRef = { uri: string; name?: string };

@@ -128,7 +128,7 @@ export const handleExperimentDelete: RouteHandler = async (req, res, { pathname,
       tick(`Deleting factors: ${cleared.factors} of ${l.factors.length}`);
     }
     cleared.notes = await tidyNotes(l.notes, [id, ...goneProvenances]);
-    tick("Tidying notes about it");
+    tick("Tidying annotations about it");
     await authedDelete(`/core/experiments/${enc(id)}`);
     tick("Deleted the experiment");
     if (!streaming) line({});

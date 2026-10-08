@@ -3385,15 +3385,15 @@ test("notes: created about the selected things (text, kind and a target required
 
     const d = await detailOf(base, "annotation", "n-1");
     assert.deepEqual(d.actions, ["rename", "delete", "link"]);
-    assert.deepEqual(d.facts, [{ label: "Kind", value: "commenting" }, { label: "Note", value: "Lens is dusty" }, { label: "Written", value: "2026-10-08" }]);
+    assert.deepEqual(d.facts, [{ label: "Kind", value: "commenting" }, { label: "Text", value: "Lens is dusty" }, { label: "Written", value: "2026-10-08" }]);
     assert.deepEqual(groupItems(d, "Devices"), [["device", "Camera"]]);
     assert.deepEqual(groupItems(d, "Variables"), [["variable", "Height"]]);
     assert.deepEqual(groupItems(d, "Facilities"), [["facility", "Greenhouse"]], "the organization graph is told apart through the facility list");
-    assert.deepEqual(groupItems(await detailOf(base, "device", "dev-1"), "Notes"), [["annotation", "Lens is dusty"]], "a target's page lists its notes");
+    assert.deepEqual(groupItems(await detailOf(base, "device", "dev-1"), "Annotations"), [["annotation", "Lens is dusty"]], "a target's page lists its notes");
 
     const create = (body: unknown) => sendJson(base, "/api/create", "POST", body);
     const fields = { motivation: "oa:commenting" };
-    assert.match((await (await create({ type: "annotation", name: "x", links: [], fields })).json()).error, /Select what the note is about/);
+    assert.match((await (await create({ type: "annotation", name: "x", links: [], fields })).json()).error, /Select what the annotation is about/);
     assert.equal((await create({ type: "annotation", name: "x", links: [{ type: "device", id: "dev-1" }] })).status, 400, "the kind is asked, never defaulted");
     const ok = await create({ type: "annotation", name: "Checked it", links: [{ type: "device", id: "dev-1" }, { type: "variable", id: "var-1" }], fields });
     assert.equal(ok.status, 201, await ok.clone().text());

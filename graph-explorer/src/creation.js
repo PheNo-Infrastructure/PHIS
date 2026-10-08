@@ -171,9 +171,9 @@ export const CREATABLE = {
   // A note about the selected things (any kind). The "name" is the note's text; the kind of note (PHIS's "motivation") is picked, never defaulted.
   annotation: {
     url: "/core/annotations",
-    nameLabel: "Note",
+    nameLabel: "Annotation",
     linkFields: Object.fromEntries(["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group", "person", "event"].map((t) => [t, "targets"])),
-    fields: [{ key: "motivation", label: "Kind of note", input: "select", options: "api/motivations", required: true }],
+    fields: [{ key: "motivation", label: "Kind of annotation", input: "select", options: "api/motivations", required: true }],
   },
   // A profile: a name, optionally starting from another profile's rights; the rights themselves are ticked on its page.
   profile: {

@@ -1011,7 +1011,7 @@ const TYPES = {
   account:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "account" },
   group:      { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "group" },
   profile:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "profile" },
-  annotation: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "note" },
+  annotation: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "annotation" },
   variable_group: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "variable group" },
   germplasm_group: { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "germplasm group" },
   data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "data file" },
@@ -1052,7 +1052,7 @@ const CATEGORY_ITEMS = {
     { id: "cat-datafiles", type: "category", label: "Data files", hint: "images and raw files" },
     { id: "cat-provenances", type: "category", label: "Provenances", hint: "how data was collected: device, software, who" },
     { id: "cat-documents", type: "category", label: "Documents", hint: "protocols, papers, notes" },
-    { id: "cat-annotations", type: "category", label: "Notes", hint: "comments on anything, e.g. a plant, a device, an experiment" },
+    { id: "cat-annotations", type: "category", label: "Annotations", hint: "notes and comments on anything, e.g. a plant, a device, an experiment" },
   ],
   "cat-setup": [
     { id: "cat-sites", type: "category", label: "Sites", hint: "places, e.g. Holt, Ås" },
@@ -1757,7 +1757,7 @@ async function deleteExperimentEverything(item) {
     ...(p.values ? [`${p.values.toLocaleString("en")} measured ${p.values === 1 ? "value" : "values"} — research data, gone for good`] : []),
     ...(p.factors ? [`${p.factors} ${p.factors === 1 ? "factor" : "factors"} with their levels`] : []),
     ...(p.provenances.length ? [`provenance${p.provenances.length === 1 ? "" : "s"} ${p.provenances.join("; ")} — unless still used by another experiment`] : []),
-    ...(p.notes ? [`${p.notes} ${p.notes === 1 ? "note" : "notes"} about it (a note that also concerns other things only loses this one)`] : []),
+    ...(p.notes ? [`${p.notes} ${p.notes === 1 ? "annotation" : "annotations"} about it (one that also concerns other things only loses this one)`] : []),
     "the experiment itself",
   ];
   const typed = prompt(`DELETE ${p.name} AND EVERYTHING IN IT
@@ -3249,7 +3249,9 @@ function linkPlan() {
     return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${typeName(types[0], 2)} can't be linked to each other.` };
   }
   if (types.includes("group") && types.includes("account")) return groupMemberPlan(items, types);
-  if (types.includes("person")) return personPlan(items, types);
+  // A person goes into an experiment or project by role, to a device/account on their own; with a provenance (who made the
+  // data) or a note (what it is about) it is an ordinary link.
+  if (types.includes("person") && !types.includes("provenance") && !types.includes("annotation")) return personPlan(items, types);
   // An object holds one level per factor.
   const levels = items.filter(v => v.type === "factor_level");
   if (new Set(levels.map(l => l.factor)).size < levels.length) return { kind: "none", why: "Two levels of one factor can't both be on a scientific object — keep one." };
@@ -4483,7 +4485,7 @@ function importChoicesHtml(p) {
     <p><label>Run by: <select id="importPerson"><option value="">No one</option>${opts(o.persons)}</select></label></p>
     ${p.experiment.exists ? "" : `<p><label>Who can see the new experiment: <select id="importShare">
       <option value="public">Everyone in PHIS (public)</option><option value="private">Only this app's account (private)</option>${o.groups.map(g => `<option value="${escapeHtml(g.id)}">Only the group ${escapeHtml(g.label)}</option>`).join("")}</select></label></p>`}
-    <p><label><input type="checkbox" id="importNote" checked> Keep a note of this import on the experiment${p.measurements?.count ? " and the provenance" : ""} (files, what was written, what was left out, warnings)</label></p>
+    <p><label><input type="checkbox" id="importNote" checked> Record this import as an annotation on the experiment${p.measurements?.count ? " and the provenance" : ""} (files, what was written, what was left out, warnings)</label></p>
   </div>`;
 }
 
@@ -4582,7 +4584,7 @@ function wireImportRun(file, plan, close) {
         ...(c.codes ? [`set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}`] : []),
         ...(c.variables ? [`created ${c.variables} ${c.variables === 1 ? "variable" : "variables"}`] : []),
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
-        ...(c.note === true ? ["kept a note of the import"] : c.note === false ? ["could not save the note of the import (the data is in PHIS)"] : []),
+        ...(c.note === true ? ["recorded an annotation about the import"] : c.note === false ? ["could not save the annotation about the import (the data is in PHIS)"] : []),
       ];
       footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });

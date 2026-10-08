@@ -144,7 +144,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment in full — 7 types, proving the solo case is unconstrained.
     assert.deepEqual(
       new Set(soloItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())),
-      new Set(["organization", "facility", "project", "person", "factor", "scientific object", "group", "note"])
+      new Set(["organization", "facility", "project", "person", "factor", "scientific object", "group", "annotation"])
     );
     // Types the app can't create yet stay listed, but greyed and saying where to do it.
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), false, "a factor can be created for one experiment");
@@ -166,7 +166,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment ∩ ADJACENT.project = {project, person} — strictly smaller than
     // either operand alone, which is what proves this is really an intersection and not,
     // say, "whichever set happens to come from the first selected item."
-    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())), new Set(["project", "person", "note"]));
+    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())), new Set(["project", "person", "annotation"]));
   });
 });
 
@@ -3239,5 +3239,23 @@ test("e2e: a profile page has a rights editor: tick boxes per area (see/change/d
     assert.deepEqual([...saved.credentials].sort(), ["account-access", "device-access", "device-modification"]);
     assert.equal(saved.profile, "prof-1");
     assert.equal(await ed.locator("#rightsSave").isDisabled(), true, "saved: the editor is clean again");
+  });
+});
+
+test("e2e: a provenance (who made the data) or a note can be linked to a person from the selection pane; an experiment still asks for a role", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(500);
+    const plan = (items: { id: string; type: string; label: string }[]) => page.evaluate((its) => {
+      /* eslint-disable no-undef */
+      selection = new Map(its.map((i) => [i.id, i]));
+      return linkPlan();
+      /* eslint-enable no-undef */
+    }, items);
+    const person = { id: "per-1", type: "person", label: "Anna" };
+    assert.deepEqual(await plan([{ id: "pv-1", type: "provenance", label: "Import" }, person]), { kind: "link" });
+    assert.deepEqual(await plan([{ id: "n-1", type: "annotation", label: "A note" }, person]), { kind: "link" });
+    const forExperiment: any = await plan([{ id: "exp-1", type: "experiment", label: "Trial" }, person]);
+    assert.ok(forExperiment.roles?.length, "an experiment still asks which role");
   });
 });
