@@ -3495,6 +3495,7 @@ test("delete an experiment and everything in it: the preview counts, the name mu
     const prev = await (await realFetch(`${base}/api/experiment-delete/preview?id=${E}`)).json();
     assert.deepEqual(prev, { name: "Trial", objects: 3, trays: 1, shared: 1, values: 336, factors: 1, provenances: ["Import"], notes: 2 });
     assert.equal((await realFetch(`${base}/api/experiment-delete?id=${E}&name=nope`, { method: "DELETE" })).status, 400, "the name has to be typed");
+    assert.equal((await realFetch(`${base}/api/experiment-delete?id=${E}&name=${encodeURIComponent("tri")}`, { method: "DELETE" })).status, 400, "part of a name is not the name");
     assert.deepEqual(calls, [], "nothing deleted yet");
 
     const res = await realFetch(`${base}/api/experiment-delete?id=${E}&name=${encodeURIComponent("Trial")}`, { method: "DELETE" });
@@ -3513,4 +3514,13 @@ test("delete an experiment and everything in it: the preview counts, the name mu
       `DELETE /core/experiments/${E}`,
     ]);
   });
+});
+
+test("typing an experiment's name to confirm its delete: any dash, case and spacing are accepted, a different name is not", async () => {
+  const { sameTypedName } = await import("../src/routes/experiment-delete.ts");
+  const name = "PBar1x4 – TraitFinder – 2025-10-22";
+  assert.equal(sameTypedName("PBar1x4 - TraitFinder - 2025-10-22", name), true, "a plain hyphen for the long dash");
+  assert.equal(sameTypedName("  pbar1x4  —  traitfinder − 2025-10-22 ", name), true, "other dashes, case and spaces");
+  assert.equal(sameTypedName("PBar1x4 - TraitFinder - 2025-10-23", name), false);
+  assert.equal(sameTypedName("", name), false);
 });

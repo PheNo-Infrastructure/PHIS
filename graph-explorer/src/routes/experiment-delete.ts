@@ -4,6 +4,12 @@ import { NODE_TYPES } from "../node-types.ts";
 import { objectsElsewhere } from "./elsewhere.ts";
 
 const enc = encodeURIComponent;
+// The name is typed to confirm, and names carry dashes like "–" that few keyboards have: every kind of dash counts as "-",
+// and case and repeated spaces don't matter.
+export const sameTypedName = (a: string, b: string) => {
+  const norm = (s: string) => s.replace(/[‐-―−]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
+  return norm(a) === norm(b);
+};
 const AT_ONCE = 4; // deletes in flight: each costs OpenSILEX CPU, like the import's writes
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
 const countValues = async (query: string) => Number((await authedPost(`/core/data/count?${query}&count_limit=10000000`, [])).result) || 0;
@@ -74,7 +80,7 @@ export const handleExperimentDelete: RouteHandler = async (req, res, { pathname,
   const line = (o: unknown) => { if (!streaming) { res.writeHead(200, { "Content-Type": "application/x-ndjson" }); streaming = true; } res.write(JSON.stringify(o) + "\n"); };
   try {
     const l = await look(id);
-    if ((searchParams.get("name") ?? "").trim() !== l.name.trim()) throw new OpenSilexError(400, "Type the experiment's name exactly to confirm.");
+    if (!sameTypedName(searchParams.get("name") ?? "", l.name)) throw new OpenSilexError(400, "Type the experiment's name to confirm (a plain - works in place of a long dash).");
     const cleared = { variables: 0, values: l.values, provenances: 0, kept: [] as string[], removed: 0, deleted: 0, factors: 0, notes: 0 };
     const steps = l.variables.length + l.provenances.length + l.objects.length + l.factors.length + 2;
     const goneProvenances: string[] = [];

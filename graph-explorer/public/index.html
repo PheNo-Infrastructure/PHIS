@@ -1768,9 +1768,10 @@ ${lines.map(l => `• ${l}`).join("\n")}
 Stays: germplasm, variables, people, groups.
 This cannot be undone.
 
-Type the experiment's name to confirm:`, "");
+Type the experiment's name to confirm (a plain - works in place of a long dash):`, "");
   if (typed === null) return;
-  if (typed.trim() !== p.name.trim()) { showToast("That isn't the experiment's name. Nothing was deleted."); return; }
+  const norm = (s) => s.replace(/[‐-―−]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
+  if (norm(typed) !== norm(p.name)) { showToast("That isn't the experiment's name. Nothing was deleted."); return; }
   try {
     showToast("Starting…", 600000);
     const res = await fetch(`api/experiment-delete?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(p.name)}`, { method: "DELETE" });
