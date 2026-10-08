@@ -122,3 +122,11 @@ Order by what researchers ask for; each is small once the pattern is known.
 - Guest account `admin=true` on phis-test (likely prod too).
 - Rename the long PBar1x4 provenance (possible in the app now; ask first).
 - Which profile should a newly created group member get by default? (App will not default — decide if it should.)
+
+## Direction after 2026-10-08 (the user's verdict — read before building more)
+The A–Z coverage is far along; the portal's *clarity* is not. In the user's words (2026-10-08):
+- **Import is not part of the portal.** "I am missing the union of the import tool and the rest of the portal. The whole reason to rework the PHIS interface was so that importing would be more intuitive; now we have essentially just slapped the import process on top." Idea to explore: import as a first-class part (reachable from an experiment/facility/device page and the Data menu; each import an openable item — it is already a provenance + an annotation — with files, what it wrote, who ran it, who sees it, and Undo; the review built from the portal's own components).
+- **UI rough spots** (screenshots): the blocked-delete banner collapses its text to one word per line while its buttons run off the panel's edge; the Selection pane buttons clip at that width; the selected title is a large bordered pill that dominates the card; long annotation chips are truncated with no way to read them; "Unlink/Delete" is unclear.
+- **Intuition.** "I am fairly familiar with this UI, and still find a lot of friction" — a new user would find it impossible. Next step: stop adding features, run a first-click test with someone who has never seen it, then fix what fails.
+Do this with the user (brainstorm first), before more A–Z items.
+
