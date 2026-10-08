@@ -18,7 +18,7 @@ test("intersects two types down to only what's common to both", () => {
 });
 
 test("returns empty when selected types share no adjacent type", () => {
-  assert.deepEqual(creatableTypesFor(["site", "provenance"]), new Set());
+  assert.deepEqual(creatableTypesFor(["site", "person"]), new Set());
 });
 
 test("an unknown type contributes an empty set, collapsing the whole intersection", () => {

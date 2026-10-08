@@ -41,7 +41,7 @@ export const PERSON_ROLES = {
 
 export const ADJACENT = {
   // A note can be about any of these (and several kinds at once); each of them offers "+ New note".
-  annotation: ["experiment","project","organization","site","facility","device","variable","scientific_object","germplasm","variable_group"],
+  annotation: ["experiment","project","organization","site","facility","device","variable","scientific_object","germplasm","provenance","variable_group"],
   // site/experiment: their CreationDTOs own the link (organizations / organisations+facilities),
   // not the org/facility — but creatableTypesFor only reads the SELECTED type's list, so they
   // have to be listed here too to be offered from an org or facility.
@@ -57,7 +57,7 @@ export const ADJACENT = {
   germplasm_group: ["germplasm"],
   factor: ["experiment", "factor_level"],
   device: ["facility", "person", "event", "annotation"],
-  provenance: ["device", "person"],
+  provenance: ["device", "person", "annotation"],
   // A signed-up account has no person until one is made for it (+ New person), or linked (Link selection).
   account: ["person", "group"],
   // Sharing: a group is what an experiment, organization, site or germplasm is shared with; its members are accounts.

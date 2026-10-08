@@ -2719,7 +2719,7 @@ test("provenance page: description, period and publisher; rename sends the recor
     const json = { "Content-Type": "application/json" };
     const d = await (await realFetch(`${base}/api/node-detail?type=provenance&id=prov-1`)).json();
     assert.deepEqual(d.facts, [{ label: "Description", value: "Imported from a TraitFinder export" }, { label: "Period", value: "2025-10-22 to 2026-01-02" }, { label: "Published by", value: "admin@opensilex.org" }]);
-    assert.deepEqual(d.actions, ["rename", "delete"]);
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
     assert.equal(d.deleteBlocked, "has 18,564 measured values. Delete them first.");
     assert.match(d.deleteFix.confirm, /Delete all 18,564 measured values of PBar1x4 import, in every experiment\? This undoes the import/);
     assert.ok(counted[0].includes("provenances=prov-1"), "counted by provenance");
@@ -3405,5 +3405,38 @@ test("notes: created about the selected things (text, kind and a target required
     log.puts.length = 0;
     assert.equal((await sendJson(base, "/api/node", "PUT", { type: "annotation", id: "n-1", unlink: { field: "targets_device", uri: "dev-1" } })).status, 400, "the last target can't go");
     assert.equal(log.puts.length, 0);
+  });
+});
+
+test("provenance agents: devices and people that made the data go in `prov_agent` (several, kept on rename and on the next link); unlink removes one; the person route accepts a provenance", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    const prov: any = { uri: "pv-1", name: "Import", description: "d", prov_activity: [{ rdf_type: "prov:Activity", start_date: "2026-01-01T00:00:00Z" }], prov_agent: [{ uri: "dev-1", rdf_type: "vocabulary:Device", settings: null }] };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "PUT") { log.puts.push(JSON.parse(String(init?.body))); return jsonResponse(200, { result: "ok" }); }
+      if (path === "/core/provenances/pv-1") return jsonResponse(200, { result: prov });
+      if (path === "/core/devices/dev-1") return jsonResponse(200, { result: { uri: "dev-1", name: "Camera" } });
+      if (path === "/security/persons/per-1") return jsonResponse(200, { result: { uri: "per-1", first_name: "Anna", last_name: "Berg" } });
+      if (path.startsWith("/core/annotations?")) return jsonResponse(200, { result: [] });
+      if (path.startsWith("/core/data/count")) return jsonResponse(200, { result: 0 });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+    assert.deepEqual(groupItems(await detailOf(base, "provenance", "pv-1"), "Made with"), [["device", "Camera"]]);
+
+    const linked = await (await sendJson(base, "/api/link", "POST", { items: [{ type: "provenance", id: "pv-1" }, { type: "person", id: "per-1" }] })).json();
+    assert.deepEqual(linked, { ok: true, linkedPairs: 1, alreadyLinked: 0 });
+    assert.deepEqual(log.puts[0], { uri: "pv-1", name: "Import", description: "d", prov_activity: prov.prov_activity, prov_agent: [{ uri: "dev-1", rdf_type: "vocabulary:Device", settings: null }, { uri: "per-1", rdf_type: "vocabulary:Operator", settings: null }] });
+
+    prov.prov_agent = log.puts[0].prov_agent;
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "provenance", id: "pv-1", unlink: { field: "agents_device", uri: "dev-1" } });
+    assert.deepEqual(log.puts[0].prov_agent.map((a: any) => a.uri), ["per-1"], "only the device goes; the person stays");
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "provenance", id: "pv-1", name: "Import 2" });
+    assert.equal(log.puts[0].prov_agent.length, 2, "a rename keeps the agents");
   });
 });

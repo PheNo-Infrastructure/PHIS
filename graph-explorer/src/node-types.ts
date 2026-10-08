@@ -556,11 +556,27 @@ async function changeEventTargets(id: string, change: (have: string[]) => string
   });
 }
 
+// A provenance's agents (who or what made the data) are {uri, rdf_type} refs; the rdf_type tells a person ("Operator") from a device.
+const PROV_DEVICE = "vocabulary:Device";
+const PROV_PERSON = "vocabulary:Operator";
+function provenancePayload(dto: Record<string, unknown>, name: string, agents: unknown) {
+  return { uri: dto.uri, name, description: dto.description ?? undefined, prov_activity: dto.prov_activity ?? undefined, prov_agent: agents ?? undefined };
+}
+async function provenanceAgents(id: string) {
+  const dto = (await authedGetOne(`/core/provenances/${encodeURIComponent(id)}`)).result;
+  return ((dto.prov_agent ?? []) as Record<string, unknown>[]).map((a) => ({ uri: String(a.uri), type: String(a.rdf_type ?? "").endsWith("Operator") ? ("person" as const) : ("device" as const) }));
+}
+async function changeProvenanceAgents(id: string, change: (have: Record<string, unknown>[]) => Record<string, unknown>[] | Promise<Record<string, unknown>[]>) {
+  const dto = (await authedGetOne(`/core/provenances/${encodeURIComponent(id)}`)).result;
+  const next = await change(((dto.prov_agent ?? []) as Record<string, unknown>[]).map((a) => ({ uri: a.uri, rdf_type: a.rdf_type, settings: a.settings ?? null })));
+  await authedPut("/core/provenances", provenancePayload(dto, String(dto.name ?? ""), next));
+}
+
 // Notes (annotations): a text, a motivation and targets of any kind. A target is a bare uri, so its kind comes from PHIS's uri
 // lookup: the graph it lives in says what it is — except the organization graph, which holds organizations, sites and facilities
 // (told apart through their lists). Probed 2026-10-08.
-const NOTE_TYPES = ["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "variable_group"] as const;
-const NOTE_LABEL: Record<string, string> = { experiment: "Experiments", project: "Projects", organization: "Organizations", site: "Sites", facility: "Facilities", device: "Devices", variable: "Variables", scientific_object: "Scientific objects", germplasm: "Germplasm", variable_group: "Variable groups" };
+const NOTE_TYPES = ["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group"] as const;
+const NOTE_LABEL: Record<string, string> = { experiment: "Experiments", project: "Projects", organization: "Organizations", site: "Sites", facility: "Facilities", device: "Devices", variable: "Variables", scientific_object: "Scientific objects", germplasm: "Germplasm", provenance: "Provenances", variable_group: "Variable groups" };
 const NOTE_GRAPHS: Record<string, string> = { experiment: "experiment", project: "project", device: "device", variable: "variable", "scientific-object": "scientific_object", germplasm: "germplasm", variablesGroup: "variable_group" };
 const noteText = (d: unknown, max = 80) => { const t = String(d ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > max ? `${t.slice(0, max - 1)}…` : t) : "(empty note)"; };
 const memo = new Map<string, { at: number; p: Promise<unknown> }>();
@@ -582,7 +598,7 @@ async function noteTargetsOf(id: string) {
       const found = (await authedGetOne(`/core/uri_search/${encodeURIComponent(t)}`).catch(() => null))?.result;
       const label = String(found?.name ?? t);
       const graph = String(found?.context ?? "").split("/set/")[1];
-      let type = graph ? NOTE_GRAPHS[graph] : undefined;
+      let type = graph ? NOTE_GRAPHS[graph] : String(found?.rdf_type ?? "").endsWith("#Provenance") ? "provenance" : undefined;
       if (graph === "organization") {
         if (!orgKinds) {
           orgKinds = new Map();
@@ -1168,13 +1184,24 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
   provenance: {
     getUrl: (id) => `/core/provenances/${encodeURIComponent(id)}`,
     putUrl: "/core/provenances",
-    putPayload: (dto, name) => ({
-      uri: dto.uri, name, description: dto.description ?? undefined, prov_activity: dto.prov_activity ?? undefined, prov_agent: dto.prov_agent ?? undefined,
-    }),
+    putPayload: (dto, name) => provenancePayload(dto, name, dto.prov_agent),
     deleteUrl: (id) => `/core/provenances/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["rename", "delete"],
+    actions: ["rename", "delete", "link"],
+    // Who made it: its `prov_agent` list of {uri, rdf_type} — devices ("Device") and people ("Operator"), several of each (probed 2026-10-08).
+    contextLinks: Object.fromEntries((["device", "person"] as const).map((type) => [`agents_${type}`, {
+      otherType: type,
+      current: async (id: string) => (await provenanceAgents(id)).filter((a) => a.type === type).map((a) => a.uri),
+      link: async (id: string, otherId: string) => { await changeProvenanceAgents(id, (have) => [...have, { uri: otherId, rdf_type: type === "person" ? PROV_PERSON : PROV_DEVICE, settings: null }]); },
+      unlink: async (id: string, otherId: string) => { const drop = await compactUri(otherId); await changeProvenanceAgents(id, async (have) => (await Promise.all(have.map(async (a) => ((await compactUri(String(a.uri))) === drop ? null : a)))).filter((a): a is Record<string, unknown> => a !== null)); },
+    }])),
+    queryRelations: [
+      { label: "Made with", type: "device", field: "agents_device", url: () => "", load: async (id) =>
+        Promise.all((await provenanceAgents(id)).filter((a) => a.type === "device").map(async (a) => ({ id: a.uri, label: String((await authedGetOne(`/core/devices/${encodeURIComponent(a.uri)}`).catch(() => null))?.result.name ?? a.uri) }))) },
+      { label: "Made by", type: "person", field: "agents_person", url: () => "", load: async (id) =>
+        Promise.all((await provenanceAgents(id)).filter((a) => a.type === "person").map(async (a) => ({ id: a.uri, label: personName((await authedGetOne(`/security/persons/${encodeURIComponent(a.uri)}`).catch(() => ({ result: { uri: a.uri } as Record<string, unknown> }))).result) }))) },
+    ],
     facts: (p) => {
       const act = (p.prov_activity as { start_date?: string; end_date?: string }[] | null)?.[0];
       const pub = p.publisher as { email?: string } | null;

@@ -31,7 +31,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Variable groups (`VariablesGroup`) | ✔ 2026-10-08 | Data > Variable groups: create (alone or from selected variables), rename, delete (variables stay), link/unlink variables; a variable's page lists its groups. Facilities link to groups (facility `variableGroups`, either side; a group lists its facilities). Facility `locations` still ✖ (geo data, address-duplication bug risk) |
 | Germplasm groups (`GermplasmGroup`) | ✔ 2026-10-08 | Trials > Germplasm groups: same as variable groups; a germplasm's page lists its groups |
 | Data (measured values) | ◐ | import + read (tables, charts); no manual add/edit/delete of single values; confidence, raw data ✖ |
-| Provenances | ✔ | page, rename, delete (blocked while values; "delete its values" separately). **prov_agent (device/person that produced the data): ✖** |
+| Provenances | ✔ | page, rename, delete (blocked while values; "delete its values" separately). **prov_agent done 2026-10-08**: link/unlink the devices ("Made with") and people ("Made by") that made the data (several, kept on rename); notes can be about a provenance. Provenances are still only created by the import |
 | Data files | ✖ | none in PHIS; empty-state says so |
 | Documents | ✖ | none in PHIS; empty-state says so |
 | Annotations (comments on anything: `targets`, `motivation`) | ✔ 2026-10-08 | "Notes" under Data: create from selected experiments/projects/organizations/sites/facilities/devices/variables/scientific objects/germplasm/variable groups (text + a kind PHIS lists, never defaulted), edit text, add/remove targets, delete; a target's page lists its notes. Not yet: provenances (no link action), events, persons as targets |

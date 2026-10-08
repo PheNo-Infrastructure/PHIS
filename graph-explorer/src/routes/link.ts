@@ -89,6 +89,15 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       });
       return true;
     }
+    // People made some data: a provenance's agents (several allowed; they are not a role).
+    if (types.length === 2 && owner === "provenance") {
+      await respondOpenSilexErrors(res, async () => {
+        const r = await applyLink(resolveLink("provenance", "person")!, idsByType.get("provenance")!, idsByType.get("person")!);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+      });
+      return true;
+    }
     const roles = owner ? (PERSON_ROLES as Record<string, { field: string; label: string }[]>)[owner] : undefined;
     const bad = (error: string) => { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error })); return true; };
     if (types.length !== 2 || !roles) return bad("People are linked on their own: select an experiment or a project and the people.");

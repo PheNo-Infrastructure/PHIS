@@ -4226,7 +4226,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation", "provenance"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —

@@ -19,7 +19,7 @@ async function findLinks(items: Item[]): Promise<Found[]> {
     return dtos.get(it.id)!;
   };
   const name = (it: Item) => {
-    if (!names.has(it.id)) names.set(it.id, dto(it).then((d) => String(d.name ?? it.id)));
+    if (!names.has(it.id)) names.set(it.id, dto(it).then((d) => it.type === "person" ? personName(d) : String(d.name ?? d.description ?? it.id)));
     return names.get(it.id)!;
   };
   const same = async (a: string, b: string) => (await compactUri(a)) === (await compactUri(b));
@@ -95,7 +95,9 @@ async function findLinks(items: Item[]): Promise<Found[]> {
         if (!(await has(await r.ctx.current(owner.id), other.id))) continue;
         const [so, exp] = owner.type === "scientific_object" ? [owner, other] : [other, owner];
         out.push({
-          text: `${await name(so)} is in ${await name(exp)} — removing it there also removes what it has in that experiment (germplasm, parent)`,
+          text: so.type === "scientific_object" && exp.type === "experiment"
+            ? `${await name(so)} is in ${await name(exp)} — removing it there also removes what it has in that experiment (germplasm, parent)`
+            : `${await name(owner)} — ${other.type.replace("_", " ")}: ${await name(other)}`,
           run: () => r.ctx!.unlink(owner.id, other.id),
           touched: exp.id,
         });
