@@ -589,9 +589,9 @@ async function changeProvenanceAgents(id: string, change: (have: Record<string, 
 // Notes (annotations): a text, a motivation and targets of any kind. A target is a bare uri, so its kind comes from PHIS's uri
 // lookup: the graph it lives in says what it is — except the organization graph, which holds organizations, sites and facilities
 // (told apart through their lists). Probed 2026-10-08.
-const NOTE_TYPES = ["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group"] as const;
-const NOTE_LABEL: Record<string, string> = { experiment: "Experiments", project: "Projects", organization: "Organizations", site: "Sites", facility: "Facilities", device: "Devices", variable: "Variables", scientific_object: "Scientific objects", germplasm: "Germplasm", provenance: "Provenances", variable_group: "Variable groups" };
-const NOTE_GRAPHS: Record<string, string> = { experiment: "experiment", project: "project", device: "device", variable: "variable", "scientific-object": "scientific_object", germplasm: "germplasm", variablesGroup: "variable_group" };
+const NOTE_TYPES = ["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group", "person", "event"] as const;
+const NOTE_LABEL: Record<string, string> = { experiment: "Experiments", project: "Projects", organization: "Organizations", site: "Sites", facility: "Facilities", device: "Devices", variable: "Variables", scientific_object: "Scientific objects", germplasm: "Germplasm", provenance: "Provenances", variable_group: "Variable groups", person: "People", event: "Events" };
+const NOTE_GRAPHS: Record<string, string> = { experiment: "experiment", project: "project", device: "device", variable: "variable", "scientific-object": "scientific_object", germplasm: "germplasm", variablesGroup: "variable_group", user: "person", event: "event" };
 const noteText = (d: unknown, max = 80) => { const t = String(d ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > max ? `${t.slice(0, max - 1)}…` : t) : "(empty note)"; };
 const memo = new Map<string, { at: number; p: Promise<unknown> }>();
 // One answer shared by the several groups of a page (they are loaded together), dropped after a few seconds.
@@ -610,9 +610,13 @@ async function noteTargetsOf(id: string) {
     let orgKinds: Map<string, string> | null = null;
     for (const t of ((dto.targets ?? []) as string[]).map(String)) {
       const found = (await authedGetOne(`/core/uri_search/${encodeURIComponent(t)}`).catch(() => null))?.result;
-      const label = String(found?.name ?? t);
+      let label = String(found?.name ?? t);
       const graph = String(found?.context ?? "").split("/set/")[1];
       let type = graph ? NOTE_GRAPHS[graph] : String(found?.rdf_type ?? "").endsWith("#Provenance") ? "provenance" : undefined;
+      if (graph === "event") {
+        const e = (await authedGetOne(`/core/events/${encodeURIComponent(t)}`).catch(() => null))?.result;
+        label = String(e?.description || [e?.rdf_type_name, dateOf(e?.end ?? e?.start)].filter(Boolean).join(" · ") || t);
+      }
       if (graph === "organization") {
         if (!orgKinds) {
           orgKinds = new Map();

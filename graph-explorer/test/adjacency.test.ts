@@ -18,7 +18,7 @@ test("intersects two types down to only what's common to both", () => {
 });
 
 test("returns empty when selected types share no adjacent type", () => {
-  assert.deepEqual(creatableTypesFor(["site", "person"]), new Set());
+  assert.deepEqual(creatableTypesFor(["factor", "account"]), new Set());
 });
 
 test("an unknown type contributes an empty set, collapsing the whole intersection", () => {
@@ -46,4 +46,9 @@ test("every create form's option list is a relative URL (works under /portal)", 
       if (typeof f.options === "string") assert.doesNotMatch(f.options, /^\//, `${type}.${f.key}: ${f.options}`);
     }
   }
+});
+
+test("a note can be made about a person or an event, alone or together with other things", () => {
+  assert.deepEqual(creatableTypesFor(["person"]), new Set(["annotation"]));
+  assert.ok(creatableTypesFor(["event", "person", "device"]).has("annotation"));
 });

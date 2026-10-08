@@ -60,7 +60,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
 
   // People: an experiment's supervisors or a project's contacts. Each role is its own field and the user says which
   // — nothing is linked without a role. People are only ever linked this way (never through the generic pairs below).
-  if (types.includes("person")) {
+  if (types.includes("person") && !types.includes("annotation")) {
     const owner = types.find((t) => t !== "person");
     // A person and devices: the person becomes each device's person in charge (one person; it replaces another).
     if (types.length === 2 && owner === "device") {

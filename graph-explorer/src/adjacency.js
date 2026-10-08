@@ -41,7 +41,7 @@ export const PERSON_ROLES = {
 
 export const ADJACENT = {
   // A note can be about any of these (and several kinds at once); each of them offers "+ New note".
-  annotation: ["experiment","project","organization","site","facility","device","variable","scientific_object","germplasm","provenance","variable_group"],
+  annotation: ["experiment","project","organization","site","facility","device","variable","scientific_object","germplasm","provenance","variable_group","person","event"],
   // site/experiment: their CreationDTOs own the link (organizations / organisations+facilities),
   // not the org/facility — but creatableTypesFor only reads the SELECTED type's list, so they
   // have to be listed here too to be offered from an org or facility.
@@ -62,7 +62,9 @@ export const ADJACENT = {
   account: ["person", "group"],
   // Sharing: a group is what an experiment, organization, site or germplasm is shared with; its members are accounts.
   group: ["experiment", "organization", "site", "germplasm", "account"],
-  event: ["scientific_object", "device", "facility"],
+  event: ["scientific_object", "device", "facility", "annotation"],
+  // A note can be about a person too (their page lists it).
+  person: ["annotation"],
   data_file: ["scientific_object", "device", "provenance"],
 };
 

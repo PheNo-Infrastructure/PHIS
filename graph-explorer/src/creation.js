@@ -172,7 +172,7 @@ export const CREATABLE = {
   annotation: {
     url: "/core/annotations",
     nameLabel: "Note",
-    linkFields: Object.fromEntries(["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group"].map((t) => [t, "targets"])),
+    linkFields: Object.fromEntries(["experiment", "project", "organization", "site", "facility", "device", "variable", "scientific_object", "germplasm", "provenance", "variable_group", "person", "event"].map((t) => [t, "targets"])),
     fields: [{ key: "motivation", label: "Kind of note", input: "select", options: "api/motivations", required: true }],
   },
   // A profile: a name, optionally starting from another profile's rights; the rights themselves are ticked on its page.
