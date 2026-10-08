@@ -26,7 +26,7 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
       uri: String(dto.uri ?? id),
       // OpenSILEX's own label for the node's class, e.g. "Sample", "Compartment", "research unit".
       ...(typeof dto.rdf_type_name === "string" && dto.rdf_type_name ? { typeName: dto.rdf_type_name } : {}),
-      actions: (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
+      actions: config.actionsFor?.(dto) ?? (["rename", "delete", "link"] as const).filter((a) => allows(config, a)),
       ...(config.deleteRemovesLinks ? { deleteRemovesLinks: true } : {}),
       ...(config.visibility ? { isPublic: dto.is_public === true } : {}),
       ...(config.facts ? { facts: config.facts(dto) } : {}),

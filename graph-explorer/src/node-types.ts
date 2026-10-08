@@ -27,6 +27,8 @@ export type NodeConfig = {
   // frontend hides them, and only "link" types belong in the mockup's LINKABLE_TYPES. E.g. a
   // move event can only be deleted.
   actions?: Action[];
+  // What THIS node allows when it differs from its type (a move is an event that can only be deleted).
+  actionsFor?: (dto: Record<string, unknown>) => Action[] | null;
   // Delete goes ahead with links still in place — OpenSILEX drops them with the node (confirmed
   // for sites and experiments) — so the confirm names them instead of routing to unlink mode.
   deleteRemovesLinks?: true;
@@ -559,9 +561,12 @@ async function changeEventTargets(id: string, change: (have: string[]) => string
   if (isMoveEvent(dto)) throw new OpenSilexError(400, "A move changes by moving the device to another facility.");
   const targets = [...new Set(await change(((dto.targets ?? []) as string[]).map(String)))];
   if (!targets.length) throw new OpenSilexError(400, "An event has to be about at least one thing. Delete the event instead.");
+  await putEvent(dto, String(dto.description ?? ""), targets);
+}
+async function putEvent(dto: Record<string, unknown>, description: string, targets: string[]) {
   await authedPut("/core/events", {
     uri: dto.uri, rdf_type: dto.rdf_type, is_instant: dto.is_instant, ...(dto.start ? { start: dto.start } : {}), ...(dto.end ? { end: dto.end } : {}),
-    ...(dto.description ? { description: dto.description } : {}), targets, relations: dto.relations ?? [],
+    ...(description ? { description } : {}), targets, relations: dto.relations ?? [],
   });
 }
 
@@ -779,8 +784,16 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteUrl: (id) => `/core/events/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["delete", "link"],
+    actions: ["rename", "delete", "link"],
+    actionsFor: (dto) => (isMoveEvent(dto) ? ["delete"] : null),
     deleteRemovesLinks: true,
+    // Rename = change what happened (the description). A move is not edited here.
+    rename: async (id, text) => {
+      const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}/details`)).result;
+      if (isMoveEvent(dto)) throw new OpenSilexError(400, "A move changes by moving the device to another facility.");
+      await putEvent(dto, text.trim(), ((dto.targets ?? []) as string[]).map(String));
+      return text.trim() || String(dto.rdf_type_name ?? "event");
+    },
     remove: async (id) => {
       const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}`)).result;
       await authedDelete(`/core/events/${isMoveEvent(dto) ? "moves/" : ""}${encodeURIComponent(id)}`);

@@ -2363,7 +2363,7 @@ test("move page: date and description; its device, from and to; delete only", as
     const log = devLog();
     globalThis.fetch = deviceStub(log);
     const d = await detailOf(base, "event", MV_NEW);
-    assert.deepEqual(d.actions, ["delete", "link"]);
+    assert.deepEqual(d.actions, ["delete"]);
     assert.deepEqual(d.facts, [{ label: "Kind", value: "Move" }, { label: "Date", value: "2023-05-01" }, { label: "Description", value: "Moved to the lab" }]);
     assert.deepEqual(groupItems(d, "Devices"), [["device", "Specim FX10e"]]);
     assert.deepEqual(groupItems(d, "To"), [["facility", "HOLT_BR_1"]]);
@@ -3306,14 +3306,17 @@ test("events: created about the selected things (list POST, needs a target, a ki
       if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
       if (path.startsWith("/core/devices?")) return list([{ uri: "dev-1", name: "Camera" }]);
       if (path.startsWith("/core/facilities?")) return list([{ uri: "fac-1", name: "Greenhouse" }]);
+      if (path === "/core/facilities/fac-1") return jsonResponse(200, { result: { uri: "fac-1", name: "Greenhouse" } });
       if (path === "/core/scientific_objects/so-1") return jsonResponse(200, { result: { uri: "so-1", name: "Plant 1" } });
       let m: RegExpMatchArray | null;
+      if ((m = path.match(/^\/core\/events\/moves\/(.+)$/)) && ev[m[1]]) return jsonResponse(200, { result: { ...ev[m[1]], location: { from: null, to: "fac-1" } } });
       if ((m = path.match(/^\/core\/events\/([^/]+)(\/details)?$/)) && ev[m[1]]) return jsonResponse(200, { result: ev[m[1]] });
       throw new Error(`unexpected fetch: ${method} ${url}`);
     }) as typeof fetch;
 
     const d = await detailOf(base, "event", "ev-1");
-    assert.deepEqual(d.actions, ["delete", "link"]);
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    { const mv = await detailOf(base, "event", "mv-1"); assert.deepEqual(mv.actions, ["delete"], JSON.stringify(mv)); }
     assert.deepEqual(groupItems(d, "Scientific objects"), [["scientific_object", "Plant 1"]]);
     assert.deepEqual(groupItems(d, "Devices"), [["device", "Camera"]]);
 
@@ -3330,6 +3333,10 @@ test("events: created about the selected things (list POST, needs a target, a ki
     assert.deepEqual(await (await sendJson(base, "/api/link", "POST", { items: [{ type: "event", id: "ev-1" }, { type: "device", id: "dev-1" }] })).json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
     assert.deepEqual(log.puts[0].body.targets, ["dev-1", "so-1", "fac-1"]);
     assert.equal(log.puts[0].body.description, "Watered");
+    log.puts.length = 0;
+    assert.equal((await sendJson(base, "/api/node", "PUT", { type: "event", id: "ev-1", name: "Watered twice" })).status, 200);
+    assert.deepEqual([log.puts[0].body.description, log.puts[0].body.targets, log.puts[0].body.end], ["Watered twice", ["dev-1", "so-1"], "2026-10-08T12:00:00+00:00"], "a rename keeps the targets and the date");
+    assert.equal((await sendJson(base, "/api/node", "PUT", { type: "event", id: "mv-1", name: "x" })).status, 400, "a move is not renamed");
 
     log.puts.length = 0;
     await sendJson(base, "/api/node", "PUT", { type: "event", id: "ev-1", unlink: { field: "targets_device", uri: "dev-1" } });
