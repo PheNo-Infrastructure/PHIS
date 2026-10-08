@@ -35,7 +35,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Data files | ✖ | none in PHIS; empty-state says so |
 | Documents | ✖ | none in PHIS; empty-state says so |
 | Annotations (comments on anything: `targets`, `motivation`) | ✖ | one mechanism for every type; PHIS has 0 |
-| Events (non-move: e.g. watering, observation) | ✖ | moves only today (device/object moves); `targets` list of any resource |
+| Events (non-move: e.g. watering, observation) | ✔ 2026-10-08 | create from selected scientific objects/devices/facilities (kind from PHIS, a day, what happened), add/remove targets, delete; moves stay read-only (made by moving a device). Edit date/description/kind: ✖; start/end ranges: ✖ (instants only) |
 | Areas, positions, locations (maps, plots in a greenhouse) | ✖ | `Area` (structural or event area), `Position` (x/y/z or point), facility `locations` |
 | Devices | ✔ | create/rename/delete, move to a facility on a date, **person in charge (set/replace/clear)** |
 | Persons | ✔ | **separate from accounts** (see facts). Create (alone or for an account), rename, link into experiments/projects in a role, link to an account (once). No delete in PHIS |

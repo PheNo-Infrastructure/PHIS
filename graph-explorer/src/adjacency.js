@@ -44,17 +44,17 @@ export const ADJACENT = {
   // not the org/facility — but creatableTypesFor only reads the SELECTED type's list, so they
   // have to be listed here too to be offered from an org or facility.
   organization: ["facility", "organization", "site", "experiment", "group"],
-  facility: ["organization", "site", "experiment", "device", "variable_group"],
+  facility: ["organization", "site", "experiment", "device", "variable_group", "event"],
   site: ["organization", "facility", "group"],
   experiment: ["organization", "facility", "project", "person", "factor", "scientific_object", "group"],
   project: ["experiment", "project", "person"],
-  scientific_object: ["experiment", "scientific_object", "germplasm", "factor"],
+  scientific_object: ["experiment", "scientific_object", "germplasm", "factor", "event"],
   germplasm: ["scientific_object", "germplasm", "group", "germplasm_group"],
   variable: ["entity", "entity_of_interest", "characteristic", "method", "unit", "variable_group"],
   variable_group: ["variable", "facility"],
   germplasm_group: ["germplasm"],
   factor: ["experiment", "factor_level"],
-  device: ["facility", "person"],
+  device: ["facility", "person", "event"],
   provenance: ["device", "person"],
   // A signed-up account has no person until one is made for it (+ New person), or linked (Link selection).
   account: ["person", "group"],

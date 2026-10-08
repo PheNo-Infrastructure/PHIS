@@ -17,6 +17,14 @@ const flattenClasses = (tree: RawItem[]): RawItem[] => {
 // kind: what the item is within its type (a germplasm's species/variety/accession).
 // rows: reshapes the answer first (a class tree flattened to a list).
 // post: the list is a search (POST with an empty filter), as for germplasm groups.
+// The classes with no subclasses (Irrigation, Sowing…), without Move, by name.
+const leafClasses = (tree: RawItem[]): RawItem[] => {
+  const out: RawItem[] = [];
+  const walk = (n: RawItem) => { const kids = (n.children as RawItem[] | undefined) ?? []; if (kids.length) kids.forEach(walk); else if (!String(n.uri).endsWith("Move")) out.push(n); };
+  tree.forEach(walk);
+  return out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+};
+
 export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; rows?: (result: RawItem[]) => RawItem[]; post?: true };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
@@ -35,6 +43,8 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/profiles": { url: "/security/profiles?page_size=500", type: "profile", label: byName },
   "/api/variable-groups": { url: "/core/variables_group?page_size=500", type: "variable_group", label: byName },
   "/api/germplasm-groups": { url: "/core/germplasm_group/search?page_size=500", type: "germplasm_group", label: byName, post: true },
+  // Not a browsable category: the kinds of event a new event can be (create form); moves are made by moving a device.
+  "/api/event-types": { url: "/ontology/subclasses_of?parent_type=oeev%3AEvent&ignoreRootClasses=true", type: "rdf_type", label: byName, rows: leafClasses },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
   "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species, kind: (i) => germplasmKind(i.rdf_type) },

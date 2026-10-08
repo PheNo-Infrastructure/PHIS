@@ -157,6 +157,17 @@ export const CREATABLE = {
     linkFields: { germplasm: "germplasm_list" },
     fields: [{ key: "description", label: "Description" }],
   },
+  // An event (watering, sowing, calibration…): made about the selected things (scientific objects, devices, facilities), on a
+  // day, of a kind PHIS lists. The "name" is what happened (the event's description). Moves are not made here: a device moves.
+  event: {
+    url: "/core/events",
+    nameLabel: "What happened",
+    linkFields: { scientific_object: "targets", device: "targets", facility: "targets" },
+    fields: [
+      { key: "rdf_type", label: "Kind of event", input: "select", options: "api/event-types", required: true },
+      { key: "date", label: "Date", input: "date", required: true },
+    ],
+  },
   // A profile: a name, optionally starting from another profile's rights; the rights themselves are ticked on its page.
   profile: {
     url: "/security/profiles",

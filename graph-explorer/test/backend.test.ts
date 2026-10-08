@@ -2312,8 +2312,8 @@ function deviceStub(log: { puts: any[]; posts: { url: string; body: any }[]; del
     [DEV2]: { uri: DEV2, name: "Nikon Z6III", rdf_type: "vocabulary:RGBCamera", rdf_type_name: "RGB camera", brand: "Nikon", relations: [] },
   };
   const moves: Record<string, any> = {
-    [MV_OLD]: { uri: MV_OLD, rdf_type_name: "Move", end: "2022-09-12T22:00Z", description: "Installed", targets: [DEV], location: { from: null, to: FAC2 } },
-    [MV_NEW]: { uri: MV_NEW, rdf_type_name: "Move", end: "2023-05-01T10:00Z", description: "Moved to the lab", targets: [DEV], location: { from: FAC2, to: FAC1 } },
+    [MV_OLD]: { uri: MV_OLD, rdf_type: "oeev:Move", rdf_type_name: "Move", end: "2022-09-12T22:00Z", description: "Installed", targets: [DEV], location: { from: null, to: FAC2 } },
+    [MV_NEW]: { uri: MV_NEW, rdf_type: "oeev:Move", rdf_type_name: "Move", end: "2023-05-01T10:00Z", description: "Moved to the lab", targets: [DEV], location: { from: FAC2, to: FAC1 } },
   };
   const facilities: Record<string, any> = { [FAC1]: { uri: FAC1, name: "HOLT_BR_1", organizations: [], sites: [], devices: [] }, [FAC2]: { uri: FAC2, name: "HOLT_PT", organizations: [], sites: [], devices: [] } };
   return (async (url: string, init?: RequestInit) => {
@@ -2328,6 +2328,8 @@ function deviceStub(log: { puts: any[]; posts: { url: string; body: any }[]; del
     let m;
     if (path === "/core/events") { const t = u.searchParams.get("target"); return list(Object.values(moves).filter((mv) => !t || mv.targets.includes(t)).map(({ location, ...rest }) => rest)); }
     if ((m = path.match(/^\/core\/events\/moves\/(.+)$/))) return moves[m[1]] ? jsonResponse(200, { result: moves[m[1]] }) : jsonResponse(404, { result: { message: "nope" } });
+    if ((m = path.match(/^\/core\/events\/(?!moves\/)(.+)$/))) return moves[m[1]] ? jsonResponse(200, { result: moves[m[1]] }) : jsonResponse(404, { result: { message: "nope" } });
+    if (path === "/core/facilities") return list(Object.values(facilities));
     if (path === "/core/devices") {
       const f = u.searchParams.get("facility"), name = u.searchParams.get("name");
       return list(Object.values(devices).filter((d) => (!f || (f === FAC1 && d.uri === DEV)) && (!name || new RegExp(name, "i").test(d.name))));
@@ -2361,9 +2363,9 @@ test("move page: date and description; its device, from and to; delete only", as
     const log = devLog();
     globalThis.fetch = deviceStub(log);
     const d = await detailOf(base, "event", MV_NEW);
-    assert.deepEqual(d.actions, ["delete"]);
-    assert.deepEqual(d.facts, [{ label: "Date", value: "2023-05-01" }, { label: "Description", value: "Moved to the lab" }]);
-    assert.deepEqual(groupItems(d, "Device"), [["device", "Specim FX10e"]]);
+    assert.deepEqual(d.actions, ["delete", "link"]);
+    assert.deepEqual(d.facts, [{ label: "Kind", value: "Move" }, { label: "Date", value: "2023-05-01" }, { label: "Description", value: "Moved to the lab" }]);
+    assert.deepEqual(groupItems(d, "Devices"), [["device", "Specim FX10e"]]);
     assert.deepEqual(groupItems(d, "To"), [["facility", "HOLT_BR_1"]]);
     assert.deepEqual(groupItems(d, "From"), [["facility", "HOLT_PT"]]);
     assert.equal((await realFetch(`${base}/api/node?type=event&id=${encodeURIComponent(MV_NEW)}`, { method: "DELETE" })).status, 200);
@@ -3283,5 +3285,64 @@ test("facility variable groups: the facility holds the link (`variableGroups`), 
     log.puts.length = 0;
     await sendJson(base, "/api/node", "PUT", { type: "facility", id: "fac-1", unlink: { field: "variableGroups", uri: "vg-9" } });
     assert.deepEqual(log.puts[0].body.variableGroups, []);
+  });
+});
+
+test("events: created about the selected things (list POST, needs a target, a kind and a day); targets are told apart by kind; link/unlink do a full update; the last target can't be removed; a move is deleted through the moves endpoint", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as { url: string; body: any }[], deletes: [] as string[] };
+    const ev: Record<string, any> = {
+      "ev-1": { uri: "ev-1", rdf_type: "oeev:Irrigation", rdf_type_name: "Irrigation", is_instant: true, end: "2026-10-08T12:00:00+00:00", description: "Watered", targets: ["dev-1", "so-1"], relations: [] },
+      "mv-1": { uri: "mv-1", rdf_type: "oeev:Move", rdf_type_name: "Move", is_instant: true, end: "2026-01-01T00:00Z", targets: ["dev-1"], relations: [] },
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+      const method = init?.method ?? "GET";
+      const list = (rows: unknown[]) => jsonResponse(200, { result: rows });
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: ["ev-new"] }); }
+      if (method === "PUT") { log.puts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
+      if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+      if (path.startsWith("/core/devices?")) return list([{ uri: "dev-1", name: "Camera" }]);
+      if (path.startsWith("/core/facilities?")) return list([{ uri: "fac-1", name: "Greenhouse" }]);
+      if (path === "/core/scientific_objects/so-1") return jsonResponse(200, { result: { uri: "so-1", name: "Plant 1" } });
+      let m: RegExpMatchArray | null;
+      if ((m = path.match(/^\/core\/events\/([^/]+)(\/details)?$/)) && ev[m[1]]) return jsonResponse(200, { result: ev[m[1]] });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+
+    const d = await detailOf(base, "event", "ev-1");
+    assert.deepEqual(d.actions, ["delete", "link"]);
+    assert.deepEqual(groupItems(d, "Scientific objects"), [["scientific_object", "Plant 1"]]);
+    assert.deepEqual(groupItems(d, "Devices"), [["device", "Camera"]]);
+
+    const create = (body: unknown) => sendJson(base, "/api/create", "POST", body);
+    const fields = { rdf_type: "oeev:Irrigation", date: "2026-10-08" };
+    assert.match((await (await create({ type: "event", name: "x", links: [], fields })).json()).error, /Select what the event is about/);
+    assert.equal((await create({ type: "event", name: "x", links: [{ type: "device", id: "dev-1" }], fields: { rdf_type: "oeev:Move", date: "2026-10-08" } })).status, 400, "moves are made by moving a device");
+    const ok = await create({ type: "event", name: "Watered", links: [{ type: "device", id: "dev-1" }, { type: "facility", id: "fac-1" }], fields });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts[0], { url: "/core/events", body: [{ rdf_type: "oeev:Irrigation", is_instant: true, end: "2026-10-08T12:00:00+00:00", description: "Watered", targets: ["dev-1", "fac-1"] }] });
+
+    const linked = await (await sendJson(base, "/api/link", "POST", { items: [{ type: "event", id: "ev-1" }, { type: "facility", id: "fac-1" }] })).json();
+    assert.deepEqual(linked, { ok: true, linkedPairs: 1, alreadyLinked: 0 });
+    assert.deepEqual(await (await sendJson(base, "/api/link", "POST", { items: [{ type: "event", id: "ev-1" }, { type: "device", id: "dev-1" }] })).json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
+    assert.deepEqual(log.puts[0].body.targets, ["dev-1", "so-1", "fac-1"]);
+    assert.equal(log.puts[0].body.description, "Watered");
+
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "event", id: "ev-1", unlink: { field: "targets_device", uri: "dev-1" } });
+    assert.deepEqual(log.puts[0].body.targets, ["so-1"]);
+    ev["ev-1"].targets = ["so-1"];
+    log.puts.length = 0;
+    const last = await sendJson(base, "/api/node", "PUT", { type: "event", id: "ev-1", unlink: { field: "targets_scientific_object", uri: "so-1" } });
+    assert.equal(last.status, 400);
+    assert.equal(log.puts.length, 0);
+    assert.equal((await sendJson(base, "/api/node", "PUT", { type: "event", id: "mv-1", unlink: { field: "targets_device", uri: "dev-1" } })).status, 400, "a move changes by moving the device");
+
+    assert.equal((await realFetch(`${base}/api/node?type=event&id=mv-1`, { method: "DELETE" })).status, 200);
+    assert.equal((await realFetch(`${base}/api/node?type=event&id=ev-1`, { method: "DELETE" })).status, 200);
+    assert.deepEqual(log.deletes, ["/core/events/moves/mv-1", "/core/events/ev-1"]);
   });
 });

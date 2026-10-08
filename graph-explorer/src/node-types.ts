@@ -524,6 +524,38 @@ export function contextLinkFor(typeA: string, typeB: string): { ownerType: strin
   return null;
 }
 
+// What an event can be about. A target is a bare uri, so its kind is found by looking it up among the devices and
+// facilities; anything else is a scientific object.
+const EVENT_TARGET_TYPES = ["scientific_object", "device", "facility"] as const;
+const isMoveEvent = (dto: Record<string, unknown>) => String(dto.rdf_type ?? "").endsWith("Move");
+async function eventTargetsOf(id: string) {
+  const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}`)).result;
+  const targets = ((dto.targets ?? []) as string[]).map(String);
+  if (!targets.length) return [];
+  const keyed = async (rows: Record<string, unknown>[]) => new Map(await Promise.all(rows.map(async (r) => [await compactUri(String(r.uri)), String(r.name ?? r.uri)] as const)));
+  const devices = await keyed((await authedGet("/core/devices?page_size=500")).result);
+  const facilities = await keyed((await authedGet("/core/facilities?page_size=500")).result);
+  const out: { id: string; type: (typeof EVENT_TARGET_TYPES)[number]; label: string }[] = [];
+  for (const t of targets) {
+    const key = await compactUri(t);
+    if (devices.has(key)) out.push({ id: t, type: "device", label: devices.get(key)! });
+    else if (facilities.has(key)) out.push({ id: t, type: "facility", label: facilities.get(key)! });
+    else out.push({ id: t, type: "scientific_object", label: String((await authedGetOne(`/core/scientific_objects/${encodeURIComponent(t)}`).catch(() => ({ result: {} as Record<string, unknown> }))).result.name ?? t) });
+  }
+  return out;
+}
+// A plain event's targets are changed by a full update (a move's are not: it changes by moving the device).
+async function changeEventTargets(id: string, change: (have: string[]) => string[] | Promise<string[]>) {
+  const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}/details`)).result;
+  if (isMoveEvent(dto)) throw new OpenSilexError(400, "A move changes by moving the device to another facility.");
+  const targets = [...new Set(await change(((dto.targets ?? []) as string[]).map(String)))];
+  if (!targets.length) throw new OpenSilexError(400, "An event has to be about at least one thing. Delete the event instead.");
+  await authedPut("/core/events", {
+    uri: dto.uri, rdf_type: dto.rdf_type, is_instant: dto.is_instant, ...(dto.start ? { start: dto.start } : {}), ...(dto.end ? { end: dto.end } : {}),
+    ...(dto.description ? { description: dto.description } : {}), targets, relations: dto.relations ?? [],
+  });
+}
+
 const plural = (n: number, one: string) => `${n.toLocaleString("en")} ${one}${n === 1 ? "" : "s"}`;
 // A scientific object's measured values, counted now, with where they came from. The object goes in
 // the body: as a query parameter `targets` is ignored and everything is counted (probed 2026-10-05).
@@ -657,22 +689,48 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         Promise.all((await movesOf(id)).map(async (m) => ({ id: String(m.uri), label: `${dateOf(m.end ?? m.start)} · moved to ${m.location?.to ? await facilityName(m.location.to) : "?"}` }))) },
     ],
   },
-  // ponytail: every event is read as a move — the only kind in PHIS today; another kind needs its own getUrl.
+  // Events: a logbook entry about one or more things (scientific objects, devices, facilities). A MOVE is an event too but
+  // carries a location and is made by moving a device, so it is only read and deleted here (through the moves endpoint).
+  // Probed 2026-10-08: GET /core/events/{uri} reads both kinds, the moves endpoints refuse the others; a plain event is
+  // created with a list POST and changed by a full PUT; its `targets` are bare uris of any kind.
   event: {
-    getUrl: (id) => `/core/events/moves/${encodeURIComponent(id)}`,
-    putUrl: "",
-    deleteUrl: (id) => `/core/events/moves/${encodeURIComponent(id)}`,
+    getUrl: (id) => `/core/events/${encodeURIComponent(id)}`,
+    putUrl: "/core/events",
+    deleteUrl: (id) => `/core/events/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["delete"],
+    actions: ["delete", "link"],
     deleteRemovesLinks: true,
-    facts: (e) => factsOf([["Date", dateOf(e.end ?? e.start)], ["Description", e.description]]),
+    remove: async (id) => {
+      const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}`)).result;
+      await authedDelete(`/core/events/${isMoveEvent(dto) ? "moves/" : ""}${encodeURIComponent(id)}`);
+    },
+    create: async (p) => {
+      const targets = (Array.isArray(p.targets) ? p.targets : []) as string[];
+      if (!targets.length) throw new OpenSilexError(400, "Select what the event is about first (a scientific object, device or facility), then use + New.");
+      const rdfType = String(p.rdf_type ?? "");
+      if (!rdfType || rdfType.endsWith("Move")) throw new OpenSilexError(400, "Pick what kind of event it is. Moves are made by moving a device to a facility.");
+      const date = String(p.date ?? "").trim();
+      if (!date) throw new OpenSilexError(400, "Date is required.");
+      const description = String(p.name ?? "").trim();
+      const made = (await authedPost("/core/events", [{ rdf_type: rdfType, is_instant: true, end: `${date}T12:00:00+00:00`, description, targets }])).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: description || rdfType.split(":").pop() || "event" };
+    },
+    facts: (e) => factsOf([["Kind", e.rdf_type_name], ["Date", dateOf(e.end ?? e.start)], ["Description", e.description]]),
+    contextLinks: Object.fromEntries((EVENT_TARGET_TYPES as readonly string[]).map((type) => [`targets_${type}`, {
+      otherType: type,
+      current: async (id: string) => (await eventTargetsOf(id)).filter((t) => t.type === type).map((t) => t.id),
+      link: async (id: string, otherId: string) => { await changeEventTargets(id, (have) => [...have, otherId]); },
+      unlink: async (id: string, otherId: string) => { const drop = await compactUri(otherId); await changeEventTargets(id, async (have) => (await Promise.all(have.map(async (u) => ((await compactUri(u)) === drop ? null : u)))).filter((u): u is string => u !== null)); },
+    }])),
     queryRelations: [
-      { label: "Device", type: "device", url: () => "", load: async (id) => {
-        const targets = ((await authedGetOne(`/core/events/moves/${encodeURIComponent(id)}`)).result.targets ?? []) as string[];
-        return Promise.all(targets.map(async (t) => ({ id: t, label: String((await authedGetOne(`/core/devices/${encodeURIComponent(t)}`)).result.name ?? t) })));
-      } },
+      ...EVENT_TARGET_TYPES.map((type) => ({
+        label: type === "scientific_object" ? "Scientific objects" : type === "device" ? "Devices" : "Facilities", type, field: `targets_${type}`, url: () => "",
+        load: async (id: string) => (await eventTargetsOf(id)).filter((t) => t.type === type).map(({ id: tid, label }) => ({ id: tid, label })),
+      })),
       ...(["to", "from"] as const).map((end) => ({ label: end === "to" ? "To" : "From", type: "facility", url: () => "", load: async (id: string) => {
+        const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}`)).result;
+        if (!isMoveEvent(dto)) return [];
         const f = ((await authedGetOne(`/core/events/moves/${encodeURIComponent(id)}`)).result.location as Record<string, unknown> | null)?.[end];
         return f ? [{ id: String(f), label: await facilityName(f) }] : [];
       } })),
