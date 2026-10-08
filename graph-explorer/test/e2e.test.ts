@@ -144,7 +144,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment in full — 7 types, proving the solo case is unconstrained.
     assert.deepEqual(
       new Set(soloItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())),
-      new Set(["organization", "facility", "project", "person", "factor", "scientific object", "group"])
+      new Set(["organization", "facility", "project", "person", "factor", "scientific object", "group", "note"])
     );
     // Types the app can't create yet stay listed, but greyed and saying where to do it.
     assert.equal(await page.locator("#newList .newmenu-item", { hasText: "factor" }).isDisabled(), false, "a factor can be created for one experiment");
@@ -166,7 +166,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // ADJACENT.experiment ∩ ADJACENT.project = {project, person} — strictly smaller than
     // either operand alone, which is what proves this is really an intersection and not,
     // say, "whichever set happens to come from the first selected item."
-    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())), new Set(["project", "person"]));
+    assert.deepEqual(new Set(comboItems.map((s) => s.replace("in PHIS for now", "").replace("make it first", "").trim())), new Set(["project", "person", "note"]));
   });
 });
 

@@ -3346,3 +3346,64 @@ test("events: created about the selected things (list POST, needs a target, a ki
     assert.deepEqual(log.deletes, ["/core/events/moves/mv-1", "/core/events/ev-1"]);
   });
 });
+
+test("notes: created about the selected things (text, kind and a target required); targets are told apart by where they live; link/unlink do a full update and the page reads fresh; a target's page lists its notes; rename edits the text", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as { url: string; body: any }[], deletes: [] as string[] };
+    const notes: Record<string, any> = { "n-1": { uri: "n-1", description: "Lens is dusty", motivation: { uri: "oa:commenting", name: "commenting" }, targets: ["dev-1", "var-1", "fac-1"], published: "2026-10-08T08:00:00Z" } };
+    const found: Record<string, any> = {
+      "dev-1": { name: "Camera", context: "https://p/set/device" }, "var-1": { name: "Height", context: "https://p/set/variable" },
+      "fac-1": { name: "Greenhouse", context: "https://p/set/organization" }, "x-1": { name: "Who knows", context: "https://p/set/mystery" },
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+      const method = init?.method ?? "GET";
+      const list = (rows: unknown[]) => jsonResponse(200, { result: rows });
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "n-new" }); }
+      if (method === "PUT") { log.puts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
+      if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+      let m: RegExpMatchArray | null;
+      if ((m = path.match(/^\/core\/annotations\/(.+)$/))) return jsonResponse(200, { result: notes[m[1]] });
+      if (path.startsWith("/core/annotations?")) return list(path.includes("target=dev-1") ? [notes["n-1"]] : []);
+      if ((m = path.match(/^\/core\/uri_search\/(.+)$/))) return found[m[1]] ? jsonResponse(200, { result: found[m[1]] }) : jsonResponse(404, { result: { message: "nope" } });
+      if (path.startsWith("/core/organisations")) return list([]);
+      if (path.startsWith("/core/sites?")) return list([]);
+      if (path.startsWith("/core/facilities?")) return list([{ uri: "fac-1", name: "Greenhouse" }]);
+      if (path === "/core/devices/dev-1") return jsonResponse(200, { result: { uri: "dev-1", name: "Camera" } });
+      if (path.startsWith("/core/devices?") || path.startsWith("/core/events")) return list([]);
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+
+    const d = await detailOf(base, "annotation", "n-1");
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
+    assert.deepEqual(d.facts, [{ label: "Kind", value: "commenting" }, { label: "Note", value: "Lens is dusty" }, { label: "Written", value: "2026-10-08" }]);
+    assert.deepEqual(groupItems(d, "Devices"), [["device", "Camera"]]);
+    assert.deepEqual(groupItems(d, "Variables"), [["variable", "Height"]]);
+    assert.deepEqual(groupItems(d, "Facilities"), [["facility", "Greenhouse"]], "the organization graph is told apart through the facility list");
+    assert.deepEqual(groupItems(await detailOf(base, "device", "dev-1"), "Notes"), [["annotation", "Lens is dusty"]], "a target's page lists its notes");
+
+    const create = (body: unknown) => sendJson(base, "/api/create", "POST", body);
+    const fields = { motivation: "oa:commenting" };
+    assert.match((await (await create({ type: "annotation", name: "x", links: [], fields })).json()).error, /Select what the note is about/);
+    assert.equal((await create({ type: "annotation", name: "x", links: [{ type: "device", id: "dev-1" }] })).status, 400, "the kind is asked, never defaulted");
+    const ok = await create({ type: "annotation", name: "Checked it", links: [{ type: "device", id: "dev-1" }, { type: "variable", id: "var-1" }], fields });
+    assert.equal(ok.status, 201, await ok.clone().text());
+    assert.deepEqual(log.posts[0], { url: "/core/annotations", body: { description: "Checked it", motivation: "oa:commenting", targets: ["dev-1", "var-1"] } });
+
+    log.puts.length = 0;
+    const linked = await (await sendJson(base, "/api/link", "POST", { items: [{ type: "annotation", id: "n-1" }, { type: "variable", id: "var-2" }, { type: "variable", id: "var-1" }] })).json();
+    assert.deepEqual(linked, { ok: true, linkedPairs: 1, alreadyLinked: 1 });
+    assert.deepEqual(log.puts[0].body, { uri: "n-1", description: "Lens is dusty", motivation: "oa:commenting", targets: ["dev-1", "var-1", "fac-1", "var-2"] });
+
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "annotation", id: "n-1", name: "Clean now" });
+    assert.equal(log.puts[0].body.description, "Clean now");
+    assert.deepEqual(log.puts[0].body.targets, ["dev-1", "var-1", "fac-1"]);
+    notes["n-1"].targets = ["dev-1"];
+    log.puts.length = 0;
+    assert.equal((await sendJson(base, "/api/node", "PUT", { type: "annotation", id: "n-1", unlink: { field: "targets_device", uri: "dev-1" } })).status, 400, "the last target can't go");
+    assert.equal(log.puts.length, 0);
+  });
+});

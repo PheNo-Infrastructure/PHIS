@@ -34,7 +34,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Provenances | ✔ | page, rename, delete (blocked while values; "delete its values" separately). **prov_agent (device/person that produced the data): ✖** |
 | Data files | ✖ | none in PHIS; empty-state says so |
 | Documents | ✖ | none in PHIS; empty-state says so |
-| Annotations (comments on anything: `targets`, `motivation`) | ✖ | one mechanism for every type; PHIS has 0 |
+| Annotations (comments on anything: `targets`, `motivation`) | ✔ 2026-10-08 | "Notes" under Data: create from selected experiments/projects/organizations/sites/facilities/devices/variables/scientific objects/germplasm/variable groups (text + a kind PHIS lists, never defaulted), edit text, add/remove targets, delete; a target's page lists its notes. Not yet: provenances (no link action), events, persons as targets |
 | Events (non-move: e.g. watering, observation) | ✔ 2026-10-08 | create from selected scientific objects/devices/facilities (kind from PHIS, a day, what happened), add/remove targets, delete; moves stay read-only (made by moving a device). Edit date/description/kind: ✖; start/end ranges: ✖ (instants only) |
 | Areas, positions, locations (maps, plots in a greenhouse) | ✖ | `Area` (structural or event area), `Position` (x/y/z or point), facility `locations` |
 | Devices | ✔ | create/rename/delete, move to a facility on a date, **person in charge (set/replace/clear)** |

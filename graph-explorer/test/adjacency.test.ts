@@ -14,11 +14,11 @@ test("single type degenerates to that type's own adjacency list", () => {
 test("intersects two types down to only what's common to both", () => {
   // ADJACENT.experiment ∩ ADJACENT.project = {project, person} — strictly smaller than either
   // operand alone, proving this is a real intersection and not "whichever set came first."
-  assert.deepEqual(creatableTypesFor(["experiment", "project"]), new Set(["project", "person"]));
+  assert.deepEqual(creatableTypesFor(["experiment", "project"]), new Set(["project", "person", "annotation"]));
 });
 
 test("returns empty when selected types share no adjacent type", () => {
-  assert.deepEqual(creatableTypesFor(["site", "project"]), new Set());
+  assert.deepEqual(creatableTypesFor(["site", "provenance"]), new Set());
 });
 
 test("an unknown type contributes an empty set, collapsing the whole intersection", () => {

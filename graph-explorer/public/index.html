@@ -1011,6 +1011,7 @@ const TYPES = {
   account:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "account" },
   group:      { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "group" },
   profile:    { color: "var(--type-org)", soft: "var(--type-org-soft)", name: "profile" },
+  annotation: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "note" },
   variable_group: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "variable group" },
   germplasm_group: { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "germplasm group" },
   data_file:  { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "data file" },
@@ -1051,6 +1052,7 @@ const CATEGORY_ITEMS = {
     { id: "cat-datafiles", type: "category", label: "Data files", hint: "images and raw files" },
     { id: "cat-provenances", type: "category", label: "Provenances", hint: "how data was collected: device, software, who" },
     { id: "cat-documents", type: "category", label: "Documents", hint: "protocols, papers, notes" },
+    { id: "cat-annotations", type: "category", label: "Notes", hint: "comments on anything, e.g. a plant, a device, an experiment" },
   ],
   "cat-setup": [
     { id: "cat-sites", type: "category", label: "Sites", hint: "places, e.g. Holt, Ås" },
@@ -1094,6 +1096,7 @@ const CATEGORY_ITEMS = {
   "cat-provenances": [],
   "cat-events": [],
   "cat-documents": [],
+  "cat-annotations": [],
 };
 
 const NODE_DETAIL = {};
@@ -4223,7 +4226,7 @@ function findItemById(id) {
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —
@@ -4255,6 +4258,7 @@ const CATEGORY_FOR_TYPE = {
   provenance: "cat-provenances",
   event: "cat-events",
   document: "cat-documents",
+  annotation: "cat-annotations",
   factor: "cat-factors",
 };
 
@@ -4283,6 +4287,7 @@ const BACKED_CATEGORIES = {
   "cat-provenances": "api/provenances",
   "cat-events": "api/events",
   "cat-documents": "api/documents",
+  "cat-annotations": "api/annotations",
   "cat-factors": "api/factors",
 };
 
