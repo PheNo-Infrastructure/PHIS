@@ -1313,7 +1313,7 @@ test("PUT /api/node with `unlink` drops just that one uri from its field, keeps 
 
     assert.equal(res.status, 200);
     // name wasn't in the request body — carried forward from the current DTO, not blanked.
-    assert.deepEqual(putBody, { uri: "fac-1", name: "Greenhouse 1", organizations: ["org-2"], sites: [] });
+    assert.deepEqual(putBody, { uri: "fac-1", name: "Greenhouse 1", organizations: ["org-2"], sites: [], variableGroups: [] });
     const body = await res.json();
     assert.deepEqual(body.relations, [
       { label: "Organizations", field: "organizations", items: [{ id: "org-2", type: "organization", label: "NMBU" }] },
@@ -1402,7 +1402,7 @@ test("PUT /api/node reads the current facility first and carries organizations/s
 
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { id: "fac-1", type: "facility", label: "New Name" });
-    assert.deepEqual(putBody, { uri: "fac-1", name: "New Name", organizations: ["org-1"], sites: ["site-1"] });
+    assert.deepEqual(putBody, { uri: "fac-1", name: "New Name", organizations: ["org-1"], sites: ["site-1"], variableGroups: [] });
   });
 });
 
@@ -3172,6 +3172,7 @@ function collectionStub(log: { puts: any[]; posts: { url: string; body: any }[];
     if (method === "POST") { log.posts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://phis.pheno.no/id/made" }); }
     if (method === "PUT") { log.puts.push({ url: path, body: JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
     if (method === "DELETE") { log.deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+    if (path.startsWith("/core/facilities?")) return list([]);
     if (path.startsWith("/core/variables_group?")) return list(path.includes("variableUri=var-1") ? [vg] : path.includes("name=") ? [] : [vg]);
     if (path === "/core/variables_group/vg-1") return jsonResponse(200, { result: vg });
     if (path === "/core/germplasm_group/gg-1") return jsonResponse(200, { result: gg });
@@ -3259,5 +3260,28 @@ test("create germplasm group: from selected germplasm or alone; the lists are br
     assert.deepEqual(log.posts.find((p) => p.url === "/core/germplasm_group"), { url: "/core/germplasm_group", body: { name: "Panel C", germplasm_list: ["g-1"] } });
     assert.deepEqual(await (await realFetch(`${base}/api/germplasm-groups`)).json(), [{ id: "gg-1", type: "germplasm_group", label: "Panel A" }]);
     assert.deepEqual(await (await realFetch(`${base}/api/variable-groups`)).json(), [{ id: "vg-1", type: "variable_group", label: "Drone traits" }]);
+  });
+});
+
+test("facility variable groups: the facility holds the link (`variableGroups`), link keeps the rest, unlink removes one; the group page lists its facilities", async () => {
+  await withServer(async (base) => {
+    const log = { puts: [] as any[], posts: [] as any[], deletes: [] as string[] };
+    const inner = collectionStub(log);
+    const fac = { uri: "fac-1", name: "Greenhouse 1", rdf_type: "vocabulary:Greenhouse", organizations: [], sites: [], address: null, variableGroups: [{ uri: "vg-9", name: "Other" }] };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+      if ((init?.method ?? "GET") === "GET" && path.startsWith("/core/facilities?")) return jsonResponse(200, { result: [{ ...fac, variableGroups: [...fac.variableGroups, { uri: "vg-1", name: "Drone traits" }] }] });
+      if ((init?.method ?? "GET") === "GET" && path === "/core/facilities/fac-1") return jsonResponse(200, { result: fac });
+      if (path.startsWith("/core/devices?")) return jsonResponse(200, { result: [] });
+      return inner(url, init);
+    }) as typeof fetch;
+    assert.deepEqual(groupItems(await detailOf(base, "facility", "fac-1"), "Variable groups"), [["variable_group", "Other"]]);
+    assert.deepEqual(groupItems(await detailOf(base, "variable_group", "vg-1"), "Facilities"), [["facility", "Greenhouse 1"]]);
+    const linked = await (await sendJson(base, "/api/link", "POST", { items: [{ type: "facility", id: "fac-1" }, { type: "variable_group", id: "vg-1" }] })).json();
+    assert.deepEqual(linked, { ok: true, linkedPairs: 1, alreadyLinked: 0 });
+    assert.deepEqual(log.puts[0].body.variableGroups, ["vg-9", "vg-1"]);
+    log.puts.length = 0;
+    await sendJson(base, "/api/node", "PUT", { type: "facility", id: "fac-1", unlink: { field: "variableGroups", uri: "vg-9" } });
+    assert.deepEqual(log.puts[0].body.variableGroups, []);
   });
 });

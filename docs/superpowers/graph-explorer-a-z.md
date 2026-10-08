@@ -28,7 +28,7 @@ something ships, and rerun the generator when PHIS is upgraded.
 | Factors and levels | ✔ | create with levels, rename, delete |
 | Germplasm | ✔ | species/variety/accession; `isPublic` set at creation |
 | Variables | ◐ | create/rename/delete (name only; unit/parts never editable — PHIS would relabel values silently). Parts (entity, characteristic, method, unit) are read-only; **create parts, entity_of_interest, trait, species, match fields: ✖** |
-| Variable groups (`VariablesGroup`) | ✔ 2026-10-08 | Data > Variable groups: create (alone or from selected variables), rename, delete (variables stay), link/unlink variables; a variable's page lists its groups. Facility `variableGroups` still ✖ |
+| Variable groups (`VariablesGroup`) | ✔ 2026-10-08 | Data > Variable groups: create (alone or from selected variables), rename, delete (variables stay), link/unlink variables; a variable's page lists its groups. Facilities link to groups (facility `variableGroups`, either side; a group lists its facilities). Facility `locations` still ✖ (geo data, address-duplication bug risk) |
 | Germplasm groups (`GermplasmGroup`) | ✔ 2026-10-08 | Trials > Germplasm groups: same as variable groups; a germplasm's page lists its groups |
 | Data (measured values) | ◐ | import + read (tables, charts); no manual add/edit/delete of single values; confidence, raw data ✖ |
 | Provenances | ✔ | page, rename, delete (blocked while values; "delete its values" separately). **prov_agent (device/person that produced the data): ✖** |

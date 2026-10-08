@@ -585,8 +585,9 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Organizations", field: "organizations", type: "organization" },
       { label: "Sites", field: "sites", type: "site" },
       { label: "Devices", field: "devices", type: "device" },
+      { label: "Variable groups", field: "variableGroups", type: "variable_group" },
     ],
-    updateLinkFields: ["organizations", "sites"],
+    updateLinkFields: ["organizations", "sites", "variableGroups"],
     queryRelations: [
       { label: "Devices located here", type: "device", url: (id) => `/core/devices?facility=${encodeURIComponent(id)}&page_size=500` },
     ],
@@ -1103,6 +1104,11 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       return { id: String(Array.isArray(made) ? made[0] : made), label: name };
     },
     facts: (g) => factsOf([["Description", typeof g.description === "string" ? g.description.trim() : null]]),
+    // The facility holds the link (its `variableGroups`), so the list is read from the facilities, not from the group.
+    queryRelations: [
+      { label: "Facilities", type: "facility", url: () => "", emptyText: "Not used by any facility.", load: async (id) =>
+        listedIn((await authedGet("/core/facilities?page_size=500")).result, "variableGroups", id) as Promise<{ id: string; label: string }[]> },
+    ],
   },
   // A named set of germplasm. Probed 2026-10-08: the record only says how many (`germplasm_count`); the members come from
   // `/germplasm` and are written back as `germplasm_list`, which an update REPLACES. Deleting the group leaves the germplasm alone.
