@@ -3931,6 +3931,9 @@ function renderActionbar() {
         const date = prompt(`Moved to ${plan.askDate} on which date? (YYYY-MM-DD)`, new Date().toISOString().slice(0, 10));
         if (!date) return;
         extra = { date: date.trim() };
+        // Optional: where in the facility. Cancel or empty = no position.
+        const where = prompt(`Where in ${plan.askDate}? (optional, e.g. bench 2 — leave empty to skip)`, "");
+        if (where && where.trim()) extra.position = where.trim();
       }
       linkItems(items.map(v => ({ type: v.type, id: v.id })), undefined, extra);
     });

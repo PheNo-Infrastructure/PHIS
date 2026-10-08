@@ -16,7 +16,8 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // `date`: the day of the move, for devices + a facility.
   // `role`: the field a person goes into (an experiment's supervisors, a project's contacts).
   // `profile`: the profile an account gets in a group (never defaulted).
-  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; role?: string; profile?: string };
+  // `position`: where in the facility a moved device is put (free text, optional).
+  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; position?: string; role?: string; profile?: string };
   const items = (body.items ?? []).filter((it) => it?.type && it?.id);
   if (items.length < 2) {
     res.writeHead(400, { "Content-Type": "application/json" });
@@ -35,7 +36,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // Devices + one facility: each device is moved there (a Move event — its history is kept).
   if (types.length === 2 && idsByType.has("device") && idsByType.has("facility")) {
     await respondOpenSilexErrors(res, async () => {
-      const r = await moveDevices(idsByType.get("device")!, idsByType.get("facility")!, body.date);
+      const r = await moveDevices(idsByType.get("device")!, idsByType.get("facility")!, body.date, typeof body.position === "string" ? body.position.trim().slice(0, 200) || undefined : undefined);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
     });

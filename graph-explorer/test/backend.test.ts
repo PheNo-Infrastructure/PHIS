@@ -3440,3 +3440,16 @@ test("provenance agents: devices and people that made the data go in `prov_agent
     assert.equal(log.puts[0].prov_agent.length, 2, "a rename keeps the agents");
   });
 });
+
+test("link device + facility with a position: it goes on the move as text; the same facility with a NEW position is a new move, the same position is not", async () => {
+  await withServer(async (base) => {
+    const log = devLog();
+    globalThis.fetch = deviceStub(log);
+    const post = (position?: string) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: [{ type: "device", id: DEV }, { type: "facility", id: FAC1 }], date: "2026-10-01", ...(position !== undefined ? { position } : {}) }) });
+    assert.deepEqual(await (await post("  bench 2 ")).json(), { ok: true, linkedPairs: 1, alreadyLinked: 0 }, "already in the facility, but the position is new");
+    assert.deepEqual(log.posts[0].body[0].targets_positions, [{ target: DEV, position: { text: "bench 2" } }]);
+    log.posts.length = 0;
+    assert.deepEqual(await (await post("")).json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 }, "no position given = nothing to change");
+    assert.equal(log.posts.length, 0);
+  });
+});

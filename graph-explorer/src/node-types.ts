@@ -306,11 +306,18 @@ const facilityName = async (id: unknown) => String((await authedGetOne(`/core/fa
 // today gets the actual time, so two moves on one day keep their order (latest = where it is). A
 // move needs targets_positions, even empty, or OpenSILEX fails (probed).
 const today = () => new Date().toISOString().slice(0, 10);
-const postMove = (deviceId: string, facilityId: string, date: string) =>
-  authedPost("/core/events/moves", [{ rdf_type: "oeev:Move", is_instant: true, end: date === today() ? new Date().toISOString() : `${date}T12:00:00Z`, targets: [deviceId], to: facilityId, targets_positions: [] }]);
+// Where in the facility: PHIS keeps x/y/z and a free text on the move; the app writes the text (plain words, e.g. "bench 2").
+const postMove = (deviceId: string, facilityId: string, date: string, position?: string) =>
+  authedPost("/core/events/moves", [{ rdf_type: "oeev:Move", is_instant: true, end: date === today() ? new Date().toISOString() : `${date}T12:00:00Z`, targets: [deviceId], to: facilityId, targets_positions: position ? [{ target: deviceId, position: { text: position } }] : [] }]);
+// A move's position, as the words to show ("bench 2", or "x 3, y 5" when only coordinates were written elsewhere).
+const positionText = (loc: unknown) => {
+  const l = (loc ?? {}) as Record<string, unknown>;
+  const coords = (["x", "y", "z"] as const).filter((k) => l[k] != null && l[k] !== "").map((k) => `${k} ${l[k]}`).join(", ");
+  return [l.text, coords].filter((v) => typeof v === "string" && v).join(" · ");
+};
 
 // Link selection with devices and one facility: each device not already there gets a move.
-export async function moveDevices(deviceIds: string[], facilityIds: string[], date?: string) {
+export async function moveDevices(deviceIds: string[], facilityIds: string[], date?: string, position?: string) {
   if (facilityIds.length !== 1) throw new OpenSilexError(400, "A device is in one facility at a time — select one facility.");
   const day = date ?? today();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new OpenSilexError(400, "The date must look like 2026-10-01.");
@@ -318,9 +325,11 @@ export async function moveDevices(deviceIds: string[], facilityIds: string[], da
   let linked = 0;
   let already = 0;
   for (const id of deviceIds) {
-    const here = (await movesOf(id))[0]?.location?.to;
-    if (here && (await compactUri(String(here))) === to) { already++; continue; }
-    await postMove(id, facilityIds[0], day);
+    const latest = (await movesOf(id))[0];
+    const here = latest?.location?.to;
+    // Already there: only a different position is news (and is recorded as a new move, so the history shows it).
+    if (here && (await compactUri(String(here))) === to && (!position || position === String(latest.location?.text ?? ""))) { already++; continue; }
+    await postMove(id, facilityIds[0], day, position);
     linked++;
   }
   return { linked, already };
@@ -748,15 +757,16 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     },
     queryRelations: [
       { label: "Location", type: "facility", url: () => "", load: async (id) => {
-        const to = (await movesOf(id))[0]?.location?.to;
-        return to ? [{ id: String(to), label: await facilityName(to) }] : [];
+        const loc = (await movesOf(id))[0]?.location;
+        const where = positionText(loc);
+        return loc?.to ? [{ id: String(loc.to), label: `${await facilityName(loc.to)}${where ? ` · ${where}` : ""}` }] : [];
       } },
       { label: "Person in charge", type: "person", url: () => "", load: async (id) => {
         const p = (await authedGetOne(`/core/devices/${encodeURIComponent(id)}`)).result.person_in_charge;
         return p ? [{ id: String(p), label: personName((await authedGetOne(`/security/persons/${encodeURIComponent(String(p))}`)).result) }] : [];
       } },
       { label: "History", type: "event", url: () => "", load: async (id) =>
-        Promise.all((await movesOf(id)).map(async (m) => ({ id: String(m.uri), label: `${dateOf(m.end ?? m.start)} · moved to ${m.location?.to ? await facilityName(m.location.to) : "?"}` }))) },
+        Promise.all((await movesOf(id)).map(async (m) => ({ id: String(m.uri), label: `${dateOf(m.end ?? m.start)} · moved to ${m.location?.to ? await facilityName(m.location.to) : "?"}${positionText(m.location) ? ` · ${positionText(m.location)}` : ""}` }))) },
     ],
   },
   // Events: a logbook entry about one or more things (scientific objects, devices, facilities). A MOVE is an event too but
@@ -801,8 +811,10 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       ...(["to", "from"] as const).map((end) => ({ label: end === "to" ? "To" : "From", type: "facility", url: () => "", load: async (id: string) => {
         const dto = (await authedGetOne(`/core/events/${encodeURIComponent(id)}`)).result;
         if (!isMoveEvent(dto)) return [];
-        const f = ((await authedGetOne(`/core/events/moves/${encodeURIComponent(id)}`)).result.location as Record<string, unknown> | null)?.[end];
-        return f ? [{ id: String(f), label: await facilityName(f) }] : [];
+        const loc = (await authedGetOne(`/core/events/moves/${encodeURIComponent(id)}`)).result.location as Record<string, unknown> | null;
+        const f = loc?.[end];
+        const where = end === "to" ? positionText(loc) : "";
+        return f ? [{ id: String(f), label: `${await facilityName(f)}${where ? ` · ${where}` : ""}` }] : [];
       } })),
     ],
   },

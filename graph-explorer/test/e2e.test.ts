@@ -2302,8 +2302,8 @@ test("e2e: devices + a facility read 'Move Specim FX10e to HOLT_BR_1…', ask th
   await withServerAndBrowser(async (base, page) => {
     let linked: any = null;
     await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
-    let asked = "";
-    page.on("dialog", (d) => { asked = `${d.message()} [${d.defaultValue()}]`; return d.accept("2026-09-30"); });
+    let asked = "", askedWhere = "";
+    page.on("dialog", (d) => { if (/^Where in/.test(d.message())) { askedWhere = d.message(); return d.accept("bench 2"); } asked = `${d.message()} [${d.defaultValue()}]`; return d.accept("2026-09-30"); });
     await page.goto(base);
     await page.waitForTimeout(1000);
     const dev = { id: "dev-1", type: "device", label: "Specim FX10e" };
@@ -2315,7 +2315,8 @@ test("e2e: devices + a facility read 'Move Specim FX10e to HOLT_BR_1…', ask th
     await page.locator("#linkSelectionBtn").click();
     await page.waitForTimeout(400);
     assert.equal(asked, `Moved to HOLT_BR_1 on which date? (YYYY-MM-DD) [${new Date().toISOString().slice(0, 10)}]`);
-    assert.deepEqual(linked, { items: [{ type: "device", id: "dev-1" }, { type: "facility", id: "fac-1" }], date: "2026-09-30" });
+    assert.deepEqual(linked, { items: [{ type: "device", id: "dev-1" }, { type: "facility", id: "fac-1" }], date: "2026-09-30", position: "bench 2" });
+    assert.equal(askedWhere, "Where in HOLT_BR_1? (optional, e.g. bench 2 — leave empty to skip)");
 
     await set([dev, fac, { id: "fac-2", type: "facility", label: "HOLT_PT" }]);
     assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
