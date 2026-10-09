@@ -1,6 +1,15 @@
 # Portal shell: a navbar named by intent
 
-Status: draft for review, 2026-10-09. Brainstormed with the user; mockups were shown in the browser companion.
+Status: draft, 2026-10-09. **On hold: the user decided NOT to build yet** ("still not fully imagining how it should be"). See "Direction update" below; the decisions further down may change.
+
+## Direction update (user, end of 2026-10-09)
+
+The portal can **teach PHIS's structure indirectly**: each button points the user at the right subgraph, with a streamlined interface for the graph at that point. They learn how PHIS fits together by working in it, so the structure is shown, not hidden (this partly reverses decision "plain words with the PHIS term small": keep PHIS's own names and layout visible).
+- **Browse** = the entire graph; therefore **last in the navbar**.
+- **Set up** = the subgraph that can be set up; friction-free creation, PHIS structure not hidden.
+- **Import** = the same idea, streamlined for importing.
+- **Next goal: a good graph view** (the reserved "How the selection connects" pane says "the graph will show this later"). A graph that works well is expected to make the navigation problem solvable. Brainstorm the graph first; the shell follows from it.
+
 
 ## Why
 
