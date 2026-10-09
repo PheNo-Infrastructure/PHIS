@@ -3298,3 +3298,27 @@ test("e2e: layout — the blocked-delete banner, a long title and a long chip st
     }
   });
 });
+
+test("e2e: a big selection stays short — list scrolls inside the pane, groups by type and folds, Clear lives in the header", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.evaluate(() => {
+      for (let i = 0; i < 30; i++) selection.set("so-" + i, { id: "so-" + i, type: "scientific_object", label: "Plant " + i });
+      for (let i = 0; i < 3; i++) selection.set("v-" + i, { id: "v-" + i, type: "variable", label: "Var " + i });
+      hxAfterPick();
+    });
+    assert.equal(await page.locator("#selList .sel-group").count(), 2);
+    assert.equal(await page.locator("#selList .sel-item").count(), 3, "30 plants folded; the 3 variables show");
+    assert.ok((await page.locator("#selList").evaluate((e) => e.getBoundingClientRect().height)) <= 245);
+    await page.locator(".sel-group-toggle", { hasText: "30" }).click();
+    assert.equal(await page.locator("#selList .sel-item").count(), 33);
+    assert.ok((await page.locator("#selList").evaluate((e) => e.getBoundingClientRect().height)) <= 245, "unfolded list scrolls inside the pane");
+    const clear = page.locator("#selClear");
+    assert.ok(await clear.isVisible());
+    assert.equal(await page.locator("#actionbar #clearSel").count(), 0, "no second Clear in the action bar");
+    await clear.click();
+    assert.equal(await page.locator("#selList .sel-item").count(), 0);
+    assert.ok(await clear.isHidden());
+  });
+});

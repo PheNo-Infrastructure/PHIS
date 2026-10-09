@@ -900,13 +900,20 @@ button { font-family: inherit; }
   .workspace { grid-template-columns: 1fr; }
 }
 /* Selection pane (right column): what's gathered, plus the actions on it. */
-.sel-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.sel-list { padding: 8px; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.sel-group { display: flex; align-items: center; gap: 8px; padding: 2px 4px; font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.sel-group-toggle { flex: 1; text-align: left; border: none; background: none; cursor: pointer; font: inherit; color: inherit; padding: 2px 0; display: flex; align-items: center; gap: 6px; }
+.sel-group-toggle:hover { color: var(--ink); }
+.sel-group .sel-caret { width: 10px; }
+.sel-group .sel-remove { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.sel-group .sel-remove:hover { color: var(--accent); }
+.pane-head #selClear { margin-left: 8px; }
 .sel-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); font-size: 12.5px; }
 .sel-item .row-dot { flex: none; }
 .sel-item .sel-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-item button { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
 .sel-item button:hover { color: var(--accent); }
-#selectionPane .actionbar { flex-wrap: wrap; }
+#selectionPane .actionbar { flex-wrap: wrap; position: sticky; bottom: 0; z-index: 5; }
 #selectionPane .actionbar .btn { white-space: normal; max-width: 100%; }
 /* Its menus open upward and are often taller than a short selection — don't clip them. */
 #selectionPane { overflow: visible; }
@@ -954,6 +961,7 @@ button { font-family: inherit; }
       <div class="pane-head">
         <h2>Selection</h2>
         <span class="pane-count" id="selCount"></span>
+        <button class="btn ghost small" id="selClear" hidden>Clear</button>
       </div>
       <div class="sel-list" id="selList"></div>
       <div class="actionbar" id="actionbar"></div>
@@ -1187,6 +1195,7 @@ const els = {
   toast: document.getElementById("toast"),
   selList: document.getElementById("selList"),
   selCount: document.getElementById("selCount"),
+  selClear: document.getElementById("selClear"),
   treeArea: document.getElementById("treeArea"),
 };
 
@@ -3943,11 +3952,9 @@ function renderActionbar() {
       <div class="selection-summary link-why">Only charts are available while a plant is picked twice. Remove the extra picks to get the usual actions back.</div>
       ${gridButtonHtml(grid)}
       <button class="btn primary" id="dropExtraBtn">Remove extra picks</button>
-      <button class="btn ghost" id="clearSel">Clear</button>
     `;
     document.getElementById("dropExtraBtn").addEventListener("click", dropExtraPicks);
     document.getElementById("showGridBtn")?.addEventListener("click", openChartGrid);
-    document.getElementById("clearSel").addEventListener("click", () => { selection = new Map(); anchorId = null; hxAnchor = null; hxAfterPick(); });
     return;
   }
   bar.className = "actionbar";
@@ -3963,7 +3970,6 @@ function renderActionbar() {
       Selected <b>${selection.size}</b>
       <span class="selection-names">${names}</span>
     </div>
-    <button class="btn ghost" id="clearSel">Clear</button>
     ${plan.why && !(grid && grid.plan.variables.length && grid.plan.rows.length) ? `<div class="selection-summary link-why">${escapeHtml(plan.why)}</div>` : ""}
     ${canLink && plan.roles ? plan.roles.map(r => `<button class="btn primary" data-role="${escapeHtml(r.field)}">${escapeHtml(r.label)}</button>`).join("") : ""}
     ${canLink && plan.profiles ? (plan.loadingProfiles ? `<div class="selection-summary link-why">Loading profiles…</div>` : plan.profiles.map(p => `<button class="btn primary" data-profile="${escapeHtml(p.id)}">${escapeHtml(p.label)}</button>`).join("")) : ""}
@@ -4015,9 +4021,6 @@ function renderActionbar() {
     });
     document.getElementById("unlinkSelectionBtn")?.addEventListener("click", () => unlinkSelection([...selection.values()]));
   }
-  document.getElementById("clearSel").addEventListener("click", () => {
-    selection = new Map(); anchorId = null; refreshLeftPane(); renderDetail(); renderActionbar();
-  });
   const menu = document.getElementById("newMenu");
   const list = document.getElementById("newList");
   [...creatable].sort().forEach(t => {
@@ -4079,26 +4082,55 @@ function refreshLeftPane() {
   renderTree();
 }
 
+// A selection of up to SEL_FLAT items is listed as is. A bigger one is grouped by type, and a
+// group of more than SEL_OPEN items starts folded, so the pane stays short however much is picked.
+const SEL_FLAT = 8, SEL_OPEN = 5;
+const selGroupOpen = new Set();
+els.selClear.addEventListener("click", () => { selection = new Map(); anchorId = null; hxAnchor = null; hxAfterPick(); });
+function selItemEl(item) {
+  const div = document.createElement("div");
+  div.className = "sel-item";
+  div.setAttribute("style", typeStyle(item.type));
+  div.innerHTML = `<span class="row-dot"></span><span class="sel-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+    <button class="sel-open" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
+    <button class="sel-remove" title="Remove from selection" aria-label="Remove ${escapeHtml(item.label)} from selection">&times;</button>`;
+  div.querySelector(".sel-open").addEventListener("click", () => item.type === "category" ? navigateTo([...path, item]) : openRelatedNode(item));
+  div.querySelector(".sel-remove").addEventListener("click", () => {
+    selection.delete(item.id);
+    refreshLeftPane(); renderDetail(); renderActionbar();
+  });
+  return div;
+}
 function renderSelectionList() {
   els.selCount.textContent = selection.size ? `${selection.size} item${selection.size === 1 ? "" : "s"}` : "";
+  els.selClear.hidden = !selection.size;
   els.selList.innerHTML = "";
   if (!selection.size) {
     els.selList.innerHTML = `<div class="empty-hint">Nothing selected yet. Click a row to select it; ctrl-click to add more.</div>`;
     return;
   }
-  [...selection.values()].forEach(item => {
-    const div = document.createElement("div");
-    div.className = "sel-item";
-    div.setAttribute("style", typeStyle(item.type));
-    div.innerHTML = `<span class="row-dot"></span><span class="sel-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
-      <button class="sel-open" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
-      <button class="sel-remove" title="Remove from selection" aria-label="Remove ${escapeHtml(item.label)} from selection">&times;</button>`;
-    div.querySelector(".sel-open").addEventListener("click", () => item.type === "category" ? navigateTo([...path, item]) : openRelatedNode(item));
-    div.querySelector(".sel-remove").addEventListener("click", () => {
-      selection.delete(item.id);
+  const items = [...selection.values()];
+  if (items.length <= SEL_FLAT) { items.forEach(item => els.selList.appendChild(selItemEl(item))); return; }
+  const byType = new Map();
+  items.forEach(item => { if (!byType.has(item.type)) byType.set(item.type, []); byType.get(item.type).push(item); });
+  byType.forEach((group, type) => {
+    const open = group.length <= SEL_OPEN || selGroupOpen.has(type);
+    const kind = type === "category" ? "group" : typeName(type);
+    const head = document.createElement("div");
+    head.className = "sel-group";
+    head.setAttribute("style", typeStyle(type));
+    head.innerHTML = `<button class="sel-group-toggle" aria-expanded="${open}"><span class="sel-caret">${open ? "▾" : "▸"}</span><span class="row-dot"></span> ${group.length} ${escapeHtml(kind)}${group.length === 1 ? "" : "s"}</button>
+      <button class="sel-remove" title="Remove all ${group.length} from selection" aria-label="Remove all ${escapeHtml(kind)}s from selection">&times;</button>`;
+    head.querySelector(".sel-group-toggle").addEventListener("click", () => {
+      if (selGroupOpen.has(type)) selGroupOpen.delete(type); else selGroupOpen.add(type);
+      renderSelectionList();
+    });
+    head.querySelector(".sel-remove").addEventListener("click", () => {
+      group.forEach(it => selection.delete(it.id));
       refreshLeftPane(); renderDetail(); renderActionbar();
     });
-    els.selList.appendChild(div);
+    els.selList.appendChild(head);
+    if (open) group.forEach(item => els.selList.appendChild(selItemEl(item)));
   });
 }
 
