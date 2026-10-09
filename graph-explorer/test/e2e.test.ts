@@ -3259,3 +3259,42 @@ test("e2e: a provenance (who made the data) or a note can be linked to a person 
     assert.ok(forExperiment.roles?.length, "an experiment still asks which role");
   });
 });
+
+test("e2e: layout — the blocked-delete banner, a long title and a long chip stay inside the detail pane at narrow widths", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const longTitle = "Imported from a TraitFinder export by the Graph Explorer on 2026-10-08 with a very long provenance name";
+    await page.route("**/api/node-detail*", (r) => {
+      const u = new URL(r.request().url());
+      const json = (body: unknown) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+      if (u.searchParams.get("type") !== "experiment") return json({ uri: "x", actions: [], relations: [] });
+      return json({ uri: u.searchParams.get("id"), actions: ["rename", "delete", "link"], relations: [
+        { label: "Scientific objects", field: "scientific_object", blocksDelete: true, items: [{ id: "so-1", type: "scientific_object", label: "Plant" }] },
+        { label: "Annotations", items: [{ id: "n-1", type: "annotation", label: longTitle }] },
+      ] });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(1000);
+    await openRow(page, "Trials");
+    await openRow(page, "Experiments");
+    await page.locator("#rowlist .row .row-nav").first().click();
+    await page.waitForTimeout(500);
+    await page.locator("#deleteNodeBtn").click();
+    await page.waitForTimeout(300);
+    for (const width of [360, 520, 900]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(150);
+      const r = await page.evaluate(() => {
+        const body = document.getElementById("detailBody")!.getBoundingClientRect();
+        const text = document.querySelector(".unlink-intro-text")!.getBoundingClientRect();
+        const wide = [...document.querySelectorAll<HTMLElement>("#detailBody *")]
+          .filter((el) => el.getBoundingClientRect().right > body.right + 1 && getComputedStyle(el).position !== "fixed")
+          .map((el) => el.tagName + "." + el.className);
+        return { textWidth: text.width, wide, pageScroll: document.documentElement.scrollWidth - window.innerWidth };
+      });
+      assert.ok(r.textWidth >= 150, `${width}px: banner text is only ${r.textWidth}px wide`);
+      assert.deepEqual(r.wide, [], `${width}px: elements overflow the detail pane`);
+      // (the masthead subtitle overflows below ~400px: known, outside this panel check)
+      if (width >= 520) assert.ok(r.pageScroll <= 1, `${width}px: page scrolls sideways by ${r.pageScroll}px`);
+    }
+  });
+});

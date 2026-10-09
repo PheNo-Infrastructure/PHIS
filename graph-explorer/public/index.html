@@ -385,13 +385,14 @@ button { font-family: inherit; }
   text-transform: lowercase;
 }
 .node-kicker .swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--dot, var(--ink-faint)); }
-.node-title-row { display: flex; align-items: baseline; gap: 8px; }
+.node-title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.node-title-row .node-title { min-width: 0; overflow-wrap: anywhere; }
 .node-title { font-size: 19px; font-weight: 700; letter-spacing: -0.005em; }
 /* The open node's own title, as a selectable chip: reads as the heading, reveals the chip on hover. */
 .self-chip {
   font-family: inherit; color: inherit; text-align: left; cursor: pointer;
-  background: none; border: 1px dashed transparent; border-radius: 999px;
-  padding: 2px 10px; margin-left: -11px;
+  background: none; border: 1px dashed transparent; border-radius: 8px;
+  padding: 2px 10px; margin-left: -11px; flex: 1 1 100%; max-width: 100%;
   transition: border-color 100ms ease, background 100ms ease;
 }
 .self-chip:hover { border-color: var(--type-color, var(--accent)); background: var(--type-soft, var(--surface-2)); }
@@ -412,15 +413,16 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
   background: var(--warn-soft);
   border: 1px solid var(--warn);
   border-radius: var(--radius);
   padding: 10px 12px;
   color: var(--warn-ink);
 }
-.unlink-intro .unlink-intro-text { font-size: 12.5px; font-weight: 600; line-height: 1.45; }
-.unlink-intro .unlink-intro-actions { display: flex; gap: 6px; flex: none; }
+.unlink-intro .unlink-intro-text { font-size: 12.5px; font-weight: 600; line-height: 1.45; flex: 1 1 260px; min-width: 0; }
+.unlink-intro .unlink-intro-actions { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 1 auto; }
 .rel-label {
   font-size: 11.5px;
   font-weight: 600;
@@ -441,6 +443,8 @@ button { font-family: inherit; }
   cursor: pointer;
   transition: border-color 100ms ease, background 100ms ease;
 }
+.chip { max-width: 100%; }
+.chip .chip-label { min-width: 0; overflow-wrap: anywhere; }
 .chip:hover { border-color: var(--type-color, var(--accent)); background: var(--type-soft, var(--surface-2)); }
 .chip.selected { background: var(--accent-soft); border-color: var(--accent); }
 .chip .swatch { width: 6px; height: 6px; border-radius: 50%; background: var(--dot, var(--ink-faint)); }
@@ -903,6 +907,7 @@ button { font-family: inherit; }
 .sel-item button { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
 .sel-item button:hover { color: var(--accent); }
 #selectionPane .actionbar { flex-wrap: wrap; }
+#selectionPane .actionbar .btn { white-space: normal; max-width: 100%; }
 /* Its menus open upward and are often taller than a short selection — don't clip them. */
 #selectionPane { overflow: visible; }
 /* The list above already shows what's selected; the bar's own "Selected N" would only repeat it.
@@ -1932,7 +1937,7 @@ const escapeHtml = v => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;
 
 function chipHtml(it, unlinkField, expId) {
   const e = escapeHtml;
-  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"${it.factor ? ` data-factor="${e(it.factor)}"` : ""}${it.title ? ` title="${e(it.title)}"` : ""}><span class="swatch"></span><span class="chip-label">${e(it.label)}</span>${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
+  return `<span class="chip${selection.has(it.id) ? " selected" : ""}" style="${typeStyle(it.type)}" data-openid="${e(it.id)}" data-type="${e(it.type)}"${it.factor ? ` data-factor="${e(it.factor)}"` : ""} title="${e(it.title || it.label)}"><span class="swatch"></span><span class="chip-label">${e(it.label)}</span>${it.count ? ` <span style="opacity:.6">&middot; ${e(it.count)}</span>` : ""}`
     + (unlinkField ? `<button class="chip-unlink" data-field="${e(unlinkField)}" data-uri="${e(it.id)}"${expId ? ` data-exp="${e(expId)}"` : ""} title="Unlink">&times;</button>` : "")
     + `</span>`;
 }
@@ -2478,7 +2483,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   const hasRelations = canEdit && node.relations && node.relations.length > 0;
   // ...unless the type's delete simply takes its links along (and nothing blocks it).
   const deleteRedirects = hasRelations && (blockers.length > 0 || !node.deleteRemovesLinks);
-  const deleteLabel = deleteRedirects ? "Unlink/Delete" : "Delete";
+  const deleteLabel = deleteRedirects ? "Delete…" : "Delete";
   // When Delete doesn't pass through unlink mode (deleteRemovesLinks), unlinking needs its own
   // way in — otherwise e.g. a scientific object could never be taken out of one experiment.
   const canUnlink = canEdit && !deleteRedirects && actions.includes("link") && (node.relations ?? []).some(rel => rel.field && rel.items.length);
