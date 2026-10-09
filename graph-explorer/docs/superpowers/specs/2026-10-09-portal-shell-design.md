@@ -28,6 +28,21 @@ The A–Z work added capability but not clarity (user's verdict, 2026-10-08, `pr
 | Browse | Trials first; below, every other kind in plain words; trial and node pages; charts, values, the chart grid. Pane puts Open and Chart first. | today's categories, tree, detail and chart code |
 | Manage | Groups, profiles and sharing pages; pane puts Link, Unlink, Rename, Visibility, Delete first. Accounts only once login is decided | today's group and profile pages, link/unlink, delete-everything |
 
+## Scopes overlap on purpose
+
+Each button is a default subset of the knowledge graph, and the subsets overlap (a union, not a partition). That is accepted: no clear boundaries are drawn. What is built is the shared pieces that live in the overlap, and a default scope and emphasis per button.
+
+| Button | Default scope | Verbs embedded when the task needs them |
+|---|---|---|
+| Import | What a trial import touches: experiment, germplasm, variables, plants and trays, device, person, sharing group, facility | Inline editor (fix, relink, unlink a related resource from the review); picker (choose an existing device or person) |
+| Set up | The same trial subgraph, built by hand | Picker ("reuse an existing variety, variable, device"); inline editor |
+| Manage | Resources that can be changed. At first, narrow: sharing and access (groups, profiles, who sees which trial), plus link, unlink and delete on whatever is open; it grows with need | Browse inline to find things |
+| Browse | The whole graph, read-only by default | Open, walk, chart |
+
+- **Import and Set up share a subgraph.** Import is Set up with the data arriving from files, so both are built from the same components. This is what keeps import from being "slapped on": its review step is made of the portal's own chips, links and pickers.
+- **Two embeddable pieces are needed, not pages:** a *picker* (choose existing; same plain/ctrl/shift click rules, with search) and an *inline editor* (link, relink, unlink, rename). Both reuse the Selection pane's actions.
+- **Manage versus Browse blur today** because nearly everything is manageable. Once login exists, Manage = what the user has rights to change and Browse = everything they can see. That boundary arrives with login; until then they differ by default scope and emphasis only.
+
 ## Phasing
 
 Each phase ships on its own, is tested, and is reviewed visually.
