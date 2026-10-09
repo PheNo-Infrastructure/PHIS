@@ -43,3 +43,7 @@ graph-explorer/node_modules/
 
 # Kubeconfigs handed to collaborators (contain credentials)
 *kubeconfig*.yaml
+
+# graph spike data (throwaway, from phis-test)
+graph-explorer/spike/graph.json
+graph-explorer/spike/graph.html
