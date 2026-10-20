@@ -8,6 +8,15 @@ with an experienced user (2026-10-20). One file, no manifest. This is the refere
 (PBar1x4: manifest + Clean/Messy/PHIS sheets, US-style timestamps, zero-padded units, PlantID/Replicate/GroupID) was
 programmatically altered after export and is **not** a format to support by default.
 
+## Status (2026-10-20)
+Part 1 is **built and verified live** on phis-test with a throwaway `ZZclaude` import (2 blocks, 2 days, 180 values; cleaned up):
+plugin `src/import/instruments/hortcontrol.ts` (old manifest plugin removed), Block class + "Column in block" property,
+variable groups, sensor as value metadata (PHIS stores `metadata: {sensor: "A"}` and returns it). Not yet done:
+Part 2 (distribution charts), Treatment's factor category (*Air temperature exposure*), a `Bean` species (PHIS has none, so
+the review's species list cannot offer it), the real file's import, and the open questions in section 4.
+The real file's live plan: 1 new germplasm, 1 factor, 24 objects, 21 existing + 42 new variables, 7 groups, 16,380 values.
+Note: the 21 existing trait variables are reused by name, so they keep their old entity (Plant) until recreated.
+
 ## 1. What the file is (measured, not assumed)
 
 | Fact | Value |
