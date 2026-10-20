@@ -114,7 +114,8 @@ const plugin: InstrumentPlugin = {
 
     const measurements: NonNullable<TrialData["measurements"]> = [];
     units.forEach((u, i) => {
-      for (let c = 0; c < columns.length; c++) measurements.push({ object: plantName(u), variable: variables[c].name, date: scans[i], value: u.r[columns[c]] });
+      const metadata = u.r.sensor ? { sensor: u.r.sensor } : undefined;
+      for (let c = 0; c < columns.length; c++) measurements.push({ object: plantName(u), variable: variables[c].name, date: scans[i], value: u.r[columns[c]], ...(metadata ? { metadata } : {}) });
     });
 
     const base = file.path.split("/").pop()!.replace(/\.csv$/i, "");

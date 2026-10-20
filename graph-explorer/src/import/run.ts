@@ -11,6 +11,7 @@ import { prepare } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
 import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts";
 import { writeFill } from "./existing.ts";
+import { writeGroup } from "./variable-groups.ts";
 import type { Files } from "./plugins.ts";
 
 const enc = encodeURIComponent;
@@ -30,7 +31,7 @@ export type Progress = { step: string; done: number; total: number };
 export type Choices = { species?: string; device?: string; person?: string; share?: string; note?: boolean };
 const MOTIVATION_DESCRIBING = "http://www.w3.org/ns/oa#describing";
 export async function runImport(files: Files, choices: Choices, progress: (p: Progress) => void = () => {}) {
-  const { trial, plan, variables, values, experiment, fills } = await prepare(files);
+  const { trial, plan, variables, variableGroupPlans, values, experiment, fills } = await prepare(files);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];
@@ -43,13 +44,13 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   if (!experiment && !["public", "private"].includes(share) && !plan.options.groups.some((g) => g.id === share)) blockers.push("That group isn't in PHIS.");
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
-  const done = { vocabulary: 0, parts: 0, variables: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
+  const done = { vocabulary: 0, parts: 0, variables: 0, groups: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
   const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
   const newFactors = plan.factors.filter((f) => !f.exists);
   const grownFactors = plan.factors.filter((f) => f.newLevels?.length);
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
-  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + (experiment ? 0 : 1) + plan.germplasm.missing.length + existingCodes.length
+  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + plan.variableGroups.filter((g) => !g.exists || g.newMembers).length + (experiment ? 0 : 1) + plan.germplasm.missing.length + existingCodes.length
     + newFactors.length + grownFactors.length + newObjects.length + fills.length
     + (values.length ? 1 + Math.ceil(values.length / VALUES_AT_ONCE) : 0);
   let steps = 0;
@@ -72,6 +73,13 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
       variableUri.set(v.name, await createVariable(variables, v));
       done.variables++;
       tick(`Creating variables: ${done.variables} of ${variables.missing.length}`);
+    }
+    // Groups of variables (a histogram's bins), now that every member exists.
+    for (const g of variableGroupPlans) {
+      if (await writeGroup(g, variableUri)) {
+        done.groups++;
+        tick(`Grouping variables: ${done.groups} of ${plan.variableGroups.filter((x) => !x.exists || x.newMembers).length}`);
+      }
     }
 
     if (!experiment) {
@@ -207,13 +215,13 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     ];
     const what = done.experiment && wrote.some(Boolean)
       ? `It had ${andList(wrote.map((x) => x || 0))} in "${plan.experiment.name}". Import the same files again to finish: what is already in PHIS is skipped, nothing is written twice.`
-      : done.vocabulary || done.parts || done.variables
-        ? `Only ${andList([done.vocabulary && plural(done.vocabulary, "vocabulary term"), done.parts && plural(done.parts, "variable part"), done.variables && plural(done.variables, "variable")])} ${done.vocabulary + done.parts + done.variables === 1 ? "was" : "were"} added to PHIS (kept, and reused next time).`
+      : done.vocabulary || done.parts || done.variables || done.groups
+        ? `Only ${andList([done.vocabulary && plural(done.vocabulary, "vocabulary term"), done.parts && plural(done.parts, "variable part"), done.variables && plural(done.variables, "variable"), done.groups && plural(done.groups, "variable group")])} ${done.vocabulary + done.parts + done.variables + done.groups === 1 ? "was" : "were"} added to PHIS (kept, and reused next time).`
         : "Nothing was written.";
     throw new OpenSilexError(err instanceof OpenSilexError ? err.status : 502, `The import stopped part-way: ${err instanceof Error ? err.message : String(err)}. ${what}`);
   }
   return {
     experiment: { id: done.experiment, type: "experiment", label: plan.experiment.name },
-    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, filled: done.filled, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, values: done.values, ...(done.note !== undefined ? { note: done.note } : {}) },
+    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, filled: done.filled, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, variableGroups: done.groups, values: done.values, ...(done.note !== undefined ? { note: done.note } : {}) },
   };
 }

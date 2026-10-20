@@ -22,7 +22,7 @@ export type TrialData = {
   variableGroups?: { name: string; variables: string[] }[];
   // Measured values as the files have them: object and variable by name, `date` local time
   // (YYYY-MM-DDTHH:mm:ss) in `timezone`, `value` the raw text — checking it is the engine's job.
-  measurements?: { object: string; variable: string; date: string; value: string }[];
+  measurements?: { object: string; variable: string; date: string; value: string; metadata?: Record<string, string> }[];
   timezone?: string; // IANA, e.g. Europe/Oslo
   source?: string; // the instrument, for the provenance: "TraitFinder"
   // Things the user must see before anything is written (e.g. the files disagree).

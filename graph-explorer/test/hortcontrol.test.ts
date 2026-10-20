@@ -66,6 +66,7 @@ test("parse: every row gives one value per column, for its plant, at the scan's 
   assert.equal(t.measurements!.length, 20 * 63);
   const m = t.measurements!.find((x) => x.object === "B1-C1" && x.variable === "3D Leaf Area" && x.date === "2025-11-25T08:42:23");
   assert.equal(m?.value, "1465.96");
+  assert.deepEqual(m?.metadata, { sensor: "A" }, "which sensor measured it travels with each value");
   assert.ok(t.measurements!.every((x) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(x.date)));
 });
 

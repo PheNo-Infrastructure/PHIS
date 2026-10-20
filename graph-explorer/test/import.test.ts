@@ -97,7 +97,7 @@ function ontologyAnswer(url: string, present: boolean) {
 function variablesAnswer(url: string) {
   if (url.includes("/core/units?")) return jsonResponse(200, { result: [{ uri: "u:mm", name: "Millimeter", symbol: null }, { uri: "u:pct", name: "Percent" }] });
   if (url.includes("/core/methods?name=PlantEye")) return jsonResponse(200, { result: [{ uri: "m:pe", name: "PlantEye 3D scan" }] });
-  if (/\/core\/(variables|entities|characteristics|methods)\?name=/.test(url)) return jsonResponse(200, { result: [] });
+  if (/\/core\/(variables|variables_group|entities|characteristics|methods)\?name=/.test(url)) return jsonResponse(200, { result: [] });
   return null;
 }
 
@@ -134,6 +134,7 @@ test("POST /api/import/plan: HortControl export -> the plan (exact-name germplas
       { kind: "characteristics", name: "Hue [0:25]" }, { kind: "characteristics", name: "Hue [25:50]" },
       { kind: "units", name: "Unitless" }, { kind: "units", name: "SquareMillimeterPerSquareMillimeter", symbol: "mm²/mm²" },
     ], "the method, Millimeter and Percent are reused");
+    assert.deepEqual(plan.variableGroups, [{ name: "Hue distribution", variables: 2, exists: false }], "the bins of one histogram are one group");
     assert.deepEqual(plan.measurements, {
       count: 15, objects: 3, variables: 5, days: 2, first: "2025-10-22T13:19:34", last: "2025-10-29T13:19:34", timezone: "Europe/Oslo",
       skipped: { empty: 0, notNumbers: { count: 0, examples: [] }, contradictions: { count: 0, examples: [] } },
@@ -192,6 +193,7 @@ function mockPhisForRun(writes: { method: string; path: string; body: any }[], f
       if (failOn && body.name === failOn) return jsonResponse(400, { result: { title: "Bad request", message: "name clash" } });
       if (path.startsWith("/vuejs/") || path.startsWith("/ontology/")) return jsonResponse(201, { result: body.uri ?? "ok" });
       if (path === "/core/germplasm" && method === "PUT") return jsonResponse(200, { result: body.uri });
+      if (path === "/core/variables_group") return jsonResponse(201, { result: `vg:${body.name}` });
       if (path === "/core/experiments") return jsonResponse(201, { result: "exp:new" });
       if (path === "/core/provenances") return jsonResponse(201, { result: "prov:new" });
       if (path === "/core/data") return jsonResponse(201, { result: body.map((_: unknown, i: number) => `data:${i}`) });
@@ -234,9 +236,9 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     assert.equal(res.status, 200);
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
     const steps = lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`);
-    assert.deepEqual(steps.slice(0, 4), ["1/28 Added the object type Block to PHIS", "2/28 Added the plant property Column in block to PHIS", "3/28 Added the entity Plant", "4/28 Added the entity Canopy"], "one progress line per write");
-    assert.deepEqual(steps.slice(-3), ["26/28 Creating scientific objects: 5 of 5", "27/28 Created the provenance of the measurements", "28/28 Writing measurements: 15 of 15"]);
-    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: NAME }, created: { germplasm: 1, codes: 1, factors: 1, objects: 5, filled: 0, levels: 0, vocabulary: 2, variables: 5, values: 15 } } });
+    assert.deepEqual(steps.slice(0, 4), ["1/29 Added the object type Block to PHIS", "2/29 Added the plant property Column in block to PHIS", "3/29 Added the entity Plant", "4/29 Added the entity Canopy"], "one progress line per write");
+    assert.deepEqual(steps.slice(-3), ["27/29 Creating scientific objects: 5 of 5", "28/29 Created the provenance of the measurements", "29/29 Writing measurements: 15 of 15"]);
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: NAME }, created: { germplasm: 1, codes: 1, factors: 1, objects: 5, filled: 0, levels: 0, vocabulary: 2, variables: 5, variableGroups: 1, values: 15 } } });
     assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${String(w.body.name ?? w.body.uri ?? w.body.property).replace(/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, "")}`), [
       "POST /vuejs/owl_extension/rdf_type Block",
       "POST /ontology/property https://phis.pheno.no/vocabulary#positionInBlock",
@@ -247,6 +249,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
       "POST /core/units Unitless", "POST /core/units SquareMillimeterPerSquareMillimeter",
       "POST /core/variables Height", "POST /core/variables NDVI Average", "POST /core/variables Leaf inclination",
       "POST /core/variables Hue [0:25]", "POST /core/variables Hue [25:50]",
+      "POST /core/variables_group Hue distribution",
       `POST /core/experiments ${NAME}`,
       "POST /core/germplasm Tiril",
       "PUT /core/germplasm Olve",
@@ -262,7 +265,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     const data = writes.find((x) => x.path === "/core/data")!.body;
     assert.equal(data.length, 15);
     assert.deepEqual(data.find((d: any) => d.target === "so:B1-C2" && d.variable === "variables:NDVI Average"), {
-      target: "so:B1-C2", variable: "variables:NDVI Average", date: "2025-10-22T13:19:34", timezone: "Europe/Oslo", value: 0.6,
+      target: "so:B1-C2", variable: "variables:NDVI Average", date: "2025-10-22T13:19:34", timezone: "Europe/Oslo", value: 0.6, metadata: { sensor: "A" },
       provenance: { uri: "prov:new", experiments: ["exp:new"] },
     }, "the plant by its new uri, the variable by its new uri, a number, local time with its zone");
     assert.deepEqual(writes.find((x) => x.path === "/core/experiments")!.body, { name: NAME, start_date: "2025-10-22", objective: "Imported from a TraitFinder (HortControl export) export.", is_public: true });
@@ -275,6 +278,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     assert.equal(variable("Leaf inclination").entity, "entities:Leaf");
     assert.equal(variable("NDVI Average").unit, "units:Unitless");
     assert.equal(variable("Hue [0:25]").unit, "u:pct", "a bin is a percentage");
+    assert.deepEqual(w("Hue distribution"), { name: "Hue distribution", description: "The share of the pixels in each Hue range, one variable per range (they add up to 100 %).", variables: ["variables:Hue [0:25]", "variables:Hue [25:50]"] });
     assert.deepEqual(w("Tiril"), { name: "Tiril", rdf_type: "vocabulary:Variety", species: "agrovoc:barley", is_public: true, code: "G16" });
     assert.equal(writes.find((x) => x.method === "PUT")!.body.code, "G5");
     assert.equal(writes.find((x) => x.method === "PUT")!.body.species, "agrovoc:barley", "the rest of Olve's record goes back too");
@@ -314,7 +318,7 @@ test("POST /api/import/run that fails before the experiment says the vocabulary 
     mockPhisForRun([], NAME);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
-    assert.match(error, /Only 2 vocabulary terms, 10 variable parts and 5 variables were added to PHIS \(kept, and reused next time\)\.$/);
+    assert.match(error, /Only 2 vocabulary terms, 10 variable parts, 5 variables and 1 variable group were added to PHIS \(kept, and reused next time\)\.$/);
   });
 });
 
@@ -353,6 +357,7 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
     if (method !== "GET") {
       writes.push({ method, path, body });
       if (path === "/core/germplasm") return jsonResponse(201, { result: [`g:${body.name}`] });
+      if (path === "/core/variables_group") return jsonResponse(200, { result: body.uri });
       if (path === "/core/experiments/factors") return jsonResponse(method === "PUT" ? 200 : 201, { result: `f:${body.name}` });
       if (path === "/core/scientific_objects") return jsonResponse(method === "PUT" ? 200 : 201, { result: method === "PUT" ? body.uri : `so:${body.name}` });
       if (path === "/core/provenances") return jsonResponse(201, { result: "prov:new" });
@@ -371,6 +376,8 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
     if (path === "/core/germplasm/g%3Aannika") return jsonResponse(200, { result: { uri: "g:annika", name: "Annika" } });
     const levels = path.match(/^\/core\/experiments\/factors\/f%3ATreatment\/levels$/);
     if (levels) return jsonResponse(200, { result: ["15C", "18C"].map((n) => ({ uri: `lvl:Treatment.${n}`, name: n })) });
+    if (url.includes("/core/variables_group?name=")) return jsonResponse(200, { result: [{ uri: "vg:hue", name: "Hue distribution" }] });
+    if (path === "/core/variables_group/vg%3Ahue") return jsonResponse(200, { result: { uri: "vg:hue", name: "Hue distribution", description: "mine", variables: [{ uri: "var:Hue [0:25]", name: "Hue [0:25]" }] } });
     const variable = url.match(/\/core\/variables\?name=([^&]+)/);
     if (variable) { const n = decodeURIComponent(variable[1]).replace(/\\/g, ""); return jsonResponse(200, { result: [{ uri: `var:${n}`, name: n }] }); }
     const known = variablesAnswer(url);
@@ -390,6 +397,7 @@ test("POST /api/import/plan into an existing experiment is a fill: what PHIS lac
     const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
     assert.equal(plan.experiment.exists, true);
     assert.deepEqual(plan.factors, [{ name: "Treatment", levels: ["15C", "18C"], exists: true, newLevels: ["18C"] }]);
+    assert.deepEqual(plan.variableGroups, [{ name: "Hue distribution", variables: 2, exists: true, newMembers: 1 }]);
     assert.equal(plan.objects.count, 2, "Block 2 and B2-C1 are new");
     assert.equal(plan.objects.existing, 3);
     assert.deepEqual(plan.objects.fills, { count: 3, what: { block: 2, position: 1, germplasm: 1, levels: 3 } }, "B1-C2 keeps its variety and column; Block 1 only gets its treatment");
@@ -407,8 +415,9 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
     mockExistingExperiment(writes);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(lines.at(-1).result.created, { germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 3, levels: 1, vocabulary: 0, variables: 0, values: 13 });
+    assert.deepEqual(lines.at(-1).result.created, { germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 3, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
     assert.deepEqual(writes.filter((w) => w.path !== "/core/data").map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri}`.replace(/ import \d{4}.*$/, " import")), [
+      "PUT /core/variables_group Hue distribution",
       "POST /core/germplasm Tiril",
       "PUT /core/experiments/factors Treatment",
       "POST /core/scientific_objects Block 2",
@@ -416,7 +425,8 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
       "PUT /core/scientific_objects B1-C1", "PUT /core/scientific_objects B1-C2", "PUT /core/scientific_objects Block 1",
       `POST /core/provenances ${NAME} – TraitFinder import`,
     ], "no experiment created; existing ones filled after the new block exists");
-    assert.deepEqual(writes[1].body.levels.map((l: any) => l.name), ["15C", "18C"], "level 15C kept, 18C added");
+    assert.deepEqual(writes[0].body, { uri: "vg:hue", name: "Hue distribution", description: "mine", variables: ["var:Hue [0:25]", "var:Hue [25:50]"] }, "the group keeps its record and its member, and gains the missing bin");
+    assert.deepEqual(writes[2].body.levels.map((l: any) => l.name), ["15C", "18C"], "level 15C kept, 18C added");
     const put = (uri: string) => writes.find((w) => w.method === "PUT" && w.body.uri === uri)!.body;
     assert.deepEqual(put("so:old1").relations, [
       { property: "vocabulary:hasGermplasm", value: "g:olve", inverse: false },

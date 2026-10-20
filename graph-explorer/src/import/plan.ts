@@ -6,6 +6,7 @@ import { personName } from "../node-types.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
 import { POSITION_IN_BLOCK, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
+import { groupSummary, resolveGroups } from "./variable-groups.ts";
 import { checkMeasurements } from "./measurements.ts";
 import { compareObjects, newValues, readExperiment, valuesIn, type Experiment } from "./existing.ts";
 
@@ -81,6 +82,7 @@ export async function prepare(files: Files) {
   const compared = experiment ? await compareObjects(trial.objects, experiment, germplasmIds) : { fills: [], conflicts: [] };
 
   const variables = await resolveVariables(trial.variables ?? []);
+  const variableGroupPlans = await resolveGroups(trial.variableGroups ?? []);
   const measurements = checkMeasurements(trial.measurements ?? []);
   // In an existing experiment, values PHIS already has (same object, variable and time) aren't written again.
   const timezone = trial.timezone ?? "UTC";
@@ -121,6 +123,7 @@ export async function prepare(files: Files) {
       missing: variables.missing.map((v) => v.name),
       parts: variables.create.map((p) => ({ kind: p.kind, name: p.name, ...(p.symbol ? { symbol: p.symbol } : {}) })),
     },
+    variableGroups: groupSummary(variableGroupPlans, new Map(variables.existing.map((v) => [v.name, v.id]))),
     measurements: {
       ...measurements.summary, count: against.fresh.length, timezone: trial.timezone ?? null,
       ...(experiment ? { alreadyInPhis: against.already, differ: { count: against.differ.length, examples: against.differ.slice(0, 3) } } : {}),
@@ -139,7 +142,7 @@ export async function prepare(files: Files) {
     options: { devices, persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
     warnings,
   };
-  return { trial, plan, variables, values: against.fresh, experiment, fills: compared.fills };
+  return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills };
 }
 
 export async function buildPlan(files: Files) {

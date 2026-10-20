@@ -7,7 +7,7 @@ import { authedPost } from "../opensilex.ts";
 import type { TrialData } from "./plugins.ts";
 
 type Raw = NonNullable<TrialData["measurements"]>[number];
-export type Value = { object: string; variable: string; date: string; value: number };
+export type Value = { object: string; variable: string; date: string; value: number; metadata?: Record<string, string> };
 const EXAMPLES = 3;
 export const VALUES_AT_ONCE = 1000;
 
@@ -64,7 +64,7 @@ export async function createProvenance(name: string, description: string, first:
 
 export async function writeValues(batch: Value[], ids: { objects: Map<string, string>; variables: Map<string, string> }, provenance: string, experiment: string, timezone: string) {
   await authedPost("/core/data", batch.map((v) => ({
-    target: ids.objects.get(v.object), variable: ids.variables.get(v.variable), date: v.date, timezone, value: v.value,
+    target: ids.objects.get(v.object), variable: ids.variables.get(v.variable), date: v.date, timezone, value: v.value, ...(v.metadata ? { metadata: v.metadata } : {}),
     provenance: { uri: provenance, experiments: [experiment] },
   })));
 }
