@@ -238,7 +238,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     const steps = lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`);
     assert.deepEqual(steps.slice(0, 4), ["1/29 Added the object type Block to PHIS", "2/29 Added the plant property Column in block to PHIS", "3/29 Added the entity Plant", "4/29 Added the entity Canopy"], "one progress line per write");
     assert.deepEqual(steps.slice(-3), ["27/29 Creating scientific objects: 5 of 5", "28/29 Created the provenance of the measurements", "29/29 Writing measurements: 15 of 15"]);
-    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: NAME }, created: { germplasm: 1, codes: 1, factors: 1, objects: 5, filled: 0, levels: 0, vocabulary: 2, variables: 5, variableGroups: 1, values: 15 } } });
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: NAME }, created: { species: 0, germplasm: 1, codes: 1, factors: 1, objects: 5, filled: 0, levels: 0, vocabulary: 2, variables: 5, variableGroups: 1, values: 15 } } });
     assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${String(w.body.name ?? w.body.uri ?? w.body.property).replace(/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, "")}`), [
       "POST /vuejs/owl_extension/rdf_type Block",
       "POST /ontology/property https://phis.pheno.no/vocabulary#positionInBlock",
@@ -415,7 +415,7 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
     mockExistingExperiment(writes);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(lines.at(-1).result.created, { germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 3, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
+    assert.deepEqual(lines.at(-1).result.created, { species: 0, germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 3, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
     assert.deepEqual(writes.filter((w) => w.path !== "/core/data").map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri}`.replace(/ import \d{4}.*$/, " import")), [
       "PUT /core/variables_group Hue distribution",
       "POST /core/germplasm Tiril",
@@ -495,5 +495,31 @@ test("POST /api/import/run without choices behaves as before (public, no agents,
     writes.length = 0;
     for (const bad of [{ device: "nope" }, { person: "nope" }, { share: "nope" }]) assert.equal((await run(bad)).status, 409);
     assert.deepEqual(writes, []);
+  });
+});
+
+test("POST /api/import/run can add the species first when PHIS lacks it: created before the germplasm, which then points at it; a name PHIS already has, or a blank one, is refused before anything is written", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    const run = (q: Record<string, string>) => realFetch(`${base}/api/import/run?${new URLSearchParams(q)}`, { method: "POST", body: EXPORT() });
+    for (const [q, error] of [
+      [{ newSpecies: "Barley" }, /already a species named "barley".*choose it from the list/i],
+      [{ newSpecies: "   " }, /Choose the species/],
+    ] as const) {
+      const res = await run(q);
+      assert.equal(res.status, 409);
+      assert.match((await res.json()).error, error);
+    }
+    assert.deepEqual(writes, []);
+    const res = await run({ newSpecies: " Bean " });
+    assert.equal(res.status, 200);
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines.at(-1).result.created.species, 1);
+    assert.equal(lines.at(-1).progress, undefined);
+    const posts = writes.filter((w) => w.path === "/core/germplasm").map((w) => w.body);
+    assert.deepEqual(posts[0], { name: "Bean", rdf_type: "vocabulary:Species", is_public: true }, "trimmed; a species has no species of its own");
+    assert.equal(posts[1].name, "Tiril");
+    assert.equal(posts[1].species, "g:Bean", "the germplasm points at the species just made");
   });
 });

@@ -4475,7 +4475,7 @@ function importPlanHtml(p) {
       <h3>Germplasm<small>plant material: species, varieties, lines</small></h3>
       ${g.existing.length ? `<p>Already in PHIS, reused: ${g.existing.length} <span class="import-names">(${list(g.existing.map(x => x.name))})</span></p>` : ""}
       ${newCount ? `<p>New: ${newCount} <span class="import-names">(${list(g.missing)})</span></p>
-        <p><label>Species for the new germplasm: <select id="importSpecies"><option value="">Choose…</option>${p.speciesOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}</select></label></p>` : ""}
+        <p><label>Species for the new germplasm: <select id="importSpecies"><option value="">Choose…</option>${p.speciesOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}<option value="__new__">Not listed — add a species…</option></select></label> <input id="importNewSpecies" type="text" placeholder="Name of the new species" hidden></p>` : ""}
       ${g.codes.length ? `<p>Codes set: ${g.codes.length} <span class="import-names">(${list(g.codes.map(c => `${c.name} = ${c.code}`))})</span></p>` : ""}
       ${g.ambiguous.map(a => `<div class="import-warning">"${escapeHtml(a.name)}" matches ${a.ids.length} germplasm in PHIS — it isn't clear which one is meant.</div>`).join("")}
     </div>
@@ -4571,18 +4571,26 @@ function wireImportRun(file, plan, close) {
   const btn = document.getElementById("importRunBtn");
   if (!btn) return;
   const species = document.getElementById("importSpecies");
-  const sync = () => { btn.disabled = !!species && !species.value; btn.title = btn.disabled ? "Choose the species for the new germplasm first" : ""; };
-  species?.addEventListener("change", sync);
+  const newSpecies = document.getElementById("importNewSpecies");
+  const sync = () => {
+    const adding = !!species && species.value === "__new__";
+    if (newSpecies) newSpecies.hidden = !adding;
+    btn.disabled = !!species && (!species.value || (adding && !newSpecies.value.trim()));
+    btn.title = btn.disabled ? (adding ? "Type the name of the new species first" : "Choose the species for the new germplasm first") : "";
+  };
+  species?.addEventListener("change", () => { sync(); if (!newSpecies.hidden) newSpecies.focus(); });
+  newSpecies?.addEventListener("input", sync);
   sync();
   btn.addEventListener("click", async () => {
     const footer = document.getElementById("importFooter");
     if (species) species.disabled = true;
+    if (newSpecies) newSpecies.disabled = true;
     // The server streams one line per write (NDJSON), so the bar shows real progress; closing the
     // dialog or the page doesn't stop the import on the server.
     footer.innerHTML = `<div class="import-progress"><span id="importStep">Starting…</span><progress id="importBar" max="1" value="0"></progress><span class="import-names">It keeps going on the server even if you close this.</span></div>`;
     try {
       const q = new URLSearchParams();
-      if (species) q.set("species", species.value);
+      if (species) { if (species.value === "__new__") q.set("newSpecies", newSpecies.value.trim()); else q.set("species", species.value); }
       for (const [id, key] of [["importDevice", "device"], ["importPerson", "person"], ["importShare", "share"]]) {
         const el = document.getElementById(id);
         if (el && el.value) q.set(key, el.value);

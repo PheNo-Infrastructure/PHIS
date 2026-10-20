@@ -1782,6 +1782,43 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
   });
 });
 
+test("e2e: import review — a species PHIS lacks can be added by name: the option opens a name box, the button waits for the name, the run carries newSpecies", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let runUrl = "";
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.route("**/api/import/plan", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      instrument: "TraitFinder (HortControl export)",
+      experiment: { name: "Trial – TraitFinder – 2025-11-25", startDate: "2025-11-25", exists: false },
+      germplasm: { existing: [], missing: ["Bean"], ambiguous: [], codes: [] },
+      speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
+      factors: [], vocabulary: [], variables: { existing: [], missing: [], parts: [] },
+      objects: { count: 0, kinds: [], sample: [] }, warnings: [],
+    }) }));
+    await page.route("**/api/import/run**", (route) => {
+      runUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/x", type: "experiment", label: "Trial" }, created: { species: 1, germplasm: 1, factors: 0, objects: 0, variables: 0, values: 0 } } }) + "\n" });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
+    const btn = page.locator("#importRunBtn");
+    await btn.waitFor();
+    const box = page.locator("#importNewSpecies");
+    assert.equal(await box.isHidden(), true, "no name box until the user says the species is not listed");
+    await page.locator("#importSpecies").selectOption("__new__");
+    assert.equal(await box.isVisible(), true);
+    assert.equal(await btn.isDisabled(), true, "waits for a name");
+    await box.fill("  Bean ");
+    assert.equal(await btn.isDisabled(), false);
+    await btn.click();
+    await page.locator("#importOpenBtn").waitFor();
+    assert.match(runUrl, /\/api\/import\/run\?newSpecies=Bean$/, "trimmed, and no species uri");
+    assert.deepEqual(errors, []);
+  });
+});
+
 // ---------- search ----------
 async function stubSearch(page: import("playwright").Page, answer: (u: URL) => unknown, delayMs: (u: URL) => number = () => 0) {
   await page.route("**/api/search*", async (r) => {

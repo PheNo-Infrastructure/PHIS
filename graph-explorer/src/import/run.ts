@@ -28,7 +28,7 @@ const andList = (items: (string | 0)[]) => {
 export type Progress = { step: string; done: number; total: number };
 // device / person: who made the data (optional, from the plan's lists). share: who sees a NEW experiment — "public" (the
 // default, as before), "private", or a group's uri. note: keep a note of the import (on by default in the page).
-export type Choices = { species?: string; device?: string; person?: string; share?: string; note?: boolean };
+export type Choices = { species?: string; newSpecies?: string; device?: string; person?: string; share?: string; note?: boolean };
 const MOTIVATION_DESCRIBING = "http://www.w3.org/ns/oa#describing";
 export async function runImport(files: Files, choices: Choices, progress: (p: Progress) => void = () => {}) {
   const { trial, plan, variables, variableGroupPlans, values, experiment, fills } = await prepare(files);
@@ -37,20 +37,26 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   const blockers: string[] = [];
   if (plan.experiment.sameName) blockers.push(`${plan.experiment.sameName} experiments in PHIS are named "${plan.experiment.name}", so it isn't clear which one to fill in.`);
   for (const a of plan.germplasm.ambiguous) blockers.push(`"${a.name}" matches ${a.ids.length} germplasm in PHIS, so it isn't clear which one is meant.`);
-  if (plan.germplasm.missing.length && !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
+  // New germplasm needs a species: one of PHIS's, or one added first (named here, when PHIS lacks it).
+  const newSpecies = choices.newSpecies?.trim();
+  if (plan.germplasm.missing.length) {
+    const sameName = newSpecies ? plan.speciesOptions.find((o) => o.label.toLowerCase() === newSpecies.toLowerCase()) : undefined;
+    if (sameName) blockers.push(`There is already a species named "${sameName.label}" in PHIS; choose it from the list.`);
+    else if (choices.newSpecies !== undefined ? !newSpecies : !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
+  }
   if (choices.device && !plan.options.devices.some((d) => d.id === choices.device)) blockers.push("That device isn't in PHIS.");
   if (choices.person && !plan.options.persons.some((p) => p.id === choices.person)) blockers.push("That person isn't in PHIS.");
   const share = choices.share ?? "public";
   if (!experiment && !["public", "private"].includes(share) && !plan.options.groups.some((g) => g.id === share)) blockers.push("That group isn't in PHIS.");
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
-  const done = { vocabulary: 0, parts: 0, variables: 0, groups: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
+  const done = { vocabulary: 0, parts: 0, variables: 0, groups: 0, species: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
   const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
   const newFactors = plan.factors.filter((f) => !f.exists);
   const grownFactors = plan.factors.filter((f) => f.newLevels?.length);
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
-  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + plan.variableGroups.filter((g) => !g.exists || g.newMembers).length + (experiment ? 0 : 1) + plan.germplasm.missing.length + existingCodes.length
+  const total = plan.vocabulary.length + variables.create.length + variables.missing.length + plan.variableGroups.filter((g) => !g.exists || g.newMembers).length + (experiment ? 0 : 1) + (newSpecies && plan.germplasm.missing.length ? 1 : 0) + plan.germplasm.missing.length + existingCodes.length
     + newFactors.length + grownFactors.length + newObjects.length + fills.length
     + (values.length ? 1 + Math.ceil(values.length / VALUES_AT_ONCE) : 0);
   let steps = 0;
@@ -96,10 +102,16 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     }
 
     const germplasm = new Map(plan.germplasm.existing.map((g) => [g.name, g.id]));
+    let species = choices.species;
+    if (newSpecies && plan.germplasm.missing.length) {
+      species = firstUri(await authedPost("/core/germplasm", { name: newSpecies, rdf_type: "vocabulary:Species", is_public: true }));
+      done.species++;
+      tick(`Added the species ${newSpecies}`);
+    }
     for (const name of plan.germplasm.missing) {
       // ponytail: new germplasm are always varieties; let the plugin say so per instrument once one
       // brings accessions or lines.
-      germplasm.set(name, firstUri(await authedPost("/core/germplasm", { name, rdf_type: "vocabulary:Variety", species: choices.species, is_public: true, ...(codeOf.has(name) ? { code: codeOf.get(name) } : {}) })));
+      germplasm.set(name, firstUri(await authedPost("/core/germplasm", { name, rdf_type: "vocabulary:Variety", species, is_public: true, ...(codeOf.has(name) ? { code: codeOf.get(name) } : {}) })));
       done.germplasm++;
       tick(`Creating germplasm: ${done.germplasm} of ${plan.germplasm.missing.length}`);
     }
@@ -222,6 +234,6 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   }
   return {
     experiment: { id: done.experiment, type: "experiment", label: plan.experiment.name },
-    created: { germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, filled: done.filled, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, variableGroups: done.groups, values: done.values, ...(done.note !== undefined ? { note: done.note } : {}) },
+    created: { species: done.species, germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, filled: done.filled, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, variableGroups: done.groups, values: done.values, ...(done.note !== undefined ? { note: done.note } : {}) },
   };
 }
