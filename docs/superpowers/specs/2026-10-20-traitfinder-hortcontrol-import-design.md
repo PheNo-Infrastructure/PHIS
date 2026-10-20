@@ -8,14 +8,18 @@ with an experienced user (2026-10-20). One file, no manifest. This is the refere
 (PBar1x4: manifest + Clean/Messy/PHIS sheets, US-style timestamps, zero-padded units, PlantID/Replicate/GroupID) was
 programmatically altered after export and is **not** a format to support by default.
 
-## Status (2026-10-20)
-Part 1 is **built and verified live** on phis-test with a throwaway `ZZclaude` import (2 blocks, 2 days, 180 values; cleaned up):
-plugin `src/import/instruments/hortcontrol.ts` (old manifest plugin removed), Block class + "Column in block" property,
-variable groups, sensor as value metadata (PHIS stores `metadata: {sensor: "A"}` and returns it). Not yet done:
-Part 2 (distribution charts), Treatment's factor category (*Air temperature exposure*), a `Bean` species (PHIS has none, so
-the review's species list cannot offer it), the real file's import, and the open questions in section 4.
-The real file's live plan: 1 new germplasm, 1 factor, 24 objects, 21 existing + 42 new variables, 7 groups, 16,380 values.
-Note: the 21 existing trait variables are reused by name, so they keep their old entity (Plant) until recreated.
+## Status (2026-10-20, end of day)
+**Part 1 works end to end.** The real file is imported into phis-test (private experiment "UiT_MDK_ArcticFrontiers_01 – TraitFinder – 2025-11-25":
+24 objects, 63 variables, 16,380 values, 7 distribution groups) and its Treatment grid renders in the portal (15C vs 18C, 10 plants each).
+Decisions made while getting there: the treatment sits on the **plants only** (the portal lists a level's members as plants, so a block
+carrying it was counted as one); the import review can **add a species** PHIS lacks (named there; `Bean`, no AGROVOC link — which bean it is
+is unconfirmed: common bean c_5767 or broad bean c_10722); a species is never matched as the file's germplasm (species "Bean" and variety "Bean"
+share a name). Re-importing the same file is a no-op (16,380 values "already in PHIS", nothing differs).
+**Open:** (1) OpenSILEX's `GET /vuejs/owl_extension/rdf_type_properties` answers 500 "Multiple objects for some unique property" for EVERY class on
+phis-test since the first Block import added the Block class, `positionInBlock` and its Plant restriction (it worked before; the import now
+falls back to reading the property itself). PHIS's own object forms probably use that read. Cause unconfirmed; the diagnostic (deleting the
+`positionInBlock` restriction on Plant) was blocked by the permission classifier and needs the user's say. (2) Part 2 distribution charts.
+(3) Treatment's factor category. (4) The 21 older trait variables keep entity Plant. (5) Questions in section 4.
 
 ## 1. What the file is (measured, not assumed)
 
