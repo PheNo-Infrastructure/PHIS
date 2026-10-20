@@ -46,8 +46,9 @@ export async function prepare(files: Files) {
   const existing: { name: string; id: string }[] = [];
   const missing: string[] = [];
   const ambiguous: { name: string; ids: string[] }[] = [];
+  // A file's germplasm is a variety or accession: a species that happens to share its name (genotype "Bean" of species Bean) isn't it.
   await Promise.all(germplasmNames.map(async (name) => {
-    const hits = (await authedGet(`/core/germplasm?name=${enc(escapeRegex(name))}&page_size=50`)).result.filter((g) => same(g.name, name));
+    const hits = (await authedGet(`/core/germplasm?name=${enc(escapeRegex(name))}&page_size=50`)).result.filter((g) => same(g.name, name) && !/species$/i.test(String(g.rdf_type ?? "")));
     if (hits.length === 1) existing.push({ name, id: hits[0].uri });
     else if (hits.length) ambiguous.push({ name, ids: hits.map((g) => g.uri) });
     else missing.push(name);

@@ -73,8 +73,9 @@ const plugin: InstrumentPlugin = {
 
     const byBlock = Map.groupBy(units, (u) => u.block);
     const byPlant = Map.groupBy(units, plantName);
-    const blocks = [...byBlock].sort((a, b) => a[0] - b[0]).map(([block, us]) => ({
-      name: `Block ${block}`, rdfType: BLOCK, factors: factorsOf(us.map((u) => u.r), `Block ${block}`),
+    const blocks = [...byBlock].sort((a, b) => a[0] - b[0]).map(([block]) => ({
+      // A block carries no factor level: the portal lists a level's members as plants, and the plants have it.
+      name: `Block ${block}`, rdfType: BLOCK, factors: {},
     }));
     const plants = [...byPlant].map(([name, us]) => {
       const germplasm = agreed(us.map((u) => u.r), "genotype");

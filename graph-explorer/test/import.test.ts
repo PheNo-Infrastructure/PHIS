@@ -285,8 +285,8 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     assert.deepEqual(w("Treatment"), { name: "Treatment", experiment: "exp:new", levels: [{ name: "15C" }, { name: "18C" }] });
     assert.deepEqual(w("Block 1"), {
       name: "Block 1", rdf_type: "https://phis.pheno.no/vocabulary#Block", experiment: "exp:new",
-      relations: [{ property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false }],
-    }, "a block carries its treatment");
+      relations: [],
+    }, "a block carries no treatment; its plants do");
     assert.deepEqual(w("B1-C2"), {
       name: "B1-C2", rdf_type: "vocabulary:Plant", experiment: "exp:new",
       relations: [
@@ -400,7 +400,7 @@ test("POST /api/import/plan into an existing experiment is a fill: what PHIS lac
     assert.deepEqual(plan.variableGroups, [{ name: "Hue distribution", variables: 2, exists: true, newMembers: 1 }]);
     assert.equal(plan.objects.count, 2, "Block 2 and B2-C1 are new");
     assert.equal(plan.objects.existing, 3);
-    assert.deepEqual(plan.objects.fills, { count: 3, what: { block: 2, position: 1, germplasm: 1, levels: 3 } }, "B1-C2 keeps its variety and column; Block 1 only gets its treatment");
+    assert.deepEqual(plan.objects.fills, { count: 2, what: { block: 2, position: 1, germplasm: 1, levels: 2 } }, "B1-C2 keeps its variety and column; Block 1 has nothing to add");
     assert.deepEqual(plan.objects.conflicts, { count: 2, examples: ["B1-C2: PHIS has Annika, the file Tiril", "B1-C2: PHIS has position 3, the file position 2"] });
     assert.equal(plan.measurements.count, 13, "15 in the file, 1 already in PHIS, 1 different in PHIS");
     assert.equal(plan.measurements.alreadyInPhis, 1, "PHIS's +0100 on 2025-10-29 is 13:19:34 Oslo time, as in the file");
@@ -415,14 +415,14 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
     mockExistingExperiment(writes);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(lines.at(-1).result.created, { species: 0, germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 3, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
+    assert.deepEqual(lines.at(-1).result.created, { species: 0, germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 2, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
     assert.deepEqual(writes.filter((w) => w.path !== "/core/data").map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri}`.replace(/ import \d{4}.*$/, " import")), [
       "PUT /core/variables_group Hue distribution",
       "POST /core/germplasm Tiril",
       "PUT /core/experiments/factors Treatment",
       "POST /core/scientific_objects Block 2",
       "POST /core/scientific_objects B2-C1",
-      "PUT /core/scientific_objects B1-C1", "PUT /core/scientific_objects B1-C2", "PUT /core/scientific_objects Block 1",
+      "PUT /core/scientific_objects B1-C1", "PUT /core/scientific_objects B1-C2",
       `POST /core/provenances ${NAME} – TraitFinder import`,
     ], "no experiment created; existing ones filled after the new block exists");
     assert.deepEqual(writes[0].body, { uri: "vg:hue", name: "Hue distribution", description: "mine", variables: ["var:Hue [0:25]", "var:Hue [25:50]"] }, "the group keeps its record and its member, and gains the missing bin");
@@ -521,5 +521,31 @@ test("POST /api/import/run can add the species first when PHIS lacks it: created
     assert.deepEqual(posts[0], { name: "Bean", rdf_type: "vocabulary:Species", is_public: true }, "trimmed; a species has no species of its own");
     assert.equal(posts[1].name, "Tiril");
     assert.equal(posts[1].species, "g:Bean", "the germplasm points at the species just made");
+  });
+});
+
+test("POST /api/import/plan: when OpenSILEX's class-properties read is broken (500 'Multiple objects…'), the column property counts as present if the property itself exists — the plan still works", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/vuejs/owl_extension/rdf_type_properties")) return jsonResponse(500, { result: { message: "Multiple objects for some unique property" } });
+      return ontologyAnswer(url, true) ?? inner(url, init);
+    }) as typeof fetch;
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(plan.vocabulary, []);
+  });
+});
+
+test("POST /api/import/plan: a species with the same name as the file's germplasm is not a match — only varieties and accessions are", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => url.includes("/core/germplasm?name=Olve")
+      ? jsonResponse(200, { result: [{ uri: "g:olve", name: "Olve", rdf_type: "vocabulary:Variety" }, { uri: "g:olve-species", name: "Olve", rdf_type: "vocabulary:Species" }] })
+      : inner(url, init)) as typeof fetch;
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(plan.germplasm.existing, [{ name: "Olve", id: "g:olve" }]);
+    assert.deepEqual(plan.germplasm.ambiguous, []);
   });
 });

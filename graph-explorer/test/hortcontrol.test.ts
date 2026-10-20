@@ -16,10 +16,10 @@ test("detect: a raw HortControl export is recognised, other files are not", () =
   assert.equal(plugin.detect(new Map([["notes.txt", Buffer.from("hello")]])), false);
 });
 
-test("parse: blocks carry the treatment, plants are parts of their block with their column, germplasm and treatment", () => {
+test("parse: plants carry the treatment and are parts of their block with their column and germplasm; blocks carry no factor level (the portal lists a level's members as plants)", () => {
   const t = plugin.parse(files());
   const blocks = t.objects.filter((o) => o.rdfType === BLOCK);
-  assert.deepEqual(blocks.map((b) => [b.name, b.factors]), [["Block 1", { Treatment: "15C" }], ["Block 3", { Treatment: "18C" }]]);
+  assert.deepEqual(blocks.map((b) => [b.name, b.factors]), [["Block 1", {}], ["Block 3", {}]]);
   const plants = t.objects.filter((o) => o.rdfType === "vocabulary:Plant");
   assert.equal(plants.length, 10);
   assert.deepEqual(plants.find((p) => p.name === "B3-C2"), {
@@ -85,9 +85,9 @@ test("parse: unit is block:column:row read as numbers (padding doesn't matter); 
   assert.throws(() => plugin.parse(files(sample.toString().replace("\n1:1:1,", "\n1-1-1,"))), /1-1-1/);
 });
 
-test("parse: a block whose plants disagree on treatment is warned about and gets no treatment itself", () => {
+test("parse: a plant whose scans disagree on treatment is warned about and gets none", () => {
   const mixed = sample.toString().replace("\n1:2:1,2025-11-25 08:42:23,A,Bean,Bean,15C", "\n1:2:1,2025-11-25 08:42:23,A,Bean,Bean,18C");
   const t = plugin.parse(files(mixed));
-  assert.deepEqual(t.objects.find((o) => o.name === "Block 1")!.factors, {});
-  assert.ok(t.warnings.some((w) => /Block 1/.test(w) && /treatment/i.test(w)));
+  assert.deepEqual(t.objects.find((o) => o.name === "B1-C2")!.factors, {});
+  assert.ok(t.warnings.some((w) => /B1-C2/.test(w) && /treatment/i.test(w)));
 });
