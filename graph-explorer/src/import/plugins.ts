@@ -11,7 +11,7 @@ export type Files = Map<string, Buffer>; // path inside the upload -> bytes
 export type TrialData = {
   experiment: { name: string; startDate: string }; // startDate: YYYY-MM-DD
   // One per scientific object. `factors`: factor name -> level name. `parent`: the name of another
-  // object here it is part of (a plant's tray); `position`: its place in that parent, from 1.
+  // object here it is part of (a plant's block); `position`: its place in that parent, from 1.
   objects: { name: string; rdfType: string; germplasm?: string; factors: Record<string, string>; parent?: string; position?: number }[];
   // Germplasm name -> its code in the files (TraitFinder's G_alias: Olve -> G5). A name the files give
   // two codes is left out and warned about.

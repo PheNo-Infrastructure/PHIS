@@ -1,12 +1,12 @@
 // The shared import engine, step 3: write what the plan showed, in dependency order —
 // vocabulary -> variables (+ their parts) -> experiment -> germplasm (+ codes) -> factors (+ levels) -> scientific objects,
-// containers (trays) before what is part of them, each with its germplasm, factor levels, parent
+// containers (blocks) before what is part of them, each with its germplasm, factor levels, parent
 // and position (all live on the object's copy in the experiment, so they're sent on creation)
 // -> the measured values. Into an experiment that exists, the same order fills in only what PHIS
 // lacks (existing.ts): new factors/levels/objects are created, existing objects get what they miss.
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "../opensilex.ts";
 import { NODE_TYPES, saveLevels, updatePayloadFromDto } from "../node-types.ts";
-import { POSITION_IN_TRAY, addTerm } from "./ontology.ts";
+import { POSITION_IN_BLOCK, addTerm } from "./ontology.ts";
 import { prepare } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
 import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts";
@@ -123,14 +123,14 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     // One POST per object (no batch endpoint in this OpenSILEX), OBJECTS_AT_ONCE in flight: each costs
     // OpenSILEX ~0.5-1 CPU-s, and with no CPU limit 4-5 at a time is ~2x faster; more gains nothing
     // on the 4-vCPU node (measured 2026-09-30). A failure stops the next batch.
-    // Containers first, so a plant's tray has a uri when the plant is sent.
+    // Containers first, so a plant's block has a uri when the plant is sent.
     const objectUri = new Map<string, string>(experiment?.objects ?? []);
     const write = async (o: (typeof trial.objects)[number]) => {
       const relations = [
         ...(o.germplasm ? [{ property: "vocabulary:hasGermplasm", value: germplasm.get(o.germplasm), inverse: false }] : []),
         ...Object.entries(o.factors).map(([f, l]) => ({ property: "vocabulary:hasFactorLevel", value: levels.get(`${f}|${l}`), inverse: false })),
         ...(o.parent ? [{ property: "vocabulary:isPartOf", value: objectUri.get(o.parent), inverse: false }] : []),
-        ...(o.position !== undefined ? [{ property: POSITION_IN_TRAY, value: String(o.position), inverse: false }] : []),
+        ...(o.position !== undefined ? [{ property: POSITION_IN_BLOCK, value: String(o.position), inverse: false }] : []),
       ];
       objectUri.set(o.name, firstUri(await authedPost("/core/scientific_objects", { name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations })));
       done.objects++;
@@ -139,7 +139,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     for (const pass of [newObjects.filter((o) => !o.parent), newObjects.filter((o) => o.parent)]) {
       for (let i = 0; i < pass.length; i += OBJECTS_AT_ONCE) await Promise.all(pass.slice(i, i + OBJECTS_AT_ONCE).map(write));
     }
-    // Existing objects get what they lack (their tray now has a uri), one PUT each.
+    // Existing objects get what they lack (their block now has a uri), one PUT each.
     for (let i = 0; i < fills.length; i += OBJECTS_AT_ONCE) {
       await Promise.all(fills.slice(i, i + OBJECTS_AT_ONCE).map(async (fill) => {
         await writeFill(fill, done.experiment, { germplasm, levels, objects: objectUri });

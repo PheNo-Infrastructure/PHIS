@@ -4,16 +4,16 @@
 import { OpenSilexError, authedGet, authedGetOne, escapeRegex } from "../opensilex.ts";
 import { personName } from "../node-types.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
-import { POSITION_IN_TRAY, missingTerms } from "./ontology.ts";
+import { POSITION_IN_BLOCK, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
 import { checkMeasurements } from "./measurements.ts";
 import { compareObjects, newValues, readExperiment, valuesIn, type Experiment } from "./existing.ts";
 
 const enc = encodeURIComponent;
-// How many existing objects get each kind of detail added: "tray", "position", "germplasm", "factor level".
+// How many existing objects get each kind of detail added: "block", "position", "germplasm", "factor level".
 function fillWhat(fills: Awaited<ReturnType<typeof compareObjects>>["fills"]) {
   return {
-    tray: fills.filter((f) => f.parent).length, position: fills.filter((f) => f.position !== undefined).length,
+    block: fills.filter((f) => f.parent).length, position: fills.filter((f) => f.position !== undefined).length,
     germplasm: fills.filter((f) => f.germplasm).length, levels: fills.filter((f) => f.levels.length).length,
   };
 }
@@ -69,11 +69,11 @@ export async function prepare(files: Files) {
   setCodes.sort((a, b) => a.name.localeCompare(b.name));
   const warnings = [...trial.warnings, ...keptCodes.map((k) => `${k.name} already has the code ${k.inPhis} in PHIS; the file's ${k.code} isn't used.`)];
 
-  // Vocabulary the objects need that this PHIS lacks (a Tray type, a plant's position) — added first.
+  // Vocabulary the objects need that this PHIS lacks (a Block type, a plant's column) — added first.
   const needed = new Set(trial.objects.map((o) => o.rdfType));
-  if (trial.objects.some((o) => o.position !== undefined)) needed.add(POSITION_IN_TRAY);
+  if (trial.objects.some((o) => o.position !== undefined)) needed.add(POSITION_IN_BLOCK);
   const vocabulary = await missingTerms(needed);
-  const parents = new Set(trial.objects.map((o) => o.parent).filter(Boolean)); // the sample shows what is measured, not trays
+  const parents = new Set(trial.objects.map((o) => o.parent).filter(Boolean)); // the sample shows what is measured, not blocks
   const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
   const kinds = new Map<string, number>();
   for (const o of newObjects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
@@ -125,7 +125,7 @@ export async function prepare(files: Files) {
       ...measurements.summary, count: against.fresh.length, timezone: trial.timezone ?? null,
       ...(experiment ? { alreadyInPhis: against.already, differ: { count: against.differ.length, examples: against.differ.slice(0, 3) } } : {}),
     },
-    // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Tray) — fine for these two.
+    // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Block) — fine for these two.
     objects: {
       count: newObjects.length,
       kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })),

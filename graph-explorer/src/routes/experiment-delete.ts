@@ -20,7 +20,7 @@ async function look(id: string) {
   const exp = (await authedGetOne(`/core/experiments/${enc(id)}`)).result;
   const objects = (await authedGet(`/core/scientific_objects?experiment=${enc(id)}&page_size=5000`)).result;
   const elsewhere = await objectsElsewhere(id);
-  const isTray = (o: Record<string, unknown>) => /tray/i.test(String(o.rdf_type_name ?? o.rdf_type));
+  const isTray = (o: Record<string, unknown>) => /tray|block/i.test(String(o.rdf_type_name ?? o.rdf_type));
   const values = await countValues(`experiments=${enc(id)}`);
   const factors = (await authedGet(`/core/experiments/${enc(id)}/factors`)).result;
   const provenances = (await authedGet(`/core/experiments/${enc(id)}/provenances?page_size=500`)).result;

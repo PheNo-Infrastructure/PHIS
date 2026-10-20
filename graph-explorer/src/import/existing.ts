@@ -1,9 +1,9 @@
 // Importing into an experiment that already exists is a fill (user, 2026-10-05): what the files have
-// and PHIS lacks is added — objects, trays, factors and levels, an object's germplasm, factor levels,
-// tray and position, measured values — and nothing in PHIS is changed. Where PHIS says something else,
-// it's listed in the plan and PHIS is kept. Fewer orphans: an old import gets its trays and values.
+// and PHIS lacks is added — objects, blocks, factors and levels, an object's germplasm, factor levels,
+// block and position, measured values — and nothing in PHIS is changed. Where PHIS says something else,
+// it's listed in the plan and PHIS is kept. Fewer orphans: an old import gets its blocks and values.
 import { authedGet, authedGetOne, authedPost, authedPut, compactUri } from "../opensilex.ts";
-import { POSITION_IN_TRAY } from "./ontology.ts";
+import { POSITION_IN_BLOCK } from "./ontology.ts";
 import type { TrialData } from "./plugins.ts";
 import type { Value } from "./measurements.ts";
 
@@ -66,7 +66,7 @@ export async function compareObjects(objects: Obj[], exp: Experiment, germplasmI
       }
     }
     if (o.position !== undefined) {
-      const pos = of(localName(POSITION_IN_TRAY));
+      const pos = of(localName(POSITION_IN_BLOCK));
       if (!pos.length) fill.position = o.position;
       else if (Number(pos[0].v) !== o.position) differ(`position ${pos[0].v}`, `position ${o.position}`);
     }
@@ -86,7 +86,7 @@ export async function writeFill(fill: Fill, expId: string, ids: { germplasm: Map
   if (fill.germplasm) add("vocabulary:hasGermplasm", ids.germplasm.get(fill.germplasm));
   for (const [f, l] of fill.levels) add("vocabulary:hasFactorLevel", ids.levels.get(`${f}|${l}`));
   if (fill.parent) add("vocabulary:isPartOf", ids.objects.get(fill.parent));
-  if (fill.position !== undefined) add(POSITION_IN_TRAY, String(fill.position));
+  if (fill.position !== undefined) add(POSITION_IN_BLOCK, String(fill.position));
   await authedPut("/core/scientific_objects", { uri: fill.uri, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
 }
 
