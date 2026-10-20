@@ -5,6 +5,7 @@ import { OpenSilexError, authedGetOne, authedPost } from "../opensilex.ts";
 
 const enc = encodeURIComponent;
 export const TRAY = "https://phis.pheno.no/vocabulary#Tray";
+export const BLOCK = "https://phis.pheno.no/vocabulary#Block";
 export const POSITION_IN_TRAY = "https://phis.pheno.no/vocabulary#positionInTray";
 
 // OpenSILEX answers a missing class or property with a 500 "... URI not found".

@@ -184,7 +184,7 @@ test("POST /api/import/plan refuses what it can't import, saying why", async () 
     assert.match(noManifest.error, /no design manifest/);
     const unknown = await post(makeZip({ "notes.txt": "hi" }));
     assert.equal(unknown.status, 400);
-    assert.match(unknown.error, /None of the known instruments recognises these files \(TraitFinder \(PlantEye\)\)/);
+    assert.match(unknown.error, /None of the known instruments recognises these files \(TraitFinder \(HortControl export\), TraitFinder \(PlantEye\)\)/);
   });
 });
 
