@@ -29,14 +29,14 @@ checked on the real data (NDVI: 20 plants x 13 scans x 6 bins, every bar sums to
 or the CSV itself; the review and result text name variable groups and an added species. Treatment's factor category is deliberately NOT set
 (the column is generic; "Air temperature" would be a guess from the level names).
 
-## Open incident: phis-test ontology read (root cause found 2026-10-21)
+## Resolved incident: phis-test ontology read (2026-10-21)
 After the first Block import, OpenSILEX's `GET /vuejs/owl_extension/rdf_type_properties` answers 500 "Multiple objects for some unique property" for every
 class; PHIS's own Scientific object types screen shows the error when a type is opened. **Cause:** this OpenSILEX version supports only ONE custom class
 made through `POST /vuejs/owl_extension/rdf_type`: the store holds exactly two Vue ClassExtension nodes (Tray from 2 Oct, Block from 20 Oct) and the lookup
 `VueOwlExtensionDAO.getExtensionClass` (a "unique property" query) then finds two. The Block property and its Plant restriction were ruled out (deleted
 the restriction, read still failed, restored it). **Design consequence:** never add a second custom class; prefer existing OESO classes. **Fix needs a
 decision about phis-test data** (drop Tray + the old PBar1x4 import and keep Block; or drop Block + the new import; or relabel Tray as Block); details in the
-memory note `project_ontology_read_incident`. The importer works around the broken read in the meantime. Only phis-test was ever written to.
+memory note `project_ontology_read_incident`. **Resolved:** the user said Tray and the outdated PBar1x4 import weren't wanted; PBar1x4 was deleted with everything, the Tray property/restriction removed through the API, and the Tray class's 9 triples removed directly in GraphDB (the API delete hits the same bug). The read works again and PHIS's own screen opens every class. Rule: one custom class only (`#Block`). Only phis-test was ever written to.
 
 ## 1. What the file is (measured, not assumed)
 

@@ -18,7 +18,8 @@ const plantHasPosition = async () => {
     const r = (await authedGetOne(`/vuejs/owl_extension/rdf_type_properties?rdf_type=${enc("vocabulary:Plant")}&parent_type=${enc("vocabulary:ScientificObject")}`)).result as { data_properties?: { uri: string }[] };
     return (r.data_properties ?? []).some((p) => p.uri === POSITION_IN_BLOCK);
   } catch (err) {
-    // Seen on phis-test after the Block terms were added: OpenSILEX answers this read with a 500 for every class. The property
+    // OpenSILEX 1.5.4.7 answers this read with a 500 for EVERY class once two custom classes exist (each gets a Vue ClassExtension node and its
+    // lookup expects one; seen on phis-test with Tray + Block, fixed by removing Tray). So: never create a second custom class. The property
     // itself can still be read, so that decides (the restriction is added together with it).
     if (err instanceof OpenSilexError && /Multiple objects/i.test(err.message)) return positionExists();
     throw err;
