@@ -1819,6 +1819,41 @@ test("e2e: import review — a species PHIS lacks can be added by name: the opti
   });
 });
 
+test("e2e: a distribution (a variable group of histogram bins) is picked like a variable and charted as stacked bars: a bar per scan per group, then a bar per plant for one scan", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const bins = [{ id: "b1", label: "-1 – 0.3", lo: -1, hi: 0.3 }, { id: "b2", label: "0.3 – 1", lo: 0.3, hi: 1 }];
+    let asked = "";
+    await page.route("**/api/experiment-distribution*", (r) => {
+      asked = r.request().url();
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        group: { id: "vg-n", name: "NDVI distribution" }, bins,
+        columns: [{ key: "2025-10-22", times: ["12:00"] }, { key: "2025-10-29", times: ["12:00"] }],
+        plants: [{ id: "so-p1", values: [[30, 70], [20, 80]] }, { id: "so-p2", values: [[40, 60], [10, 90]] }, { id: "so-p3", values: [[50, 50], null] }],
+      }) });
+    });
+    await openStructuredExperiment(page, base, null, { ...STRUCT, distributions: [{ id: "vg-n", label: "NDVI distribution", bins }] });
+    const chip = page.locator("#detailBody .chip", { hasText: "NDVI distribution" });
+    assert.match(await chip.innerText(), /2 bins/, "offered on the Overview, with its number of bins");
+    await chip.click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".d-chart").first().waitFor();
+    assert.match(asked, /experiment=exp-1&group=vg-n/);
+    assert.equal(await grid.locator("#gridOverlay").count(), 0, "line-chart options don't apply");
+    assert.deepEqual((await grid.locator(".d-legend span").allInnerTexts()).map((t) => t.trim()), ["-1 – 0.3", "0.3 – 1"], "the legend names the ranges in order");
+    assert.equal(await grid.locator(".d-chart").count(), 2, "one chart per level of the picked factor");
+    assert.equal(await grid.locator(".d-chart").first().locator(".d-col").count(), 2, "a bar per scan");
+    assert.equal(await grid.locator(".d-chart").nth(1).locator(".d-col").count(), 1, "the group's only plant has no histogram at the second scan");
+    assert.equal(await grid.locator("#distDay").inputValue(), "1", "the one-scan view starts at the last scan");
+    assert.equal(await grid.locator(".d-day-chart").first().locator("rect").count(), 4, "two plants x two ranges");
+    await grid.locator(".d-chart").first().locator('.d-col[data-col="0"]').dispatchEvent("click");
+    assert.equal(await grid.locator("#distDay").inputValue(), "0", "clicking a scan's bar shows that scan per plant");
+    assert.equal(await grid.locator(".d-day-chart").nth(1).locator("rect").count(), 2, "the single plant has a histogram at the first scan");
+  });
+});
+
 // ---------- search ----------
 async function stubSearch(page: import("playwright").Page, answer: (u: URL) => unknown, delayMs: (u: URL) => number = () => 0) {
   await page.route("**/api/search*", async (r) => {
@@ -2499,11 +2534,11 @@ const STRUCT = {
   ],
   other: [{ id: "so-t1", label: "Tray 31" }],
 };
-async function openStructuredExperiment(page: import("playwright").Page, base: string, tab: string | null = "plants") {
+async function openStructuredExperiment(page: import("playwright").Page, base: string, tab: string | null = "plants", struct: object = STRUCT) {
   await page.route("**/api/node-detail*", (r) => {
     const id = new URL(r.request().url()).searchParams.get("id");
     const body = id === "exp-1"
-      ? { uri: "exp-1", actions: ["rename", "delete", "link"], relations: [{ label: "Scientific objects", field: "scientific_object", items: [{ id: "so-p1", type: "scientific_object", label: "PB001" }] }], structure: STRUCT }
+      ? { uri: "exp-1", actions: ["rename", "delete", "link"], relations: [{ label: "Scientific objects", field: "scientific_object", items: [{ id: "so-p1", type: "scientific_object", label: "PB001" }] }], structure: struct }
       : { uri: String(id), actions: [], relations: [] };
     return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });

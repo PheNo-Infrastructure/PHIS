@@ -14,6 +14,7 @@ import { handleExperimentDelete } from "./routes/experiment-delete.ts";
 import { handleSearch } from "./routes/search.ts";
 import { handleMeasurements } from "./routes/measurements.ts";
 import { handleExperimentOverview } from "./routes/experiment-overview.ts";
+import { handleExperimentDistribution } from "./routes/experiment-distribution.ts";
 import { handleProfileRights } from "./routes/profile-rights.ts";
 
 export { _resetAuthCacheForTests } from "./opensilex.ts";
@@ -28,6 +29,7 @@ const routeHandlers: RouteHandler[] = [
   handleSearch,
   handleMeasurements,
   handleExperimentOverview,
+  handleExperimentDistribution,
   handleProfileRights,
   handleCreate,
   handleNodeDetail,

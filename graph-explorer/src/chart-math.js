@@ -36,11 +36,24 @@ export function yRange(seriesLists) {
   return lo === hi ? { lo: lo - 0.5, hi: hi + 0.5 } : { lo, hi };
 }
 
+// Per scan column: the mean share of each bin over the plants that have a histogram then (a plant's value is its array of
+// shares, in the bins' order, or null). A column no plant has gives null.
+export function distributionMeans(plants, nCols) {
+  return Array.from({ length: nCols }, (_, i) => {
+    const got = plants.map((p) => p.values[i]).filter((a) => Array.isArray(a) && a.length);
+    if (!got.length) return null;
+    return got[0].map((_, b) => got.reduce((sum, a) => sum + a[b], 0) / got.length);
+  });
+}
+
 const STANDALONE_VIAS = new Set(["", "#all", "#other"]); // not a factor box: a plant picked here is charted on its own
 
 // What to chart for a selection in one experiment. `picks` = the selection's items, `st` = the experiment's structure.
 export function arrangeCharts(picks, st) {
-  const variables = picks.filter((p) => p.type === "variable").map((p) => ({ id: p.id, label: p.label }));
+  // What is plotted: variables, and variable groups the experiment offers as distributions, in pick order.
+  const offered = new Set((st.distributions ?? []).map((d) => d.id));
+  const variables = picks.filter((p) => p.type === "variable" || (p.type === "variable_group" && offered.has(p.id)))
+    .map((p) => (p.type === "variable" ? { id: p.id, label: p.label } : { id: p.id, label: p.label, kind: "distribution" }));
   const levelOf = new Map(), factorOfLevel = new Map();
   st.factors.forEach((f) => f.levels.forEach((l) => { levelOf.set(l.id, l); factorOfLevel.set(l.id, f); }));
   const known = new Set([...st.factors.flatMap((f) => f.levels.flatMap((l) => l.plants.map((p) => p.id))), ...st.factors.flatMap((f) => f.unset.map((p) => p.id)), ...st.other.map((p) => p.id)]);

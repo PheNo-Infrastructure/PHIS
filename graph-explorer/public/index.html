@@ -504,6 +504,19 @@ button { font-family: inherit; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .g-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
 .g-title { font-size: 16px; font-weight: 600; }
+.d-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin: 4px 0 8px; color: var(--ink-muted); }
+.d-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.d-legend .d-note { margin-left: auto; color: var(--ink-faint); }
+.d-chart rect, .d-day-chart rect { stroke: rgba(0, 0, 0, .15); stroke-width: .4; vector-effect: non-scaling-stroke; }
+.d-chart .d-col { cursor: pointer; }
+.d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.d-day-head { margin-bottom: 6px; font-size: 13px; }
+.d-day-head small { color: var(--ink-faint); margin-left: 8px; }
+.d-day-chart { cursor: default; }
+.d-day-chart:hover { border-color: var(--border); }
+.d-names { display: flex; font-size: 9px; color: var(--ink-faint); margin-top: 2px; }
+.d-names span { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g-pager { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .g-pager button, .g-head button { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 12px; font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer; }
 .g-pager button:disabled { opacity: .4; cursor: default; }
@@ -2010,9 +2023,16 @@ function variablesBodyHtml(st, q) {
     ? `<div class="chip-row var-grid">${list.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en"), title: v.label })).join("")}</div>`
     : `<span class="rel-empty">${st.variables.length ? `No variable matches "${escapeHtml(q)}".` : "None."}</span>`;
 }
+// Variable groups that are histograms (a bin per variable): picked like a variable, charted as stacked bars.
+function distributionsHtml(st) {
+  if (!st.distributions?.length) return "";
+  return `<div class="rel-label" style="margin-top:10px">Distributions <small>what share of the plant falls in each range</small></div>
+    <div class="chip-row var-grid">${st.distributions.map(d => chipHtml({ id: d.id, type: "variable_group", label: d.label, count: `${d.bins.length} bins`, title: `${d.label}: ${d.bins.map(b => b.label).join(", ")}` })).join("")}</div>`;
+}
+
 function variablesTabHtml(id, st) {
   const q = varFilter[id] ?? "";
-  return `<div class="rel-group"><div class="rel-label">Variables measured</div>
+  return `${distributionsHtml(st) ? `<div class="rel-group">${distributionsHtml(st)}</div>` : ""}<div class="rel-group"><div class="rel-label">Variables measured</div>
     <div class="tab-controls"><input class="tab-filter" data-filter="variables" placeholder="Filter variables…" value="${escapeHtml(q)}"></div>
     <div id="variablesBody">${variablesBodyHtml(st, q)}</div></div>`;
 }
@@ -2073,7 +2093,8 @@ function overviewHtml(node) {
     h += `<div class="rel-group"><div class="rel-label">Variables</div>
       <div class="chip-row var-grid">${shown.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en"), title: v.label })).join("")}</div>
       ${st.variables.length > shown.length ? `<button class="go-plants go-vars" title="All variables, with a filter">Show all ${st.variables.length} ›</button>` : ""}
-      <details class="how-charts"><summary>How charts work</summary><p>Pick variables here or on the Variables tab, and plants, levels or whole factors below or on the Plants tab — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
+      ${distributionsHtml(st)}
+      <details class="how-charts"><summary>How charts work</summary><p>Pick variables (or a distribution) here or on the Variables tab, and plants, levels or whole factors below or on the Plants tab — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
   }
   if (st.factors.length) {
     h += `<div class="rel-group"><div class="rel-label">Factors</div>` + st.factors.map(f => `<div class="ov-fac" data-fac="${e(f.id)}">
@@ -2258,6 +2279,80 @@ function wireOverlayRow(plot, row, data, hiddenSeries, group) {
   }, group);
 }
 
+// ---- distribution charts: a variable group of histogram bins, drawn as stacked bars (each bar adds up to 100 %) ----
+const DIST = {}; // "<experiment>|<group>" -> promise of /api/experiment-distribution
+function loadDistribution(exp, group) {
+  const key = `${exp}|${group}`;
+  if (!DIST[key]) {
+    DIST[key] = fetch(`api/experiment-distribution?experiment=${encodeURIComponent(exp)}&group=${encodeURIComponent(group)}`)
+      .then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(b => Promise.reject(new Error(b.error || `PHIS answered ${r.status}`))))
+      .catch(err => { delete DIST[key]; throw err; });
+  }
+  return DIST[key];
+}
+const distState = { day: null }; // the scan the one-day view shows (index into the columns); null = the last
+// Pale for the lowest range to dark for the highest, so a shift towards high values reads as the bars darkening.
+const YLGNBU = ["#ffffd9", "#edf8b1", "#c7e9b4", "#7fcdbb", "#41b6c4", "#1d91c0", "#225ea8", "#253494", "#081d58"]; // ColorBrewer YlGnBu: steps stay apart
+const distColors = n => Array.from({ length: n }, (_, i) => YLGNBU[n < 2 ? 8 : Math.round(i * 8 / (n - 1))]);
+
+function stackedBars(shares, colors, bins, x, w, title) {
+  let y = 100, out = "";
+  shares.forEach((sh, b) => {
+    const h = Math.max(0, sh);
+    y -= h;
+    out += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${colors[b]}"><title>${escapeHtml(title)} · ${escapeHtml(bins[b].label)}: ${sh.toFixed(1)} %</title></rect>`;
+  });
+  return out;
+}
+
+// One chart: the group's mean share per bin at every scan (one bar per scan); a single plant shows its own.
+function distChartHtml(ch, data, colors) {
+  const e = escapeHtml;
+  const head = `<div class="g-ct"><b style="color:${ch.kind === "plant" ? "var(--ink)" : colorVar(ch.colorIndex)}">${e(ch.title)}</b><span>${e(ch.sub)}</span></div>`;
+  const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
+  if (!data.columns.length || !pts.length) return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-empty">no values for ${e(data.group.name)}</div></div>`;
+  const means = distributionMeans(pts, data.columns.length), bw = 100 / means.length;
+  const bars = means.map((m, i) => m ? `<g class="d-col${distState.day === i ? " on" : ""}" data-col="${i}">${stackedBars(m, colors, data.bins, i * bw + bw * 0.08, bw * 0.84, whenText(data.columns[i].key))}</g>` : "").join("");
+  return `<div class="g-chart d-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[data.columns.length - 1].key))}</span></div></div>`;
+}
+
+// One scan, one bar per plant of each chart's group.
+function distDayHtml(plan, data, colors, st) {
+  const e = escapeHtml;
+  const day = distState.day ?? data.columns.length - 1;
+  const panels = plan.rows.flatMap(r => r.charts).map(ch => {
+    const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values[day]);
+    if (!pts.length) return "";
+    const bw = 100 / pts.length;
+    const bars = pts.map((p, i) => stackedBars(p.values[day], colors, data.bins, i * bw + bw * 0.1, bw * 0.8, plantLabelIn(st, p.id))).join("");
+    const names = pts.length <= 12 ? `<div class="d-names">${pts.map(p => `<span title="${e(plantLabelIn(st, p.id))}">${e(plantLabelIn(st, p.id))}</span>`).join("")}</div>` : "";
+    return `<div class="g-chart d-day-chart"><div class="g-ct"><b style="color:${ch.kind === "plant" ? "var(--ink)" : colorVar(ch.colorIndex)}">${e(ch.title)}</b><span>${pts.length} plant${pts.length === 1 ? "" : "s"}</span></div><div class="g-plot"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div>${names}</div>`;
+  }).join("");
+  return `<div class="d-day"><div class="d-day-head"><b>One scan</b> <select id="distDay">${data.columns.map((c, i) => `<option value="${i}"${i === day ? " selected" : ""}>${e(whenText(c.key))}</option>`).join("")}</select> <small>one bar per plant; click a bar above to jump to its scan</small></div><div class="g-row-charts">${panels || `<div class="hx-note">No plant has this histogram at that scan.</div>`}</div></div>`;
+}
+
+async function renderDistributionBody(dlg, body, plan, sel, v) {
+  const e = escapeHtml;
+  let data;
+  try { data = await loadDistribution(sel.experiment, v.id); }
+  catch (err) {
+    body.innerHTML = `<div class="import-warning">Couldn't load ${e(v.label)}: ${e(String(err.message))} <button id="gridRetry">Retry</button></div>`;
+    body.querySelector("#gridRetry").addEventListener("click", () => renderChartGrid());
+    return;
+  }
+  if (!dlg.isConnected || dlg.querySelector("#gridBody") !== body) return; // closed, or a newer render took over
+  if (!data.bins.length || !data.columns.length) { body.innerHTML = `<div class="hx-note">No values for ${e(v.label)} in this experiment.</div>`; return; }
+  const colors = distColors(data.bins.length);
+  const legend = `<div class="d-legend">${data.bins.map((b, i) => `<span><i style="background:${colors[i]}"></i>${e(b.label)}</span>`).join("")}<span class="d-note">each bar adds up to 100 %</span></div>`;
+  const draw = () => {
+    body.innerHTML = legend + plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}"><div class="g-row-label">${e(r.label)}</div><div class="g-row-charts">${r.charts.map(c => distChartHtml(c, data, colors)).join("")}</div></div>`).join("")
+      + distDayHtml(plan, data, colors, sel.st);
+    body.querySelectorAll(".d-col").forEach(g => g.addEventListener("click", () => { distState.day = Number(g.dataset.col); draw(); }));
+    body.querySelector("#distDay").addEventListener("change", ev => { distState.day = Number(ev.target.value); draw(); });
+  };
+  draw();
+}
+
 async function renderChartGrid() {
   const dlg = document.getElementById("chartGrid");
   const sel = chartableSelection();
@@ -2275,21 +2370,22 @@ async function renderChartGrid() {
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><span class="g-title">${e(v.label)}</span>${pager}<span style="flex:1"></span>
       <span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
-      <label title="One chart per row: the row's charts on top of each other"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
+      ${v.kind === "distribution" ? "" : `<label title="One chart per row: the row's charts on top of each other"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label title="Every plant as a percentage of its own first scan, to compare growth shapes"><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
       <label><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
-      <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>
+      <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>`}
       <button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());
   dlg.querySelector("#gridPrev")?.addEventListener("click", () => { gridState.vi--; renderChartGrid(); });
   dlg.querySelector("#gridNext")?.addEventListener("click", () => { gridState.vi++; renderChartGrid(); });
   dlg.querySelectorAll("[data-gvar]").forEach(b => b.addEventListener("click", () => { gridState.vi = Number(b.dataset.gvar); renderChartGrid(); }));
   dlg.querySelectorAll("[data-size]").forEach(b => b.addEventListener("click", () => { gridState.size = b.dataset.size; saveGrid(); renderChartGrid(); }));
-  dlg.querySelector("#gridOverlay").addEventListener("change", ev => { gridState.overlay = ev.target.checked; saveGrid(); renderChartGrid(); });
-  dlg.querySelector("#gridNorm").addEventListener("change", ev => { gridState.norm = ev.target.checked; saveGrid(); renderChartGrid(); });
-  dlg.querySelector("#gridShared").addEventListener("change", ev => { gridState.sharedY = ev.target.checked; saveGrid(); renderChartGrid(); });
-  dlg.querySelector("#gridStats").addEventListener("change", ev => { gridState.stats = ev.target.checked; saveGrid(); renderChartGrid(); });
+  dlg.querySelector("#gridOverlay")?.addEventListener("change", ev => { gridState.overlay = ev.target.checked; saveGrid(); renderChartGrid(); });
+  dlg.querySelector("#gridNorm")?.addEventListener("change", ev => { gridState.norm = ev.target.checked; saveGrid(); renderChartGrid(); });
+  dlg.querySelector("#gridShared")?.addEventListener("change", ev => { gridState.sharedY = ev.target.checked; saveGrid(); renderChartGrid(); });
+  dlg.querySelector("#gridStats")?.addEventListener("change", ev => { gridState.stats = ev.target.checked; saveGrid(); renderChartGrid(); });
   const body = dlg.querySelector("#gridBody");
+  if (v.kind === "distribution") { await renderDistributionBody(dlg, body, plan, sel, v); return; }
   let data;
   try { data = await loadOverview(sel.experiment, v.id); if (gridState.norm) data = normaliseOverview(data); }
   catch (err) {

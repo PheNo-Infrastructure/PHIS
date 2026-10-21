@@ -6,9 +6,12 @@ const enc = encodeURIComponent;
 const natural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
 
 export type Ref = { id: string; label: string };
+export type Bin = { id: string; label: string; lo: number; hi: number };
 export type Structure = {
   truncated: boolean;
   variables: { id: string; label: string; count: number }[];
+  // Variable groups whose members are histogram bins ("NDVI [0.15:0.3]") with values in this experiment: one chart each.
+  distributions: { id: string; label: string; bins: Bin[] }[];
   factors: {
     id: string; label: string;
     levels: { id: string; type: "factor_level"; label: string; factor: string; plants: Ref[] }[];
@@ -28,6 +31,38 @@ async function inBatches<T, R>(items: T[], size: number, fn: (x: T) => Promise<R
   const out: R[] = [];
   for (let i = 0; i < items.length; i += size) out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
   return out;
+}
+
+// A bin's range is in its variable's name: "NDVI [0.15:0.3]" (what the HortControl import writes).
+const BIN = /\[(-?[\d.]+):(-?[\d.]+)\]\s*$/;
+export function binOf(id: string, name: string): Bin | null {
+  const r = BIN.exec(name);
+  if (!r) return null;
+  const lo = Number(r[1]), hi = Number(r[2]);
+  return { id, label: `${lo} – ${hi}`, lo, hi };
+}
+async function distributionsOf(variables: { id: string; label: string; count: number }[]): Promise<Structure["distributions"]> {
+  try {
+    const here = new Map<string, number>();
+    for (const v of variables) if (v.count > 0) here.set(await compactUri(v.id), v.count);
+    const groups = (await authedGet("/core/variables_group?page_size=500")).result;
+    const out: Structure["distributions"] = [];
+    for (const g of await inBatches(groups, AT_ONCE, async (g) => (await authedGet(`/core/variables_group/${enc(String(g.uri))}`)).result)) {
+      const members = (g.variables as Row[] | undefined) ?? [];
+      const bins: Bin[] = [];
+      for (const m of members) {
+        const id = String(m.uri);
+        if (!here.has(await compactUri(id))) continue;
+        const bin = binOf(id, String(m.name ?? ""));
+        if (!bin) { bins.length = 0; break; } // a group with anything but bins isn't a distribution
+        bins.push(bin);
+      }
+      if (bins.length > 1) out.push({ id: String(g.uri), label: String(g.name ?? g.uri), bins: bins.sort((a, b) => a.lo - b.lo || a.hi - b.hi) });
+    }
+    return out.sort((a, b) => natural(a.label, b.label));
+  } catch {
+    return []; // the page works without distributions
+  }
 }
 
 export async function experimentStructure(expId: string): Promise<Structure> {
@@ -75,5 +110,5 @@ export async function experimentStructure(expId: string): Promise<Structure> {
   const factors = built.map(({ own, ...f }) => ({ ...f, unset: all.filter((o) => !own.has(keyOf.get(o.id)!) && inAnyFactor.has(keyOf.get(o.id)!)) }));
   const other = all.filter((o) => !inAnyFactor.has(keyOf.get(o.id)!));
   const total = soPage.metadata?.pagination?.totalCount ?? all.length;
-  return { truncated: levelCut || total > all.length, variables, factors, other };
+  return { truncated: levelCut || total > all.length, variables, distributions: await distributionsOf(variables), factors, other };
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { meanSd, groupColumns, yRange, arrangeCharts, normaliseOverview } from "../src/chart-math.js";
+import { meanSd, groupColumns, yRange, arrangeCharts, normaliseOverview, distributionMeans } from "../src/chart-math.js";
 
 test("meanSd: mean and sample SD over the numbers present; one value has SD null; nothing gives null", () => {
   assert.deepEqual(meanSd([2, 4, 6]), { mean: 4, sd: 2, n: 3 });
@@ -85,4 +85,16 @@ test("normaliseOverview: every plant as % of its own first scan; no baseline (fi
   assert.deepEqual(out.plants[1].values, [null, { v: 100, at: "x" }, { v: 50, at: "y" }], "the first scan it HAS is the baseline");
   assert.deepEqual(out.plants[2].values, [null, null, null]);
   assert.equal(out.variable.unit, "% of first scan");
+});
+
+test("arrangeCharts: a picked variable group the experiment offers as a distribution is charted like a variable (in pick order, marked); one it doesn't offer is ignored", () => {
+  const st = { ...ST, distributions: [{ id: "vg1", label: "NDVI distribution", bins: [] }] };
+  const r = arrangeCharts([v("v1"), { id: "vg1", type: "variable_group", label: "NDVI distribution" }, { id: "vg9", type: "variable_group", label: "Other" }], st);
+  assert.deepEqual(r.variables, [{ id: "v1", label: "v1" }, { id: "vg1", label: "NDVI distribution", kind: "distribution" }]);
+});
+
+test("distributionMeans: per scan, the mean share of each bin over the plants that have one; no plant then gives null", () => {
+  const plants = [{ values: [[30, 70], [20, 80], null] }, { values: [[40, 60], null, null] }];
+  assert.deepEqual(distributionMeans(plants, 3), [[35, 65], [20, 80], null]);
+  assert.deepEqual(distributionMeans([], 2), [null, null]);
 });

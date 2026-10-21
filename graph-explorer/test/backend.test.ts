@@ -3524,3 +3524,63 @@ test("typing an experiment's name to confirm its delete: any dash, case and spac
   assert.equal(sameTypedName("PBar1x4 - TraitFinder - 2025-10-23", name), false);
   assert.equal(sameTypedName("", name), false);
 });
+
+test("structure: a variable group whose members are histogram bins with values here is offered as a distribution — bins in order of their range, other groups left out", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: url.includes("variables=var-c") ? 0 : 5 });
+      if (url.includes("/core/experiments/exp-6/variables")) return jsonResponse(200, { result: [
+        { uri: "var-b", name: "NDVI [0.3:1]" }, { uri: "var-a", name: "NDVI [-1:0.3]" }, { uri: "var-h", name: "Height" }, { uri: "var-c", name: "Hue [0:25]" }] });
+      if (url.includes("/core/experiments/exp-6/species")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/experiments/exp-6/factors")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/scientific_objects?experiment=exp-6")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+      if (url.includes("/core/variables_group/vg-ndvi")) return jsonResponse(200, { result: { uri: "vg-ndvi", name: "NDVI distribution", variables: [{ uri: "var-b", name: "NDVI [0.3:1]" }, { uri: "var-a", name: "NDVI [-1:0.3]" }] } });
+      if (url.includes("/core/variables_group/vg-mixed")) return jsonResponse(200, { result: { uri: "vg-mixed", name: "Mixed", variables: [{ uri: "var-a", name: "NDVI [-1:0.3]" }, { uri: "var-h", name: "Height" }] } });
+      if (url.includes("/core/variables_group/vg-hue")) return jsonResponse(200, { result: { uri: "vg-hue", name: "Hue distribution", variables: [{ uri: "var-c", name: "Hue [0:25]" }] } });
+      if (url.includes("/core/variables_group?")) return jsonResponse(200, { result: [{ uri: "vg-mixed", name: "Mixed" }, { uri: "vg-ndvi", name: "NDVI distribution" }, { uri: "vg-hue", name: "Hue distribution" }] });
+      if (url.endsWith("/core/experiments/exp-6")) return jsonResponse(200, { result: { uri: "exp-6", name: "Beans" } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const { structure } = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-6`)).json();
+    assert.deepEqual(structure.distributions, [{ id: "vg-ndvi", label: "NDVI distribution", bins: [{ id: "var-a", label: "-1 – 0.3", lo: -1, hi: 0.3 }, { id: "var-b", label: "0.3 – 1", lo: 0.3, hi: 1 }] }]);
+  });
+});
+
+test("GET /api/experiment-distribution: a bin group's shares for every plant, one array per scan in the bins' order; a scan missing a bin is left out, not guessed; bad requests are refused", async () => {
+  await withServer(async (base) => {
+    let searchUrl = "";
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/variables_group/vg-ndvi")) return jsonResponse(200, { result: { uri: "vg-ndvi", name: "NDVI distribution", variables: [{ uri: "var-b", name: "NDVI [0.3:1]" }, { uri: "var-a", name: "NDVI [-1:0.3]" }] } });
+      if (url.includes("/core/data/search")) {
+        searchUrl = url;
+        return jsonResponse(200, { result: [
+          { date: "2025-10-22T12:54:51.000+0200", target: "so-p1", variable: "var-a", value: 30 },
+          { date: "2025-10-22T12:54:51.000+0200", target: "so-p1", variable: "var-b", value: 70 },
+          { date: "2025-10-22T13:10:00.000+0200", target: "so-p2", variable: "var-a", value: 40 },
+          { date: "2025-10-22T13:10:00.000+0200", target: "so-p2", variable: "var-b", value: 60 },
+          { date: "2025-10-23T08:00:00.000+0200", target: "so-p1", variable: "var-a", value: 20 },
+          { date: "2025-10-23T08:00:00.000+0200", target: "so-p1", variable: "var-b", value: 80 },
+          { date: "2025-10-23T08:05:00.000+0200", target: "so-p2", variable: "var-a", value: 10 },
+        ] });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await realFetch(`${base}/api/experiment-distribution?experiment=exp-1&group=vg-ndvi`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.match(searchUrl, /variables=var-a/);
+    assert.match(searchUrl, /variables=var-b/);
+    assert.deepEqual(body.group, { id: "vg-ndvi", name: "NDVI distribution" });
+    assert.deepEqual(body.bins, [{ id: "var-a", label: "-1 – 0.3", lo: -1, hi: 0.3 }, { id: "var-b", label: "0.3 – 1", lo: 0.3, hi: 1 }]);
+    assert.deepEqual(body.columns.map((c: any) => c.key), ["2025-10-22", "2025-10-23"]);
+    assert.deepEqual(body.plants, [
+      { id: "so-p1", values: [[30, 70], [20, 80]] },
+      { id: "so-p2", values: [[40, 60], null] },
+    ]);
+    assert.equal((await realFetch(`${base}/api/experiment-distribution?experiment=exp-1`)).status, 400);
+  });
+});
