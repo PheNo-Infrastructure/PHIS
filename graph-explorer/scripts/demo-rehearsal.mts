@@ -43,7 +43,7 @@ await precondition();
 step("precondition ok: no TraitFinder experiment yet");
 
 const browser = await chromium.launch({ headless: !headed, slowMo: headed ? 400 : 0 });
-const context = await browser.newContext({ viewport: { width: 1600, height: 900 }, colorScheme: process.env.DEMO_SCHEME === "dark" ? "dark" : "light", ...(video ? { recordVideo: { dir: `${OUT}/video`, size: { width: 1600, height: 900 } } } : {}) });
+const context = await browser.newContext({ viewport: { width: 1600, height: 900 }, ...(video ? { recordVideo: { dir: `${OUT}/video`, size: { width: 1600, height: 900 } } } : {}) });
 page = await context.newPage();
 page.setDefaultTimeout(30_000);
 try {
