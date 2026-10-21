@@ -18,8 +18,8 @@ ontologies:
 
 core:
   agroportal:
-    basePath: "https://agroportal.lirmm.fr"
-    baseAPIPath: "https://data.agroportal.lirmm.fr"
+    basePath: "https://agroportal.eu"
+    baseAPIPath: "https://data.agroportal.eu"
     externalAPIKey: "${AGROPORTAL_API_KEY}"
 
 big-data:
