@@ -549,3 +549,18 @@ test("POST /api/import/plan: a species with the same name as the file's germplas
     assert.deepEqual(plan.germplasm.ambiguous, []);
   });
 });
+
+test("POST /api/import/plan takes the export's CSV as it is too (its name in X-File-Name); anything else that isn't a ZIP is refused, saying what to upload", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const post = (body: string, name?: string) => realFetch(`${base}/api/import/plan`, { method: "POST", body, headers: name ? { "X-File-Name": encodeURIComponent(name) } : {} });
+    const ok = await post(RAW, "Trial01_TraitFinder_20260107_PlantEye.csv");
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).experiment.name, NAME, "named from the file, as when it comes in a ZIP");
+    const notCsv = await post("hello", "notes.txt");
+    assert.equal(notCsv.status, 400);
+    assert.match((await notCsv.json()).error, /ZIP or its CSV/);
+    const noName = await post("hello");
+    assert.equal((await noName.json()).error, "This isn't a ZIP file.", "unchanged when nothing says it is a CSV");
+  });
+});

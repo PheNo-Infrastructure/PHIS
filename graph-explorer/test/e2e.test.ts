@@ -1714,6 +1714,7 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
           { kind: "entities", name: "Plant" }, { kind: "characteristics", name: "c1" }, { kind: "characteristics", name: "c2" }, { kind: "characteristics", name: "c3" }, { kind: "characteristics", name: "c4" },
           { kind: "units", name: "Unitless" }, { kind: "units", name: "SquareMillimeterPerSquareMillimeter", symbol: "mm²/mm²" },
         ] },
+        variableGroups: [{ name: "NDVI distribution", variables: 6, exists: false }, { name: "Hue distribution", variables: 6, exists: true, newMembers: 2 }],
         warnings: ["On 2025-10-29 the sheet disagrees."],
       }) });
     });
@@ -1732,6 +1733,8 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
     assert.match(text, /Scientific objects.* New: 4 \(1 tray and 3 plants\) \(e\.g\. PB001: Olve, Replicate 1, in Tray 31, position 1\)/);
     assert.match(text, /Variables.* Already in PHIS, reused: 1 \(Plant Height Max\) New: 4 \(NDVI Average, Leaf inclination, A, B\) Also adds what they're made of: the entity Plant, 4 characteristics and the units Unitless and SquareMillimeterPerSquareMillimeter \(mm²\/mm²\)\./);
     assert.match(text, /Nothing has been written to PHIS yet\./);
+    assert.match(text, /Variable groups \(a histogram's bins together\): New: 1 \(NDVI distribution\) Existing groups that get more variables: 1 \(Hue distribution\)/);
+    assert.match((await page.locator("#importRunBtn").innerText()).trim(), /1 variable group\b/, "the button names the groups it creates");
     assert.equal(await page.locator("#importSpecies").inputValue(), "", "no species chosen for the user");
     await page.locator("#importClose").click();
     assert.equal(await page.locator("#importOverlay.open").count(), 0);
@@ -1851,6 +1854,39 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
     await grid.locator(".d-chart").first().locator('.d-col[data-col="0"]').dispatchEvent("click");
     assert.equal(await grid.locator("#distDay").inputValue(), "0", "clicking a scan's bar shows that scan per plant");
     assert.equal(await grid.locator(".d-day-chart").nth(1).locator("rect").count(), 2, "the single plant has a histogram at the first scan");
+  });
+});
+
+test("e2e: a file dropped on the import dialog is read like a chosen one — a CSV goes up with its name, a ZIP as a ZIP", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const seen: { type: string; name: string | undefined; size: number }[] = [];
+    await page.route("**/api/import/plan", (route) => {
+      const h = route.request().headers();
+      seen.push({ type: h["content-type"], name: h["x-file-name"], size: route.request().postDataBuffer()?.length ?? 0 });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        instrument: "TraitFinder (HortControl export)", experiment: { name: "Trial", startDate: "2025-11-25", exists: true },
+        germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [], vocabulary: [],
+        variables: { existing: [], missing: [], parts: [] }, objects: { count: 0, kinds: [], sample: [] }, warnings: [],
+      }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    const drop = (name: string, type: string, text: string) => page.evaluate(({ name, type, text }) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], name, { type }));
+      const zone = document.getElementById("importDrop")!;
+      zone.dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      zone.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }, { name, type, text });
+    await drop("Trial_TraitFinder_20260108_PlantEye.csv", "text/csv", "unit,timestamp\n");
+    await page.locator(".import-section").first().waitFor();
+    await drop("export.zip", "application/zip", "PK-fake");
+    await page.waitForTimeout(400);
+    assert.deepEqual(seen, [
+      { type: "text/csv", name: "Trial_TraitFinder_20260108_PlantEye.csv", size: 15 },
+      { type: "application/zip", name: undefined, size: 7 },
+    ]);
   });
 });
 

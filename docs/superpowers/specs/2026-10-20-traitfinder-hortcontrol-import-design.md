@@ -21,6 +21,14 @@ falls back to reading the property itself). PHIS's own object forms probably use
 `positionInBlock` restriction on Plant) was blocked by the permission classifier and needs the user's say. (2) Part 2 distribution charts.
 (3) Treatment's factor category. (4) The 21 older trait variables keep entity Plant. (5) Questions in section 4.
 
+## Status (2026-10-21)
+**Part 2 built.** An experiment's page offers each variable group made of histogram bins under "Distributions" (found from the bins' names,
+`NDVI [0.15:0.3]`); picked like a variable, the chart grid draws one stacked bar per scan (the group's mean share per bin, a chart per
+treatment level), and below it one bar per plant for a chosen scan (click a bar to jump to its scan). Route `/api/experiment-distribution`;
+checked on the real data (NDVI: 20 plants x 13 scans x 6 bins, every bar sums to 100 %). Also: the import dialog takes a dropped file, a ZIP
+or the CSV itself; the review and result text name variable groups and an added species. Treatment's factor category is deliberately NOT set
+(the column is generic; "Air temperature" would be a guess from the level names).
+
 ## 1. What the file is (measured, not assumed)
 
 | Fact | Value |

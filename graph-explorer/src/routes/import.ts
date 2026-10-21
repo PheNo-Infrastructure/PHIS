@@ -8,7 +8,7 @@ import { runImport } from "../import/run.ts";
 // multi-GB scan archive is refused instead of exhausting the server.
 const MAX_UPLOAD = 50 * 1024 * 1024;
 
-// Both take the instrument's ZIP as-is as the body.
+// Both take the instrument's ZIP (or its CSV, with X-File-Name) as-is as the body.
 //   POST /api/import/plan               -> what would be created or reused; writes nothing
 //   POST /api/import/run?species=<uri>|newSpecies=<name>&device=<uri>&person=<uri>&share=<public|private|group uri>&note=1
 //                                       -> writes it, streaming progress (species: for new germplasm; device/person: who made
@@ -32,7 +32,13 @@ export const handleImport: RouteHandler = async (req, res, { pathname, searchPar
   }
   let files;
   try {
-    files = readZip(Buffer.concat(chunks));
+    const body = Buffer.concat(chunks);
+    // A ZIP, or the export's CSV as it is (its name in X-File-Name: the plugin takes the experiment's name from it).
+    const name = decodeURIComponent(String(req.headers["x-file-name"] ?? ""));
+    if (name && !(body.length > 1 && body[0] === 0x50 && body[1] === 0x4b)) {
+      if (!/\.csv$/i.test(name)) throw new Error("Upload the instrument's ZIP or its CSV file.");
+      files = new Map([[name.split(/[\\/]/).pop()!, body]]);
+    } else files = readZip(body);
   } catch (err) {
     reply(400, { error: err instanceof Error ? err.message : String(err) });
     return true;

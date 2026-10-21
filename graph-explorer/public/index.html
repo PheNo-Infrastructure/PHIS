@@ -504,6 +504,9 @@ button { font-family: inherit; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .g-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
 .g-title { font-size: 16px; font-weight: 600; }
+.import-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-muted); }
+.import-drop.drag-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.import-drop .import-or { color: var(--ink-faint); }
 .d-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin: 4px 0 8px; color: var(--ink-muted); }
 .d-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .d-legend .d-note { margin-left: auto; color: var(--ink-faint); }
@@ -4520,29 +4523,35 @@ function openImport() {
     <div class="ranking-backdrop" id="importBackdrop"></div>
     <div class="ranking-modal import-modal">
       <div class="ranking-header"><span>Import from an instrument</span><button class="ranking-close" id="importClose" title="Close">&times;</button></div>
-      <p class="ranking-hint">Choose the ZIP your instrument produced (e.g. a TraitFinder export). You'll see what it would create in PHIS first — nothing is written until you confirm.</p>
-      <input type="file" id="importFile" accept=".zip,application/zip">
+      <p class="ranking-hint">Drop the file your instrument produced here (a ZIP, or the CSV itself — e.g. a TraitFinder export from HortControl), or choose it. You'll see what it would create in PHIS first — nothing is written until you confirm.</p>
+      <div class="import-drop" id="importDrop"><span>Drop the file here</span> <span class="import-or">or</span> <input type="file" id="importFile" accept=".zip,.csv,application/zip,text/csv"></div>
       <div id="importPlan"></div>
     </div>`;
   overlay.classList.add("open");
   const close = () => { overlay.classList.remove("open"); overlay.innerHTML = ""; };
   document.getElementById("importBackdrop").addEventListener("click", close);
   document.getElementById("importClose").addEventListener("click", close);
-  document.getElementById("importFile").addEventListener("change", async (e) => {
-    const f = e.target.files[0];
+  const readFile = async (f) => {
     const out = document.getElementById("importPlan");
     if (!f) { out.innerHTML = ""; return; }
     out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>`;
     try {
-      const res = await fetch("api/import/plan", { method: "POST", headers: { "Content-Type": "application/zip" }, body: f });
+      const res = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f), body: f });
       const body = await res.json();
       out.innerHTML = res.ok ? importPlanHtml(body) : `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
       if (res.ok) wireImportRun(f, body, close);
     } catch (err) {
       out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>`;
     }
-  });
+  };
+  document.getElementById("importFile").addEventListener("change", (e) => readFile(e.target.files[0]));
+  const drop = document.getElementById("importDrop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag-over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drag-over"); readFile(e.dataTransfer.files[0]); });
 }
+// A ZIP goes as it is; a CSV says its name (the experiment is named from it).
+const importHeaders = (f) => /\.csv$/i.test(f.name) ? { "Content-Type": "text/csv", "X-File-Name": encodeURIComponent(f.name) } : { "Content-Type": "application/zip" };
 document.getElementById("importBtn").addEventListener("click", openImport);
 
 function importPlanHtml(p) {
@@ -4551,6 +4560,7 @@ function importPlanHtml(p) {
   const newCount = g.missing.length;
   const sample = p.objects.sample[0];
   const v = p.variables;
+  const newGroups = (p.variableGroups ?? []).filter(g => !g.exists), grownGroups = (p.variableGroups ?? []).filter(g => g.exists && g.newMembers);
   const m = p.measurements;
   const skipped = m && (m.skipped.empty + m.skipped.notNumbers.count + m.skipped.contradictions.count);
   return `
@@ -4585,11 +4595,13 @@ function importPlanHtml(p) {
       ${p.objects.existing ? `<p>Already in PHIS: ${p.objects.existing}${p.objects.fills.count ? `; fills in what ${p.objects.fills.count} of them lack: ${escapeHtml(andList(fillsText(p.objects.fills.what)))}` : ", nothing to fill in"}.</p>` : ""}
       ${p.objects.conflicts?.count ? `<div class="import-warning">PHIS and the file disagree in ${p.objects.conflicts.count} ${p.objects.conflicts.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(p.objects.conflicts.examples.join("; "))}).</div>` : ""}
     </div>
-    ${v.existing.length + v.missing.length ? `<div class="import-section">
+    ${v.existing.length + v.missing.length + newGroups.length + grownGroups.length ? `<div class="import-section">
       <h3>Variables<small>what is measured: a trait of the plant, how, and in what unit</small></h3>
       ${v.existing.length ? `<p>Already in PHIS, reused: ${v.existing.length} <span class="import-names">(${list(v.existing)})</span></p>` : ""}
       ${v.missing.length ? `<p>New: ${v.missing.length} <span class="import-names">(${list(v.missing, 30)})</span></p>` : ""}
       ${v.parts.length ? `<p>Also adds what they're made of: ${escapeHtml(andList(partsText(v.parts)))}.</p>` : ""}
+      ${newGroups.length ? `<p>Variable groups (a histogram's bins together): New: ${newGroups.length} <span class="import-names">(${list(newGroups.map(g => g.name))})</span></p>` : ""}
+      ${grownGroups.length ? `<p>Existing groups that get more variables: ${grownGroups.length} <span class="import-names">(${list(grownGroups.map(g => g.name))})</span></p>` : ""}
     </div>` : ""}
     ${m && (m.count || skipped || m.alreadyInPhis || m.differ?.count) ? `<div class="import-section">
       <h3>Measurements<small>the values: one per plant, variable and scan time</small></h3>
@@ -4652,6 +4664,7 @@ function importFooterHtml(p) {
     ...(newFactors ? [`${newFactors} ${newFactors === 1 ? "factor" : "factors"}`] : []),
     ...(p.objects.count || !p.experiment.exists ? [`${p.objects.count} ${typeName("scientific_object", p.objects.count)}`] : []),
     ...(p.variables.missing.length ? [`${p.variables.missing.length} ${p.variables.missing.length === 1 ? "variable" : "variables"}`] : []),
+    ...((p.variableGroups ?? []).filter(g => !g.exists).length ? [`${(p.variableGroups ?? []).filter(g => !g.exists).length} variable ${(p.variableGroups ?? []).filter(g => !g.exists).length === 1 ? "group" : "groups"}`] : []),
     ...(p.measurements?.count ? [`${p.measurements.count.toLocaleString("en")} measured ${p.measurements.count === 1 ? "value" : "values"}`] : []),
   ];
   const fill = p.objects.fills?.count ? `fill in ${p.objects.fills.count} existing ${typeName("scientific_object", p.objects.fills.count)}` : "";
@@ -4695,7 +4708,7 @@ function wireImportRun(file, plan, close) {
       const noteBox = document.getElementById("importNote");
       if (noteBox?.checked) q.set("note", "1");
       if (noteBox) noteBox.disabled = true;
-      const res = await fetch(`api/import/run${q.size ? `?${q}` : ""}`, { method: "POST", headers: { "Content-Type": "application/zip" }, body: file });
+      const res = await fetch(`api/import/run${q.size ? `?${q}` : ""}`, { method: "POST", headers: importHeaders(file), body: file });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
         footer.innerHTML = `<div class="import-warning">${escapeHtml(b.error || `The import failed (${res.status}).`)}</div>`;
@@ -4723,7 +4736,9 @@ function wireImportRun(file, plan, close) {
       const c = body.created;
       const also = [
         ...(c.codes ? [`set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}`] : []),
+        ...(c.species ? [`added the species`] : []),
         ...(c.variables ? [`created ${c.variables} ${c.variables === 1 ? "variable" : "variables"}`] : []),
+        ...(c.variableGroups ? [`grouped variables into ${c.variableGroups} ${c.variableGroups === 1 ? "group" : "groups"}`] : []),
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
         ...(c.note === true ? ["recorded an annotation about the import"] : c.note === false ? ["could not save the annotation about the import (the data is in PHIS)"] : []),
       ];
