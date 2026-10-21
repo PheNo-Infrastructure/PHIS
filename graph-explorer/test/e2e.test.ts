@@ -1842,7 +1842,7 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
     await grid.locator(".d-chart").first().waitFor();
     assert.match(asked, /experiment=exp-1&group=vg-n/);
     assert.equal(await grid.locator("#gridOverlay").count(), 0, "line-chart options don't apply");
-    assert.deepEqual((await grid.locator(".d-legend span").allInnerTexts()).map((t) => t.trim()), ["-1 – 0.3", "0.3 – 1"], "the legend names the ranges in order");
+    assert.deepEqual((await grid.locator(".d-legend span:not(.d-note)").allInnerTexts()).map((t) => t.trim()), ["-1 – 0.3", "0.3 – 1"], "the legend names the ranges in order");
     assert.equal(await grid.locator(".d-chart").count(), 2, "one chart per level of the picked factor");
     assert.equal(await grid.locator(".d-chart").first().locator(".d-col").count(), 2, "a bar per scan");
     assert.equal(await grid.locator(".d-chart").nth(1).locator(".d-col").count(), 1, "the group's only plant has no histogram at the second scan");
