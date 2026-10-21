@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --experimental-strip-types --env-file=.env src/index.ts",
+    "demo:rehearse": "node --experimental-strip-types --env-file=.env scripts/demo-rehearsal.mts",
     "test": "node --experimental-strip-types --env-file=.env --test test/*.test.ts"
   },
   "devDependencies": {
