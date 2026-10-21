@@ -43,7 +43,7 @@ await precondition();
 step("precondition ok: no TraitFinder experiment yet");
 
 const browser = await chromium.launch({ headless: !headed, slowMo: headed ? 400 : 0 });
-const context = await browser.newContext({ viewport: { width: 1600, height: 900 }, ...(video ? { recordVideo: { dir: `${OUT}/video`, size: { width: 1600, height: 900 } } } : {}) });
+const context = await browser.newContext({ viewport: { width: 1600, height: 900 }, colorScheme: process.env.DEMO_SCHEME === "dark" ? "dark" : "light", ...(video ? { recordVideo: { dir: `${OUT}/video`, size: { width: 1600, height: 900 } } } : {}) });
 page = await context.newPage();
 page.setDefaultTimeout(30_000);
 try {
@@ -98,6 +98,10 @@ try {
   if (!charts || !scans) throw new Error("Distribution chart did not render");
   step(`chart grid: ${charts} charts, ${scans} bars (scans) in the first`);
   await grid.locator(".d-day-chart").first().waitFor();
+  // Every plant bar must carry its own name (a glitch once showed ten bars all labelled B1-C1).
+  const labels = (await grid.locator(".d-day-chart").first().innerText()).match(/B\d-C\d/g) ?? [];
+  if (labels.length < 5 || new Set(labels).size !== labels.length) throw new Error(`One-scan plant labels are wrong: ${labels.join(",")}`);
+  step(`one-scan labels ok: ${labels.length} distinct plants`);
   await page.screenshot({ path: `${OUT}/3-charts.png`, fullPage: true });
   await caption("Per scan, 15C vs 18C, and per plant for one scan", 6000);
   step("DONE — screenshots in " + OUT);

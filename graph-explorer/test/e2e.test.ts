@@ -201,6 +201,8 @@ test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Ma
 
 test("e2e: '+ New' menu shows the honest empty state when a multi-selection shares no adjacent type", async () => {
   await withServerAndBrowser(async (base, page) => {
+    // A factor must exist for the Factors category to select anything; live PHIS may have none (the demo reset removes the only one).
+    await page.route("**/api/factors", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "phis:id/factor/f1", type: "factor", label: "Treatment" }]) }));
     await page.goto(base);
     await page.waitForTimeout(1000);
 
@@ -3384,6 +3386,24 @@ test("e2e: a provenance (who made the data) or a note can be linked to a person 
     assert.deepEqual(await plan([{ id: "n-1", type: "annotation", label: "A note" }, person]), { kind: "link" });
     const forExperiment: any = await plan([{ id: "exp-1", type: "experiment", label: "Trial" }, person]);
     assert.ok(forExperiment.roles?.length, "an experiment still asks which role");
+  });
+});
+
+test("e2e: sameId tells apart URIs that differ only before a shared last segment (PHIS adds /1 to reused URIs) but still matches full, prefixed and bare forms", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    const r = await page.evaluate(() => ({
+      differentPlants: sameId("https://phis.pheno.no/id/scientific-object/so-b1-c1/1", "https://phis.pheno.no/id/scientific-object/so-b1-c2/1"),
+      samePlant: sameId("https://phis.pheno.no/id/scientific-object/so-b1-c1/1", "https://phis.pheno.no/id/scientific-object/so-b1-c1/1"),
+      fullVsPrefixed: sameId("https://phis.pheno.no/id/scientific-object/so-b1-c1/1", "phis:id/scientific-object/so-b1-c1/1"),
+      fullVsBare: sameId("https://phis.pheno.no/id/scientific-object/so-p1", "so-p1"),
+      suffixOnly: sameId("https://phis.pheno.no/id/scientific-object/so-b1-c1/1", "1"),
+    }));
+    assert.equal(r.differentPlants, false, "two plants whose URIs both end in /1 are not the same plant");
+    assert.equal(r.samePlant, true);
+    assert.equal(r.fullVsPrefixed, true, "full and prefixed forms of one URI match");
+    assert.equal(r.fullVsBare, true, "a bare id matches its full URI");
+    assert.equal(r.suffixOnly, false, "a bare '1' is not every URI ending in /1");
   });
 });
 
