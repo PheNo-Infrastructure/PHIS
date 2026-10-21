@@ -16,6 +16,12 @@ ontologies:
       readTimeout: 60000
       queryTimeout: 120000
 
+core:
+  agroportal:
+    basePath: "https://agroportal.lirmm.fr"
+    baseAPIPath: "https://data.agroportal.lirmm.fr"
+    externalAPIKey: "${AGROPORTAL_API_KEY}"
+
 big-data:
   mongodb:
     implementation: org.opensilex.nosql.mongodb.MongoDBService
