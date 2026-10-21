@@ -29,6 +29,14 @@ checked on the real data (NDVI: 20 plants x 13 scans x 6 bins, every bar sums to
 or the CSV itself; the review and result text name variable groups and an added species. Treatment's factor category is deliberately NOT set
 (the column is generic; "Air temperature" would be a guess from the level names).
 
+## Open incident: phis-test ontology read (checked 2026-10-21)
+After the first Block import, OpenSILEX's `GET /vuejs/owl_extension/rdf_type_properties` answers 500 "Multiple objects for some unique property" for every
+class. Verified in PHIS's own UI (Vocabulary > Scientific object types): the list of types loads, but opening plant, Tray or Block shows that error.
+The Scientific Objects list and the "Add scientific object" dialog open fine; choosing a type in that dialog was not tested. Cause unconfirmed (Block
+class, `positionInBlock`, or a second position restriction on Plant). The importer works around it (reads the property directly). The diagnostic —
+deleting the `positionInBlock` restriction on Plant, reversible — was blocked by the permission classifier and needs the user's yes. If that fixes
+the read, use ONE position property for both Tray and Block data instead of two. Only phis-test was ever written to.
+
 ## 1. What the file is (measured, not assumed)
 
 | Fact | Value |
