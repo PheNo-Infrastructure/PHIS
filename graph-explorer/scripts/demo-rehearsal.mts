@@ -22,7 +22,7 @@ async function caption(text: string, ms = 2500) {
     let el = document.getElementById("demoCaption");
     if (!el) {
       el = document.createElement("div"); el.id = "demoCaption";
-      el.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:14px 24px;background:#16302b;color:#fff;font:600 20px system-ui;text-align:center";
+      el.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:14px 24px;background:#264030;color:#F2F5DE;font:600 20px system-ui;text-align:center";
       document.body.appendChild(el);
     }
     el.textContent = t;
