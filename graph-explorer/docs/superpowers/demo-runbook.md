@@ -9,8 +9,9 @@ Everything below was rehearsed by `npm run demo:rehearse` (whole path ≈ 15 s o
 - [ ] `cd graph-explorer`, `.env` present (`PHIS_PASS`, `PHIS_HOST` = phis-test).
 - [ ] Start the portal: `npm run dev`, open http://localhost:4000. If it says the port is busy, a stale `node` holds :4000: PowerShell `Get-NetTCPConnection -LocalPort 4000 | % { Stop-Process -Id $_.OwningProcess -Force }`, then start again.
 - [ ] File ready: `Downloads/Sheets.zip` (the raw HortControl export, unaltered).
-- [ ] **Experiment must NOT exist.** Search the portal for "TraitFinder". If "UiT_MDK_ArcticFrontiers_01 – TraitFinder – 2025-11-25" is there, the import would do nothing. Ask the portal owner to reset it (delete that one experiment; nothing else).
-- [ ] Optional safety check: `npm run demo:rehearse` — but it imports, so reset again afterwards.
+- [ ] **Experiment must NOT exist.** Run `npm run demo:reset` (portal running). It deletes ONLY "UiT_MDK_ArcticFrontiers_01 – TraitFinder – 2025-11-25" on phis-test and says "Already clean" if it is gone. If it were left in, the import would do nothing.
+- [ ] Optional full dry run: `DEMO_HEADED=1 npm run demo:rehearse` (PowerShell: `$env:DEMO_HEADED=1; npm run demo:rehearse`). It imports, so run `npm run demo:reset` again afterwards.
+- [ ] Fallback video (≈ 40 s, captioned, no sound): `graph-explorer/demo-rehearsal-out/tuesday-demo-fallback.webm` (local only, not in git). Have it open in a player before you start. Re-make it with `DEMO_VIDEO=1 npm run demo:rehearse` after a reset.
 - [ ] Browser full screen, zoom 100 %, notifications off.
 
 ## Full cut (5–8 min)
