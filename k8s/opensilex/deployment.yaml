@@ -37,6 +37,7 @@ spec:
                 -e "s|\${FEIDE_CLIENT_SECRET}|${FEIDE_CLIENT_SECRET}|g" \
                 -e "s|\${SMTP_USERNAME}|${SMTP_USERNAME}|g" \
                 -e "s|\${SMTP_PASSWORD}|${SMTP_PASSWORD}|g" \
+                -e "s|\${AGROPORTAL_API_KEY}|${AGROPORTAL_API_KEY}|g" \
                 /config-template/opensilex.yml > /config-gen/opensilex.yml
               echo "Config generated."
           env:
@@ -65,6 +66,11 @@ spec:
                 secretKeyRef:
                   name: opensilex-credentials
                   key: smtp-password
+            - name: AGROPORTAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opensilex-credentials
+                  key: agroportal-api-key
           volumeMounts:
             - name: config
               mountPath: /config-template
