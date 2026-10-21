@@ -564,3 +564,75 @@ test("POST /api/import/plan takes the export's CSV as it is too (its name in X-F
     assert.equal((await noName.json()).error, "This isn't a ZIP file.", "unchanged when nothing says it is a CSV");
   });
 });
+
+// ---- edits made in the review (X-Import-Edits) ----
+const EDITS = { experiment: { name: "My trial", startDate: "2025-11-01" }, germplasm: { Tiril: "Tiril B" }, factors: { Treatment: { levels: { "15C": "15 °C" } } }, variables: { "NDVI Average": "NDVI" } };
+const editsHeader = (e: unknown) => ({ "X-Import-Edits": encodeURIComponent(JSON.stringify(e)) });
+
+test("POST /api/import/plan with edits: the plan describes the edited data and says what the file called things, so the page can show both", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const res = await realFetch(`${base}/api/import/plan`, { method: "POST", body: makeZip({ [FILE]: RAW }), headers: editsHeader(EDITS) });
+    assert.equal(res.status, 200);
+    const plan = await res.json();
+    assert.deepEqual(plan.experiment, { name: "My trial", startDate: "2025-11-01", exists: false });
+    assert.deepEqual(plan.germplasm.missing, ["Tiril B"]);
+    assert.deepEqual(plan.factors, [{ name: "Treatment", levels: ["15 °C", "18C"] }]);
+    assert.ok(plan.variables.missing.includes("NDVI") && !plan.variables.missing.includes("NDVI Average"));
+    assert.deepEqual(plan.original.experiment, { name: NAME, startDate: "2025-10-22" }, "the file's own name and date");
+    assert.deepEqual(plan.original.germplasm, ["Olve", "Tiril"]);
+    assert.deepEqual(plan.original.factors, [{ name: "Treatment", levels: ["15C", "18C"] }]);
+    assert.ok(plan.original.variables.includes("NDVI Average"));
+    assert.deepEqual(plan.edits, EDITS, "what was applied is echoed back");
+  });
+});
+
+test("POST /api/import/plan without edits has the file's names as original and no edits", async () => {
+  await withServer(async (base) => {
+    mockPhis([]);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: makeZip({ [FILE]: RAW }) })).json();
+    assert.deepEqual(plan.edits, {});
+    assert.deepEqual(plan.original.experiment, plan.experiment.exists === false ? { name: NAME, startDate: "2025-10-22" } : plan.original.experiment);
+  });
+});
+
+test("POST /api/import/plan and /run refuse edits that don't make sense, in plain words, before anything is written", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    for (const [edits, message] of [
+      [{ experiment: { name: " " } }, /name can't be empty/],
+      [{ experiment: { startDate: "1 Nov" } }, /YYYY-MM-DD/],
+      [{ germplasm: { Wheat: "x" } }, /no germplasm "Wheat"/],
+      [{ germplasm: { Tiril: "Olve" } }, /Two germplasm would both be called "Olve"/],
+    ] as [unknown, RegExp][]) {
+      for (const route of ["plan", "run?species=agrovoc%3Abarley"]) {
+        const res = await realFetch(`${base}/api/import/${route}`, { method: "POST", body: EXPORT(), headers: editsHeader(edits) });
+        assert.equal(res.status, 400, route);
+        assert.match((await res.json()).error, message);
+      }
+    }
+    const garbled = await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT(), headers: { "X-Import-Edits": "%7Bnope" } });
+    assert.equal(garbled.status, 400);
+    assert.match((await garbled.json()).error, /edits could not be read/);
+    assert.deepEqual(writes, [], "nothing was written");
+  });
+});
+
+test("POST /api/import/run with edits writes the edited names: the experiment, the germplasm, the factor level and the variable", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT(), headers: editsHeader(EDITS) });
+    assert.equal(res.status, 200);
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines.at(-1).result.experiment.label, "My trial");
+    const wrote = writes.map((w) => `${w.method} ${w.path} ${String(w.body.name ?? w.body.uri ?? w.body.property)}`);
+    assert.ok(wrote.includes("POST /core/experiments My trial"), wrote.join("\n"));
+    assert.ok(wrote.includes("POST /core/germplasm Tiril B"));
+    assert.ok(wrote.includes("POST /core/variables NDVI"));
+    assert.ok(!wrote.some((w) => w.includes(NAME) && w.startsWith("POST /core/experiments ")), "the file's own name isn't used");
+    const exp = writes.find((w) => w.path === "/core/experiments" && w.method === "POST")!;
+    assert.equal(exp.body.start_date, "2025-11-01");
+  });
+});

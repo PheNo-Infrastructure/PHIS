@@ -13,6 +13,7 @@ import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts
 import { writeFill } from "./existing.ts";
 import { writeGroup } from "./variable-groups.ts";
 import type { Files } from "./plugins.ts";
+import type { Edits } from "./edits.ts";
 
 const enc = encodeURIComponent;
 const OBJECTS_AT_ONCE = 4;
@@ -28,10 +29,10 @@ const andList = (items: (string | 0)[]) => {
 export type Progress = { step: string; done: number; total: number };
 // device / person: who made the data (optional, from the plan's lists). share: who sees a NEW experiment — "public" (the
 // default, as before), "private", or a group's uri. note: keep a note of the import (on by default in the page).
-export type Choices = { species?: string; newSpecies?: string; device?: string; person?: string; share?: string; note?: boolean };
+export type Choices = { species?: string; newSpecies?: string; device?: string; person?: string; share?: string; note?: boolean; edits?: Edits };
 const MOTIVATION_DESCRIBING = "http://www.w3.org/ns/oa#describing";
 export async function runImport(files: Files, choices: Choices, progress: (p: Progress) => void = () => {}) {
-  const { trial, plan, variables, variableGroupPlans, values, experiment, fills } = await prepare(files);
+  const { trial, plan, variables, variableGroupPlans, values, experiment, fills } = await prepare(files, choices.edits);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];

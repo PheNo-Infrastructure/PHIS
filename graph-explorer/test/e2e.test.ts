@@ -19,9 +19,11 @@ async function withServerAndBrowser(fn: (base: string, page: import("playwright"
   const port = typeof address === "object" && address ? address.port : 0;
   const browser = await chromium.launch();
   const page = await browser.newPage();
+  await page.addInitScript(() => { try { localStorage.setItem("showTree", "1"); } catch {} }); // the selection tree pane is hidden by default
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
-  page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+  // The browser logs every 4xx answer by itself; a test that stubs a refusal expects that line, a script error is still a failure.
+  page.on("console", (msg) => { if (msg.type() === "error" && !/^Failed to load resource: the server responded with a status of 4\d\d/.test(msg.text())) consoleErrors.push(msg.text()); });
   page.on("pageerror", (err) => pageErrors.push(err.message));
 
   try {
@@ -3467,5 +3469,99 @@ test("e2e: a big selection stays short — list scrolls inside the pane, groups 
     await clear.click();
     assert.equal(await page.locator("#selList .sel-item").count(), 0);
     assert.ok(await clear.isHidden());
+  });
+});
+
+test("e2e: import review — the pencil on a row edits it in place, Save re-plans with the edit (X-Import-Edits), the run carries it too, a refusal shows in place, Undo all clears it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const FILE_NAME = "UiT trial", seen: (string | undefined)[] = [];
+    let runEdits: string | undefined;
+    const planFor = (edits: any) => ({
+      instrument: "TraitFinder (HortControl export)",
+      experiment: { name: edits.experiment?.name ?? FILE_NAME, startDate: "2025-11-25", exists: false },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [],
+      factors: [{ name: "Treatment", levels: ["15C", "18C"] }], vocabulary: [],
+      variables: { existing: ["NDVI"], missing: ["Height"], parts: [] },
+      objects: { count: 2, kinds: [{ type: "plant", count: 2 }], sample: [] },
+      original: { experiment: { name: FILE_NAME, startDate: "2025-11-25" }, germplasm: ["Olve"], factors: [{ name: "Treatment", levels: ["15C", "18C"] }], variables: ["NDVI", "Height"] },
+      edits, warnings: [],
+    });
+    await page.route("**/api/import/plan", (route) => {
+      const header = route.request().headers()["x-import-edits"];
+      seen.push(header);
+      const edits = header ? JSON.parse(decodeURIComponent(header)) : {};
+      if (edits.experiment?.name === "BAD") return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "The experiment name can't be empty." }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(planFor(edits)) });
+    });
+    await page.route("**/api/import/run**", (route) => {
+      runEdits = route.request().headers()["x-import-edits"];
+      return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "e", type: "experiment", label: "x" }, created: { germplasm: 0, factors: 0, objects: 2 } } }) + "\n" });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
+    await page.locator("#importRunBtn").waitFor();
+    assert.deepEqual(seen, [undefined], "the first plan has no edits");
+    // The variables row offers an edit (a new variable), and so do the others.
+    assert.deepEqual(await page.locator(".import-edit").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.edit)), ["experiment", "germplasm", "factors", "variables"]);
+
+    // A refusal from the server is shown in the editor and nothing changes.
+    await page.locator('.import-edit[data-edit="experiment"]').click();
+    await page.locator('input[data-k="name"]').fill("BAD");
+    await page.locator('[data-act="save"]').click();
+    await page.locator(".import-editor .import-warning:not([hidden])").waitFor();
+    assert.match(await page.locator(".import-editor .import-warning").innerText(), /name can't be empty/);
+    assert.match(await page.locator("#importPlan").innerText(), /Experiment/);
+
+    // A good edit: re-planned with the header, shown as edited, and the run carries it.
+    await page.locator('input[data-k="name"]').fill("  My trial ");
+    await page.locator('[data-act="save"]').click();
+    await page.locator(".import-edited").waitFor();
+    assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1)!)), { experiment: { name: "My trial" } }, "only what changed, trimmed, keyed by the file's own names");
+    assert.match((await page.locator(".import-section").first().innerText()).replace(/\s+/g, " "), /New: My trial, starting 2025-11-25/);
+    assert.equal(await page.locator("#importEditor, .import-editor").count(), 0, "the editor closed");
+    await page.locator("#importRunBtn").click();
+    await page.locator("#importOpenBtn").waitFor();
+    assert.deepEqual(JSON.parse(decodeURIComponent(runEdits!)), { experiment: { name: "My trial" } });
+  });
+});
+
+test("e2e: import review — factor levels and new variables are editable by the file's names, reused variables are not offered, Undo all changes goes back to the file's names", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const seen: (string | undefined)[] = [];
+    await page.route("**/api/import/plan", (route) => {
+      const header = route.request().headers()["x-import-edits"];
+      seen.push(header);
+      const edits = header ? JSON.parse(decodeURIComponent(header)) : {};
+      const level = (l: string) => edits.factors?.Treatment?.levels?.[l] ?? l;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        instrument: "TraitFinder (HortControl export)", experiment: { name: "T", startDate: "2025-11-25", exists: false },
+        germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [],
+        factors: [{ name: "Treatment", levels: [level("15C"), "18C"] }], vocabulary: [],
+        variables: { existing: ["NDVI"], missing: ["Height"], parts: [] }, objects: { count: 1, kinds: [], sample: [] },
+        original: { experiment: { name: "T", startDate: "2025-11-25" }, germplasm: [], factors: [{ name: "Treatment", levels: ["15C", "18C"] }], variables: ["NDVI", "Height"] },
+        edits, warnings: [],
+      }) });
+    });
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
+    await page.locator("#importRunBtn").waitFor();
+    assert.equal(await page.locator('.import-edit[data-edit="germplasm"]').count(), 0, "no germplasm in the file, nothing to edit");
+    await page.locator('.import-edit[data-edit="variables"]').click();
+    assert.deepEqual(await page.locator('.import-editor input[data-orig]').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).dataset.orig)), ["Height"], "only the new variable");
+    await page.locator('.import-editor [data-act="cancel"]').click();
+    await page.locator('.import-edit[data-edit="factors"]').click();
+    await page.locator('input[data-factor="Treatment"][data-level="15C"]').fill("15 °C");
+    await page.locator('.import-editor [data-act="save"]').click();
+    await page.locator(".import-edited").waitFor();
+    assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1)!)), { factors: { Treatment: { levels: { "15C": "15 °C" } } } });
+    assert.match((await page.locator("#importPlan").innerText()).replace(/\s+/g, " "), /Treatment: 2 levels \(15 °C, 18C\)/);
+    await page.locator("#importUndoEdits").click();
+    await page.locator(".import-edited").waitFor({ state: "detached" });
+    assert.equal(seen.at(-1), undefined, "no edits are sent after Undo all changes");
+    assert.match((await page.locator("#importPlan").innerText()).replace(/\s+/g, " "), /Treatment: 2 levels \(15C, 18C\)/);
   });
 });

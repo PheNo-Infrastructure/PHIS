@@ -4,6 +4,7 @@
 import { OpenSilexError, authedGet, authedGetOne, escapeRegex } from "../opensilex.ts";
 import { personName } from "../node-types.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
+import { applyEdits, namesIn, type Edits } from "./edits.ts";
 import { POSITION_IN_BLOCK, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
 import { groupSummary, resolveGroups } from "./variable-groups.ts";
@@ -21,15 +22,16 @@ function fillWhat(fills: Awaited<ReturnType<typeof compareObjects>>["fills"]) {
 const byNumberThenText = (a: string, b: string) => (Number(a) - Number(b)) || a.localeCompare(b);
 
 // Plan and run both start here, so what is written is exactly what was shown.
-export async function prepare(files: Files) {
+export async function prepare(files: Files, edits?: Edits) {
   const plugins = await instrumentPlugins();
   const plugin = plugins.find((p) => p.detect(files));
   if (!plugin) {
     throw new OpenSilexError(400, `None of the known instruments recognises these files (${plugins.map((p) => p.label).join(", ")}).`);
   }
-  let trial;
+  let original, trial;
   try {
-    trial = plugin.parse(files);
+    original = plugin.parse(files);
+    trial = applyEdits(original, edits); // what the user changed in the review; plan and run both start from the edited data
   } catch (err) {
     throw new OpenSilexError(400, err instanceof Error ? err.message : String(err));
   }
@@ -141,11 +143,14 @@ export async function prepare(files: Files) {
       } : {}),
     },
     options: { devices, persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
+    // What the file itself called things (the page keys its edits by these) and the edits applied.
+    original: { experiment: original.experiment, ...namesIn(original) },
+    edits: edits ?? {},
     warnings,
   };
   return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills };
 }
 
-export async function buildPlan(files: Files) {
-  return (await prepare(files)).plan;
+export async function buildPlan(files: Files, edits?: Edits) {
+  return (await prepare(files, edits)).plan;
 }

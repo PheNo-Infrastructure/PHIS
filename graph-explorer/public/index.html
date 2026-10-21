@@ -59,7 +59,7 @@ button { font-family: inherit; }
 }
 
 .app {
-  max-width: 1180px;
+  max-width: 1760px;
   margin: 0 auto;
   padding: 28px 24px 64px;
   display: flex;
@@ -94,15 +94,44 @@ button { font-family: inherit; }
 
 /* ---------- instrument import: reuses the ranking dialog's overlay/modal ---------- */
 .masthead-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.import-modal { width: min(600px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 32px)); }
-.import-section { border-top: 1px solid var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.ranking-modal.import-modal { width: min(820px, calc(100vw - 32px)); max-height: min(820px, calc(100vh - 32px)); }
+.import-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 4px 0 8px; }
+.import-tile { border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg); padding: 8px 10px; }
+.import-tile b { display: block; font-size: 22px; line-height: 1.1; color: var(--ink); }
+.import-tile span { font-size: 12px; color: var(--ink-muted); }
+.import-tile.is-new { border-color: var(--accent); }
+.import-tile.is-new b { color: var(--accent); }
+.import-section { border-top: 1px solid var(--border); border-left: 4px solid var(--border-strong); padding: 8px 0 8px 12px; display: grid; grid-template-columns: 150px 1fr; gap: 3px 16px; align-items: start; }
+.import-section.is-new { border-left-color: var(--accent); }
+.import-section > :not(h3) { grid-column: 2; }
+.import-section > h3 { grid-column: 1; grid-row: 1 / span 6; }
+.import-section h3 small { display: block; margin: 2px 0 0; line-height: 1.3; }
+@media (max-width: 560px) { .import-section { grid-template-columns: 1fr; } .import-section > :not(h3), .import-section > h3 { grid-column: 1; grid-row: auto; } }
 .import-section h3 { margin: 0; font-size: 13px; font-weight: 700; }
 .import-section h3 small { font-weight: 400; color: var(--ink-faint); margin-left: 6px; }
 .import-section p { margin: 0; font-size: 12.5px; }
 .import-names { color: var(--ink-faint); font-size: 12px; }
 .import-warning { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn-ink); border-radius: var(--radius); padding: 8px; font-size: 12.5px; }
-.import-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; font-size: 12px; color: var(--ink-faint); }
+.import-edit { display: inline-block; margin-top: 6px; border: 1px solid var(--accent); background: var(--bg); color: var(--accent); border-radius: 5px; font: inherit; font-size: 12px; font-weight: 600; padding: 2px 8px; cursor: pointer; }
+.import-edit:hover { background: var(--accent); color: #F2F5DE; }
+.import-edited { display: inline-block; margin: 6px 0 0 6px; font-size: 11px; font-weight: 600; color: var(--ink); background: var(--surface-2); border-radius: 9px; padding: 1px 7px; }
+.import-section.editing > :not(h3):not(.import-editor) { display: none; }
+.import-editor { display: flex; flex-direction: column; gap: 8px; }
+.import-editor .import-form { max-height: 260px; overflow-y: auto; padding-right: 4px; }
+.import-editor-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.import-undo { background: none; border: none; padding: 0; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+/* Label column + field column: every field in the dialog lines up the same way. */
+.import-form { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+.import-form > label, .import-form > .import-field-name { font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+.import-form select, .import-form input[type="text"], .import-form input[type="date"] { width: 100%; max-width: 380px; box-sizing: border-box; font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg); color: var(--ink); }
+.import-form .import-note, .import-form .import-check { grid-column: 2; }
+.import-form .import-note { margin: -4px 0 0; font-size: 12px; color: var(--ink-faint); }
+.import-form .import-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
+.import-form .import-sub { grid-column: 1 / -1; font-weight: 700; font-size: 12.5px; margin-top: 4px; }
+@media (max-width: 560px) { .import-form { grid-template-columns: 1fr; } .import-form .import-note, .import-form .import-check { grid-column: 1; } }
+.import-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; font-size: 12px; color: var(--ink-faint); }
 .import-footer .btn { white-space: normal; text-align: left; max-width: 100%; }
+.import-footer > span { flex: 1; min-width: 200px; }
 .import-progress { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .import-progress progress { width: 100%; accent-color: var(--accent); }
 
@@ -170,8 +199,9 @@ button { font-family: inherit; }
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 6fr) minmax(0, 4fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch; /* columns run to the same height instead of floating as short boxes */
 }
+@media (min-width: 761px) { .workspace { min-height: min(calc(100vh - 250px), 600px); } }
 .pane {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -203,7 +233,7 @@ button { font-family: inherit; }
 /* explorer rows */
 .rowlist {
   -webkit-user-select: none; -moz-user-select: none; user-select: none;
-  max-height: 480px;
+  max-height: max(480px, calc(100vh - 340px));
   overflow-y: auto;
 }
 .row {
@@ -270,6 +300,17 @@ button { font-family: inherit; }
 .row:hover .row-nav, .row.selected .row-nav { opacity: 1; }
 .row-nav:hover { background: var(--border); color: var(--ink); }
 .row-nav:focus-visible { opacity: 1; }
+/* The "open this resource" arrow: always visible and high-contrast (Leaf green dark with Straw light, Forest green on hover), so it can't be missed. */
+.row-open, .sel-item button.sel-open {
+  opacity: 1; flex: none; display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #F2F5DE; border: none; border-radius: 6px;
+  font-size: 20px; font-weight: 700; line-height: 1; cursor: pointer;
+  transition: background 100ms ease;
+}
+.row-open { width: 30px; height: 30px; padding: 0 0 2px; }
+.sel-item button.sel-open { width: 24px; height: 24px; padding: 0 0 2px; font-size: 17px; }
+.row-open:hover, .row:hover .row-open, .row.selected .row-open, .sel-item button.sel-open:hover { background: var(--ink); color: #F2F5DE; }
+.row-open:focus-visible, .sel-item button.sel-open:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .empty-hint {
   padding: 28px 16px;
@@ -885,6 +926,7 @@ button { font-family: inherit; }
 /* …and open downward, so the list and the question they answer stay readable above them. */
 #selectionPane .newmenu-list { z-index: 30; bottom: auto; top: calc(100% + 6px); }
 #treePane .rowlist { max-height: 360px; overflow: auto; }
+#treePane[hidden] { display: none; }
 </style>
 
 <div class="app">
@@ -930,7 +972,7 @@ button { font-family: inherit; }
   </div>
 
   <!-- How the selection connects. The real graph will replace this tree here. -->
-  <div class="pane" id="treePane" aria-label="How the selection connects">
+  <div class="pane" id="treePane" aria-label="How the selection connects" hidden>
     <div class="pane-head">
       <h2>How the selection connects</h2>
       <span class="pane-count">the graph will show this later</span>
@@ -1145,6 +1187,8 @@ let searchTimer = null;
    this single map instead of guessing which pane a click landed in. */
 let addressableItems = new Map();
 
+// "How the selection connects" is a placeholder until the real graph exists: hidden unless asked for (?tree, or showTree in localStorage).
+try { if (location.search.includes("tree") || localStorage.getItem("showTree") === "1") document.getElementById("treePane").hidden = false; } catch {}
 const els = {
   crumbs: document.getElementById("crumbs"),
   paneTitle: document.getElementById("paneTitle"),
@@ -1241,7 +1285,7 @@ function rowEl(item, note) {
       <span class="row-label">${escapeHtml(item.label)}</span>
       <span class="row-type">${typeLine}</span>
     </span>
-    <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
+    <button class="row-nav row-open" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
   `;
   // A search hit opens at its real place (its canonical path); navigateTo ends the search.
   row.querySelector(".row-nav").addEventListener("click", (e) => { e.stopPropagation(); search ? openRelatedNode(item) : openNode(item); });
@@ -1891,7 +1935,7 @@ function renderDetail() {
   // A category page of a type with an explainer (TYPE_INFO) shows it above the usual message.
   const info = p.type === "category" ? typeInfoHtml(TYPE_FOR_CATEGORY[p.id]) : "";
   if (selection.size === 0) {
-    els.detailBody.innerHTML = info + `<div class="detail-empty">Select a row, or click the &rsaquo; arrow to open one, to see its connections here.</div>`;
+    els.detailBody.innerHTML = info + `<div class="detail-empty">Select a row, or click the green &rsaquo; arrow to open one, to see its connections here.</div>`;
     wireTypeInfo(els.detailBody);
     return;
   }
@@ -3150,7 +3194,7 @@ function renderDetailMembers(categoryId) {
         <span class="row-label">${escapeHtml(m.label)}</span>
         <span class="row-type">${m.type === "category" ? escapeHtml(m.hint ?? "") : typeName(m.type)}</span>
       </span>
-      <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(m.label)}">›</button>
+      <button class="row-nav row-open" title="Open" aria-label="Open ${escapeHtml(m.label)}">›</button>
     `;
     row.querySelector(".row-nav").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4239,7 +4283,7 @@ function renderTreeRow(item, depth, container, railFlags, isLastSibling) {
       <span class="row-label">${escapeHtml(item.label)}</span>
       <span class="row-type">${item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type)}</span>
     </span>
-    <button class="row-nav" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
+    <button class="row-nav row-open" title="Open" aria-label="Open ${escapeHtml(item.label)}">›</button>
   `;
   const [caretBtn, openBtn] = row.querySelectorAll(".row-nav");
   if (hasChildren) {
@@ -4481,7 +4525,7 @@ function openImport() {
     <div class="ranking-backdrop" id="importBackdrop"></div>
     <div class="ranking-modal import-modal">
       <div class="ranking-header"><span>Import from an instrument</span><button class="ranking-close" id="importClose" title="Close">&times;</button></div>
-      <p class="ranking-hint">Drop the file your instrument produced here (a ZIP, or the CSV itself — e.g. a TraitFinder export from HortControl), or choose it. You'll see what it would create in PHIS first — nothing is written until you confirm.</p>
+      <p class="ranking-hint">Drop the file your instrument produced (a ZIP or the CSV). You'll see what it would create first — nothing is written until you confirm.</p>
       <div class="import-drop" id="importDrop"><span>Drop the file here</span> <span class="import-or">or</span> <input type="file" id="importFile" accept=".zip,.csv,application/zip,text/csv"></div>
       <div id="importPlan"></div>
     </div>`;
@@ -4489,15 +4533,35 @@ function openImport() {
   const close = () => { overlay.classList.remove("open"); overlay.innerHTML = ""; };
   document.getElementById("importBackdrop").addEventListener("click", close);
   document.getElementById("importClose").addEventListener("click", close);
+  const CHOICE_IDS = ["importSpecies", "importNewSpecies", "importDevice", "importPerson", "importShare"];
+  // Applying an edit asks the server for a new plan; what was already chosen in the dialog is kept.
+  const render = (f, plan) => {
+    const out = document.getElementById("importPlan");
+    const kept = Object.fromEntries(CHOICE_IDS.map((id) => [id, document.getElementById(id)?.value]));
+    const note = document.getElementById("importNote")?.checked;
+    out.innerHTML = importPlanHtml(plan);
+    for (const id of CHOICE_IDS) { const el = document.getElementById(id); if (el && kept[id] !== undefined && [...(el.options ?? [{ value: kept[id] }])].some((o) => o.value === kept[id])) el.value = kept[id]; }
+    if (note !== undefined && document.getElementById("importNote")) document.getElementById("importNote").checked = note;
+    wireImportRun(f, plan, close);
+    wireImportEditing(plan, async (candidate) => {
+      const r = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f, candidate), body: f });
+      const body = await r.json();
+      if (!r.ok) return body.error || `Couldn't apply that (${r.status}).`;
+      importEdits = candidate;
+      render(f, body);
+      return null;
+    });
+  };
   const readFile = async (f) => {
     const out = document.getElementById("importPlan");
+    importEdits = {};
     if (!f) { out.innerHTML = ""; return; }
     out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>`;
     try {
       const res = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f), body: f });
       const body = await res.json();
-      out.innerHTML = res.ok ? importPlanHtml(body) : `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
-      if (res.ok) wireImportRun(f, body, close);
+      if (res.ok) render(f, body);
+      else out.innerHTML = `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
     } catch (err) {
       out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>`;
     }
@@ -4509,8 +4573,84 @@ function openImport() {
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drag-over"); readFile(e.dataTransfer.files[0]); });
 }
 // A ZIP goes as it is; a CSV says its name (the experiment is named from it).
-const importHeaders = (f) => /\.csv$/i.test(f.name) ? { "Content-Type": "text/csv", "X-File-Name": encodeURIComponent(f.name) } : { "Content-Type": "application/zip" };
+// The review's edits (keyed by the file's own names) travel with the file, for the plan and for the run.
+let importEdits = {};
+const importHeaders = (f, edits = importEdits) => ({
+  ...(/\.csv$/i.test(f.name) ? { "Content-Type": "text/csv", "X-File-Name": encodeURIComponent(f.name) } : { "Content-Type": "application/zip" }),
+  ...(Object.keys(edits).length ? { "X-Import-Edits": encodeURIComponent(JSON.stringify(edits)) } : {}),
+});
 document.getElementById("importBtn").addEventListener("click", openImport);
+
+// Variables the review lets you rename: the new ones, plus any already renamed (so a rename can be undone).
+function editableVariables(p) {
+  const ev = p.edits?.variables ?? {}, missing = new Set(p.variables.missing);
+  return (p.original?.variables ?? []).filter((o) => missing.has(ev[o] ?? o) || o in ev);
+}
+
+// The pencil on a review row turns its values into fields. Save asks the server for a new plan with the edit applied (apply
+// answers null, or the server's plain-words refusal, shown in place), so what the review shows is what will be written.
+function wireImportEditing(plan, apply) {
+  const root = document.getElementById("importPlan");
+  const e = escapeHtml, had = plan.edits ?? {};
+  const field = (label, attrs, value, type = "text") => `<label>${e(label)}</label><input type="${type}" ${attrs} value="${e(value)}">`;
+  const builders = {
+    experiment: () => field("Experiment name", 'data-k="name"', plan.experiment.name) + field("Start date", 'data-k="startDate"', plan.experiment.startDate, "date"),
+    germplasm: () => plan.original.germplasm.map((o) => field(o, `data-orig="${e(o)}"`, had.germplasm?.[o] ?? o)).join(""),
+    factors: () => plan.original.factors.map((f) => field(`${f.name} (factor)`, `data-factor="${e(f.name)}"`, had.factors?.[f.name]?.name ?? f.name)
+      + f.levels.map((l) => field(`${f.name}: ${l}`, `data-factor="${e(f.name)}" data-level="${e(l)}"`, had.factors?.[f.name]?.levels?.[l] ?? l)).join("")).join(""),
+    variables: () => editableVariables(plan).map((o) => field(o, `data-orig="${e(o)}"`, had.variables?.[o] ?? o)).join("")
+      + `<p class="import-note">Variables already in PHIS keep their names. Give a new one the name of an existing variable to use that one instead.</p>`,
+  };
+  const collect = (kind, editor) => {
+    const next = structuredClone(had), val = (el) => el.value.trim(), set = (key, x) => { if (Object.keys(x).length) next[key] = x; else delete next[key]; };
+    if (kind === "experiment") {
+      const o = plan.original.experiment, x = {};
+      const name = val(editor.querySelector('[data-k="name"]')), date = val(editor.querySelector('[data-k="startDate"]'));
+      if (name !== o.name) x.name = name;
+      if (date !== o.startDate) x.startDate = date;
+      set("experiment", x);
+    } else if (kind === "germplasm" || kind === "variables") {
+      const x = {};
+      for (const inp of editor.querySelectorAll("input[data-orig]")) if (val(inp) !== inp.dataset.orig) x[inp.dataset.orig] = val(inp);
+      if (kind === "variables") for (const [o, n] of Object.entries(had.variables ?? {})) if (!editor.querySelector(`input[data-orig="${CSS.escape(o)}"]`)) x[o] = n; // not shown here, so unchanged
+      set(kind, x);
+    } else {
+      const x = {};
+      for (const inp of editor.querySelectorAll("input[data-factor]")) {
+        const f = inp.dataset.factor, l = inp.dataset.level;
+        if (l === undefined ? val(inp) !== f : val(inp) !== l) {
+          x[f] ??= {};
+          if (l === undefined) x[f].name = val(inp); else (x[f].levels ??= {})[l] = val(inp);
+        }
+      }
+      set("factors", x);
+    }
+    return next;
+  };
+  root.querySelector("#importUndoEdits")?.addEventListener("click", () => apply({}));
+  root.querySelectorAll(".import-edit").forEach((btn) => btn.addEventListener("click", () => {
+    const section = btn.closest(".import-section"), kind = btn.dataset.edit;
+    if (section.querySelector(".import-editor")) return;
+    section.classList.add("editing");
+    const editor = document.createElement("div");
+    editor.className = "import-editor";
+    editor.innerHTML = `<div class="import-form">${builders[kind]()}</div><div class="import-warning" hidden></div>
+      <div class="import-editor-actions"><button type="button" class="btn small" data-act="cancel">Cancel</button><button type="button" class="btn small primary" data-act="save">Save</button></div>`;
+    section.appendChild(editor);
+    const save = editor.querySelector('[data-act="save"]'), cancel = editor.querySelector('[data-act="cancel"]'), error = editor.querySelector(".import-warning");
+    cancel.addEventListener("click", () => { editor.remove(); section.classList.remove("editing"); });
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      const message = await apply(collect(kind, editor));
+      if (message) { error.textContent = message; error.hidden = false; save.disabled = false; }
+    });
+    editor.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); save.click(); }
+      if (ev.key === "Escape") { ev.stopPropagation(); cancel.click(); }
+    });
+    editor.querySelector("input")?.focus();
+  }));
+}
 
 function importPlanHtml(p) {
   const list = (names, max = 8) => escapeHtml(names.slice(0, max).join(", ") + (names.length > max ? `, … (${names.length} in all)` : ""));
@@ -4521,6 +4661,16 @@ function importPlanHtml(p) {
   const newGroups = (p.variableGroups ?? []).filter(g => !g.exists), grownGroups = (p.variableGroups ?? []).filter(g => g.exists && g.newMembers);
   const m = p.measurements;
   const skipped = m && (m.skipped.empty + m.skipped.notNumbers.count + m.skipped.contradictions.count);
+  const nv = v.existing.length + v.missing.length;
+  const ed = p.edits ?? {}, orig = p.original;
+  const editable = { experiment: !!orig, germplasm: !!orig?.germplasm.length, factors: !!orig?.factors.length, variables: !!orig && editableVariables(p).length > 0 };
+  const editBtn = (kind) => editable[kind] ? `<button type="button" class="import-edit" data-edit="${kind}" title="Change this before importing">✎ Edit</button>${ed[kind] ? `<span class="import-edited">edited</span>` : ""}` : "";
+  const tiles = [
+    ...(p.objects.count ? [[p.objects.count.toLocaleString("en"), typeName("scientific_object", p.objects.count), true]] : []),
+    ...(p.factors.length ? [[String(p.factors.length), p.factors.length === 1 ? "factor" : "factors", p.factors.some(f => !f.exists)]] : []),
+    ...(nv ? [[String(nv), `${nv === 1 ? "variable" : "variables"} (${v.missing.length ? `${v.missing.length} new` : "all reused"})`, v.missing.length > 0]] : []),
+    ...(m?.count ? [[m.count.toLocaleString("en"), m.count === 1 ? "measured value" : "measured values", true]] : []),
+  ];
   return `
     <p class="ranking-hint">Recognised as <b>${escapeHtml(p.instrument)}</b>.</p>
     ${p.warnings.map(w => `<div class="import-warning">${escapeHtml(w)}</div>`).join("")}
@@ -4528,40 +4678,42 @@ function importPlanHtml(p) {
       <h3>Vocabulary<small>words this PHIS doesn't have yet</small></h3>
       <p>Adds ${escapeHtml(andList(p.vocabulary.map(v => v.label)))}. Done once; later imports reuse ${p.vocabulary.length === 1 ? "it" : "them"}.</p>
     </div>` : ""}
-    <div class="import-section">
-      <h3>Experiment<small>your trial</small></h3>
+    ${Object.keys(ed).length ? `<p class="import-names">You changed some of the file's names. <button type="button" class="import-undo" id="importUndoEdits">Undo all changes</button></p>` : ""}
+    <div class="import-tiles">${tiles.map(([n, label, isNew]) => `<div class="import-tile${isNew ? " is-new" : ""}"><b>${escapeHtml(n)}</b><span>${escapeHtml(label)}</span></div>`).join("")}</div>
+    <div class="import-section${p.experiment.exists ? "" : " is-new"}">
+      <h3>Experiment<small>your trial</small>${editBtn("experiment")}</h3>
       ${p.experiment.exists
         ? `<p>Already in PHIS: <b>${escapeHtml(p.experiment.name)}</b>. The import fills in what it lacks; nothing already in PHIS is changed.</p>`
         : `<p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>`}
       ${p.experiment.sameName ? `<div class="import-warning">${p.experiment.sameName} experiments in PHIS have this name, so it isn't clear which one to fill in.</div>` : ""}
     </div>
-    <div class="import-section">
-      <h3>Germplasm<small>plant material: species, varieties, lines</small></h3>
+    <div class="import-section${newCount ? " is-new" : ""}">
+      <h3>Germplasm<small>plant material: species, varieties, lines</small>${editBtn("germplasm")}</h3>
       ${g.existing.length ? `<p>Already in PHIS, reused: ${g.existing.length} <span class="import-names">(${list(g.existing.map(x => x.name))})</span></p>` : ""}
       ${newCount ? `<p>New: ${newCount} <span class="import-names">(${list(g.missing)})</span></p>
         <p><label>Species for the new germplasm: <select id="importSpecies"><option value="">Choose…</option>${p.speciesOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}<option value="__new__">Not listed — add a species…</option></select></label> <input id="importNewSpecies" type="text" placeholder="Name of the new species" hidden></p>` : ""}
       ${g.codes.length ? `<p>Codes set: ${g.codes.length} <span class="import-names">(${list(g.codes.map(c => `${c.name} = ${c.code}`))})</span></p>` : ""}
       ${g.ambiguous.map(a => `<div class="import-warning">"${escapeHtml(a.name)}" matches ${a.ids.length} germplasm in PHIS — it isn't clear which one is meant.</div>`).join("")}
     </div>
-    <div class="import-section">
-      <h3>Factors<small>treatments and design</small></h3>
+    <div class="import-section${p.factors.some(f => !f.exists) ? " is-new" : ""}">
+      <h3>Factors<small>treatments and design</small>${editBtn("factors")}</h3>
       ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.exists ? (f.newLevels.length ? `already in PHIS; adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))}` : "already in PHIS, with all its levels") : `${f.levels.length} levels`} <span class="import-names">(${list(f.levels, 12)})</span></p>`).join("") : "<p>None.</p>"}
     </div>
-    <div class="import-section">
+    <div class="import-section${p.objects.count ? " is-new" : ""}">
       <h3>${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></h3>
       <p>New: ${p.objects.count}${p.objects.kinds.length ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.parent && `in ${sample.parent}${sample.position ? `, position ${sample.position}` : ""}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
       ${p.objects.existing ? `<p>Already in PHIS: ${p.objects.existing}${p.objects.fills.count ? `; fills in what ${p.objects.fills.count} of them lack: ${escapeHtml(andList(fillsText(p.objects.fills.what)))}` : ", nothing to fill in"}.</p>` : ""}
       ${p.objects.conflicts?.count ? `<div class="import-warning">PHIS and the file disagree in ${p.objects.conflicts.count} ${p.objects.conflicts.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(p.objects.conflicts.examples.join("; "))}).</div>` : ""}
     </div>
-    ${v.existing.length + v.missing.length + newGroups.length + grownGroups.length ? `<div class="import-section">
-      <h3>Variables<small>what is measured: a trait of the plant, how, and in what unit</small></h3>
+    ${v.existing.length + v.missing.length + newGroups.length + grownGroups.length ? `<div class="import-section${v.missing.length || newGroups.length ? " is-new" : ""}">
+      <h3>Variables<small>what is measured: a trait of the plant, how, and in what unit</small>${editBtn("variables")}</h3>
       ${v.existing.length ? `<p>Already in PHIS, reused: ${v.existing.length} <span class="import-names">(${list(v.existing)})</span></p>` : ""}
       ${v.missing.length ? `<p>New: ${v.missing.length} <span class="import-names">(${list(v.missing, 30)})</span></p>` : ""}
       ${v.parts.length ? `<p>Also adds what they're made of: ${escapeHtml(andList(partsText(v.parts)))}.</p>` : ""}
       ${newGroups.length ? `<p>Variable groups (a histogram's bins together): New: ${newGroups.length} <span class="import-names">(${list(newGroups.map(g => g.name))})</span></p>` : ""}
       ${grownGroups.length ? `<p>Existing groups that get more variables: ${grownGroups.length} <span class="import-names">(${list(grownGroups.map(g => g.name))})</span></p>` : ""}
     </div>` : ""}
-    ${m && (m.count || skipped || m.alreadyInPhis || m.differ?.count) ? `<div class="import-section">
+    ${m && (m.count || skipped || m.alreadyInPhis || m.differ?.count) ? `<div class="import-section${m.count ? " is-new" : ""}">
       <h3>Measurements<small>the values: one per plant, variable and scan time</small></h3>
       <p>New: ${m.count.toLocaleString("en")} values <span class="import-names">(${m.objects} ${typeName("scientific_object", m.objects)}, ${m.variables} ${m.variables === 1 ? "variable" : "variables"}, scanned on ${m.days} ${m.days === 1 ? "day" : "days"}${m.first ? ` from ${escapeHtml(m.first.slice(0, 10))} to ${escapeHtml(m.last.slice(0, 10))}` : ""})</span></p>
       ${m.alreadyInPhis ? `<p>Already in PHIS, skipped: ${m.alreadyInPhis.toLocaleString("en")}.</p>` : ""}
@@ -4583,12 +4735,16 @@ function importChoicesHtml(p) {
   const opts = (list, picked) => list.map(x => `<option value="${escapeHtml(x.id)}"${x.id === picked ? " selected" : ""}>${escapeHtml(x.label)}</option>`).join("");
   return `<div class="import-section">
     <h3>Made by${p.experiment.exists ? "" : " and visible to"}<small>so the data can be traced${p.experiment.exists ? "" : " and shared"}</small></h3>
-    <p><label>Measured with: <select id="importDevice"><option value="">No device</option>${opts(o.devices, o.matchedDevice)}</select></label>
-      ${o.matchedDevice ? `<span class="import-names">pre-selected because its name holds "${escapeHtml(o.matchedBecause)}", the instrument named in the file</span>` : ""}</p>
-    <p><label>Run by: <select id="importPerson"><option value="">No one</option>${opts(o.persons)}</select></label></p>
-    ${p.experiment.exists ? "" : `<p><label>Who can see the new experiment: <select id="importShare">
-      <option value="public">Everyone in PHIS (public)</option><option value="private">Only this app's account (private)</option>${o.groups.map(g => `<option value="${escapeHtml(g.id)}">Only the group ${escapeHtml(g.label)}</option>`).join("")}</select></label></p>`}
-    <p><label><input type="checkbox" id="importNote" checked> Record this import as an annotation on the experiment${p.measurements?.count ? " and the provenance" : ""} (files, what was written, what was left out, warnings)</label></p>
+    <div class="import-form">
+      <label for="importDevice">Measured with</label>
+      <select id="importDevice"><option value="">No device</option>${opts(o.devices, o.matchedDevice)}</select>
+      ${o.matchedDevice ? `<p class="import-note">pre-selected because its name holds "${escapeHtml(o.matchedBecause)}", the instrument named in the file</p>` : ""}
+      <label for="importPerson">Run by</label>
+      <select id="importPerson"><option value="">No one</option>${opts(o.persons)}</select>
+      ${p.experiment.exists ? "" : `<label for="importShare">Who can see the new experiment</label>
+      <select id="importShare"><option value="public">Everyone in PHIS (public)</option><option value="private">Only this app's account (private)</option>${o.groups.map(g => `<option value="${escapeHtml(g.id)}">Only the group ${escapeHtml(g.label)}</option>`).join("")}</select>`}
+      <label class="import-check"><input type="checkbox" id="importNote" checked> <span>Record this import as an annotation on the experiment${p.measurements?.count ? " and the provenance" : ""} (files, what was written, what was left out, warnings)</span></label>
+    </div>
   </div>`;
 }
 

@@ -3,12 +3,13 @@ import type { RouteHandler } from "../http.ts";
 import { readZip } from "../import/files.ts";
 import { buildPlan } from "../import/plan.ts";
 import { runImport } from "../import/run.ts";
+import { parseEdits } from "../import/edits.ts";
 
 // ponytail: the whole upload is held in memory; fine for sheet exports, capped so a stray
 // multi-GB scan archive is refused instead of exhausting the server.
 const MAX_UPLOAD = 50 * 1024 * 1024;
 
-// Both take the instrument's ZIP (or its CSV, with X-File-Name) as-is as the body.
+// Both take the instrument's ZIP (or its CSV, with X-File-Name) as-is as the body, and optionally X-Import-Edits (the review's edits).
 //   POST /api/import/plan               -> what would be created or reused; writes nothing
 //   POST /api/import/run?species=<uri>|newSpecies=<name>&device=<uri>&person=<uri>&share=<public|private|group uri>&note=1
 //                                       -> writes it, streaming progress (species: for new germplasm; device/person: who made
@@ -43,8 +44,16 @@ export const handleImport: RouteHandler = async (req, res, { pathname, searchPar
     reply(400, { error: err instanceof Error ? err.message : String(err) });
     return true;
   }
+  // What the user changed in the review, as URL-encoded JSON (see edits.ts); both routes apply it before anything else.
+  let edits;
+  try {
+    edits = parseEdits(req.headers["x-import-edits"] as string | undefined);
+  } catch (err) {
+    reply(400, { error: err instanceof Error ? err.message : String(err) });
+    return true;
+  }
   if (route === "plan") {
-    await respondOpenSilexErrors(res, async () => reply(200, await buildPlan(files)));
+    await respondOpenSilexErrors(res, async () => reply(200, await buildPlan(files, edits)));
     return true;
   }
   // The run answers as NDJSON, one line per write ({"progress": …}), then {"result": …} or
@@ -55,7 +64,7 @@ export const handleImport: RouteHandler = async (req, res, { pathname, searchPar
   try {
     const result = await runImport(files, {
       species: searchParams.get("species") || undefined, newSpecies: searchParams.get("newSpecies") ?? undefined, device: searchParams.get("device") || undefined, person: searchParams.get("person") || undefined,
-      share: searchParams.get("share") || undefined, note: searchParams.get("note") === "1",
+      share: searchParams.get("share") || undefined, note: searchParams.get("note") === "1", edits,
     }, (p) => {
       if (!streaming) { res.writeHead(200, { "Content-Type": "application/x-ndjson" }); streaming = true; }
       line({ progress: p });

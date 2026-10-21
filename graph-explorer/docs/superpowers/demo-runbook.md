@@ -20,10 +20,11 @@ Everything below was rehearsed by `npm run demo:rehearse` (whole path ≈ 15 s o
 |---|---|---|---|
 | 1 | On the start page, click **Import from an instrument…** (top right) | "This is the only entry point we need today." | One button, no menu hunting |
 | 2 | Drop **Sheets.zip** on the dashed box (or **Choose file**) | "This is the raw export from the TraitFinder, exactly as the instrument wrote it." | It says "Recognised as TraitFinder (HortControl export)" |
-| 3 | Scroll the review slowly | "Before anything is written, it shows what it will create in plain terms." | New experiment; Treatment with 2 levels (15C, 18C); 24 objects (4 blocks, 20 plants); 63 variables; the footer says **Nothing has been written to PHIS yet** |
-| 4 | Click the blue button at the bottom (it starts with "Create 1 experiment, …" and names what it creates) | "One click." | Progress bar; ≈ 9 s. Say: "it keeps going on the server even if you close this" if it feels slow |
+| 3 | Point at the four tiles at the top, then the rows below (green stripe = something new is added) | "Before anything is written, it shows what it will create in plain terms." | Tiles: 24 scientific objects, 1 factor, 63 variables, 16,380 values. Rows: new experiment; Treatment with 2 levels (15C, 18C); 4 blocks and 20 plants. The footer says **Nothing has been written to PHIS yet** |
+| 3b | (Optional, ~20 s) Click **✎ Edit** on the Experiment row, change the name, **Save** | "If a name is wrong you can fix it right here before anything is written." | The review updates; the row says **edited**; **Undo all changes** restores the file's names |
+| 4 | Click the green button at the bottom (it starts with "Create 1 experiment, …" and names what it creates) | "One click." | Progress bar; ≈ 9 s. Say: "it keeps going on the server even if you close this" if it feels slow |
 | 5 | Read the result line | "24 objects, one factor, 16,380 measured values, and a note about where it came from." | Numbers match step 3 |
-| 6 | Click **Open the experiment** | "Now it is a normal experiment in PHIS." | Overview with a **Distributions** row of chips |
+| 6 | Click **Open the experiment** (to open anything else later, use the green **›** arrow at the end of its row) | "Now it is a normal experiment in PHIS." | Overview with a **Distributions** row of chips |
 | 7 | **Ctrl+click** a chip, e.g. *GLI distribution*; open the **Plants** tab; **Ctrl+click** the **Treatment** header; click **Show grid** | "Each trait histogram was imported as variables and grouped; here are the shares per scan, 15C vs 18C." | Stacked bars: 13 scans per chart; below, **One scan** with a bar per plant (B1-C1 … B4-C5) |
 | 8 | Change the **One scan** dropdown | "Every plant, every scan — traceable back to its block and position." | |
 
