@@ -1890,6 +1890,25 @@ test("e2e: a file dropped on the import dialog is read like a chosen one — a C
   });
 });
 
+test("e2e: the review of an import into an existing experiment names what it fills in, including the block and the column in it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/import/plan", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      instrument: "TraitFinder (HortControl export)", experiment: { name: "Trial", startDate: "2025-11-25", exists: true },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [], vocabulary: [],
+      variables: { existing: [], missing: [], parts: [] },
+      objects: { count: 0, existing: 3, kinds: [], sample: [], fills: { count: 2, what: { block: 2, position: 1, germplasm: 1, levels: 2 } }, conflicts: { count: 0, examples: [] } },
+      warnings: [],
+    }) }));
+    await page.goto(base);
+    await page.waitForTimeout(800);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("unit\n") });
+    await page.locator(".import-section").first().waitFor();
+    const text = (await page.locator("#importPlan").innerText()).replace(/\s+/g, " ");
+    assert.match(text, /fills in what 2 of them lack: block \(2\), column in the block \(1\), germplasm \(1\) and factor levels \(2\)/);
+  });
+});
+
 // ---------- search ----------
 async function stubSearch(page: import("playwright").Page, answer: (u: URL) => unknown, delayMs: (u: URL) => number = () => 0) {
   await page.route("**/api/search*", async (r) => {

@@ -1783,7 +1783,7 @@ async function deleteExperimentEverything(item) {
   } catch (err) { showToast(`Couldn't count what is in it: ${err.message || err}`); return; }
   els.toast.classList.remove("show");
   const lines = [
-    `${p.objects.toLocaleString("en")} ${typeName("scientific_object", p.objects)}${p.trays ? ` (${p.trays} ${p.trays === 1 ? "is a tray" : "are trays"})` : ""}${p.shared ? ` — ${p.shared} also in other experiments, only taken out of this one` : ""}`,
+    `${p.objects.toLocaleString("en")} ${typeName("scientific_object", p.objects)}${p.trays ? ` (${p.trays} ${p.trays === 1 ? "is a block or tray" : "are blocks or trays"})` : ""}${p.shared ? ` — ${p.shared} also in other experiments, only taken out of this one` : ""}`,
     ...(p.values ? [`${p.values.toLocaleString("en")} measured ${p.values === 1 ? "value" : "values"} — research data, gone for good`] : []),
     ...(p.factors ? [`${p.factors} ${p.factors === 1 ? "factor" : "factors"} with their levels`] : []),
     ...(p.provenances.length ? [`provenance${p.provenances.length === 1 ? "" : "s"} ${p.provenances.join("; ")} — unless still used by another experiment`] : []),
@@ -4634,9 +4634,9 @@ function importChoicesHtml(p) {
   </div>`;
 }
 
-// What existing objects get filled in: "their tray (100), position (100)".
+// What existing objects get filled in: "their block (100), column in the block (100)".
 function fillsText(what) {
-  return [["tray", what.tray], ["position in the tray", what.position], ["germplasm", what.germplasm], ["factor levels", what.levels]]
+  return [["block", what.block], ["column in the block", what.position], ["germplasm", what.germplasm], ["factor levels", what.levels]]
     .filter(([, k]) => k).map(([label, k]) => `${label} (${k})`);
 }
 
