@@ -3677,3 +3677,27 @@ test("e2e: set up page asks for a trial, then shows the five steps of the select
     assert.equal(await page.locator("#pageBody .setup-step.done").count(), 2);
   });
 });
+
+test("e2e: manage opens on groups and the selection survives switching views", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    await page.goto(base);
+    await page.locator("#pageBody .row", { hasText: "Bean 2025" }).click();
+    await page.locator("#mainnav a", { hasText: "Manage" }).click();
+    await page.waitForFunction(() => document.body.dataset.view === "manage");
+    assert.equal(await page.locator("#paneTitle").textContent(), "Groups");
+    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/);
+    await page.locator("#mainnav a", { hasText: "Browse" }).click();
+    await page.waitForFunction(() => document.body.dataset.view === "browse");
+    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/);
+  });
+});
+
+test("e2e: browse lists trials first at the top level", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    await page.locator("#rowlist .row").first().waitFor();
+    const labels = await page.locator("#rowlist .row .row-label").allTextContents();
+    assert.equal(labels[0], "Trials");
+  });
+});
