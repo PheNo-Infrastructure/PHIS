@@ -18,10 +18,10 @@ Everything below was rehearsed by `npm run demo:rehearse` (whole path ≈ 15 s o
 
 | # | Do | Say | Notice |
 |---|---|---|---|
-| 1 | On the **Overview** page (the start page), click **Import from an instrument…** in the green card | "This is the only entry point we need today." | One button, no menu hunting; your trials are listed below it |
-| 2 | Drop **Sheets.zip** on the dashed box (or **Choose file**) | "This is the raw export from the TraitFinder, exactly as the instrument wrote it." | It says "Recognised as TraitFinder (HortControl export)" |
+| 1 | On the **Overview** page (the start page), click **Import from an instrument…** in the green card (it opens the **Import** page; the navbar is Overview · Import · Set up · Browse) | "This is the only entry point we need today." | One button, no menu hunting; your trials are listed below it |
+| 2 | On the Import page, drop **Sheets.zip** on the dashed box (or **Choose file**) | "This is the raw export from the TraitFinder, exactly as the instrument wrote it." | It says "Recognised as TraitFinder (HortControl export)" |
 | 3 | Point at the four tiles at the top, then the rows below (green stripe = something new is added) | "Before anything is written, it shows what it will create in plain terms." | Tiles: 24 scientific objects, 1 factor, 63 variables, 16,380 values. Rows: new experiment; Treatment with 2 levels (15C, 18C); 4 blocks and 20 plants. The footer says **Nothing has been written to PHIS yet** |
-| 3b | (Optional, ~20 s) Click **✎ Edit** on the Experiment row, change the name, **Save** | "If a name is wrong you can fix it right here before anything is written." | The review updates; the row says **edited**; **Undo all changes** restores the file's names |
+| 3b | (Optional, ~20 s) Click **✎ Edit** on the Experiment row, change the name, **Save** | "If a name is wrong you can fix it right here before anything is written (the name becomes the address in PHIS, which can't be changed afterwards)." | The review updates; the row says **edited**; **Undo all changes** restores the file's names |
 | 4 | Click the green button at the bottom (it starts with "Create 1 experiment, …" and names what it creates) | "One click." | Progress bar; ≈ 9 s. Say: "it keeps going on the server even if you close this" if it feels slow |
 | 5 | Read the result line | "24 objects, one factor, 16,380 measured values, and a note about where it came from." | Numbers match step 3 |
 | 6 | Click **Open the experiment** (to open anything else later, use the green **›** arrow at the end of its row) | "Now it is a normal experiment in PHIS." | Overview with a **Distributions** row of chips |
@@ -46,4 +46,4 @@ Steps 1 → 2 → 3 (stop at the footer "Nothing has been written") → 4 → 5 
 ## Things to be honest about if asked
 - Variables and the Bean germplasm were already in PHIS from earlier imports, so the review says "reused". On a PHIS with none, it would say "New".
 - Bean is an assumed species; the variable naming (Plant/Leaf/Canopy) is not final.
-- The navbar (Overview · Set up · Import · Browse) is a first version: Set up and Import are simple pages, Today's path stays on Overview and the import dialog on purpose.
+- The navbar is Overview · Import · Set up · Browse. Import is the automatic route (file, review, confirm); Set up is the checklist for one experiment (Data first, then Scientific Objects, then optional steps) and its Import button is a file chooser that hands the file to Import for that experiment. Today's path stays on Overview and Import on purpose.
