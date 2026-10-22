@@ -103,7 +103,8 @@ button { font-family: inherit; }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
 .setup-step { cursor: default; }
 .setup-step .setup-go { margin-left: auto; flex: none; }
-.setup-optional-head { margin: 18px 0 8px; font-size: 14px; }
+.setup-optional-box { margin-top: 16px; }
+.setup-optional-head { margin: 0 0 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .setup-optional-head span { font-weight: 400; color: var(--ink-faint); }
 .adding-banner { padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
 .adding-banner[hidden] { display: none; }
@@ -1577,18 +1578,18 @@ function renderOverview(body) {
    The trial is the one experiment in the selection. A step is done when the experiment's page lists something for it;
    unfinished steps are filled with the Selection pane's + New, which links what it creates to the selected trial. */
 const SETUP_STEPS = [
-  { label: "Plants and blocks", relation: "Scientific objects", category: "cat-scientificobjects", hint: "the scientific objects you measure" },
-  { label: "Treatments", relation: "Factors", category: "cat-factors", optional: true, hint: "factors and their levels" },
-  { label: "Species", relation: "Species", category: "cat-germplasm", optional: true, hint: "the germplasm of its plants" },
-  { label: "Facility", relation: "Facilities", category: "cat-facilities", optional: true, hint: "where it takes place" },
-  { label: "Project", relation: "Projects", category: "cat-projects", optional: true, hint: "the project that funds it" },
-  { label: "People", relation: "Scientific supervisors", category: "cat-persons", optional: true, hint: "who supervises it" },
-  { label: "Sharing", relation: "Shared with", category: "cat-groups", optional: true, hint: "groups that can see it" },
+  { label: "Scientific Objects", relation: "Scientific objects", category: "cat-scientificobjects", hint: "what you measure: plants, plots, pots" },
+  { label: "Factors", relation: "Factors", category: "cat-factors", optional: true, hint: "treatments and design, e.g. drought" },
+  { label: "Germplasm", relation: "Species", category: "cat-germplasm", optional: true, hint: "the plant material" },
+  { label: "Facilities", relation: "Facilities", category: "cat-facilities", optional: true, hint: "where it takes place" },
+  { label: "Projects", relation: "Projects", category: "cat-projects", optional: true, hint: "the project that funds it" },
+  { label: "Persons", relation: "Scientific supervisors", category: "cat-persons", optional: true, hint: "who supervises it" },
+  { label: "Groups", relation: "Shared with", category: "cat-groups", optional: true, hint: "who it is shared with" },
 ];
 function setupSteps(detail) {
   const has = rel => (detail?.relations ?? []).some(r => r.label === rel && r.items.length > 0);
-  return [{ label: "Experiment", done: true, hint: "created in PHIS" },
-    ...SETUP_STEPS.map(st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet — ${st.hint}` }))];
+  return [{ label: "Experiment", done: true, hint: "exists in PHIS" },
+    ...SETUP_STEPS.map(st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet · ${st.hint}` }))];
 }
 // The trail to a category list: Browse's root, the group it sits in, the category.
 function categoryPath(categoryId) {
@@ -1628,8 +1629,8 @@ function renderSetupPage(body) {
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
     <p class="page-note">Each step opens Browse on that list with this trial selected: create a new one (linked to the trial at once) or link one that already exists.</p>
     <div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
-    <h4 class="setup-optional-head">Optional <span>— the trial works without these</span></h4>
-    <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div>`;
+    <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
+      <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
   // Browse with the trial selected: on its own page, or straight on the list of the thing to add (its category).
   const go = (path, categoryId) => {
     selection = new Map([[trial.id, trial]]); anchorId = null;

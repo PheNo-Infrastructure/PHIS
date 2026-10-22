@@ -3657,7 +3657,7 @@ test("e2e: setupSteps marks a step done only when its relation has items", async
         none: setupSteps(undefined).map(s => s.done),
       };
     });
-    assert.deepEqual(out.full, [["Experiment", true], ["Plants and blocks", true], ["Treatments", true], ["Species", true], ["Facility", true], ["Project", true], ["People", true], ["Sharing", true]]);
+    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Factors", true], ["Germplasm", true], ["Facilities", true], ["Projects", true], ["Persons", true], ["Groups", true]]);
     assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false]);
     assert.deepEqual(out.none, [true, false, false, false, false, false, false, false]);
   });
@@ -3694,8 +3694,10 @@ test("e2e: set up page separates what is required from what is optional", async 
     await page.goto(base + "/#setup");
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     await page.locator("#pageBody .setup-step").first().waitFor();
-    assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Plants and blocks"]);
-    assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Treatments", "Species", "Facility", "Project", "People", "Sharing"]);
+    assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Scientific Objects"]);
+    assert.equal(await page.locator("#pageBody .setup-optional").isVisible(), false, "optional steps start folded");
+    await page.locator("#pageBody .setup-optional-head").click();
+    assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Germplasm", "Facilities", "Projects", "Persons", "Groups"]);
     assert.match(await page.locator("#pageBody .setup-optional-head").textContent() ?? "", /Optional/);
   });
 });
@@ -3708,7 +3710,8 @@ test("e2e: a set up step opens Browse on that list, the trial stays selected, an
     await page.route("**/api/create", (r) => { sent = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/factor/f9", type: "factor", label: "Irrigation" }) }); });
     await page.goto(base + "/#setup");
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
-    await page.locator("#pageBody .setup-optional .setup-step", { hasText: "Treatments" }).locator(".setup-go").click();
+    await page.locator("#pageBody .setup-optional-head").click();
+    await page.locator("#pageBody .setup-optional .setup-step", { hasText: "Factors" }).locator(".setup-go").click();
     await page.waitForFunction(() => document.body.dataset.view === "browse");
     assert.match(await page.locator("#addingBanner").textContent() ?? "", /Adding Factors to Barley 2024/);
     await page.locator("#addingNew").click();
