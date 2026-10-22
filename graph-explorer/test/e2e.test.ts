@@ -3888,7 +3888,7 @@ test("e2e: the germplasm sub-menu goes back without choosing", async () => {
   });
 });
 
-test("e2e: Set up has a Data step that imports into this experiment: the file's experiment is renamed to it", async () => {
+test("e2e: Set up's Import button is a file chooser; the file goes to the Import page, into this experiment (its name is used)", async () => {
   await withServerAndBrowser(async (base, page) => {
     await setupStubs(page);
     let header = "";
@@ -3897,39 +3897,66 @@ test("e2e: Set up has a Data step that imports into this experiment: the file's 
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     const row = page.locator("#pageBody .setup-required .setup-step", { hasText: "Data" });
     assert.match(await row.textContent() ?? "", /none yet|no measured values/i);
-    await row.locator("#setupImport").click();
+    assert.equal(await page.locator("#setupDrop").count(), 0, "no drop box on Set up");
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), row.locator("#setupImport").click()]);
+    await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
     await page.waitForFunction(() => document.body.dataset.view === "import");
-    assert.match(await page.locator("#pageBody").textContent() ?? "", /Barley 2024/);
-    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
     await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Barley 2024/);
     assert.deepEqual(JSON.parse(decodeURIComponent(header)), { experiment: { name: "Barley 2024" } });
   });
 });
 
-test("e2e: shift-click picks a range in the adding list", async () => {
+test("e2e: with no trial chosen, Set up's import chooser creates the experiment from the file", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", [
-      ...TWO_OBJECTS, { id: "phis:id/so/o3", type: "scientific_object", label: "Plant C" }, { id: "phis:id/so/o4", type: "scientific_object", label: "Plant D" }]);
-    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
-    await page.locator("#addingList .row", { hasText: "Plant C" }).click({ modifiers: ["Shift"] });
-    assert.deepEqual(await page.locator("#addingList .row.picked .row-label").allTextContents(), ["Plant A", "Plant B", "Plant C"]);
+    await setupStubs(page);
+    let header: string | undefined = "unset";
+    await page.route("**/api/import/plan", (r) => { header = r.request().headers()["x-import-edits"]; return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "stub" }) }); });
+    await page.goto(base + "/#setup");
+    assert.equal(await page.locator("#setupDrop").count(), 0, "no drop box on Set up");
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator("#setupImport").click()]);
+    await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+    await page.waitForFunction(() => document.body.dataset.view === "import");
+    await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
+    assert.equal(header, undefined, "no experiment chosen: the file's own experiment");
   });
 });
 
-test("e2e: persons are picked with a role and cannot be created from an experiment", async () => {
+test("e2e: after an import, one button goes to Set up for that experiment", async () => {
   await withServerAndBrowser(async (base, page) => {
-    const links: any[] = [];
-    await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
-    await openAdding(page, base, "Persons", "**/api/persons", [{ id: "phis:id/person/p1", type: "person", label: "Ada Lovelace" }]);
-    assert.equal(await page.locator("#addingNew").count(), 0);
-    assert.match(await page.locator("#pageBody").textContent() ?? "", /Persons.*first|make the person first/i);
-    const roles = await page.locator("#addingRole option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-    assert.ok(roles.length >= 2, "a role to choose");
-    await page.locator("#addingList .row", { hasText: "Ada" }).click();
-    await page.locator("#addingRole").selectOption(roles[1]);
+    await setupStubs(page);
+    const plan = { instrument: "TraitFinder (PlantEye)", experiment: { name: "Barley 2024", startDate: "2025-10-22", exists: false },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [{ name: "Replicate", levels: ["1"] }], vocabulary: [],
+      variables: { existing: [], missing: ["NDVI Average"], parts: [] }, objects: { count: 3, kinds: [{ type: "plant", count: 3 }], sample: [] }, warnings: [] };
+    await page.route("**/api/import/plan", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan) }));
+    await page.route("**/api/import/run**", (r) => r.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/e1", type: "experiment", label: "Barley 2024" }, created: { objects: 1, factors: 0, germplasm: 0 } } }) + "\n" }));
+    await page.goto(base + "/#import");
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+    await page.locator("#importRunBtn").click();
+    await page.locator("#importSetupBtn").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    assert.match(await page.locator("#pageBody .overview-h").first().textContent() ?? "", /Barley 2024/);
+  });
+});
+
+test("e2e: Done says everything it did: what it created and what it linked", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/scientific-object-types", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "vocabulary:Plant", label: "Plant" }]) }));
+    await page.route("**/api/create", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/so/o9", type: "scientific_object", label: "Plant C" }) }));
+    await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 2 }) }));
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
+    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
+    await page.locator("#addingList .row", { hasText: "Plant B" }).click();
+    await page.locator("#addingNew").click();
+    const form = page.locator("dialog.create-dialog");
+    await form.locator("input[name=name]").fill("Plant C");
+    for (const f of await form.locator("select[required]").all()) await f.selectOption({ index: 1 });
+    await form.locator("button[value=ok]").click();
     await page.locator("#addingDone").click();
     await page.waitForFunction(() => document.body.dataset.view === "setup");
-    assert.equal(links[0].role, roles[1]);
+    const toast = (await page.locator("#toast").textContent()) ?? "";
+    assert.match(toast, /created Plant C/i);
+    assert.match(toast, /linked Plant A and Plant B/i);
   });
 });
 
@@ -3953,24 +3980,37 @@ test("e2e: annotations are written for the experiment (new only), organizations 
   });
 });
 
-test("e2e: Done says everything it did: what it created and what it linked", async () => {
+test("e2e: persons are picked with a role and cannot be created from an experiment", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.route("**/api/scientific-object-types", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "vocabulary:Plant", label: "Plant" }]) }));
-    await page.route("**/api/create", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/so/o9", type: "scientific_object", label: "Plant C" }) }));
-    await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 2 }) }));
-    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
-    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
-    await page.locator("#addingList .row", { hasText: "Plant B" }).click();
-    await page.locator("#addingNew").click();
-    const form = page.locator("dialog.create-dialog");
-    await form.locator("input[name=name]").fill("Plant C");
-    for (const f of await form.locator("select[required]").all()) await f.selectOption({ index: 1 });
-    await form.locator("button[value=ok]").click();
+    const links: any[] = [];
+    await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
+    await openAdding(page, base, "Persons", "**/api/persons", [{ id: "phis:id/person/p1", type: "person", label: "Ada Lovelace" }]);
+    assert.equal(await page.locator("#addingNew").count(), 0);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Persons.*first|make the person first/i);
+    const roles = await page.locator("#addingRole option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+    assert.ok(roles.length >= 2, "a role to choose");
+    await page.locator("#addingList .row", { hasText: "Ada" }).click();
+    await page.locator("#addingRole").selectOption(roles[1]);
     await page.locator("#addingDone").click();
     await page.waitForFunction(() => document.body.dataset.view === "setup");
-    const toast = (await page.locator("#toast").textContent()) ?? "";
-    assert.match(toast, /created Plant C/i);
-    assert.match(toast, /linked Plant A and Plant B/i);
+    assert.equal(links[0].role, roles[1]);
+  });
+});
+
+test("e2e: set up reads the experiment again after an import, so the boxes fill in", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    let calls = 0;
+    await page.route("**/api/node-detail**", (r) => { calls++; return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SETUP_DETAIL) }); });
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    await page.locator("#pageBody .setup-step").first().waitFor();
+    await idle(page);
+    const before = calls;
+    await page.evaluate(() => afterImport({ experiment: { id: "phis:id/experiment/e1" } }));
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    await idle(page);
+    assert.ok(calls > before, "the experiment's details were fetched again");
   });
 });
 
@@ -3997,54 +4037,13 @@ test("e2e: set up shows which resources are actually used: a count and the first
   });
 });
 
-test("e2e: set up reads the experiment again after an import, so the boxes fill in", async () => {
+test("e2e: shift-click picks a range in the adding list", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
-    let calls = 0;
-    await page.route("**/api/node-detail**", (r) => { calls++; return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SETUP_DETAIL) }); });
-    await page.goto(base + "/#setup");
-    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
-    await page.locator("#pageBody .setup-step").first().waitFor();
-    await idle(page);
-    const before = calls;
-    await page.evaluate(() => afterImport({ experiment: { id: "phis:id/experiment/e1" } }));
-    await page.waitForFunction(() => document.body.dataset.view === "setup");
-    await idle(page);
-    assert.ok(calls > before, "the experiment's details were fetched again");
-  });
-});
-
-test("e2e: Set up has a file drop: with a trial it imports into it, without one it creates from the file", async () => {
-  for (const withTrial of [true, false]) {
-    await withServerAndBrowser(async (base, page) => {
-      await setupStubs(page);
-      let header: string | undefined;
-      await page.route("**/api/import/plan", (r) => { header = r.request().headers()["x-import-edits"]; return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "stub" }) }); });
-      await page.goto(base + "/#setup");
-      if (withTrial) { await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click(); await page.locator("#pageBody .setup-step").first().waitFor(); }
-      await page.locator("#setupFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
-      await page.waitForFunction(() => document.body.dataset.view === "import");
-      await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
-      if (withTrial) assert.deepEqual(JSON.parse(decodeURIComponent(header!)), { experiment: { name: "Barley 2024" } });
-      else assert.equal(header, undefined, "no experiment chosen: the file's own experiment");
-    });
-  }
-});
-
-test("e2e: after an import, one button goes to Set up for that experiment", async () => {
-  await withServerAndBrowser(async (base, page) => {
-    await setupStubs(page);
-    const plan = { instrument: "TraitFinder (PlantEye)", experiment: { name: "Barley 2024", startDate: "2025-10-22", exists: false },
-      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [{ name: "Replicate", levels: ["1"] }], vocabulary: [],
-      variables: { existing: [], missing: ["NDVI Average"], parts: [] }, objects: { count: 3, kinds: [{ type: "plant", count: 3 }], sample: [] }, warnings: [] };
-    await page.route("**/api/import/plan", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan) }));
-    await page.route("**/api/import/run**", (r) => r.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/e1", type: "experiment", label: "Barley 2024" }, created: { objects: 1, factors: 0, germplasm: 0 } } }) + "\n" }));
-    await page.goto(base + "/#import");
-    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
-    await page.locator("#importRunBtn").click();
-    await page.locator("#importSetupBtn").click();
-    await page.waitForFunction(() => document.body.dataset.view === "setup");
-    assert.match(await page.locator("#pageBody .overview-h").first().textContent() ?? "", /Barley 2024/);
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", [
+      ...TWO_OBJECTS, { id: "phis:id/so/o3", type: "scientific_object", label: "Plant C" }, { id: "phis:id/so/o4", type: "scientific_object", label: "Plant D" }]);
+    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
+    await page.locator("#addingList .row", { hasText: "Plant C" }).click({ modifiers: ["Shift"] });
+    assert.deepEqual(await page.locator("#addingList .row.picked .row-label").allTextContents(), ["Plant A", "Plant B", "Plant C"]);
   });
 });
 
