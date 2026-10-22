@@ -3950,6 +3950,46 @@ test("e2e: Done says everything it did: what it created and what it linked", asy
   });
 });
 
+test("e2e: set up shows which resources are actually used: a count and the first few names, and the data totals", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    const objs = ["P1", "P2", "P3", "P4", "P5", "P6"].map((n) => ({ id: `so-${n}`, type: "scientific_object", label: n }));
+    await page.route("**/api/node-detail**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      relations: [{ label: "Scientific objects", items: objs }, { label: "Factors", items: [{ id: "f1", type: "factor", label: "Irrigation" }] }],
+      structure: { variables: [{ id: "v1", label: "NDVI", count: 100 }, { id: "v2", label: "GLI", count: 20 }] },
+    }) }));
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    const objectsRow = page.locator("#pageBody .setup-required .setup-step").filter({ has: page.locator(".setup-label", { hasText: /^Scientific Objects$/ }) });
+    await objectsRow.locator(".setup-chip").first().waitFor();
+    assert.deepEqual(await objectsRow.locator(".setup-chip").allTextContents(), ["P1", "P2", "P3", "P4"]);
+    assert.match(await objectsRow.locator(".setup-more").textContent() ?? "", /\+2 more/);
+    const dataRow = page.locator("#pageBody .setup-required .setup-step", { hasText: "Data" });
+    assert.match(await dataRow.textContent() ?? "", /120 measured values/);
+    assert.match(await dataRow.textContent() ?? "", /2 variables/);
+    await page.locator("#pageBody .setup-optional-head").click();
+    const factorsRow = page.locator("#pageBody .setup-optional .setup-step").filter({ has: page.locator(".setup-label", { hasText: /^Factors$/ }) });
+    assert.deepEqual(await factorsRow.locator(".setup-chip").allTextContents(), ["Irrigation"]);
+  });
+});
+
+test("e2e: set up reads the experiment again after an import, so the boxes fill in", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    let calls = 0;
+    await page.route("**/api/node-detail**", (r) => { calls++; return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SETUP_DETAIL) }); });
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    await page.locator("#pageBody .setup-step").first().waitFor();
+    await idle(page);
+    const before = calls;
+    await page.evaluate(() => afterImport({ experiment: { id: "phis:id/experiment/e1" } }));
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    await idle(page);
+    assert.ok(calls > before, "the experiment's details were fetched again");
+  });
+});
+
 test("e2e: a selection made in Browse survives a visit to Overview", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));

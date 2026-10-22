@@ -102,6 +102,9 @@ button { font-family: inherit; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
 .setup-step { cursor: default; }
+.setup-used { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.setup-chip { background: var(--surface-2); border-radius: 999px; padding: 1px 9px; font-size: 12.5px; }
+.setup-more { color: var(--ink-faint); font-size: 12.5px; padding: 1px 4px; }
 .setup-step .setup-go { margin-left: auto; flex: none; }
 .setup-optional-box { margin-top: 16px; }
 .setup-optional-head { margin: 0 0 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -1607,18 +1610,19 @@ function addCaps(categoryId, owner = "experiment") {
   return { create, pick: PICKABLE.has(t), role: t === "person" };
 }
 function setupSteps(detail) {
-  const has = rel => (detail?.relations ?? []).some(r => [rel].flat().includes(r.label) && r.items.length > 0);
-  const values = (detail?.structure?.variables ?? []).reduce((n, v) => n + (Number(v.count) || 0), 0);
-  const data = { label: "Data", import: true, done: values > 0, hint: values > 0 ? `${values.toLocaleString("en")} measured values` : "none yet · measurements from an instrument file" };
+  const relations = (rel) => (detail?.relations ?? []).filter(r => [rel].flat().includes(r.label));
+  const itemsOf = (rel) => relations(rel).flatMap(r => r.items);
+  const has = rel => itemsOf(rel).length > 0;
+  const vars = detail?.structure?.variables ?? [];
+  const values = vars.reduce((n, v) => n + (Number(v.count) || 0), 0);
+  const step = st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), items: itemsOf(st.relation).map(i => i.label),
+    hint: has(st.relation) ? st.hint : `none yet · ${st.hint}` });
+  const data = { label: "Data", import: true, done: values > 0, items: [],
+    hint: values > 0 ? `${values.toLocaleString("en")} measured values · ${vars.length} ${vars.length === 1 ? "variable" : "variables"}` : "none yet · measurements from an instrument file" };
   const [objects, ...rest] = SETUP_STEPS;
-  return [{ label: "Experiment", done: true, hint: "exists in PHIS" }, ...[objects].map(st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet · ${st.hint}` })), data,
-    ...rest.map(st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet · ${st.hint}` }))];
+  return [{ label: "Experiment", done: true, items: [], hint: "exists in PHIS" }, step(objects), data, ...rest.map(step)];
 }
-// The trail to a category list: Browse's root, the group it sits in, the category.
-function categoryPath(categoryId) {
-  const group = ROOT.find(g => CATEGORY_ITEMS[g.id]?.some(c => c.id === categoryId));
-  return [path[0], group, CATEGORY_ITEMS[group.id].find(c => c.id === categoryId)];
-}
+
 let setupTrial = null; // the trial this page shows the steps of
 async function newExperimentFromSetup() {
   const v = await askCreateValues("experiment");
@@ -1646,7 +1650,8 @@ function renderSetupPage(body) {
   loadNodeDetail(trial);
   const steps = setupSteps(NODE_DETAIL[trial.id]);
   const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
-      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span></span>
+      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span>
+        ${st.items.length ? `<span class="setup-used">${st.items.slice(0, 4).map(n => `<span class="setup-chip">${escapeHtml(n)}</span>`).join("")}${st.items.length > 4 ? `<span class="setup-more">+${st.items.length - 4} more</span>` : ""}</span>` : ""}</span>
       ${st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>` : ""}
       ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}</h3>
@@ -4871,6 +4876,13 @@ reloadCategories();
 /* ---------- instrument import (step 2: the plan; nothing is written yet) ----------
    The ZIP goes to /api/import/plan unchanged; the server's instrument plugins read it and answer
    what would be created or reused in PHIS. Shown in PHIS's words with a plain line under each. */
+// What every page must forget once an import has written: the lists, and the experiment's cached details.
+async function afterImport(body) {
+  await reloadCategories(["cat-experiments", "cat-germplasm", "cat-scientificobjects", "cat-factors"]);
+  const id = body?.experiment?.id;
+  if (id) { delete NODE_DETAIL[id]; if (setupTrial && setupTrial.id === id) loadNodeDetail(setupTrial); }
+  if (PAGE_VIEWS.has(view)) renderPage();
+}
 function openImport(opts = {}) {
   const overlay = document.getElementById("importOverlay");
   overlay.innerHTML = `
@@ -5198,7 +5210,7 @@ function wireImportRun(file, plan, close) {
         }
       }
       if (failed || !body) { footer.innerHTML = `<div class="import-warning">${escapeHtml(failed || "The import ended without an answer.")}</div>`; return; }
-      await reloadCategories(["cat-experiments", "cat-germplasm", "cat-scientificobjects", "cat-factors"]);
+      await afterImport(body);
       const c = body.created;
       const also = [
         ...(c.codes ? [`set ${c.codes} variety ${c.codes === 1 ? "code" : "codes"}`] : []),
