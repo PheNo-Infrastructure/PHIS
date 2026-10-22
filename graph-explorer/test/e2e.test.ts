@@ -63,7 +63,7 @@ const WIRED_CATEGORIES: Array<{ branch: string; label: string; fakeIdPrefix: str
 for (const { branch, label, fakeIdPrefix } of WIRED_CATEGORIES) {
   test(`e2e: ${label} category loads without fake ids or console errors`, async () => {
     await withServerAndBrowser(async (base, page) => {
-      await page.goto(base);
+      await page.goto(base + "/#browse");
       await page.waitForTimeout(1000);
       await openRow(page, branch);
       await openRow(page, label);
@@ -78,7 +78,7 @@ for (const { branch, label, fakeIdPrefix } of WIRED_CATEGORIES) {
 
 test("e2e: every type referenced in ADJACENT has a TYPES style, except the documented Variable-decomposition exceptions", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(500);
 
     // ADJACENT/TYPES are top-level `const` in a plain (non-module) <script>, so they're
@@ -110,7 +110,7 @@ test("e2e: the mockup's LINKABLE_TYPES stays in sync with node-types.ts's real N
   // "Link selection" only appears when at least one pair /api/link can actually resolve is
   // present — this is the drift check, same role as the ADJACENT/TYPES test above.
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(500);
     // LINKABLE_TYPES is a top-level `const` in a plain (non-module) <script>, so it's a
     // lexical binding visible by bare identifier in page scope, not a window property.
@@ -131,7 +131,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
   // A single new node gets linked to every selected item at once, so the menu must offer only
   // types adjacent to ALL selected nodes — not the union of what's adjacent to any one of them.
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
 
     // Select one real Experiment
@@ -176,7 +176,7 @@ test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Ma
   await withServerAndBrowser(async (base, page) => {
     const puts: any[] = [];
     await page.route("**/api/node", (r) => { puts.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Experiments");
@@ -205,7 +205,7 @@ test("e2e: '+ New' menu shows the honest empty state when a multi-selection shar
   await withServerAndBrowser(async (base, page) => {
     // A factor must exist for the Factors category to select anything; live PHIS may have none (the demo reset removes the only one).
     await page.route("**/api/factors", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "phis:id/factor/f1", type: "factor", label: "Treatment" }]) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
 
     // Select the Factors category (group-select = every factor) and ctrl-click the
@@ -237,7 +237,7 @@ test("e2e: browsing a category with nothing selected offers a standalone \"+ New
     });
     page.on("dialog", (dialog) => dialog.accept("Mock New Org"));
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -276,7 +276,7 @@ test("e2e: standalone \"+ New site\" picks organization(s) first (same click rul
     });
     page.on("dialog", (dialog) => dialog.accept("Mock Site"));
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Setup");
     await openRow(page, "Sites");
@@ -331,7 +331,7 @@ test("e2e: creating a facility from a selected organization auto-attaches it and
     );
     page.on("dialog", (dialog) => dialog.accept("Mock New Facility"));
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
 
     await openRow(page, "People");
@@ -367,7 +367,7 @@ test("e2e: opening a facility shows its real relations, and Rename/Delete work e
       route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "mock-facility-uri", relations }) })
     );
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Setup");
     await openRow(page, "Facilities");
@@ -450,7 +450,7 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
       nameInB = b.name;
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "so-1", type: "scientific_object", label: b.name }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await page.waitForTimeout(400);
@@ -486,7 +486,7 @@ test("e2e: a plant's experiment box shows its measurements as a trend line per v
         : { columns: [], variables: [] };
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await page.waitForTimeout(600);
@@ -541,7 +541,7 @@ test("e2e: clicking a relation chip jumps to that resource's own canonical bread
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "mock-uri", relations }) });
     });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -573,7 +573,7 @@ test("e2e: germplasm nests under its species — the category lists species, an 
       const relations = id === "exp-x" ? [{ label: "Germplasm", items: [{ id: "acc-2", type: "germplasm", label: "Other Accession" }] }] : [];
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: id, actions: [], relations }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Germplasm");
@@ -608,7 +608,7 @@ test("e2e: a scientific object shows one box per experiment with its germplasm/p
         : [{ label: "In experiments", field: "experiment", items: [box("exp-a", "Barley 2025", [{ id: "g-annika", label: "Annika" }]), box("exp-b", "Barley 2026", [])] }];
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: id, actions: ["delete", "link"], deleteRemovesLinks: true, relations }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await page.waitForTimeout(400);
@@ -653,7 +653,7 @@ test("e2e: no '+ Add' in boxes — germplasm is added through the selection (sea
       if (b.unlink) germ = germ.filter((g) => g.id !== b.unlink.uri);
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "so-1", type: "scientific_object", label: "Plot 1", relations: detail().relations }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await page.waitForTimeout(400);
@@ -689,7 +689,7 @@ test("e2e: after linking objects into an experiment, the action bar offers their
       ok: true, linkedPairs: 1, alreadyLinked: 0, carryOver: [offer("g-annika", "Annika", "Barley 2025"), offer("g-arild", "Arild", "Barley 2026")],
     }) }));
     await page.route("**/api/node", (r) => { puts.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ relations: [] }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const link = () => page.evaluate(() => linkItems([{ type: "experiment", id: "exp-B" }, { type: "scientific_object", id: "so-1" }]));
 
@@ -726,7 +726,7 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
         groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [{ id: "g-x", type: "germplasm", label: evil }] }] }] }],
     }) }));
     await stubSearch(page, () => [{ type: "germplasm", total: 1, items: [{ id: "g-evil", type: "germplasm", label: evil }] }]);
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await page.waitForTimeout(400);
@@ -767,7 +767,7 @@ test("e2e: linking objects + a germplasm asks which experiment (nothing picked) 
       if (ids.includes("so-two") && !b.experiments) return json({ needsExperiment: { notInAny: [], experiments: [{ id: "exp-a", label: "Barley 2025", objects: 1 }, { id: "exp-b", label: "Barley 2026", objects: 1 }], objects: 1 } });
       return json({ ok: true, linkedPairs: 1, alreadyLinked: 0, touched: b.experiments ?? ["exp-b"] });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const bar = async () => (await page.locator("#actionbar").innerText()).replace(/\s+/g, " ");
     const rows = async () => (await page.locator("#linkList .linkmenu-items .newmenu-item").allTextContents()).map((t) => t.trim());
@@ -811,7 +811,7 @@ test("e2e: ctrl-clicking a relation chip adds it to the current selection instea
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "mock-uri", relations }) });
     });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -886,7 +886,7 @@ test("e2e: unlinking a relation from one side drops the OTHER side's cached deta
       });
     });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -940,7 +940,7 @@ test("e2e: a site down to its LAST organization can't unlink it — the unlink v
     let confirmText = "";
     page.on("dialog", (d) => { confirmText = d.message(); d.accept(); });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Setup");
     await openRow(page, "Sites");
@@ -973,7 +973,7 @@ test("e2e: '+ New' → experiment from a selected organization opens a form (not
     let sawPrompt = false;
     page.on("dialog", (d) => { sawPrompt = true; d.dismiss(); });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -1010,7 +1010,7 @@ test("e2e: '+ New' → scientific object from ONE selected experiment: form has 
       capturedBody = route.request().postDataJSON();
       return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "phis:id/so/mock", type: "scientific_object", label: "Mock Plant" }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Experiments");
@@ -1052,7 +1052,7 @@ test("e2e: '+ New' → scientific object with TWO experiments selected creates i
       capturedBody = route.request().postDataJSON();
       return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "phis:id/so/mock", type: "scientific_object", label: "Mock Plant" }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Experiments");
@@ -1075,7 +1075,7 @@ test("e2e: '+ New' → scientific object with TWO experiments selected creates i
 
 test("e2e: the Scientific Objects page shows a collapsible 'How scientific objects work' box, and remembers it open", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Scientific Objects");
@@ -1097,7 +1097,7 @@ test("e2e: the Scientific Objects page shows a collapsible 'How scientific objec
 test("e2e: opening a real experiment shows its relations as chips with Rename and Delete", async () => {
   // Hits the real backend + real OpenSILEX read path (no mock) — read-only, nothing clicked.
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Experiments");
@@ -1146,7 +1146,7 @@ test("e2e: deleting an experiment that holds scientific objects: banner explains
     const confirms: string[] = [];
     page.on("dialog", (d) => { confirms.push(d.message()); d.accept(); });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Experiments");
@@ -1180,7 +1180,7 @@ test("e2e: a type whose Delete takes its links along (e.g. scientific object) ge
       unlinked = r.request().postDataJSON().unlink;
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ relations: [{ label: "Experiments", field: "experiment", items: [{ id: "exp-b", type: "experiment", label: "Exp B" }] }] }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -1201,7 +1201,7 @@ test("e2e: a type whose Delete takes its links along (e.g. scientific object) ge
 test("e2e: the open node's own title is a selectable chip — plain click selects only it, ctrl toggles it", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", relations: [] }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -1240,7 +1240,7 @@ test("e2e: opening a node from the selection TREE (local detail) fetches its rel
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", relations: [
         { label: "Child organizations", items: [{ id: "mock-child", type: "organization", label: "Mock Child" }] }] }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -1264,7 +1264,7 @@ test("e2e: selecting two existing, different-typed adjacent nodes offers \"Link 
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1 }) });
     });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
 
     // Select one real Organization.
@@ -1297,7 +1297,7 @@ test("e2e: selecting two existing, different-typed adjacent nodes offers \"Link 
 
 test("e2e: two of a type WITHOUT parent/child (facilities) offer no \"Link selection\" and say why; two organizations open the ranking list", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Setup");
     await openRow(page, "Facilities");
@@ -1328,7 +1328,7 @@ test("e2e: Link selection with 3 objects: flexible anchor — 'make anchor' swap
       posts.push(b);
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 2, written: b.pairs.map((p: any) => ({ ...p, experiments: ["Wheat 2025"], only: true })) }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
       for (const it of [{ id: "plant", label: "Plant A" }, { id: "row", label: "Row 1" }, { id: "field", label: "Field East" }]) selection.set(it.id, { ...it, type: "scientific_object" });
@@ -1369,7 +1369,7 @@ test("e2e: Unlink selection names every link in a confirm before removing; cance
       const body = b.confirm ? { removed: ["Plant B is part of Row 2 in Wheat 2026"], touched: ["exp"] } : { links: ["Plant B is part of Row 2 in Wheat 2026"] };
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
       selection.set("plant-b", { id: "plant-b", type: "scientific_object", label: "Plant B" });
@@ -1391,7 +1391,7 @@ test("e2e: Unlink selection names every link in a confirm before removing; cance
 
 test("e2e: a selection with something that fits nothing else offers no \"Link selection\" and names it", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
       selection.set("so-1", { id: "so-1", type: "scientific_object", label: "Plot 1" });
@@ -1412,7 +1412,7 @@ test("e2e: selecting several facilities plus one organization offers \"Link sele
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 3 }) });
     });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
 
     await openRow(page, "Setup");
@@ -1453,7 +1453,7 @@ test("e2e: picker popover (an app question) follows the same click/ctrl rules as
     await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
       ok: true, linkedPairs: 1, alreadyLinked: 0, carryOver: [offer("g-a", "Annika"), offer("g-b", "Arild"), offer("g-c", "Brage")],
     }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => linkItems([{ type: "experiment", id: "exp-B" }, { type: "scientific_object", id: "so-1" }]));
     await page.waitForTimeout(400);
@@ -1479,7 +1479,7 @@ test("e2e: one organization selected + more ctrl-clicked in the list -> Link sel
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "x", type: "organization", label: "x" }) });
     });
 
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Organizations");
@@ -1543,7 +1543,7 @@ test("e2e: one object selected + other objects added -> Link selection -> the ra
         : { needsExperiment: { notInAny: [], experiments: [{ id: "exp-a", label: "Barley 2025", objects: 2 }, { id: "exp-b", label: "Barley 2026", objects: 1 }], objects: 2 } };
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Scientific Objects");
@@ -1593,7 +1593,7 @@ test("e2e: Delete on an object with a location history explains why and points t
       uri: "so-geo", actions: ["delete", "link"], deleteRemovesLinks: true, relations: [],
       deleteBlocked: "has a location history in PHIS (where it was placed, and when). Delete it in PHIS instead — its location history is under Events and Positions.",
     }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "so-geo", type: "scientific_object", label: "Geo plot" }));
     await page.waitForTimeout(400);
@@ -1626,7 +1626,7 @@ test("e2e: after setting germplasm on a plot (Link selection), the action bar of
       puts.push(JSON.parse(r.request().postData() || "{}"));
       return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ relations: detail.relations }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
       selection.set("plot", { id: "plot", type: "scientific_object", label: "Plot 1" });
@@ -1658,7 +1658,7 @@ test("e2e: objects + germplasm selected: the button says what it will write, and
       ok: true, linkedPairs: 2, alreadyLinked: 0,
       written: [{ id: "plot-1", values: ["g-annika"], experiments: ["Barley 2026"], only: true }, { id: "plot-3", values: ["g-annika"], experiments: ["Barley 2026"], only: true }],
     }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => {
       for (const it of [{ id: "plot-1", type: "scientific_object", label: "Plot 1" }, { id: "plot-3", type: "scientific_object", label: "Plot 3" }, { id: "g-annika", type: "germplasm", label: "Annika" }]) selection.set(it.id, it);
@@ -1677,7 +1677,7 @@ test("e2e: the picker popover (an app question) closes via its own × button, no
       ok: true, linkedPairs: 1, alreadyLinked: 0, carryOver: [{ type: "scientific_object", id: "so-1", label: "Plot 1", experiment: "exp-B",
         experimentLabel: "Barley 2027", field: "hasGermplasm", value: "g-a", valueType: "germplasm", valueLabel: "Annika", from: "Barley 2025" }],
     }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => linkItems([{ type: "experiment", id: "exp-B" }, { type: "scientific_object", id: "so-1" }]));
     await page.waitForTimeout(400);
@@ -1690,7 +1690,7 @@ test("e2e: the picker popover (an app question) closes via its own × button, no
 
 test("e2e: Tabular Data (deliberately unwired) shows honest empty state, not fake data", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Data");
     await openRow(page, "Tabular Data");
@@ -1722,7 +1722,7 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
         warnings: ["On 2025-10-29 the sheet disagrees."],
       }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK-fake-zip") });
@@ -1768,7 +1768,7 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
       return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3, variables: 1, values: 1200 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
     });
     await page.route("**/api/node-detail**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: exp.id, actions: [], relations: [] }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -1806,7 +1806,7 @@ test("e2e: import review — a species PHIS lacks can be added by name: the opti
       runUrl = route.request().url();
       return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/x", type: "experiment", label: "Trial" }, created: { species: 1, germplasm: 1, factors: 0, objects: 0, variables: 0, values: 0 } } }) + "\n" });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -1873,7 +1873,7 @@ test("e2e: a file dropped on the import dialog is read like a chosen one — a C
         variables: { existing: [], missing: [], parts: [] }, objects: { count: 0, kinds: [], sample: [] }, warnings: [],
       }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     const drop = (name: string, type: string, text: string) => page.evaluate(({ name, type, text }) => {
@@ -1903,7 +1903,7 @@ test("e2e: the review of an import into an existing experiment names what it fil
       objects: { count: 0, existing: 3, kinds: [], sample: [], fills: { count: 2, what: { block: 2, position: 1, germplasm: 1, levels: 2 } }, conflicts: { count: 0, examples: [] } },
       warnings: [],
     }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("unit\n") });
@@ -1934,7 +1934,7 @@ const ANN = [
 test("e2e: search shows matches per type with honest counts; click selects, ctrl adds, Select all takes what is shown; Esc goes back", async () => {
   await withServerAndBrowser(async (base, page) => {
     await stubSearch(page, () => ANN);
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "ann");
     assert.equal(await page.locator("#paneTitle").textContent(), "Search: “ann”");
@@ -1973,7 +1973,7 @@ test("e2e: Show more asks for the next page of that one type and appends it", as
         ? [{ type: "germplasm", total: 182, items: [{ id: "g21", type: "germplasm", label: "Annette" }] }]
         : ANN;
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "ann");
     await page.locator("#rowlist .search-more").click();
@@ -1991,7 +1991,7 @@ test("e2e: a late answer to an older query is dropped", async () => {
       (u) => (u.searchParams.get("q") === "a" ? [{ type: "germplasm", total: 1, items: [{ id: "gs", type: "germplasm", label: "Stale" }] }] : ANN),
       (u) => (u.searchParams.get("q") === "a" ? 800 : 0)
     );
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.locator("#searchInput").fill("a");
     await page.waitForTimeout(350); // the "a" request is now in flight (800 ms)
@@ -2009,7 +2009,7 @@ test("e2e: search states — nothing found, a type that couldn't be searched, HT
       { type: "germplasm", total: 0, items: [], error: "boom" },
       { type: "experiment", total: 1, items: [{ id: "e-evil", type: "experiment", label: evil }] },
     ]);
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "zzz");
     assert.match(await page.locator("#rowlist").innerText(), /No matches for “zzz”\./);
@@ -2025,7 +2025,7 @@ test("e2e: `›` on a result opens it at its real place and ends the search; a c
   await withServerAndBrowser(async (base, page) => {
     await stubSearch(page, () => ANN);
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "x", relations: [] }) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "ann");
     await page.locator("#rowlist .row", { hasText: "Annika trial" }).locator(".row-nav").click();
@@ -2045,7 +2045,7 @@ test("e2e: `›` on a result opens it at its real place and ends the search; a c
 test("e2e: tree rows stay clickable while search answers arrive (searching again keeps the gathered selection editable)", async () => {
   await withServerAndBrowser(async (base, page) => {
     await stubSearch(page, (u) => (u.searchParams.get("q") === "ann" ? ANN : []));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "ann");
     await page.locator("#rowlist .row", { hasText: "Annika trial" }).click();
@@ -2061,7 +2061,7 @@ test("e2e: Select all adds the shown results to what is already selected", async
     await stubSearch(page, (u) => (u.searchParams.get("q") === "plot"
       ? [{ type: "scientific_object", total: 1, items: [{ id: "so-1", type: "scientific_object", label: "Plot 1" }] }]
       : ANN));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "plot");
     await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
@@ -2079,7 +2079,7 @@ test("e2e: clicking a search result never reorders the groups under the cursor",
       { type: "scientific_object", total: 1, items: [{ id: "so-a", type: "scientific_object", label: "Ann plot" }] },
       { type: "germplasm", total: 1, items: [{ id: "g1", type: "germplasm", label: "Annika" }] },
     ]);
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "ann");
     const before = await page.locator("#rowlist .search-group").allTextContents();
@@ -2097,7 +2097,7 @@ test("e2e: with something selected, search says what each result is to it — ca
           { type: "person", total: 1, items: [{ id: "p1", type: "person", label: "Ann Smith" }] },
           { type: "germplasm", total: 2, items: [{ id: "g1", type: "germplasm", label: "Annika" }, { id: "g2", type: "germplasm", label: "Annikki" }] },
         ]);
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await typeSearch(page, "plot");
     await page.locator("#rowlist .row", { hasText: "Plot 1" }).click();
@@ -2131,7 +2131,7 @@ test("e2e: level chips select with ctrl; plant + level reads 'Set Replicate: 2 o
   await withServerAndBrowser(async (base, page) => {
     const evil = `<img src=x onerror="window.__pwned=1">Rep`;
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail(evil)) }));
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => { selection = new Map([["so-1", { id: "so-1", type: "scientific_object", label: "PB001" }]]); });
     await page.evaluate(() => openNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
@@ -2159,7 +2159,7 @@ test("e2e: set a level on a plant not in its experiment — asked to add it ther
         ? { needsExperiment: { notInAny: [{ id: "so-1", label: "PB001" }], placeOptions: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] } }
         : { ok: true, linkedPairs: 1, alreadyLinked: 0, written: [{ id: "so-1", values: [`${FL}.2`], experiments: ["PBar1x4"], only: false }] }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate((fl) => linkItems([{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${fl}.2` }]), FL);
     await page.waitForTimeout(400);
@@ -2176,7 +2176,7 @@ test("e2e: + New factor asks for levels (one per line) and posts them; with two 
   await withServerAndBrowser(async (base, page) => {
     let posted: any = null;
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: FL, type: "factor", label: "Replicate" }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => { selection = new Map([["exp-1", { id: "exp-1", type: "experiment", label: "PBar1x4" }]]); renderActionbar(); });
     await page.locator("#newBtn").click();
@@ -2207,7 +2207,7 @@ test("e2e: the delete confirm counts again at delete time — a level set since 
     });
     let msg = "";
     page.on("dialog", (d) => { msg = d.message(); return d.dismiss(); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
     await page.waitForTimeout(400);
@@ -2219,7 +2219,7 @@ test("e2e: the delete confirm counts again at delete time — a level set since 
 
 test("e2e: + New factor from the Factors list with two experiments picked says to pick one — before the form, nothing typed is lost", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Factors");
@@ -2248,7 +2248,7 @@ test("e2e: plain click on a level opens the level's own page (Factors › Replic
           ] }
         : levelDetail()) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openRelatedNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
     await page.waitForTimeout(400);
@@ -2266,7 +2266,7 @@ test("e2e: deleting a factor confirms with the counted cascade", async () => {
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail()) }));
     let msg = "";
     page.on("dialog", (d) => { msg = d.message(); return d.dismiss(); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
     await page.waitForTimeout(400);
@@ -2283,7 +2283,7 @@ test("e2e: + New factor level with one factor selected asks its name and posts i
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: `${FL}.3`, type: "factor_level", label: "Replicate: 3", factor: FL }) }); });
     let asked = "";
     page.on("dialog", (d) => { asked = d.message(); return d.accept("3"); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate((fl) => { selection = new Map([[fl, { id: fl, type: "factor", label: "Replicate" }]]); renderActionbar(); }, FL);
     await page.locator("#newBtn").click();
@@ -2320,7 +2320,7 @@ test("e2e: a level's page renames it (the factor's list is fetched again) and it
     await page.route("**/api/node", (r) => { renamedTo = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: `${FL}.2`, type: "factor_level", label: "Replicate: 3" }) }); });
     const dialogs: string[] = [];
     page.on("dialog", (d) => { dialogs.push(`${d.type()}: ${d.message()} [${d.defaultValue()}]`); return d.type() === "prompt" ? d.accept("Replicate: 3") : d.dismiss(); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openRelatedNode({ id: "https://phis.pheno.no/id/factor/exp.rep", type: "factor", label: "Replicate" }));
     await page.waitForTimeout(400);
@@ -2350,7 +2350,7 @@ test("e2e: + New germplasm from the Germplasm list asks name, type and species (
     await page.route("**/api/germplasm-species", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "sp-barley", type: "germplasm", label: "Barley" }]) }));
     let posted: any = null;
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "g-new", type: "germplasm", label: "Fager", kind: "variety" }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Germplasm");
@@ -2372,7 +2372,7 @@ test("e2e: a species and a variety selected read 'Set Oat as species of Annika�
     await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
     let germplasmLoads = 0;
     await page.route("**/api/germplasm", (r) => { germplasmLoads++; return r.fulfill({ status: 200, contentType: "application/json", body: "[]" }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const oat = { id: "sp-oat", type: "germplasm", label: "Oat", kind: "species" };
     const annika = { id: "v-annika", type: "germplasm", label: "Annika", kind: "variety" };
@@ -2407,7 +2407,7 @@ test("e2e: People lists Accounts, Groups and Profiles; a supervisor chip opens t
             relations: [{ label: "Account", items: [{ id: "acc-1", type: "account", label: "Anna Berg" }] }, { label: "Scientific supervisor of", items: [{ id: "exp-1", type: "experiment", label: "PBar1x4" }] }] }
         : { uri: "exp-1", actions: ["rename", "delete", "link"], relations: [{ label: "Scientific supervisors", field: "scientific_supervisors", items: [{ id: "https://orcid.org/1", type: "person", label: "Anna Berg" }] }] }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     const labels = (await page.locator("#rowlist .row .row-label").allTextContents()).map((t) => t.trim());
@@ -2435,7 +2435,7 @@ test("e2e: devices + a facility read 'Move Specim FX10e to HOLT_BR_1…', ask th
     await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
     let asked = "", askedWhere = "";
     page.on("dialog", (d) => { if (/^Where in/.test(d.message())) { askedWhere = d.message(); return d.accept("bench 2"); } asked = `${d.message()} [${d.defaultValue()}]`; return d.accept("2026-09-30"); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const dev = { id: "dev-1", type: "device", label: "Specim FX10e" };
     const fac = { id: "fac-1", type: "facility", label: "HOLT_BR_1" };
@@ -2460,7 +2460,7 @@ test("e2e: + New device from the Devices list asks name, type (OpenSILEX's devic
     await page.route("**/api/device-types", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "vocabulary:RGBCamera", type: "rdf_type", label: "RGB camera" }]) }));
     let posted: any = null;
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "dev-new", type: "device", label: "ZZ cam" }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Setup");
     await openRow(page, "Devices");
@@ -2479,7 +2479,7 @@ test("e2e: an experiment + people: one 'Add … as <role> of …' button per rol
   await withServerAndBrowser(async (base, page) => {
     let linked: any = null;
     await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const exp = { id: "exp-1", type: "experiment", label: "Trial" };
     const ann = { id: "per-1", type: "person", label: "Ann Lee" };
@@ -2505,7 +2505,7 @@ test("e2e: + New person asks first name, last name, email; from an account it is
   await withServerAndBrowser(async (base, page) => {
     let posted: any = null;
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "per-new", type: "person", label: "Ann Lee" }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "People");
     await openRow(page, "Persons");
@@ -2532,7 +2532,7 @@ test("e2e: + New person asks first name, last name, email; from an account it is
 
 test("e2e: an empty category says where its things are instead of 'Nothing here yet' (Tabular Data points to experiments and plants)", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Data");
     await openRow(page, "Tabular Data");
@@ -2542,7 +2542,7 @@ test("e2e: an empty category says where its things are instead of 'Nothing here 
 
 test("e2e: a device + one person reads 'Set … as person in charge of …' and can be unlinked; two people say why not", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
     const cam = { id: "dev-1", type: "device", label: "Cam A" }, ann = { id: "per-1", type: "person", label: "Ann Lee" };
@@ -2563,7 +2563,7 @@ test("e2e: + New variable from Data > Variables asks name and the four parts (en
     }
     let posted: any = null;
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "var-new", type: "variable", label: "ZZ var" }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Data");
     await openRow(page, "Variables");
@@ -2601,7 +2601,7 @@ async function openStructuredExperiment(page: import("playwright").Page, base: s
       : { uri: String(id), actions: [], relations: [] };
     return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
-  await page.goto(base);
+  await page.goto(base + "/#browse");
   await page.waitForTimeout(1000);
   await page.evaluate(() => openNode({ id: "exp-1", type: "experiment", label: "Trial" }));
   await page.waitForTimeout(500);
@@ -2710,7 +2710,7 @@ test("e2e: picking the same plant from two boxes makes the selection graph-only:
 
 test("e2e: the browser's back and forward (Alt+Left/Right, mouse buttons) walk through the pages you opened", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const crumbs = async () => (await page.locator("#crumbs").innerText()).replace(/\s+/g, " ").trim();
     const first = await page.evaluate(() => ROOT[0].label), second = await page.evaluate(() => CATEGORY_ITEMS[ROOT[0].id][0].label);
@@ -3292,7 +3292,7 @@ test("e2e: a group + people: one 'Add … to … as <profile>' button per PHIS p
     await page.route("**/api/profiles", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "prof-d", type: "profile", label: "Default profile" }, { id: "prof-r", type: "profile", label: "Researcher profile" }]) }));
     let linked: any = null;
     await page.route("**/api/link", (r) => { linked = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, linkedPairs: 1, alreadyLinked: 0 }) }); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     const set = (s: any[]) => page.evaluate((x) => { selection = new Map(x.map((i: any) => [i.id, i])); renderActionbar(); }, s);
     const grp = { id: "grp-1", type: "group", label: "Researchers" };
@@ -3333,7 +3333,7 @@ test("e2e: a profile page has a rights editor: tick boxes per area (see/change/d
     });
     let asked = "";
     page.on("dialog", (d) => { asked = d.message(); return d.accept(); });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await page.evaluate(() => openNode({ id: "prof-1", type: "profile", label: "Researcher profile" }));
     const ed = page.locator("#rightsEditor");
@@ -3375,7 +3375,7 @@ test("e2e: a profile page has a rights editor: tick boxes per area (see/change/d
 
 test("e2e: a provenance (who made the data) or a note can be linked to a person from the selection pane; an experiment still asks for a role", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(500);
     const plan = (items: { id: string; type: string; label: string }[]) => page.evaluate((its) => {
       /* eslint-disable no-undef */
@@ -3393,7 +3393,7 @@ test("e2e: a provenance (who made the data) or a note can be linked to a person 
 
 test("e2e: sameId tells apart URIs that differ only before a shared last segment (PHIS adds /1 to reused URIs) but still matches full, prefixed and bare forms", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     const r = await page.evaluate(() => ({
       differentPlants: sameId("https://phis.pheno.no/id/scientific-object/so-b1-c1/1", "https://phis.pheno.no/id/scientific-object/so-b1-c2/1"),
       samePlant: sameId("https://phis.pheno.no/id/scientific-object/so-b1-c1/1", "https://phis.pheno.no/id/scientific-object/so-b1-c1/1"),
@@ -3421,7 +3421,7 @@ test("e2e: layout — the blocked-delete banner, a long title and a long chip st
         { label: "Annotations", items: [{ id: "n-1", type: "annotation", label: longTitle }] },
       ] });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(1000);
     await openRow(page, "Trials");
     await openRow(page, "Experiments");
@@ -3450,7 +3450,7 @@ test("e2e: layout — the blocked-delete banner, a long title and a long chip st
 
 test("e2e: a big selection stays short — list scrolls inside the pane, groups by type and folds, Clear lives in the header", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.evaluate(() => {
       for (let i = 0; i < 30; i++) selection.set("so-" + i, { id: "so-" + i, type: "scientific_object", label: "Plant " + i });
@@ -3497,7 +3497,7 @@ test("e2e: import review — the pencil on a row edits it in place, Save re-plan
       runEdits = route.request().headers()["x-import-edits"];
       return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "e", type: "experiment", label: "x" }, created: { germplasm: 0, factors: 0, objects: 2 } } }) + "\n" });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -3544,7 +3544,7 @@ test("e2e: import review — factor levels and new variables are editable by the
         edits, warnings: [],
       }) });
     });
-    await page.goto(base);
+    await page.goto(base + "/#browse");
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -3563,5 +3563,25 @@ test("e2e: import review — factor levels and new variables are editable by the
     await page.locator(".import-edited").waitFor({ state: "detached" });
     assert.equal(seen.at(-1), undefined, "no edits are sent after Undo all changes");
     assert.match((await page.locator("#importPlan").innerText()).replace(/\s+/g, " "), /Treatment: 2 levels \(15C, 18C\)/);
+  });
+});
+
+test("e2e: navbar switches views and the hash follows", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    assert.deepEqual(await page.locator("#mainnav a").allTextContents(), ["Overview", "Set up", "Import", "Browse", "Manage"]);
+    assert.equal(await page.evaluate(() => document.body.dataset.view), "overview");
+
+    await page.locator("#mainnav a", { hasText: "Browse" }).click();
+    await page.waitForFunction(() => document.body.dataset.view === "browse");
+    assert.equal(await page.evaluate(() => location.hash), "#browse");
+    assert.equal(await page.locator("#explorerPane").isVisible(), true);
+
+    await page.goBack();
+    await page.waitForFunction(() => document.body.dataset.view === "overview");
+    assert.equal(await page.locator("#explorerPane").isVisible(), false);
+
+    await page.goto(base + "/#nope");
+    assert.equal(await page.evaluate(() => document.body.dataset.view), "overview");
   });
 });
