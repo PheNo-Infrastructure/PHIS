@@ -1722,7 +1722,7 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
         warnings: ["On 2025-10-29 the sheet disagrees."],
       }) });
     });
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK-fake-zip") });
@@ -1768,7 +1768,7 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
       return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: [{ progress: { step: "Created the experiment", done: 1, total: 6 } }, { result: { experiment: exp, created: { germplasm: 1, factors: 1, objects: 3, variables: 1, values: 1200 } } }].map((l) => JSON.stringify(l)).join("\n") + "\n" });
     });
     await page.route("**/api/node-detail**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: exp.id, actions: [], relations: [] }) }));
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -1806,7 +1806,7 @@ test("e2e: import review — a species PHIS lacks can be added by name: the opti
       runUrl = route.request().url();
       return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/x", type: "experiment", label: "Trial" }, created: { species: 1, germplasm: 1, factors: 0, objects: 0, variables: 0, values: 0 } } }) + "\n" });
     });
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -1873,7 +1873,7 @@ test("e2e: a file dropped on the import dialog is read like a chosen one — a C
         variables: { existing: [], missing: [], parts: [] }, objects: { count: 0, kinds: [], sample: [] }, warnings: [],
       }) });
     });
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     const drop = (name: string, type: string, text: string) => page.evaluate(({ name, type, text }) => {
@@ -1903,7 +1903,7 @@ test("e2e: the review of an import into an existing experiment names what it fil
       objects: { count: 0, existing: 3, kinds: [], sample: [], fills: { count: 2, what: { block: 2, position: 1, germplasm: 1, levels: 2 } }, conflicts: { count: 0, examples: [] } },
       warnings: [],
     }) }));
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("unit\n") });
@@ -3497,7 +3497,7 @@ test("e2e: import review — the pencil on a row edits it in place, Save re-plan
       runEdits = route.request().headers()["x-import-edits"];
       return route.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "e", type: "experiment", label: "x" }, created: { germplasm: 0, factors: 0, objects: 2 } } }) + "\n" });
     });
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -3544,7 +3544,7 @@ test("e2e: import review — factor levels and new variables are editable by the
         edits, warnings: [],
       }) });
     });
-    await page.goto(base + "/#browse");
+    await page.goto(base);
     await page.waitForTimeout(800);
     await page.locator("#importBtn").click();
     await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
@@ -3584,4 +3584,40 @@ test("e2e: navbar switches views and the hash follows", async () => {
     await page.goto(base + "/#nope");
     assert.equal(await page.evaluate(() => document.body.dataset.view), "overview");
   });
+});
+
+const TWO_TRIALS = [
+  { id: "phis:id/experiment/e1", type: "experiment", label: "Barley 2024" },
+  { id: "phis:id/experiment/e2", type: "experiment", label: "Bean 2025" },
+];
+
+test("e2e: overview shows the import card and the trials; the arrow opens one in Browse", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    await page.goto(base);
+    assert.equal(await page.locator("#importBtn").textContent(), "Import from an instrument…");
+    await page.locator("#pageBody .row[data-id]").first().waitFor();
+    assert.deepEqual(await page.locator("#pageBody .row .row-label").allTextContents(), ["Barley 2024", "Bean 2025"]);
+
+    // a plain click selects, like everywhere else; the selection pane shows it
+    await page.locator("#pageBody .row", { hasText: "Bean 2025" }).click();
+    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/);
+
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).locator(".row-open").click();
+    await page.waitForFunction(() => document.body.dataset.view === "browse");
+    assert.match(await page.locator(".crumbs").textContent() ?? "", /Barley 2024/);
+    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/); // selection survived the switch
+  });
+});
+
+test("e2e: overview with no trials, or a failing list, still shows search and the import card", async () => {
+  for (const reply of [{ status: 200, body: "[]" }, { status: 404, body: "{\"error\":\"down\"}" }]) {
+    await withServerAndBrowser(async (base, page) => {
+      await page.route("**/api/experiments", (r) => r.fulfill({ status: reply.status, contentType: "application/json", body: reply.body }));
+      await page.goto(base);
+      await page.locator("#importBtn").waitFor();
+      assert.equal(await page.locator("#searchInput").isVisible(), true);
+      assert.match(await page.locator("#pageBody .empty-hint").textContent() ?? "", /No trials/);
+    });
+  }
 });
