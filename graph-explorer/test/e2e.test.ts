@@ -1770,8 +1770,9 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
     assert.match(text, /Variable groups \(a histogram's bins together\): New: 1 \(NDVI distribution\) Existing groups that get more variables: 1 \(Hue distribution\)/);
     assert.match((await page.locator("#importRunBtn").innerText()).trim(), /1 variable group\b/, "the button names the groups it creates");
     assert.equal(await page.locator("#importSpecies").inputValue(), "", "no species chosen for the user");
-    await page.locator("#importClose").click();
-    assert.equal(await page.locator("#importOverlay.open").count(), 0);
+    await page.locator("#mainnav a", { hasText: "Overview" }).click(); // leaving the page ends the session
+    await page.waitForFunction(() => document.body.dataset.view === "overview");
+    assert.equal(await page.locator("#importPlan").count(), 0);
   });
 });
 
@@ -1906,6 +1907,7 @@ test("e2e: a file dropped on the import dialog is read like a chosen one — a C
     await page.goto(base);
     await idle(page);
     await page.locator("#importBtn").click();
+    await page.locator("#importDrop").waitFor();
     const drop = (name: string, type: string, text: string) => page.evaluate(({ name, type, text }) => {
       const dt = new DataTransfer();
       dt.items.add(new File([text], name, { type }));
@@ -3602,7 +3604,7 @@ test("e2e: import review — factor levels and new variables are editable by the
 test("e2e: navbar switches views and the hash follows", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
-    assert.deepEqual(await page.locator("#mainnav a").allTextContents(), ["Overview", "Set up", "Import", "Browse"]);
+    assert.deepEqual(await page.locator("#mainnav a").allTextContents(), ["Overview", "Import", "Set up", "Browse"]);
     assert.equal(await page.evaluate(() => document.body.dataset.view), "overview");
 
     await page.locator("#mainnav a", { hasText: "Browse" }).click();
@@ -3653,7 +3655,7 @@ test("e2e: overview with no trials, or a failing list, still shows search and th
   }
 });
 
-test("e2e: import page lists past imports beside New import, which opens the dialog", async () => {
+test("e2e: the import page is the import itself: a drop area with the past imports under it, no pop-up", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/provenances", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
       { id: "phis:id/provenance/p1", type: "provenance", label: "TraitFinder export 21 Oct" },
@@ -3661,18 +3663,39 @@ test("e2e: import page lists past imports beside New import, which opens the dia
     ]) }));
     await page.goto(base + "/#import");
     await page.locator("#pageBody .row[data-id]").first().waitFor();
-    assert.deepEqual(await page.locator("#pageBody .row .row-label").allTextContents(), ["TraitFinder export 21 Oct", "PBar1x4"]);
-    await page.locator("#newImportBtn").click();
-    assert.equal(await page.locator("#importOverlay").isVisible(), true);
+    assert.equal(await page.locator("#importFile").isVisible(), true);
+    assert.deepEqual(await page.locator("#pastImports .row .row-label").allTextContents(), ["TraitFinder export 21 Oct", "PBar1x4"]);
+    assert.equal(await page.locator("#importOverlay.open").count(), 0);
   });
 });
 
-test("e2e: import page with no past imports says so and still offers New import", async () => {
+test("e2e: the Overview import card opens the Import page (not a pop-up)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    await page.locator("#importBtn").click();
+    await page.waitForFunction(() => document.body.dataset.view === "import");
+    assert.equal(await page.locator("#importFile").isVisible(), true);
+    assert.equal(await page.locator("#importOverlay.open").count(), 0);
+  });
+});
+
+test("e2e: import page with no past imports says so", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/provenances", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
     await page.goto(base + "/#import");
-    await page.locator("#newImportBtn").waitFor();
+    await page.locator("#importFile").waitFor();
     assert.match(await page.locator("#pageBody .empty-hint").textContent() ?? "", /No imports yet/);
+  });
+});
+
+test("e2e: the import page keeps the review while the page refreshes around it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/import/plan", (r) => r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "stub warning" }) }));
+    await page.goto(base + "/#import");
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+    await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
+    await page.evaluate(() => refreshLeftPane()); // what a list reload or a selection change does
+    assert.match(await page.locator("#importPlan").textContent() ?? "", /stub warning/);
   });
 });
 
@@ -3687,9 +3710,9 @@ test("e2e: setupSteps marks a step done only when its relation has items", async
         none: setupSteps(undefined).map(s => s.done),
       };
     });
-    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Data", true], ["Factors", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
-    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false, false, false]);
-    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.full, [["Data", true], ["Scientific Objects", true], ["Factors", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
+    assert.deepEqual(out.empty.map(([, d]) => d), [false, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.none, [false, false, false, false, false, false, false, false, false]);
   });
 });
 
@@ -3724,7 +3747,7 @@ test("e2e: set up page separates what is required from what is optional", async 
     await page.goto(base + "/#setup");
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     await page.locator("#pageBody .setup-step").first().waitFor();
-    assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Scientific Objects", "Data"]);
+    assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Data", "Scientific Objects"]);
     assert.equal(await page.locator("#pageBody .setup-optional").isVisible(), false, "optional steps start folded");
     await page.locator("#pageBody .setup-optional-head").click();
     assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Facilities", "Organizations", "Projects", "Persons", "Groups", "Annotations"]);
@@ -3875,7 +3898,8 @@ test("e2e: Set up has a Data step that imports into this experiment: the file's 
     const row = page.locator("#pageBody .setup-required .setup-step", { hasText: "Data" });
     assert.match(await row.textContent() ?? "", /none yet|no measured values/i);
     await row.locator("#setupImport").click();
-    assert.match(await page.locator("#importOverlay").textContent() ?? "", /Barley 2024/);
+    await page.waitForFunction(() => document.body.dataset.view === "import");
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Barley 2024/);
     await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
     await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
     assert.deepEqual(JSON.parse(decodeURIComponent(header)), { experiment: { name: "Barley 2024" } });
@@ -3987,6 +4011,40 @@ test("e2e: set up reads the experiment again after an import, so the boxes fill 
     await page.waitForFunction(() => document.body.dataset.view === "setup");
     await idle(page);
     assert.ok(calls > before, "the experiment's details were fetched again");
+  });
+});
+
+test("e2e: Set up has a file drop: with a trial it imports into it, without one it creates from the file", async () => {
+  for (const withTrial of [true, false]) {
+    await withServerAndBrowser(async (base, page) => {
+      await setupStubs(page);
+      let header: string | undefined;
+      await page.route("**/api/import/plan", (r) => { header = r.request().headers()["x-import-edits"]; return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "stub" }) }); });
+      await page.goto(base + "/#setup");
+      if (withTrial) { await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click(); await page.locator("#pageBody .setup-step").first().waitFor(); }
+      await page.locator("#setupFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+      await page.waitForFunction(() => document.body.dataset.view === "import");
+      await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
+      if (withTrial) assert.deepEqual(JSON.parse(decodeURIComponent(header!)), { experiment: { name: "Barley 2024" } });
+      else assert.equal(header, undefined, "no experiment chosen: the file's own experiment");
+    });
+  }
+});
+
+test("e2e: after an import, one button goes to Set up for that experiment", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await setupStubs(page);
+    const plan = { instrument: "TraitFinder (PlantEye)", experiment: { name: "Barley 2024", startDate: "2025-10-22", exists: false },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [{ name: "Replicate", levels: ["1"] }], vocabulary: [],
+      variables: { existing: [], missing: ["NDVI Average"], parts: [] }, objects: { count: 3, kinds: [{ type: "plant", count: 3 }], sample: [] }, warnings: [] };
+    await page.route("**/api/import/plan", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan) }));
+    await page.route("**/api/import/run**", (r) => r.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/e1", type: "experiment", label: "Barley 2024" }, created: { objects: 1, factors: 0, germplasm: 0 } } }) + "\n" }));
+    await page.goto(base + "/#import");
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+    await page.locator("#importRunBtn").click();
+    await page.locator("#importSetupBtn").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    assert.match(await page.locator("#pageBody .overview-h").first().textContent() ?? "", /Barley 2024/);
   });
 });
 

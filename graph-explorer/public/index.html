@@ -101,7 +101,8 @@ button { font-family: inherit; }
 .overview-card-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
-.setup-step { cursor: default; }
+.setup-step { cursor: default; flex-wrap: wrap; }
+.setup-row-drop { flex-basis: 100%; padding: 6px 0 4px 28px; }
 .setup-used { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .setup-chip { background: var(--surface-2); border-radius: 999px; padding: 1px 9px; font-size: 12.5px; }
 .setup-more { color: var(--ink-faint); font-size: 12.5px; padding: 1px 4px; }
@@ -142,6 +143,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .import-tile span { font-size: 12px; color: var(--ink-muted); }
 .import-tile.is-new { border-color: var(--accent); }
 .import-tile.is-new b { color: var(--accent); }
+.import-section > h3::before { content: "○"; display: inline-block; width: 18px; color: var(--ink-faint); font-weight: 400; }
+.import-section.is-new > h3::before { content: "+"; color: var(--accent); font-weight: 700; }
 .import-section { border-top: 1px solid var(--border); border-left: 4px solid var(--border-strong); padding: 8px 0 8px 12px; display: grid; grid-template-columns: 150px 1fr; gap: 3px 16px; align-items: start; }
 .import-section.is-new { border-left-color: var(--accent); }
 .import-section > :not(h3) { grid-column: 2; }
@@ -973,7 +976,7 @@ body[data-view="browse"] #pagePane { display: none; }
 <div class="app">
   <div class="masthead">
     <span class="brand"><svg class="logo" viewBox="0 0 498.4 120.7" role="img" aria-label="PheNo"><path class="la" d="M185.9 17.6C181.5 15.5 176.5 14.4 170.9 14.4L138.2 14.4L138.2 105.0L150.3 105.0L150.3 69.3L170.9 69.3C176.5 69.3 181.5 68.2 185.9 66.2C190.4 64.1 193.9 61.1 196.5 57.1C199.1 53.1 200.4 48.2 200.4 42.3C200.4 36.4 199.1 31.2 196.5 27.0C193.9 22.9 190.4 19.8 185.9 17.6M183.2 55.0C179.8 57.8 175.3 59.3 169.9 59.3L150.3 59.3L150.3 24.4L169.9 24.4C175.3 24.4 179.8 25.9 183.2 28.8C186.6 31.7 188.3 36.2 188.3 42.3C188.3 48.0 186.6 52.2 183.2 55.0"/><path class="la" d="M244.5 38.9C239.0 38.9 234.5 40.0 230.9 42.3C227.4 44.5 224.6 47.0 222.6 49.6L222.6 14.4L211.5 14.4L211.5 105.0L222.7 105.0L222.7 58.6C224.6 56.1 227.1 53.7 230.2 51.5C233.3 49.4 237.2 48.3 241.8 48.3C244.8 48.3 247.0 49.0 248.6 50.3C250.1 51.7 251.2 53.6 251.8 56.0C252.3 58.4 252.6 61.2 252.6 64.3L252.6 105.0L263.8 105.0L263.8 62.8C263.8 55.1 262.3 49.2 259.3 45.1C256.3 40.9 251.4 38.9 244.5 38.9L244.5 38.9"/><path class="la" d="M319.1 94.0C316.4 96.4 312.7 97.5 307.9 97.5C303.4 97.5 299.9 96.5 297.1 94.3C294.3 92.2 292.3 89.3 291.1 85.7C289.8 82.2 289.2 78.3 289.1 74.0L334.1 74.0C334.1 73.6 334.2 72.9 334.2 72.0C334.2 71.1 334.3 70.3 334.3 69.6C334.3 59.5 331.8 51.8 326.9 46.4C322.1 41.0 315.3 38.3 306.7 38.3C300.2 38.3 294.9 39.8 290.6 42.6C286.3 45.5 283.1 49.5 281.0 54.6C278.9 59.7 277.9 65.6 277.9 72.2C277.9 78.9 279.0 84.4 281.1 89.6C283.3 94.7 286.6 98.8 291.0 101.7C295.5 104.7 301.1 106.2 307.9 106.2C313.2 106.2 317.9 105.3 321.8 103.5C325.7 101.7 328.7 99.1 330.9 95.8C333.0 92.4 334.2 88.4 334.3 83.8L323.2 83.8C323.1 88.3 321.7 91.7 319.1 94.0M294.4 51.7C297.3 48.5 301.4 46.9 306.7 46.9C311.9 46.9 315.8 48.6 318.7 51.8C321.5 55.0 323.0 59.7 323.2 65.8L289.2 65.8C289.7 59.6 291.5 55.0 294.4 51.7"/><path class="lb" d="M412.1 86.5L362.5 14.4L350.2 14.4L350.2 105.0L361.6 105.0L361.6 32.8L411.2 105.0L423.5 105.0L423.5 14.4L412.1 14.4L412.1 86.5"/><path class="lb" d="M494.9 54.1C492.5 49.0 489.1 45.1 484.6 42.4C480.1 39.6 474.8 38.3 468.5 38.3C462.2 38.3 457.1 39.6 452.8 42.4C448.5 45.1 445.1 49.0 442.8 54.1C440.5 59.2 439.4 65.3 439.4 72.4C439.4 79.5 440.5 85.4 442.8 90.4C445.1 95.5 448.5 99.4 452.8 102.1C457.1 104.7 462.4 106.1 468.5 106.1C474.6 106.1 480.1 104.7 484.6 102.1C489.1 99.4 492.5 95.5 494.9 90.4C497.3 85.4 498.4 79.4 498.4 72.4C498.4 65.4 497.3 59.2 494.9 54.1M485.0 85.2C483.9 88.9 481.9 91.8 479.3 94.0C476.6 96.1 473.0 97.2 468.5 97.2C464.3 97.2 460.8 96.1 458.2 94.0C455.6 91.8 453.8 88.9 452.6 85.2C451.5 81.4 450.9 77.2 450.9 72.4C450.9 67.7 451.5 63.3 452.6 59.5C453.8 55.8 455.6 52.8 458.2 50.6C460.8 48.4 464.3 47.3 468.5 47.3C473.0 47.3 476.6 48.4 479.3 50.6C481.9 52.8 483.9 55.8 485.0 59.5C486.2 63.3 486.8 67.6 486.8 72.4C486.8 77.2 486.2 81.4 485.0 85.2L485.0 85.2"/><path class="la" d="M1.7 44.8L0.0 44.8L0.0 84.4C0.0 104.7 20.2 117.7 42.6 120.4L42.6 74.6C42.6 58.1 28.1 44.8 1.7 44.8L1.7 44.8"/><path class="lb" d="M98.0 1.1L111.1 14.2C110.8 15.1 110.5 16.0 110.2 16.9L95.0 1.6C90.7 2.4 86.7 3.6 83.1 5.1L105.8 27.8C105.4 28.6 105.0 29.4 104.6 30.1L80.6 6.1C77.3 7.6 74.3 9.4 71.6 11.4L99.1 39.1C98.8 39.5 98.5 40.0 98.2 40.4C98.0 40.6 97.8 40.9 97.7 41.1L69.6 12.9C66.6 15.5 64.0 18.3 61.8 21.4L90.0 49.7C89.4 50.2 88.8 50.8 88.2 51.3L60.4 23.5C58.5 26.6 57.0 30.0 55.9 33.5L79.8 57.5C79.1 58.0 78.4 58.4 77.6 58.8L55.1 36.3C54.3 39.9 53.9 43.7 53.9 47.6L53.9 48.9L68.0 63.1C67.1 63.4 66.2 63.7 65.3 63.9L53.9 52.4L53.9 120.7C84.4 118.6 111.4 94.2 111.6 63.0L111.6 0.1C106.8 0.1 102.2 0.5 98.0 1.1L98.0 1.1"/><path class="lb" d="M63.3 3.2L60.2 0.0L56.7 0.0L61.2 4.6C61.9 4.1 62.6 3.6 63.3 3.2L63.3 3.2"/><path class="lb" d="M37.0 0.0L51.1 14.1C51.6 13.5 52.1 12.8 52.7 12.2L40.5 0.0L37.0 0.0"/><path class="lb" d="M18.9 0.0L44.8 26.0C45.1 25.1 45.4 24.3 45.8 23.4L22.4 0.0L18.9 0.0"/><path class="lb" d="M42.4 37.5L5.0 0.0L1.6 0.0L42.3 40.8C42.3 39.7 42.4 38.6 42.4 37.5L42.4 37.5"/></svg><h1>PHIS Web Portal</h1></span>
-    <nav id="mainnav" aria-label="Sections"><a href="#overview">Overview</a><a href="#setup">Set up</a><a href="#import">Import</a><a href="#browse">Browse</a></nav>
+    <nav id="mainnav" aria-label="Sections"><a href="#overview">Overview</a><a href="#import">Import</a><a href="#setup">Set up</a><a href="#browse">Browse</a></nav>
     <span class="masthead-right"><span class="subtitle">phis.pheno.no &middot; design prototype</span></span>
   </div>
 
@@ -1539,6 +1542,7 @@ let view = "overview";
 const viewFromHash = () => VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
 function applyView(next) {
   if (next !== "adding" && adding) { selection = adding.selection; adding = null; } // left by the back button
+  if (next !== "import") importSession = null; // leaving the page ends an import session (a run in progress keeps going on the server)
   view = next;
   document.body.dataset.view = next;
   document.querySelectorAll("#mainnav a").forEach(a => a.getAttribute("href") === "#" + next ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
@@ -1548,6 +1552,7 @@ function showView(next) { if (location.hash === "#" + next) applyView(next); els
 window.addEventListener("hashchange", () => applyView(viewFromHash()));
 function renderPage() {
   const body = document.getElementById("pageBody");
+  if (view === "import" && importSession?.live && body.querySelector("#importPlan")) return; // a file is being handled: leave it
   body.innerHTML = "";
   if (view === "overview") renderOverview(body);
   else if (view === "import") renderImportPage(body);
@@ -1620,10 +1625,20 @@ function setupSteps(detail) {
   const data = { label: "Data", import: true, done: values > 0, items: [],
     hint: values > 0 ? `${values.toLocaleString("en")} measured values · ${vars.length} ${vars.length === 1 ? "variable" : "variables"}` : "none yet · measurements from an instrument file" };
   const [objects, ...rest] = SETUP_STEPS;
-  return [{ label: "Experiment", done: true, items: [], hint: "exists in PHIS" }, step(objects), data, ...rest.map(step)];
+  return [data, step(objects), ...rest.map(step)]; // the data can decide the rest (a file brings objects, factors, germplasm), so it is first
 }
 
 let setupTrial = null; // the trial this page shows the steps of
+const setupDropHtml = (label) => `<div class="import-drop" id="setupDrop"><span>${label}</span> <span class="import-or">or</span> <input type="file" id="setupFile" accept=".zip,.csv,application/zip,text/csv"></div>`;
+// A file dropped on Set up goes to the Import page: into the chosen trial, or, with none chosen, as the file's own experiment.
+function wireSetupDrop(into) {
+  const drop = document.getElementById("setupDrop"), input = document.getElementById("setupFile");
+  const take = (f) => { if (f) openImport({ ...(into ? { into } : {}), file: f }); };
+  input.addEventListener("change", (e) => take(e.target.files[0]));
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag-over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drag-over"); take(e.dataTransfer.files[0]); });
+}
 async function newExperimentFromSetup() {
   const v = await askCreateValues("experiment");
   if (!v) return;
@@ -1633,8 +1648,10 @@ async function newExperimentFromSetup() {
 function renderSetupPage(body) {
   if (!setupTrial) {
     body.innerHTML = `<div class="page-head"><h3 class="overview-h">Which trial?</h3><button class="btn" id="setupNew">+ New experiment</button></div>
-      <p class="page-note">Pick a trial to see what is set up and what is left, or start a new one.</p><div class="rowlist" id="setupTrials"></div>`;
+      <p class="page-note">Pick a trial to see what is set up and what is left, start a new one, or let an instrument file create it.</p>
+      ${setupDropHtml("Have an instrument file? Drop it here to create the experiment from it")}<div class="rowlist" id="setupTrials" style="margin-top:12px"></div>`;
     document.getElementById("setupNew").addEventListener("click", newExperimentFromSetup);
+    wireSetupDrop(null);
     const list = document.getElementById("setupTrials");
     const nodes = overviewNodes(CATEGORY_ITEMS["cat-experiments"]);
     if (!nodes.length) { list.innerHTML = `<div class="empty-hint">No trials yet. Create one, or import a file.</div>`; return; }
@@ -1653,10 +1670,11 @@ function renderSetupPage(body) {
       <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span>
         ${st.items.length ? `<span class="setup-used">${st.items.slice(0, 4).map(n => `<span class="setup-chip">${escapeHtml(n)}</span>`).join("")}${st.items.length > 4 ? `<span class="setup-more">+${st.items.length - 4} more</span>` : ""}</span>` : ""}</span>
       ${st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>` : ""}
+      ${st.import ? `<div class="setup-row-drop">${setupDropHtml("Or drop an instrument file here")}</div>` : ""}
       ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}</h3>
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
-    <p class="page-note">Each step lets you add to this experiment: create a new one (linked at once) or pick one that already exists.</p>
+    <p class="page-note">Start with the data: a file can fill in most of the rest. Otherwise each step lets you add to this experiment, a new one (linked at once) or one that already exists.</p>
     <div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
     <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
       <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
@@ -1664,6 +1682,7 @@ function renderSetupPage(body) {
   const go = (path) => { selection = new Map([[trial.id, trial]]); anchorId = null; navigateTo(path); };
   document.getElementById("setupOpen").addEventListener("click", () => go(canonicalPathFor(trial)));
   document.getElementById("setupImport")?.addEventListener("click", () => openImport({ into: trial }));
+  wireSetupDrop(trial);
   document.getElementById("setupOther").addEventListener("click", () => { setupTrial = null; renderPage(); });
   body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => startAdding(trial, b.dataset.category)));
 }
@@ -1825,16 +1844,26 @@ function renderAddingPage(body) {
   body.querySelectorAll("#addingPending .sel-remove").forEach(b => b.addEventListener("click", () => { adding.pending.splice(Number(b.dataset.id), 1); renderPage(); }));
 }
 
-/* ---------------- Import page: what was imported before, and a way to import more ---------------- */
+/* ---------------- Import page: the import itself, on the page (no pop-up) ----------------
+   A file is dropped here, reviewed here, written from here; the past imports are listed under it. While a file is being
+   handled the page must not be rebuilt by the refreshes that happen around it (lists reloading, a selection changing), so
+   renderPage leaves it alone once importSession.live is set. */
+let importSession = null; // { into?: trial, file?: File, live?: boolean }
 function renderImportPage(body) {
+  const opts = importSession ?? {};
   const past = (Array.isArray(CATEGORY_ITEMS["cat-provenances"]) ? CATEGORY_ITEMS["cat-provenances"] : []).filter(p => p && p.type === "provenance");
   body.innerHTML = `
-    <div class="page-head"><h3 class="overview-h">Past imports</h3><button class="btn" id="newImportBtn">New import…</button></div>
-    <p class="page-note">Each import leaves a provenance in PHIS: open one to see where its data came from.</p>
+    <div class="page-head"><h3 class="overview-h">Import from an instrument</h3></div>
+    <p class="page-note">Drop the file your instrument produced (a ZIP or the CSV). You see what it would create first: nothing is written until you confirm.</p>
+    ${opts.into ? `<p class="page-note">Importing into <b>${escapeHtml(opts.into.label)}</b>: the file's experiment is named after it, so what the file holds is added to this experiment.</p>` : ""}
+    <div class="import-drop" id="importDrop"><span>Drop the file here</span> <span class="import-or">or</span> <input type="file" id="importFile" accept=".zip,.csv,application/zip,text/csv"></div>
+    <div id="importPlan"></div>
+    <h4 class="adding-h" style="margin-top:22px">Past imports</h4>
     <div class="rowlist" id="pastImports"></div>`;
-  document.getElementById("newImportBtn").addEventListener("click", openImport);
   pageRows(document.getElementById("pastImports"), past, "No imports yet.");
+  wireImportPage(opts);
 }
+
 
 // Back/forward (Alt+Left/Right, the mouse buttons): every navigateTo pushes a history entry; the path itself
 // stays in memory under the entry's number (the address never changes), and popstate shows it again.
@@ -4883,21 +4912,9 @@ async function afterImport(body) {
   if (id) { delete NODE_DETAIL[id]; if (setupTrial && setupTrial.id === id) loadNodeDetail(setupTrial); }
   if (PAGE_VIEWS.has(view)) renderPage();
 }
-function openImport(opts = {}) {
-  const overlay = document.getElementById("importOverlay");
-  overlay.innerHTML = `
-    <div class="ranking-backdrop" id="importBackdrop"></div>
-    <div class="ranking-modal import-modal">
-      <div class="ranking-header"><span>Import from an instrument</span><button class="ranking-close" id="importClose" title="Close">&times;</button></div>
-      <p class="ranking-hint">Drop the file your instrument produced (a ZIP or the CSV). You'll see what it would create first — nothing is written until you confirm.</p>
-      ${opts.into ? `<p class="ranking-hint">Importing into <b>${escapeHtml(opts.into.label)}</b>: the file's experiment is named after it, so what the file holds is added to this experiment.</p>` : ""}
-      <div class="import-drop" id="importDrop"><span>Drop the file here</span> <span class="import-or">or</span> <input type="file" id="importFile" accept=".zip,.csv,application/zip,text/csv"></div>
-      <div id="importPlan"></div>
-    </div>`;
-  overlay.classList.add("open");
-  const close = () => { overlay.classList.remove("open"); overlay.innerHTML = ""; };
-  document.getElementById("importBackdrop").addEventListener("click", close);
-  document.getElementById("importClose").addEventListener("click", close);
+function openImport(opts = {}) { importSession = opts; if (view === "import") renderPage(); else showView("import"); }
+function wireImportPage(opts) {
+  const close = () => { importSession = null; renderPage(); };
   const CHOICE_IDS = ["importSpecies", "importNewSpecies", "importDevice", "importPerson", "importShare"];
   // Applying an edit asks the server for a new plan; what was already chosen in the dialog is kept.
   const render = (f, plan) => {
@@ -4921,6 +4938,7 @@ function openImport(opts = {}) {
     const out = document.getElementById("importPlan");
     importEdits = opts.into ? { experiment: { name: opts.into.label } } : {};
     if (!f) { out.innerHTML = ""; return; }
+    importSession = { ...opts, live: true }; // from now on the page keeps what it shows
     out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>`;
     try {
       const res = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f), body: f });
@@ -4936,6 +4954,7 @@ function openImport(opts = {}) {
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag-over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drag-over"); readFile(e.dataTransfer.files[0]); });
+  if (opts.file) readFile(opts.file);
 }
 // A ZIP goes as it is; a CSV says its name (the experiment is named from it).
 // The review's edits (keyed by the file's own names) travel with the file, for the plan and for the run.
@@ -5220,8 +5239,9 @@ function wireImportRun(file, plan, close) {
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
         ...(c.note === true ? ["recorded an annotation about the import"] : c.note === false ? ["could not save the annotation about the import (the data is in PHIS)"] : []),
       ];
-      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn" id="importSetupBtn">Set up this experiment</button><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
+      document.getElementById("importSetupBtn").addEventListener("click", () => { setupTrial = { id: body.experiment.id, type: "experiment", label: body.experiment.label }; importSession = null; showView("setup"); });
     } catch (err) {
       footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;
     }
