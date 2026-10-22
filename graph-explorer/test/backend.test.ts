@@ -166,7 +166,7 @@ test("GET / serves the mockup HTML", async () => {
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type") ?? "", /text\/html/);
     const text = await res.text();
-    assert.match(text, /<title>Graph Explorer<\/title>/);
+    assert.match(text, /<title>PHIS Web Portal<\/title>/);
   });
 });
 
@@ -248,6 +248,21 @@ test("POST /api/create builds the CreationDTO payload, groups same-type links in
     assert.equal(res.status, 201);
     assert.deepEqual(await res.json(), { id: "phis:id/facility/new-one", type: "facility", label: "New Facility" });
     assert.deepEqual(capturedBody, { name: "New Facility", organizations: ["org-1", "org-2"] });
+  });
+});
+
+test("POST /api/create trims the name: a stray space must not make a second, look-alike resource", async () => {
+  await withServer(async (base) => {
+    let capturedBody: any = null;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/facilities") && init?.method === "POST") { capturedBody = JSON.parse(String(init.body)); return jsonResponse(201, { result: "phis:id/facility/trim" }); }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const res = await realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "facility", name: "  Spaced Facility ", links: [] }) });
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).label, "Spaced Facility");
+    assert.equal(capturedBody.name, "Spaced Facility");
   });
 });
 

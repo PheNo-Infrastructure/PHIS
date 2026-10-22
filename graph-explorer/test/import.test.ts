@@ -342,7 +342,7 @@ test("POST /api/import/plan: messy values are left out and reported — empty ce
 // An experiment of the same name already in PHIS: Block 1, B1-C1 (nothing set) and B1-C2 (another
 // variety, column 3) are there; factor Treatment has only level 15C; the variables exist, and B1-C1
 // already has two values on 2025-10-29 (one equal to the file, one not).
-function mockExistingExperiment(writes: { method: string; path: string; body: any }[]) {
+function mockExistingExperiment(writes: { method: string; path: string; body: any }[], existingName: string = NAME) {
   const exp = "exp:old";
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     const path = url.replace(/^.*\/rest/, "");
@@ -363,7 +363,7 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
       if (path === "/core/provenances") return jsonResponse(201, { result: "prov:new" });
       if (path === "/core/data") return jsonResponse(201, { result: body.map((_: unknown, i: number) => `data:${i}`) });
     }
-    if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [{ uri: exp, name: NAME }] });
+    if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [{ uri: exp, name: existingName }] });
     if (path.startsWith(`/core/scientific_objects?experiment=${encodeURIComponent(exp)}`)) return jsonResponse(200, { result: [{ uri: "so:block1", name: "Block 1" }, { uri: "so:old1", name: "B1-C1" }, { uri: "so:old2", name: "B1-C2" }] });
     if (path === `/core/experiments/${encodeURIComponent(exp)}/factors`) return jsonResponse(200, { result: [{ uri: "f:Treatment", name: "Treatment", experiment: exp, levels: [{ uri: "lvl:Treatment.15C", name: "15C" }] }] });
     const copy = path.match(/^\/core\/scientific_objects\/so%3A(old1|old2|block1)\?experiment=/);
@@ -389,6 +389,15 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
     throw new Error(`unexpected fetch: ${method} ${url}`);
   }) as typeof fetch;
 }
+
+test("POST /api/import/plan: an experiment whose PHIS name has a stray space at the end is still the same experiment (no duplicate is created)", async () => {
+  await withServer(async (base) => {
+    mockExistingExperiment([], `${NAME} `);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.equal(plan.experiment.exists, true);
+    assert.equal(plan.experiment.sameName, undefined);
+  });
+});
 
 test("POST /api/import/plan into an existing experiment is a fill: what PHIS lacks is listed to add, what PHIS has differently is listed and kept, values already there are skipped", async () => {
   await withServer(async (base) => {

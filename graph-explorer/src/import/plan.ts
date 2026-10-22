@@ -37,7 +37,7 @@ export async function prepare(files: Files, edits?: Edits) {
   }
 
   // OpenSILEX's name filters match parts of names, so exact (case-insensitive) matching is done here.
-  const same = (a: unknown, b: string) => String(a ?? "").toLowerCase() === b.toLowerCase();
+  const same = (a: unknown, b: string) => String(a ?? "").trim().toLowerCase() === b.trim().toLowerCase(); // a stray space is not a different name
   // OpenSILEX's name filters are regexes, so names are escaped ("Tiril (G16)" is a name, not a pattern).
   // An experiment of the same name is filled in (existing.ts); two of them can't be told apart.
   const sameName = (await authedGet(`/core/experiments?name=${enc(escapeRegex(trial.experiment.name))}&page_size=50`)).result

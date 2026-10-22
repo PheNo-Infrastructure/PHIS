@@ -14,7 +14,7 @@ export const handleCreate: RouteHandler = async (req, res, { pathname }) => {
     fields?: Record<string, unknown>;
   };
   const type = body.type;
-  const name = body.name;
+  const name = typeof body.name === "string" ? body.name.trim() : body.name; // a stray space would make a look-alike name
   const links = body.links ?? [];
   if (!type || !name || !Array.isArray(links)) {
     res.writeHead(400, { "Content-Type": "application/json" });

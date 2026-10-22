@@ -3652,14 +3652,14 @@ test("e2e: setupSteps marks a step done only when its relation has items", async
     const out = await page.evaluate(() => {
       const rel = (label, n) => ({ label, items: Array.from({ length: n }, (_, i) => ({ id: `x${i}`, label: `x${i}` })) });
       return {
-        full: setupSteps({ relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Facilities", 2), rel("Organizations", 1), rel("Projects", 1), rel("Scientific supervisors", 1), rel("Shared with", 1), rel("Annotations", 1)] }).map(s => [s.label, s.done]),
+        full: setupSteps({ structure: { variables: [{ id: "v", label: "v", count: 3 }] }, relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Facilities", 2), rel("Organizations", 1), rel("Projects", 1), rel("Scientific supervisors", 1), rel("Shared with", 1), rel("Annotations", 1)] }).map(s => [s.label, s.done]),
         empty: setupSteps({ relations: [rel("Scientific objects", 0)] }).map(s => [s.label, s.done]),
         none: setupSteps(undefined).map(s => s.done),
       };
     });
-    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Factors", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
-    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false, false]);
-    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Data", true], ["Factors", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
+    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false, false, false]);
   });
 });
 
@@ -3694,7 +3694,7 @@ test("e2e: set up page separates what is required from what is optional", async 
     await page.goto(base + "/#setup");
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     await page.locator("#pageBody .setup-step").first().waitFor();
-    assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Scientific Objects"]);
+    assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Scientific Objects", "Data"]);
     assert.equal(await page.locator("#pageBody .setup-optional").isVisible(), false, "optional steps start folded");
     await page.locator("#pageBody .setup-optional-head").click();
     assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Facilities", "Organizations", "Projects", "Persons", "Groups", "Annotations"]);
@@ -3787,19 +3787,31 @@ test("e2e: factors can only be created for the trial (they belong to one experim
   });
 });
 
-test("e2e: germplasm is not a step of its own: it is set on the scientific objects while adding them", async () => {
+const GERMPLASM = [
+  { id: "phis:id/germ/s1", type: "germplasm", label: "Barley" },
+  { id: "phis:id/germ/v1", type: "germplasm", label: "Golden", parent: "phis:id/germ/s1" },
+  { id: "phis:id/germ/s2", type: "germplasm", label: "Wheat" },
+];
+test("e2e: germplasm is set on the scientific objects while adding them, chosen in a sub-menu like Browse's germplasm list", async () => {
   await withServerAndBrowser(async (base, page) => {
     const links: any[] = [];
     await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
-    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "phis:id/germ/g1", type: "germplasm", label: "Barley" }]) }));
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(GERMPLASM) }));
     await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
-    assert.equal(await page.locator("#addingGermplasm").count(), 1);
     await page.locator("#addingList .row", { hasText: "Plant A" }).click();
-    await page.locator("#addingGermplasm").selectOption({ label: "Barley" });
+    await page.locator("#addingGermplasm").click();
+    // the sub-menu: species first (a variety does not swallow the list), crumbs only within germplasm
+    assert.deepEqual(await page.locator("#germplasmList .row .row-label").allTextContents(), ["Barley", "Wheat"]);
+    assert.deepEqual((await page.locator("#germCrumbs .crumb").allTextContents()).map((c) => c.trim()), ["Germplasm"]);
+    await page.locator("#germplasmList .row", { hasText: "Barley" }).locator(".row-open").click();
+    assert.deepEqual(await page.locator("#germplasmList .row .row-label").allTextContents(), ["Golden"]);
+    assert.deepEqual((await page.locator("#germCrumbs .crumb").allTextContents()).map((c) => c.trim()), ["Germplasm", "Barley"]);
+    await page.locator("#germplasmList .row", { hasText: "Golden" }).click();
+    assert.match(await page.locator("#addingGermplasm").textContent() ?? "", /Golden/);
     await page.locator("#addingDone").click();
     await page.waitForFunction(() => document.body.dataset.view === "setup");
     assert.deepEqual(links[0].items.map((i: any) => i.id), ["phis:id/experiment/e1", "phis:id/so/o1"]);
-    assert.deepEqual(links[1].items.map((i: any) => i.id), ["phis:id/so/o1", "phis:id/germ/g1"]);
+    assert.deepEqual(links[1].items.map((i: any) => i.id), ["phis:id/so/o1", "phis:id/germ/v1"]);
     assert.deepEqual(links[1].experiments, ["phis:id/experiment/e1"]);
   });
   await withServerAndBrowser(async (base, page) => {
@@ -3809,6 +3821,34 @@ test("e2e: germplasm is not a step of its own: it is set on the scientific objec
     await page.waitForFunction(() => document.body.dataset.view === "setup");
     await page.locator("#pageBody .setup-optional-head").click();
     assert.equal(await page.locator("#pageBody .setup-label", { hasText: /^Germplasm$/ }).count(), 0);
+  });
+});
+
+test("e2e: the germplasm sub-menu goes back without choosing", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(GERMPLASM) }));
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
+    await page.locator("#addingGermplasm").click();
+    await page.locator("#germplasmBack").click();
+    assert.equal(await page.locator("#addingList").isVisible(), true);
+    assert.match(await page.locator("#addingGermplasm").textContent() ?? "", /None|Choose/);
+  });
+});
+
+test("e2e: Set up has a Data step that imports into this experiment: the file's experiment is renamed to it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await setupStubs(page);
+    let header = "";
+    await page.route("**/api/import/plan", (r) => { header = r.request().headers()["x-import-edits"] ?? ""; return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "stub" }) }); });
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    const row = page.locator("#pageBody .setup-required .setup-step", { hasText: "Data" });
+    assert.match(await row.textContent() ?? "", /none yet|no measured values/i);
+    await row.locator("#setupImport").click();
+    assert.match(await page.locator("#importOverlay").textContent() ?? "", /Barley 2024/);
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+    await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
+    assert.deepEqual(JSON.parse(decodeURIComponent(header)), { experiment: { name: "Barley 2024" } });
   });
 });
 
