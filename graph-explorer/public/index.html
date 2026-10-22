@@ -1590,14 +1590,16 @@ const SETUP_STEPS = [
   { label: "Factors", relation: "Factors", category: "cat-factors", optional: true, hint: "treatments and design, e.g. drought" },
   { label: "Germplasm", relation: "Species", category: "cat-germplasm", optional: true, hint: "the plant material, set on the Scientific Objects" },
   { label: "Facilities", relation: "Facilities", category: "cat-facilities", optional: true, hint: "where it takes place" },
+  { label: "Organizations", relation: "Organizations", category: "cat-organizations", optional: true, hint: "the institutes behind it" },
   { label: "Projects", relation: "Projects", category: "cat-projects", optional: true, hint: "the project that funds it" },
-  { label: "Persons", relation: "Scientific supervisors", category: "cat-persons", optional: true, hint: "who supervises it" },
+  { label: "Persons", relation: ["Scientific supervisors", "Technical supervisors"], category: "cat-persons", optional: true, hint: "who supervises it" },
   { label: "Groups", relation: "Shared with", category: "cat-groups", optional: true, hint: "who it is shared with" },
+  { label: "Annotations", relation: "Annotations", category: "cat-annotations", optional: true, hint: "notes about it" },
 ];
 // What can be done from an experiment, straight from what PHIS lets us write (the same rules as + New and Link in Browse):
 // create = a new one made and linked to the trial; pick = an existing one linked to it. A factor belongs to ONE experiment
 // (made here, never picked); germplasm is set on the scientific objects, not on the experiment; a person is picked with a role.
-const PICKABLE = new Set(["scientific_object", "facility", "project", "group", "person"]);
+const PICKABLE = new Set(["scientific_object", "facility", "organization", "project", "group", "person"]);
 function addCaps(categoryId, owner = "experiment") {
   const t = TYPE_FOR_CATEGORY[categoryId], c = CREATABLE[t];
   const create = !!c && t !== "germplasm" && (c.fromOnly ? c.fromOnly.includes(owner)
@@ -1605,7 +1607,7 @@ function addCaps(categoryId, owner = "experiment") {
   return { create, pick: PICKABLE.has(t), role: t === "person" };
 }
 function setupSteps(detail) {
-  const has = rel => (detail?.relations ?? []).some(r => r.label === rel && r.items.length > 0);
+  const has = rel => (detail?.relations ?? []).some(r => [rel].flat().includes(r.label) && r.items.length > 0);
   return [{ label: "Experiment", done: true, hint: "exists in PHIS" },
     ...SETUP_STEPS.map(st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet · ${st.hint}` }))];
 }
@@ -1673,28 +1675,41 @@ function endAdding() {
   showView("setup");
 }
 async function finishAdding(link) {
+  const summary = { created: [], linked: [] };
   if (link) {
     const trialLink = [{ type: adding.trial.type, id: adding.trial.id }];
     while (adding.pending.length) { // one at a time: a failure stops here and keeps the rest
       const q = adding.pending[0];
       const made = await createNode(q.type, q.name, trialLink, `linked to ${adding.trial.label}`, q.fields);
       if (!made) { renderPage(); return; }
+      summary.created.push(made.label);
       adding.pending.shift();
     }
     if (adding.picked.size) {
       const role = document.getElementById("addingRole")?.value;
       if (addCaps(adding.categoryId).role && !role) { showToast("Say which role first: the people you picked need one."); return; }
-      const ok = await linkItems([...trialLink, ...[...adding.picked.values()].map(v => ({ type: v.type, id: v.id }))], undefined, role ? { role } : {});
+      const picks = [...adding.picked.values()];
+      const ok = await linkItems([...trialLink, ...picks.map(v => ({ type: v.type, id: v.id }))], undefined, role ? { role } : {});
       if (!ok) { renderPage(); return; } // the toast says why; stay, so nothing picked is lost
+      summary.linked = picks.map(v => v.label);
     }
   }
+  const label = adding.trial.label;
   endAdding();
+  const said = [summary.created.length && `created ${andList(summary.created)}`, summary.linked.length && `linked ${andList(summary.linked)}`].filter(Boolean);
+  if (said.length) showToast(`${label}: ${said.join("; ")}.`); // one line for everything, instead of whichever toast came last
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && view === "adding" && !e.target.closest("dialog")) finishAdding(false); });
 
+// What the experiment already has for the step being added to (read-only).
+function alreadyInTrial() {
+  const rel = SETUP_STEPS.find(st => st.category === adding.categoryId)?.relation;
+  return (NODE_DETAIL[adding.trial.id]?.relations ?? []).filter(r => [rel].flat().includes(r.label)).flatMap(r => r.items);
+}
 // Why there is nothing to pick from, in the words of what PHIS does.
 function addNote(type, nice) {
   const one = CREATABLE[type]?.onlyOne;
+  if (type === "annotation") return "An annotation is about what it was written for. Write a new one about this experiment.";
   return one ? `A ${nice} belongs to one ${one}, so existing ones can't be added here. Make a new one.` : `Existing ${nice} can't be added here.`;
 }
 function paintAddingList() {
@@ -1733,6 +1748,7 @@ function renderAddingPage(body) {
         ${caps.create ? "" : `<p class="adding-note">${escapeHtml(type === "person" ? "A person can't be made from an experiment: make the person first in Browse, then pick them here." : `This app can't create a ${nice} from an experiment.`)}</p>`}
         ${caps.pick ? `<div class="rowlist" id="addingList"></div>` : ""}</div>
       <div>${caps.role ? `<h4 class="adding-h">Role</h4><select id="addingRole" aria-label="Role"><option value="">Choose a role…</option>${(PERSON_ROLES[adding.trial.type] || []).map(r => `<option value="${escapeHtml(r.field)}">${escapeHtml(r.label)}</option>`).join("")}</select>` : ""}
+        <h4 class="adding-h">Already in this experiment</h4><div id="addingExisting">${names(alreadyInTrial(), false)}</div>
         <h4 class="adding-h">To link when you press Done</h4><div id="addingPicked">${names([...adding.picked.values()], true)}</div>
         <h4 class="adding-h">To create and link when you press Done</h4><div id="addingPending">${names(adding.pending.map((q, i) => ({ id: String(i), label: q.name })), true)}</div></div>
     </div>`;

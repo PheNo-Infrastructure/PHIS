@@ -3652,18 +3652,18 @@ test("e2e: setupSteps marks a step done only when its relation has items", async
     const out = await page.evaluate(() => {
       const rel = (label, n) => ({ label, items: Array.from({ length: n }, (_, i) => ({ id: `x${i}`, label: `x${i}` })) });
       return {
-        full: setupSteps({ relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Species", 1), rel("Facilities", 2), rel("Projects", 1), rel("Scientific supervisors", 1), rel("Shared with", 1)] }).map(s => [s.label, s.done]),
+        full: setupSteps({ relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Species", 1), rel("Facilities", 2), rel("Organizations", 1), rel("Projects", 1), rel("Scientific supervisors", 1), rel("Shared with", 1), rel("Annotations", 1)] }).map(s => [s.label, s.done]),
         empty: setupSteps({ relations: [rel("Scientific objects", 0)] }).map(s => [s.label, s.done]),
         none: setupSteps(undefined).map(s => s.done),
       };
     });
-    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Factors", true], ["Germplasm", true], ["Facilities", true], ["Projects", true], ["Persons", true], ["Groups", true]]);
-    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false]);
-    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Factors", true], ["Germplasm", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
+    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false, false, false]);
   });
 });
 
-const SETUP_DETAIL = { relations: [{ label: "Scientific objects", items: [{ id: "so1", type: "scientific_object", label: "P1" }] }, { label: "Factors", items: [] }] };
+const SETUP_DETAIL = { relations: [{ label: "Scientific objects", items: [{ id: "so1", type: "scientific_object", label: "P1" }] }, { label: "Factors", items: [{ id: "phis:id/factor/f0", type: "factor", label: "Existing factor" }] }] };
 async function setupStubs(page: import("playwright").Page) {
   await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
   await page.route("**/api/node-detail**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SETUP_DETAIL) }));
@@ -3697,7 +3697,7 @@ test("e2e: set up page separates what is required from what is optional", async 
     assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Scientific Objects"]);
     assert.equal(await page.locator("#pageBody .setup-optional").isVisible(), false, "optional steps start folded");
     await page.locator("#pageBody .setup-optional-head").click();
-    assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Germplasm", "Facilities", "Projects", "Persons", "Groups"]);
+    assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Germplasm", "Facilities", "Organizations", "Projects", "Persons", "Groups", "Annotations"]);
     assert.match(await page.locator("#pageBody .setup-optional-head").textContent() ?? "", /Optional/);
   });
 });
@@ -3813,6 +3813,47 @@ test("e2e: persons are picked with a role and cannot be created from an experime
     await page.locator("#addingDone").click();
     await page.waitForFunction(() => document.body.dataset.view === "setup");
     assert.equal(links[0].role, roles[1]);
+  });
+});
+
+test("e2e: adding shows what the experiment already has for that step, read-only", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openAddingFactors(page, base);
+    assert.match(await page.locator("#addingExisting").textContent() ?? "", /Existing factor/);
+    assert.equal(await page.locator("#addingExisting .sel-remove").count(), 0);
+  });
+});
+
+test("e2e: annotations are written for the experiment (new only), organizations can be picked", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openAdding(page, base, "Annotations", "**/api/annotations", []);
+    assert.equal(await page.locator("#addingList").count(), 0);
+    assert.equal(await page.locator("#addingNew").isVisible(), true);
+  });
+  await withServerAndBrowser(async (base, page) => {
+    await openAdding(page, base, "Organizations", "**/api/organizations", [{ id: "phis:id/org/o1", type: "organization", label: "NMBU" }]);
+    assert.deepEqual(await page.locator("#addingList .row .row-label").allTextContents(), ["NMBU"]);
+  });
+});
+
+test("e2e: Done says everything it did: what it created and what it linked", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/scientific-object-types", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "vocabulary:Plant", label: "Plant" }]) }));
+    await page.route("**/api/create", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/so/o9", type: "scientific_object", label: "Plant C" }) }));
+    await page.route("**/api/link", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 2 }) }));
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
+    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
+    await page.locator("#addingList .row", { hasText: "Plant B" }).click();
+    await page.locator("#addingNew").click();
+    const form = page.locator("dialog.create-dialog");
+    await form.locator("input[name=name]").fill("Plant C");
+    for (const f of await form.locator("select[required]").all()) await f.selectOption({ index: 1 });
+    await form.locator("button[value=ok]").click();
+    await page.locator("#addingDone").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    const toast = (await page.locator("#toast").textContent()) ?? "";
+    assert.match(toast, /created Plant C/i);
+    assert.match(toast, /linked Plant A and Plant B/i);
   });
 });
 
