@@ -251,6 +251,26 @@ test("POST /api/create builds the CreationDTO payload, groups same-type links in
   });
 });
 
+test("GET /api/factors: each factor carries the experiment it belongs to (two factors can share a name)", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/experiments/factors")) return jsonResponse(200, { result: [
+        { uri: "phis:id/factor/a", name: "Treatment", experiment: "phis:id/experiment/e1" },
+        { uri: "phis:id/factor/b", name: "Treatment", experiment: "phis:id/experiment/e2" },
+        { uri: "phis:id/factor/c", name: "Alone" },
+      ] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const rows = await (await realFetch(`${base}/api/factors`)).json();
+    assert.deepEqual(rows, [
+      { id: "phis:id/factor/a", type: "factor", label: "Treatment", scope: "phis:id/experiment/e1" },
+      { id: "phis:id/factor/b", type: "factor", label: "Treatment", scope: "phis:id/experiment/e2" },
+      { id: "phis:id/factor/c", type: "factor", label: "Alone" },
+    ]);
+  });
+});
+
 test("POST /api/create trims the name: a stray space must not make a second, look-alike resource", async () => {
   await withServer(async (base) => {
     let capturedBody: any = null;

@@ -25,7 +25,7 @@ const leafClasses = (tree: RawItem[]): RawItem[] => {
   return out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 };
 
-export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; rows?: (result: RawItem[]) => RawItem[]; post?: true };
+export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; scope?: (i: RawItem) => unknown; rows?: (result: RawItem[]) => RawItem[]; post?: true };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
@@ -57,7 +57,7 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/provenances": { url: "/core/provenances?page_size=500", type: "provenance", label: byName },
   "/api/events": { url: "/core/events?page_size=500", type: "event", label: (i) => String(i.description ?? i.rdf_type_name ?? i.uri) },
   "/api/documents": { url: "/core/documents?pageSize=500", type: "document", label: (i) => String(i.title ?? i.uri) },
-  "/api/factors": { url: "/core/experiments/factors?page_size=500", type: "factor", label: byName },
+  "/api/factors": { url: "/core/experiments/factors?page_size=500", type: "factor", label: byName, scope: (i) => i.experiment },
   // Not a browsable category: the scientific-object classes (Plant, Plot, Sample, ...) that
   // feed the create form's Type dropdown (CREATABLE.scientific_object.fields).
   // Not a browsable category: the device classes (camera, RGB camera, …) for the create form.
@@ -70,7 +70,8 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/scientific-object-types": { url: "/core/scientific_objects/used_types", type: "rdf_type", label: byName },
 };
 
-export type Row = { id: string; type: string; label: string; parent?: string; kind?: string };
+// scope: the one experiment a thing belongs to (a factor), so two with the same name can be told apart.
+export type Row = { id: string; type: string; label: string; parent?: string; kind?: string; scope?: string };
 
 // One row per OpenSILEX item — shared by the list and search routes so a browsed row and a
 // search hit are the same item (same id form). A germplasm's own uri comes back full
@@ -78,8 +79,8 @@ export type Row = { id: string; type: string; label: string; parent?: string; ki
 // the detail pane's chips — so ids and parents are compacted to one form.
 export async function toRows(route: ListRoute, items: RawItem[]): Promise<Row[]> {
   const rows: Row[] = items.map((i) => {
-    const kind = route.kind?.(i);
-    return { id: String(i.uri), type: route.type, label: route.label(i), ...(kind ? { kind } : {}) };
+    const kind = route.kind?.(i), scope = route.scope?.(i);
+    return { id: String(i.uri), type: route.type, label: route.label(i), ...(kind ? { kind } : {}), ...(typeof scope === "string" && scope ? { scope } : {}) };
   });
   if (!route.parent) return rows;
   return Promise.all(

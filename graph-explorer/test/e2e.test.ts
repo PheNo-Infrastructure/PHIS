@@ -3907,18 +3907,13 @@ test("e2e: Set up's Import button is a file chooser; the file goes to the Import
   });
 });
 
-test("e2e: with no trial chosen, Set up's import chooser creates the experiment from the file", async () => {
+test("e2e: with no trial chosen, Set up only offers to pick or create an experiment (import has its own page)", async () => {
   await withServerAndBrowser(async (base, page) => {
     await setupStubs(page);
-    let header: string | undefined = "unset";
-    await page.route("**/api/import/plan", (r) => { header = r.request().headers()["x-import-edits"]; return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "stub" }) }); });
     await page.goto(base + "/#setup");
-    assert.equal(await page.locator("#setupDrop").count(), 0, "no drop box on Set up");
-    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator("#setupImport").click()]);
-    await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
-    await page.waitForFunction(() => document.body.dataset.view === "import");
-    await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
-    assert.equal(header, undefined, "no experiment chosen: the file's own experiment");
+    await page.locator("#setupNew").waitFor();
+    assert.equal(await page.locator("#setupImport").count(), 0);
+    assert.equal(await page.locator("#setupFile").count(), 0);
   });
 });
 
@@ -4044,6 +4039,23 @@ test("e2e: shift-click picks a range in the adding list", async () => {
     await page.locator("#addingList .row", { hasText: "Plant A" }).click();
     await page.locator("#addingList .row", { hasText: "Plant C" }).click({ modifiers: ["Shift"] });
     assert.deepEqual(await page.locator("#addingList .row.picked .row-label").allTextContents(), ["Plant A", "Plant B", "Plant C"]);
+  });
+});
+
+test("e2e: a factor row says which experiment it belongs to, so two factors with one name can be told apart", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    await page.route("**/api/factors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "phis:id/factor/a", type: "factor", label: "Treatment", scope: "phis:id/experiment/e1" },
+      { id: "phis:id/factor/b", type: "factor", label: "Treatment", scope: "phis:id/experiment/e2" },
+    ]) }));
+    await page.goto(base + "/#browse");
+    await openRow(page, "Scientific Information");
+    await openRow(page, "Factors");
+    const lines = await page.locator("#rowlist .row .row-type").allTextContents();
+    assert.match(lines[0], /in Barley 2024/);
+    assert.match(lines[1], /in Bean 2025/);
+    assert.match(await page.locator("#rowlist").textContent() ?? "", /Treatment/);
   });
 });
 

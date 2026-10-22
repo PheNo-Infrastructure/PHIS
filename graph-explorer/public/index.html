@@ -1112,7 +1112,7 @@ const CATEGORY_ITEMS = {
     { id: "cat-scientificobjects", type: "category", label: "Scientific Objects", hint: "what you measure: plants, plots, pots, samples" },
     { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
     { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
-    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought, replicate" },
+    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought. Each belongs to one experiment" },
     { id: "cat-germplasmgroups", type: "category", label: "Germplasm groups", hint: "named sets of germplasm, e.g. a panel" },
     { id: "cat-variablegroups", type: "category", label: "Variable groups", hint: "named sets of variables, e.g. all drone traits" },
   ],
@@ -1323,7 +1323,8 @@ function rowEl(item, note) {
   row.className = "row" + (isSelected ? " selected" : "") + (note === "can't link" ? " row-cant" : "");
   row.setAttribute("style", typeStyle(item.type));
   row.dataset.id = item.id;
-  const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (note ? ` · ${note}` : "");
+  const scopeName = item.scope ? (CATEGORY_ITEMS["cat-experiments"] || []).find(e => sameId(e.id, item.scope))?.label ?? "an experiment" : "";
+  const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (item.scope ? ` · in ${escapeHtml(scopeName)}` : "") + (note ? ` · ${note}` : "");
   row.innerHTML = `
     <span class="row-dot"></span>
     <span class="row-main${item.type === "category" ? " stacked" : ""}">
@@ -1646,10 +1647,9 @@ async function newExperimentFromSetup() {
 function renderSetupPage(body) {
   if (!setupTrial) {
     body.innerHTML = `<div class="page-head"><h3 class="overview-h">Which trial?</h3><button class="btn" id="setupNew">+ New experiment</button></div>
-      <p class="page-note">Pick a trial to see what is set up and what is left, start a new one, or let an instrument file create it.</p>
-      <p><button class="btn small" id="setupImport">Import from a file ›</button>${setupFileInputHtml}</p><div class="rowlist" id="setupTrials" style="margin-top:12px"></div>`;
+      <p class="page-note">Pick a trial to see what is set up and what is left, or start a new one. To create one from an instrument file, use Import.</p>
+      <div class="rowlist" id="setupTrials"></div>`;
     document.getElementById("setupNew").addEventListener("click", newExperimentFromSetup);
-    wireSetupImport(null);
     const list = document.getElementById("setupTrials");
     const nodes = overviewNodes(CATEGORY_ITEMS["cat-experiments"]);
     if (!nodes.length) { list.innerHTML = `<div class="empty-hint">No trials yet. Create one, or import a file.</div>`; return; }
