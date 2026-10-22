@@ -1647,11 +1647,11 @@ function renderSetupPage(body) {
 
 /* ---------------- adding to a trial: locked into one list ----------------
    Set up sends you here to add one kind of thing to a trial. Nothing else is on screen: no menu, no breadcrumbs, no
-   selection pane. Click existing rows to pick them, or + New to create one (made and linked to the trial at once); Done links
-   the picks, Cancel links nothing (what you created stays, it is already in PHIS). */
-let adding = null; // { trial, categoryId, picked: Map, created: [], filter, selection }
+   selection pane. Click existing rows to pick them, or + New to queue a new one. Nothing is written until Done (it creates the
+   queued ones linked to the trial, then links the picks); Cancel writes nothing. */
+let adding = null; // { trial, categoryId, picked: Map, pending: [{ type, name, fields }], filter, selection }
 function startAdding(trial, categoryId) {
-  adding = { trial, categoryId, picked: new Map(), created: [], filter: "", selection };
+  adding = { trial, categoryId, picked: new Map(), pending: [], filter: "", selection };
   applyView("adding");
 }
 function endAdding() {
@@ -1662,10 +1662,19 @@ function endAdding() {
   showView("setup");
 }
 async function finishAdding(link) {
-  if (link && adding.picked.size) {
-    const ok = await linkItems([{ type: adding.trial.type, id: adding.trial.id }, ...[...adding.picked.values()].map(v => ({ type: v.type, id: v.id }))]);
-    if (!ok) return; // the toast says why; stay, so nothing picked is lost
-  } else if (!link && adding.created.length) showToast("Nothing more was linked. What you created stays in PHIS, linked to the trial.");
+  if (link) {
+    const trialLink = [{ type: adding.trial.type, id: adding.trial.id }];
+    while (adding.pending.length) { // one at a time: a failure stops here and keeps the rest
+      const q = adding.pending[0];
+      const made = await createNode(q.type, q.name, trialLink, `linked to ${adding.trial.label}`, q.fields);
+      if (!made) { renderPage(); return; }
+      adding.pending.shift();
+    }
+    if (adding.picked.size) {
+      const ok = await linkItems([...trialLink, ...[...adding.picked.values()].map(v => ({ type: v.type, id: v.id }))]);
+      if (!ok) { renderPage(); return; } // the toast says why; stay, so nothing picked is lost
+    }
+  }
   endAdding();
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && view === "adding" && !e.target.closest("dialog")) finishAdding(false); });
@@ -1699,25 +1708,26 @@ function renderAddingPage(body) {
   const names = (arr, removable) => arr.length ? arr.map(v => `<div class="row"><span class="row-main"><span class="row-label">${escapeHtml(v.label)}</span></span>${removable ? `<button class="sel-remove" data-id="${escapeHtml(v.id)}" aria-label="Remove ${escapeHtml(v.label)}">&times;</button>` : ""}</div>`).join("")
     : `<div class="empty-hint">None yet.</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">Adding <b>${escapeHtml(label)}</b> to <b>${escapeHtml(adding.trial.label)}</b></h3>
-      <span><button class="btn ghost" id="addingCancel">Cancel</button> <button class="btn" id="addingDone">Done${adding.picked.size ? ` · link ${adding.picked.size}` : ""}</button></span></div>
-    <p class="page-note">Pick ${escapeHtml(nice)} that already exist, or create a new one (it is linked to the trial at once). Done links your picks; Cancel links nothing.</p>
+      <span><button class="btn ghost" id="addingCancel">Cancel</button> <button class="btn" id="addingDone">Done${adding.picked.size + adding.pending.length ? ` · add ${adding.picked.size + adding.pending.length}` : ""}</button></span></div>
+    <p class="page-note">Pick ${escapeHtml(nice)} that already exist, or add a new one. Nothing is saved until you press Done; Cancel changes nothing.</p>
     <div class="adding-grid">
       <div><div class="adding-bar"><input type="text" id="addingFilter" placeholder="Filter ${escapeHtml(label)}…" value="${escapeHtml(adding.filter)}" aria-label="Filter"><button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button></div>
         <div class="rowlist" id="addingList"></div></div>
       <div><h4 class="adding-h">To link when you press Done</h4><div id="addingPicked">${names([...adding.picked.values()], true)}</div>
-        <h4 class="adding-h">Created and linked just now</h4><div id="addingCreated">${names(adding.created, false)}</div></div>
+        <h4 class="adding-h">To create and link when you press Done</h4><div id="addingPending">${names(adding.pending.map((q, i) => ({ id: String(i), label: q.name })), true)}</div></div>
     </div>`;
   paintAddingList();
   document.getElementById("addingFilter").addEventListener("input", (e) => { adding.filter = e.target.value; paintAddingList(); });
   document.getElementById("addingNew").addEventListener("click", async () => {
     const v = await askCreateValues(type);
     if (!v) return;
-    const made = await createNode(type, v.name, [{ type: adding.trial.type, id: adding.trial.id }], `linked to ${adding.trial.label}`, v.fields);
-    if (made && adding) { adding.created.push(made); renderPage(); }
+    adding.pending.push({ type, name: v.name, fields: v.fields });
+    renderPage();
   });
   document.getElementById("addingCancel").addEventListener("click", () => finishAdding(false));
   document.getElementById("addingDone").addEventListener("click", () => finishAdding(true));
   body.querySelectorAll("#addingPicked .sel-remove").forEach(b => b.addEventListener("click", () => { adding.picked.delete(b.dataset.id); renderPage(); }));
+  body.querySelectorAll("#addingPending .sel-remove").forEach(b => b.addEventListener("click", () => { adding.pending.splice(Number(b.dataset.id), 1); renderPage(); }));
 }
 
 /* ---------------- Import page: what was imported before, and a way to import more ---------------- */

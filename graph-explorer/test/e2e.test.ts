@@ -3729,22 +3729,30 @@ test("e2e: a set up step locks Browse into adding to the trial: no navigation, n
   });
 });
 
-test("e2e: adding — + New creates and links to the trial at once, and lists it as added", async () => {
-  await withServerAndBrowser(async (base, page) => {
-    let sent: any = null;
-    await page.route("**/api/create", (r) => { sent = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/factor/f9", type: "factor", label: "Temperature" }) }); });
-    await openAddingFactors(page, base);
-    await page.locator("#addingNew").click();
-    const form = page.locator("dialog.create-dialog");
-    await form.locator("input[name=name]").fill("Temperature");
-    await form.locator("textarea[name=levels]").fill("cold\nwarm");
-    await form.locator("button[value=ok]").click();
-    await page.locator("#addingCreated .row").first().waitFor();
-    assert.equal(sent.type, "factor");
-    assert.deepEqual(sent.links.map((l: any) => l.id), ["phis:id/experiment/e1"]);
-    assert.match(await page.locator("#addingCreated").textContent() ?? "", /Temperature/);
-    assert.equal(await page.evaluate(() => document.body.dataset.view), "adding"); // still locked in
-  });
+test("e2e: adding — + New only queues the item; Done creates it linked to the trial, Cancel creates nothing", async () => {
+  for (const finish of ["Done", "Cancel"]) {
+    await withServerAndBrowser(async (base, page) => {
+      const sent: any[] = [];
+      await page.route("**/api/create", (r) => { sent.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/factor/f9", type: "factor", label: "Temperature" }) }); });
+      await openAddingFactors(page, base);
+      await page.locator("#addingNew").click();
+      const form = page.locator("dialog.create-dialog");
+      await form.locator("input[name=name]").fill("Temperature");
+      await form.locator("textarea[name=levels]").fill("cold\nwarm");
+      await form.locator("button[value=ok]").click();
+      await page.locator("#addingPending .row").first().waitFor();
+      assert.match(await page.locator("#addingPending").textContent() ?? "", /Temperature/);
+      assert.equal(sent.length, 0, "nothing is created while you are still choosing");
+      assert.equal(await page.evaluate(() => document.body.dataset.view), "adding"); // still locked in
+      await page.locator(`#adding${finish}`).click();
+      await page.waitForFunction(() => document.body.dataset.view === "setup");
+      if (finish === "Done") {
+        assert.equal(sent.length, 1);
+        assert.equal(sent[0].type, "factor");
+        assert.deepEqual(sent[0].links.map((l: any) => l.id), ["phis:id/experiment/e1"]);
+      } else assert.equal(sent.length, 0, "Cancel leaves PHIS untouched");
+    });
+  }
 });
 
 test("e2e: adding — picked rows are linked on Done, Cancel links nothing", async () => {
