@@ -271,6 +271,28 @@ test("GET /api/factors: each factor carries the experiment it belongs to (two fa
   });
 });
 
+test("GET /api/scientific-objects: each object says which experiments it is in (one scan per experiment, one after another)", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      calls.push(url.replace(/^.*?\/core/, "/core"));
+      if (url.includes("/core/experiments?")) return jsonResponse(200, { result: [{ uri: "exp:e1", name: "E1" }, { uri: "exp:e2", name: "E2" }] });
+      if (url.includes("experiment=exp%3Ae1")) return jsonResponse(200, { result: [{ uri: "so:o1", name: "P1" }] });
+      if (url.includes("experiment=exp%3Ae2")) return jsonResponse(200, { result: [{ uri: "so:o1", name: "P1" }, { uri: "so:o2", name: "P2" }] });
+      if (url.includes("/core/scientific_objects?page_size=500")) return jsonResponse(200, { result: [{ uri: "so:o1", name: "P1" }, { uri: "so:o2", name: "P2" }, { uri: "so:o3", name: "P3" }] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const rows = await (await realFetch(`${base}/api/scientific-objects`)).json();
+    assert.deepEqual(rows, [
+      { id: "so:o1", type: "scientific_object", label: "P1", scope: ["exp:e1", "exp:e2"] },
+      { id: "so:o2", type: "scientific_object", label: "P2", scope: ["exp:e2"] },
+      { id: "so:o3", type: "scientific_object", label: "P3" },
+    ]);
+    assert.equal(calls.filter((c) => c.includes("?experiment=") || c.includes("&experiment=")).length, 2, "one scan per experiment");
+  });
+});
+
 test("POST /api/create trims the name: a stray space must not make a second, look-alike resource", async () => {
   await withServer(async (base) => {
     let capturedBody: any = null;

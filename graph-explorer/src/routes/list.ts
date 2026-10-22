@@ -25,7 +25,7 @@ const leafClasses = (tree: RawItem[]): RawItem[] => {
   return out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 };
 
-export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; scope?: (i: RawItem) => unknown; rows?: (result: RawItem[]) => RawItem[]; post?: true };
+export type ListRoute = { url: string; type: string; label: (i: RawItem) => string; parent?: (i: RawItem) => unknown; kind?: (i: RawItem) => string | undefined; scope?: (i: RawItem) => unknown; scopes?: true; rows?: (result: RawItem[]) => RawItem[]; post?: true };
 
 // Every browsable OpenSILEX list wired here. `label` picks whichever field
 // that entity type actually uses for a human-readable name — most use
@@ -48,7 +48,7 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/annotations": { url: "/core/annotations?page_size=500", type: "annotation", label: (i) => { const t = String(i.description ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > 80 ? `${t.slice(0, 79)}…` : t) : "(empty annotation)"; } },
   // Not a browsable category: the kinds of note (create form).
   "/api/motivations": { url: "/core/annotations/motivations", type: "motivation", label: byName },
-  "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName },
+  "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName, scopes: true },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
   "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species, kind: (i) => germplasmKind(i.rdf_type) },
   // Not a browsable category: the species a new variety/accession is created under (create form).
@@ -71,7 +71,7 @@ export const listRoutes: Record<string, ListRoute> = {
 };
 
 // scope: the one experiment a thing belongs to (a factor), so two with the same name can be told apart.
-export type Row = { id: string; type: string; label: string; parent?: string; kind?: string; scope?: string };
+export type Row = { id: string; type: string; label: string; parent?: string; kind?: string; scope?: string | string[] };
 
 // One row per OpenSILEX item — shared by the list and search routes so a browsed row and a
 // search hit are the same item (same id form). A germplasm's own uri comes back full
@@ -91,6 +91,18 @@ export async function toRows(route: ListRoute, items: RawItem[]): Promise<Row[]>
   );
 }
 
+// An object can be in several experiments and the list does not say which, so ask each experiment for its objects (one scan
+// each, in turn: a run over 10 experiments took about half a second). object uri -> the experiments' uris.
+async function experimentsOfObjects(): Promise<Map<string, string[]>> {
+  const experiments = (await authedGet("/core/experiments?page_size=500")).result as RawItem[];
+  const of = new Map<string, string[]>();
+  for (const e of experiments) {
+    const objects = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(String(e.uri))}&page_size=100000`)).result as RawItem[];
+    for (const o of objects) of.set(String(o.uri), [...(of.get(String(o.uri)) ?? []), String(e.uri)]);
+  }
+  return of;
+}
+
 export const handleList: RouteHandler = async (req, res, { pathname }) => {
   const route = req.method === "GET" ? listRoutes[pathname] : undefined;
   if (!route) return false;
@@ -107,6 +119,10 @@ export const handleList: RouteHandler = async (req, res, { pathname }) => {
     // being hidden under nothing.
     const known = new Set(rows.map((r) => r.id));
     rows = rows.map(({ parent, ...r }) => (parent && known.has(parent) ? { ...r, parent } : r));
+  }
+  if (route.scopes) {
+    const of = await experimentsOfObjects();
+    rows = rows.map((r) => (of.get(r.id)?.length ? { ...r, scope: of.get(r.id)! } : r));
   }
   const payload = JSON.stringify(rows);
   res.writeHead(200, { "Content-Type": "application/json" });

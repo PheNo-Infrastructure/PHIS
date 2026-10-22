@@ -314,7 +314,7 @@ body[data-view="browse"] #pagePane { display: none; }
 .row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 /* Menu groups: the plain-words hint sits under the label, so neither gets cut off. */
 .row-main.stacked { flex-direction: column; align-items: flex-start; gap: 1px; }
-.row-main.stacked .row-type { font-family: inherit; font-size: 11.5px; text-transform: none; color: var(--ink-faint); }
+.row-main.stacked .row-type { font-family: inherit; font-size: 11.5px; text-transform: none; color: var(--ink-faint); white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
 .row-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1323,11 +1323,13 @@ function rowEl(item, note) {
   row.className = "row" + (isSelected ? " selected" : "") + (note === "can't link" ? " row-cant" : "");
   row.setAttribute("style", typeStyle(item.type));
   row.dataset.id = item.id;
-  const scopeName = item.scope ? (CATEGORY_ITEMS["cat-experiments"] || []).find(e => sameId(e.id, item.scope))?.label ?? "an experiment" : "";
-  const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (item.scope ? ` · in ${escapeHtml(scopeName)}` : "") + (note ? ` · ${note}` : "");
+  // The experiment(s) a thing belongs to: one for a factor, any number for a scientific object.
+  const scopes = [item.scope ?? []].flat().map(id => (CATEGORY_ITEMS["cat-experiments"] || []).find(e => sameId(e.id, id))?.label ?? "an experiment");
+  const scopeName = scopes.length > 3 ? `${scopes.slice(0, 3).join(", ")} +${scopes.length - 3} more` : scopes.join(", ");
+  const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (scopes.length ? ` · in ${escapeHtml(scopeName)}` : "") + (note ? ` · ${note}` : "");
   row.innerHTML = `
     <span class="row-dot"></span>
-    <span class="row-main${item.type === "category" ? " stacked" : ""}">
+    <span class="row-main${item.type === "category" || scopes.length ? " stacked" : ""}">
       <span class="row-label">${escapeHtml(item.label)}</span>
       <span class="row-type">${typeLine}</span>
     </span>

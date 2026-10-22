@@ -4059,6 +4059,45 @@ test("e2e: a factor row says which experiment it belongs to, so two factors with
   });
 });
 
+test("e2e: a scientific object row names the experiments it is in, so objects with one name can be told apart", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    await page.route("**/api/scientific-objects", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "phis:id/so/a", type: "scientific_object", label: "B1-C1", scope: ["phis:id/experiment/e1"] },
+      { id: "phis:id/so/b", type: "scientific_object", label: "B1-C1", scope: ["phis:id/experiment/e1", "phis:id/experiment/e2"] },
+      { id: "phis:id/so/c", type: "scientific_object", label: "B1-C1" },
+    ]) }));
+    await page.goto(base + "/#browse");
+    await openRow(page, "Scientific Information");
+    await openRow(page, "Scientific Objects");
+    const lines = await page.locator("#rowlist .row .row-type").allTextContents();
+    assert.match(lines[0], /in Barley 2024$/);
+    assert.match(lines[1], /in Barley 2024, Bean 2025$/);
+    assert.doesNotMatch(lines[2], / in /, "in no experiment: nothing to say");
+  });
+});
+
+test("e2e: a row that names its experiments keeps its whole label, wraps the experiments under it and never scrolls sideways", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const names = ["traitfinder - test 2", "NMBU_ProteinBar_251022", "ProBarVoll – 2025-04-25"];
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(names.map((n, i) => ({ id: `phis:id/experiment/x${i}`, type: "experiment", label: n }))) }));
+    await page.route("**/api/scientific-objects", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(
+      Array.from({ length: 12 }, (_, i) => ({ id: `phis:id/so/${i}`, type: "scientific_object", label: `B1-C${i}`, scope: names.map((_, k) => `phis:id/experiment/x${k}`) }))) }));
+    await page.goto(base + "/#browse");
+    await openRow(page, "Scientific Information");
+    await openRow(page, "Scientific Objects");
+    const m = await page.evaluate(() => {
+      const row = document.querySelector("#rowlist .row[data-id]")!;
+      const label = row.querySelector(".row-label") as HTMLElement, type = row.querySelector(".row-type") as HTMLElement, list = document.getElementById("rowlist")!;
+      return { cut: label.scrollWidth > label.clientWidth, labelBottom: label.getBoundingClientRect().bottom, typeTop: type.getBoundingClientRect().top, sideways: list.scrollWidth > list.clientWidth, text: type.textContent };
+    });
+    assert.equal(m.cut, false, "the label is not cut off");
+    assert.ok(m.typeTop >= m.labelBottom - 1, "the experiments sit under the label");
+    assert.equal(m.sideways, false, "no sideways scroll");
+    assert.match(m.text ?? "", /in traitfinder - test 2, NMBU_ProteinBar_251022, ProBarVoll – 2025-04-25/);
+  });
+});
+
 test("e2e: a selection made in Browse survives a visit to Overview", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
