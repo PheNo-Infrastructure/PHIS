@@ -101,6 +101,8 @@ button { font-family: inherit; }
 .overview-card-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
+.page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.page-note { margin: 0 0 10px; color: var(--ink-faint); font-size: 13px; }
 #pagePane { grid-column: span 2; }
 #pagePane .page-body { padding: 18px 20px; overflow: auto; }
 body[data-view="overview"] #explorerPane, body[data-view="setup"] #explorerPane, body[data-view="import"] #explorerPane,
@@ -1525,6 +1527,14 @@ function renderPage() {
   const body = document.getElementById("pageBody");
   body.innerHTML = "";
   if (view === "overview") renderOverview(body);
+  else if (view === "import") renderImportPage(body);
+}
+
+// Rows on a page view: the usual rows, taking part in the click rules like the explorer's.
+function pageRows(list, nodes, emptyText) {
+  if (!nodes.length) { list.innerHTML = `<div class="empty-hint">${emptyText}</div>`; return; }
+  rowOrder = nodes.map(n => n.id);
+  nodes.forEach(n => { addressableItems.set(n.id, n); list.appendChild(rowEl(n)); });
 }
 
 /* ---------------- Overview: the front door ----------------
@@ -1545,13 +1555,18 @@ function renderOverview(body) {
     <h3 class="overview-h">Your trials</h3>
     <div class="rowlist" id="overviewTrials"></div>`;
   document.getElementById("importBtn").addEventListener("click", openImport);
-  const list = document.getElementById("overviewTrials");
-  if (!nodes.length) {
-    list.innerHTML = `<div class="empty-hint">No trials to show yet. Import a file to create one.</div>`;
-    return;
-  }
-  rowOrder = nodes.map(n => n.id);
-  nodes.forEach(n => { addressableItems.set(n.id, n); list.appendChild(rowEl(n)); });
+  pageRows(document.getElementById("overviewTrials"), nodes, "No trials to show yet. Import a file to create one.");
+}
+
+/* ---------------- Import page: what was imported before, and a way to import more ---------------- */
+function renderImportPage(body) {
+  const past = (Array.isArray(CATEGORY_ITEMS["cat-provenances"]) ? CATEGORY_ITEMS["cat-provenances"] : []).filter(p => p && p.type === "provenance");
+  body.innerHTML = `
+    <div class="page-head"><h3 class="overview-h">Past imports</h3><button class="btn" id="newImportBtn">New import…</button></div>
+    <p class="page-note">Each import leaves a provenance in PHIS: open one to see where its data came from.</p>
+    <div class="rowlist" id="pastImports"></div>`;
+  document.getElementById("newImportBtn").addEventListener("click", openImport);
+  pageRows(document.getElementById("pastImports"), past, "No imports yet.");
 }
 
 // Back/forward (Alt+Left/Right, the mouse buttons): every navigateTo pushes a history entry; the path itself

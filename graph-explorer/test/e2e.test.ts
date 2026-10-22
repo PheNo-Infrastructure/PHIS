@@ -3621,3 +3621,26 @@ test("e2e: overview with no trials, or a failing list, still shows search and th
     });
   }
 });
+
+test("e2e: import page lists past imports beside New import, which opens the dialog", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/provenances", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "phis:id/provenance/p1", type: "provenance", label: "TraitFinder export 21 Oct" },
+      { id: "phis:id/provenance/p2", type: "provenance", label: "PBar1x4" },
+    ]) }));
+    await page.goto(base + "/#import");
+    await page.locator("#pageBody .row[data-id]").first().waitFor();
+    assert.deepEqual(await page.locator("#pageBody .row .row-label").allTextContents(), ["TraitFinder export 21 Oct", "PBar1x4"]);
+    await page.locator("#newImportBtn").click();
+    assert.equal(await page.locator("#importOverlay").isVisible(), true);
+  });
+});
+
+test("e2e: import page with no past imports says so and still offers New import", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/provenances", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+    await page.goto(base + "/#import");
+    await page.locator("#newImportBtn").waitFor();
+    assert.match(await page.locator("#pageBody .empty-hint").textContent() ?? "", /No imports yet/);
+  });
+});
