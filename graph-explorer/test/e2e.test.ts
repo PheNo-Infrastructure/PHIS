@@ -3644,3 +3644,36 @@ test("e2e: import page with no past imports says so and still offers New import"
     assert.match(await page.locator("#pageBody .empty-hint").textContent() ?? "", /No imports yet/);
   });
 });
+
+test("e2e: setupSteps marks a step done only when its relation has items", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base);
+    const out = await page.evaluate(() => {
+      const rel = (label, n) => ({ label, items: Array.from({ length: n }, (_, i) => ({ id: `x${i}`, label: `x${i}` })) });
+      return {
+        full: setupSteps({ relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Species", 1), rel("Facilities", 2)] }).map(s => [s.label, s.done]),
+        empty: setupSteps({ relations: [rel("Scientific objects", 0)] }).map(s => [s.label, s.done]),
+        none: setupSteps(undefined).map(s => s.done),
+      };
+    });
+    assert.deepEqual(out.full, [["Experiment", true], ["Plants and blocks", true], ["Treatments", true], ["Species", true], ["Facility", true]]);
+    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false]);
+    assert.deepEqual(out.none, [true, false, false, false, false]);
+  });
+});
+
+test("e2e: set up page asks for a trial, then shows the five steps of the selected one", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
+    await page.route("**/api/node-detail**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      relations: [{ label: "Scientific objects", items: [{ id: "so1", type: "scientific_object", label: "P1" }] }, { label: "Factors", items: [] }],
+    }) }));
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row[data-id]").first().waitFor();
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Which trial/);
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    await page.locator("#pageBody .setup-step").first().waitFor();
+    assert.deepEqual(await page.locator("#pageBody .setup-step .setup-label").allTextContents(), ["Experiment", "Plants and blocks", "Treatments", "Species", "Facility"]);
+    assert.equal(await page.locator("#pageBody .setup-step.done").count(), 2);
+  });
+});

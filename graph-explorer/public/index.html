@@ -101,6 +101,9 @@ button { font-family: inherit; }
 .overview-card-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
+.setup-step { cursor: default; }
+.setup-step.done .setup-tick { color: var(--accent); }
+.setup-tick { width: 18px; text-align: center; flex: none; }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .page-note { margin: 0 0 10px; color: var(--ink-faint); font-size: 13px; }
 #pagePane { grid-column: span 2; }
@@ -1528,6 +1531,7 @@ function renderPage() {
   body.innerHTML = "";
   if (view === "overview") renderOverview(body);
   else if (view === "import") renderImportPage(body);
+  else if (view === "setup") renderSetupPage(body);
 }
 
 // Rows on a page view: the usual rows, taking part in the click rules like the explorer's.
@@ -1556,6 +1560,36 @@ function renderOverview(body) {
     <div class="rowlist" id="overviewTrials"></div>`;
   document.getElementById("importBtn").addEventListener("click", openImport);
   pageRows(document.getElementById("overviewTrials"), nodes, "No trials to show yet. Import a file to create one.");
+}
+
+/* ---------------- Set up page: the steps of one trial ----------------
+   The trial is the one experiment in the selection. A step is done when the experiment's page lists something for it;
+   unfinished steps are filled with the Selection pane's + New, which links what it creates to the selected trial. */
+const SETUP_STEPS = [
+  { label: "Plants and blocks", relation: "Scientific objects", hint: "the scientific objects you measure" },
+  { label: "Treatments", relation: "Factors", hint: "factors and their levels" },
+  { label: "Species", relation: "Species", hint: "the germplasm of its plants" },
+  { label: "Facility", relation: "Facilities", hint: "where it takes place" },
+];
+function setupSteps(detail) {
+  const has = rel => (detail?.relations ?? []).some(r => r.label === rel && r.items.length > 0);
+  return [{ label: "Experiment", done: true, hint: "created in PHIS" },
+    ...SETUP_STEPS.map(st => ({ label: st.label, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet — ${st.hint}` }))];
+}
+function renderSetupPage(body) {
+  const picked = [...selection.values()];
+  const trial = picked.length === 1 && picked[0].type === "experiment" ? picked[0] : null;
+  if (!trial) {
+    body.innerHTML = `<h3 class="overview-h">Which trial?</h3><p class="page-note">Click a trial to set it up. The steps appear here.</p><div class="rowlist" id="setupTrials"></div>`;
+    pageRows(document.getElementById("setupTrials"), overviewNodes(CATEGORY_ITEMS["cat-experiments"]), "No trials yet. Import a file or use + New to create one.");
+    return;
+  }
+  loadNodeDetail(trial);
+  const steps = setupSteps(NODE_DETAIL[trial.id]);
+  body.innerHTML = `<h3 class="overview-h">${escapeHtml(trial.label)}</h3>
+    <p class="page-note">Unfinished steps: use <b>+ New</b> in the Selection pane; it links what you create to this trial.</p>` +
+    steps.map(st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
+      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span></span></div>`).join("");
 }
 
 /* ---------------- Import page: what was imported before, and a way to import more ---------------- */
@@ -1640,6 +1674,7 @@ async function loadNodeDetail(item) {
     if (!res.ok) return;
     NODE_DETAIL[item.id] = await res.json();
     renderDetail();
+    if (PAGE_VIEWS.has(view)) renderPage();
   } catch {
     // stays unset — renderNodeDetail's existing null-branch already shows the honest fallback
   }
