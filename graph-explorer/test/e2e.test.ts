@@ -3675,7 +3675,9 @@ test("e2e: set up page asks for a trial, shows its steps, and sends you to Brows
     await page.waitForFunction(() => document.querySelectorAll("#pageBody .setup-step.done").length === 2);
     await page.locator("#pageBody .setup-go").first().click();
     await page.waitForFunction(() => document.body.dataset.view === "browse");
-    assert.match(await page.locator(".crumbs").textContent() ?? "", /Barley 2024/);
+    // the first unfinished step is Treatments: Browse opens on the Factors list, the trial selected
+    assert.match(await page.locator(".crumbs").textContent() ?? "", /Factors/);
+    assert.equal(await page.locator("#paneTitle").textContent(), "Factors");
     assert.match(await page.locator("#selList").textContent() ?? "", /Barley 2024/);
   });
 });

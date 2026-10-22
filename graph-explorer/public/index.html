@@ -1569,15 +1569,20 @@ function renderOverview(body) {
    The trial is the one experiment in the selection. A step is done when the experiment's page lists something for it;
    unfinished steps are filled with the Selection pane's + New, which links what it creates to the selected trial. */
 const SETUP_STEPS = [
-  { label: "Plants and blocks", relation: "Scientific objects", hint: "the scientific objects you measure" },
-  { label: "Treatments", relation: "Factors", hint: "factors and their levels" },
-  { label: "Species", relation: "Species", hint: "the germplasm of its plants" },
-  { label: "Facility", relation: "Facilities", hint: "where it takes place" },
+  { label: "Plants and blocks", relation: "Scientific objects", category: "cat-scientificobjects", hint: "the scientific objects you measure" },
+  { label: "Treatments", relation: "Factors", category: "cat-factors", hint: "factors and their levels" },
+  { label: "Species", relation: "Species", category: "cat-germplasm", hint: "the germplasm of its plants" },
+  { label: "Facility", relation: "Facilities", category: "cat-facilities", hint: "where it takes place" },
 ];
 function setupSteps(detail) {
   const has = rel => (detail?.relations ?? []).some(r => r.label === rel && r.items.length > 0);
   return [{ label: "Experiment", done: true, hint: "created in PHIS" },
-    ...SETUP_STEPS.map(st => ({ label: st.label, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet — ${st.hint}` }))];
+    ...SETUP_STEPS.map(st => ({ label: st.label, category: st.category, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet — ${st.hint}` }))];
+}
+// The trail to a category list: Browse's root, the group it sits in, the category.
+function categoryPath(categoryId) {
+  const group = ROOT.find(g => CATEGORY_ITEMS[g.id]?.some(c => c.id === categoryId));
+  return [path[0], group, CATEGORY_ITEMS[group.id].find(c => c.id === categoryId)];
 }
 let setupTrial = null; // the trial this page shows the steps of
 function renderSetupPage(body) {
@@ -1602,11 +1607,12 @@ function renderSetupPage(body) {
     <p class="page-note">Unfinished steps take you to the trial in Browse with it selected, where <b>+ New</b> adds what is missing and links it to the trial.</p>` +
     steps.map(st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
       <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span></span>
-      ${st.done ? "" : `<button class="btn small setup-go">Add in Browse ›</button>`}</div>`).join("");
-  const go = () => { selection = new Map([[trial.id, trial]]); anchorId = null; openRelatedNode(trial); };
-  document.getElementById("setupOpen").addEventListener("click", go);
+      ${st.done ? "" : `<button class="btn small setup-go" data-category="${st.category}">Add in Browse ›</button>`}</div>`).join("");
+  // Browse with the trial selected: on its own page, or straight on the list of the thing to add (its category).
+  const go = (path) => { selection = new Map([[trial.id, trial]]); anchorId = null; navigateTo(path); };
+  document.getElementById("setupOpen").addEventListener("click", () => go(canonicalPathFor(trial)));
   document.getElementById("setupOther").addEventListener("click", () => { setupTrial = null; renderPage(); });
-  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", go));
+  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => go(categoryPath(b.dataset.category))));
 }
 
 /* ---------------- Import page: what was imported before, and a way to import more ---------------- */
