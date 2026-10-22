@@ -102,6 +102,13 @@ button { font-family: inherit; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
 .setup-step { cursor: default; }
+.setup-step .setup-go { margin-left: auto; flex: none; }
+.setup-optional-head { margin: 18px 0 8px; font-size: 14px; }
+.setup-optional-head span { font-weight: 400; color: var(--ink-faint); }
+.adding-banner { padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.adding-banner[hidden] { display: none; }
+.adding-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.adding-hint { font-size: 12.5px; color: var(--ink-faint); }
 .setup-step.done .setup-tick { color: var(--accent); }
 .setup-tick { width: 18px; text-align: center; flex: none; }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -973,6 +980,7 @@ body[data-view="browse"] #pagePane { display: none; }
         <h2 id="paneTitle">Graph</h2>
         <span class="pane-count" id="paneCount"></span>
       </div>
+      <div class="adding-banner" id="addingBanner" hidden></div>
       <div class="rowlist" id="rowlist"></div>
     </section>
 
@@ -1570,14 +1578,17 @@ function renderOverview(body) {
    unfinished steps are filled with the Selection pane's + New, which links what it creates to the selected trial. */
 const SETUP_STEPS = [
   { label: "Plants and blocks", relation: "Scientific objects", category: "cat-scientificobjects", hint: "the scientific objects you measure" },
-  { label: "Treatments", relation: "Factors", category: "cat-factors", hint: "factors and their levels" },
-  { label: "Species", relation: "Species", category: "cat-germplasm", hint: "the germplasm of its plants" },
-  { label: "Facility", relation: "Facilities", category: "cat-facilities", hint: "where it takes place" },
+  { label: "Treatments", relation: "Factors", category: "cat-factors", optional: true, hint: "factors and their levels" },
+  { label: "Species", relation: "Species", category: "cat-germplasm", optional: true, hint: "the germplasm of its plants" },
+  { label: "Facility", relation: "Facilities", category: "cat-facilities", optional: true, hint: "where it takes place" },
+  { label: "Project", relation: "Projects", category: "cat-projects", optional: true, hint: "the project that funds it" },
+  { label: "People", relation: "Scientific supervisors", category: "cat-persons", optional: true, hint: "who supervises it" },
+  { label: "Sharing", relation: "Shared with", category: "cat-groups", optional: true, hint: "groups that can see it" },
 ];
 function setupSteps(detail) {
   const has = rel => (detail?.relations ?? []).some(r => r.label === rel && r.items.length > 0);
   return [{ label: "Experiment", done: true, hint: "created in PHIS" },
-    ...SETUP_STEPS.map(st => ({ label: st.label, category: st.category, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet — ${st.hint}` }))];
+    ...SETUP_STEPS.map(st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), hint: has(st.relation) ? st.hint : `none yet — ${st.hint}` }))];
 }
 // The trail to a category list: Browse's root, the group it sits in, the category.
 function categoryPath(categoryId) {
@@ -1585,12 +1596,20 @@ function categoryPath(categoryId) {
   return [path[0], group, CATEGORY_ITEMS[group.id].find(c => c.id === categoryId)];
 }
 let setupTrial = null; // the trial this page shows the steps of
+async function newExperimentFromSetup() {
+  const v = await askCreateValues("experiment");
+  if (!v) return;
+  const made = await createNode("experiment", v.name, [], "", v.fields);
+  if (made) { setupTrial = { id: made.id, type: "experiment", label: made.label }; if (view === "setup") renderPage(); }
+}
 function renderSetupPage(body) {
   if (!setupTrial) {
-    body.innerHTML = `<h3 class="overview-h">Which trial?</h3><p class="page-note">Pick a trial to see what is set up and what is left.</p><div class="rowlist" id="setupTrials"></div>`;
+    body.innerHTML = `<div class="page-head"><h3 class="overview-h">Which trial?</h3><button class="btn" id="setupNew">+ New experiment</button></div>
+      <p class="page-note">Pick a trial to see what is set up and what is left, or start a new one.</p><div class="rowlist" id="setupTrials"></div>`;
+    document.getElementById("setupNew").addEventListener("click", newExperimentFromSetup);
     const list = document.getElementById("setupTrials");
     const nodes = overviewNodes(CATEGORY_ITEMS["cat-experiments"]);
-    if (!nodes.length) { list.innerHTML = `<div class="empty-hint">No trials yet. Import a file to create one.</div>`; return; }
+    if (!nodes.length) { list.innerHTML = `<div class="empty-hint">No trials yet. Create one, or import a file.</div>`; return; }
     nodes.forEach(n => {
       const row = rowEl(n);
       row.querySelector(".row-open").remove();
@@ -1602,17 +1621,52 @@ function renderSetupPage(body) {
   const trial = setupTrial;
   loadNodeDetail(trial);
   const steps = setupSteps(NODE_DETAIL[trial.id]);
+  const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
+      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span></span>
+      ${st.category ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}</h3>
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
-    <p class="page-note">Unfinished steps take you to the trial in Browse with it selected, where <b>+ New</b> adds what is missing and links it to the trial.</p>` +
-    steps.map(st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
-      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span></span>
-      ${st.done ? "" : `<button class="btn small setup-go" data-category="${st.category}">Add in Browse ›</button>`}</div>`).join("");
+    <p class="page-note">Each step opens Browse on that list with this trial selected: create a new one (linked to the trial at once) or link one that already exists.</p>
+    <div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
+    <h4 class="setup-optional-head">Optional <span>— the trial works without these</span></h4>
+    <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div>`;
   // Browse with the trial selected: on its own page, or straight on the list of the thing to add (its category).
-  const go = (path) => { selection = new Map([[trial.id, trial]]); anchorId = null; navigateTo(path); };
+  const go = (path, categoryId) => {
+    selection = new Map([[trial.id, trial]]); anchorId = null;
+    navigateTo(path);
+    adding = categoryId ? { trial, categoryId } : null;
+    render();
+  };
   document.getElementById("setupOpen").addEventListener("click", () => go(canonicalPathFor(trial)));
   document.getElementById("setupOther").addEventListener("click", () => { setupTrial = null; renderPage(); });
-  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => go(categoryPath(b.dataset.category))));
+  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => go(categoryPath(b.dataset.category), b.dataset.category)));
+}
+
+/* ---------------- adding to a trial: Browse scoped to one list ----------------
+   Set up sends you to the list of what you want to add. The trial stays selected while you are there, a banner offers
+   + New (made and linked to the trial in one step) and Link (the rows you picked, to the trial), and Done goes back. */
+let adding = null; // { trial, categoryId } while Browse is scoped
+function renderAddingBanner() {
+  const el = document.getElementById("addingBanner");
+  if (adding && currentPane().id !== adding.categoryId) adding = null;
+  if (!adding) { el.hidden = true; el.innerHTML = ""; return; }
+  if (!selection.has(adding.trial.id)) selection.set(adding.trial.id, adding.trial); // the trial stays selected
+  const type = TYPE_FOR_CATEGORY[adding.categoryId], nice = typeName(type);
+  const picked = [...selection.values()].filter(v => v.id !== adding.trial.id && v.type === type).length;
+  el.hidden = false;
+  el.innerHTML = `<div class="adding-title">Adding <b>${escapeHtml(currentPane().label)}</b> to <b>${escapeHtml(adding.trial.label)}</b></div>
+    <div class="adding-actions">
+      <button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button>
+      <button class="btn small" id="addingLink"${picked ? "" : " disabled"}>${picked ? `Link ${picked} selected` : "Link existing"}</button>
+      <button class="btn ghost small" id="addingDone">Done</button>
+    </div>
+    <div class="adding-hint">Click a row to pick an existing one (ctrl+click for several), then Link.</div>`;
+  document.getElementById("addingNew").addEventListener("click", async () => {
+    const v = await askCreateValues(type);
+    if (v) createNode(type, v.name, [{ type: adding.trial.type, id: adding.trial.id }], `linked to ${adding.trial.label}`, v.fields);
+  });
+  document.getElementById("addingLink").addEventListener("click", () => document.getElementById("linkSelectionBtn")?.click());
+  document.getElementById("addingDone").addEventListener("click", () => { const t = adding.trial; adding = null; delete NODE_DETAIL[t.id]; showView("setup"); });
 }
 
 /* ---------------- Import page: what was imported before, and a way to import more ---------------- */
@@ -3462,6 +3516,7 @@ async function createNode(type, name, links, toastSuffix, fields = {}) {
     links.forEach((l) => invalidateNodeDetail(l.id));
     render();
     showToast(`Created ${body.label}${toastSuffix ? `, ${toastSuffix}` : ""}${body.warning ? ` — but ${body.warning}` : ""}`);
+    return body;
   } catch (err) {
     showToast(`Failed to create ${typeName(type)}: ${err}`);
   }
@@ -4322,6 +4377,7 @@ function render() {
 // Everything that shows the selection: the list (browse), the selection pane (what's gathered)
 // and the tree along the bottom (how it connects) — all always visible, no switching.
 function refreshLeftPane() {
+  renderAddingBanner();
   renderRows();
   renderSelectionList();
   renderTree();
