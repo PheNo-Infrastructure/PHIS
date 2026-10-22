@@ -1,6 +1,6 @@
 # Portal shell: a navbar named by intent
 
-Status: draft, 2026-10-09. **On hold: the user decided NOT to build yet** ("still not fully imagining how it should be"). See "Direction update" below; the decisions further down may change.
+Status: first version BUILT 2026-10-22 on `graph-explorer/shell` (plan `docs/superpowers/plans/2026-10-22-portal-shell.md`): navbar with hash routes, Overview (search, import card, trials), Set up (checklist for the selected trial), Import (past imports + New import), Manage (workspace opened on Groups), Browse (workspace). The graph is still to come; Overview's trial list is shaped as `overviewNodes` so a graph can replace it. Earlier status: draft 2026-10-09, put on hold, see "Direction update" below.
 
 ## Direction update (user, end of 2026-10-09)
 

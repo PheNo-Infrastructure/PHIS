@@ -18,7 +18,7 @@ Everything below was rehearsed by `npm run demo:rehearse` (whole path ≈ 15 s o
 
 | # | Do | Say | Notice |
 |---|---|---|---|
-| 1 | On the start page, click **Import from an instrument…** (top right) | "This is the only entry point we need today." | One button, no menu hunting |
+| 1 | On the **Overview** page (the start page), click **Import from an instrument…** in the green card | "This is the only entry point we need today." | One button, no menu hunting; your trials are listed below it |
 | 2 | Drop **Sheets.zip** on the dashed box (or **Choose file**) | "This is the raw export from the TraitFinder, exactly as the instrument wrote it." | It says "Recognised as TraitFinder (HortControl export)" |
 | 3 | Point at the four tiles at the top, then the rows below (green stripe = something new is added) | "Before anything is written, it shows what it will create in plain terms." | Tiles: 24 scientific objects, 1 factor, 63 variables, 16,380 values. Rows: new experiment; Treatment with 2 levels (15C, 18C); 4 blocks and 20 plants. The footer says **Nothing has been written to PHIS yet** |
 | 3b | (Optional, ~20 s) Click **✎ Edit** on the Experiment row, change the name, **Save** | "If a name is wrong you can fix it right here before anything is written." | The review updates; the row says **edited**; **Undo all changes** restores the file's names |
@@ -46,4 +46,4 @@ Steps 1 → 2 → 3 (stop at the footer "Nothing has been written") → 4 → 5 
 ## Things to be honest about if asked
 - Variables and the Bean germplasm were already in PHIS from earlier imports, so the review says "reused". On a PHIS with none, it would say "New".
 - Bean is an assumed species; the variable naming (Plant/Leaf/Canopy) is not final.
-- The menu structure is being reworked; today's path avoids it on purpose.
+- The navbar (Overview · Set up · Import · Browse · Manage) is a first version: Set up and Import are simple pages, Manage is today's workspace opened on Groups. Today's path stays on Overview and the import dialog on purpose.
