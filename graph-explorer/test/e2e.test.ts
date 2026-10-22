@@ -3569,7 +3569,7 @@ test("e2e: import review — factor levels and new variables are editable by the
 test("e2e: navbar switches views and the hash follows", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base);
-    assert.deepEqual(await page.locator("#mainnav a").allTextContents(), ["Overview", "Set up", "Import", "Browse", "Manage"]);
+    assert.deepEqual(await page.locator("#mainnav a").allTextContents(), ["Overview", "Set up", "Import", "Browse"]);
     assert.equal(await page.evaluate(() => document.body.dataset.view), "overview");
 
     await page.locator("#mainnav a", { hasText: "Browse" }).click();
@@ -3599,14 +3599,12 @@ test("e2e: overview shows the import card and the trials; the arrow opens one in
     await page.locator("#pageBody .row[data-id]").first().waitFor();
     assert.deepEqual(await page.locator("#pageBody .row .row-label").allTextContents(), ["Barley 2024", "Bean 2025"]);
 
-    // a plain click selects, like everywhere else; the selection pane shows it
-    await page.locator("#pageBody .row", { hasText: "Bean 2025" }).click();
-    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/);
-
-    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).locator(".row-open").click();
+    // the pages are outside the selection system: no selection pane, and a click goes to that trial in Browse
+    assert.equal(await page.locator("#selectionPane").isVisible(), false);
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     await page.waitForFunction(() => document.body.dataset.view === "browse");
     assert.match(await page.locator(".crumbs").textContent() ?? "", /Barley 2024/);
-    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/); // selection survived the switch
+    assert.equal(await page.locator("#selectionPane").isVisible(), true);
   });
 });
 
@@ -3662,7 +3660,7 @@ test("e2e: setupSteps marks a step done only when its relation has items", async
   });
 });
 
-test("e2e: set up page asks for a trial, then shows the five steps of the selected one", async () => {
+test("e2e: set up page asks for a trial, shows its steps, and sends you to Browse with it selected", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
     await page.route("**/api/node-detail**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
@@ -3674,19 +3672,24 @@ test("e2e: set up page asks for a trial, then shows the five steps of the select
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     await page.locator("#pageBody .setup-step").first().waitFor();
     assert.deepEqual(await page.locator("#pageBody .setup-step .setup-label").allTextContents(), ["Experiment", "Plants and blocks", "Treatments", "Species", "Facility"]);
-    assert.equal(await page.locator("#pageBody .setup-step.done").count(), 2);
+    await page.waitForFunction(() => document.querySelectorAll("#pageBody .setup-step.done").length === 2);
+    await page.locator("#pageBody .setup-go").first().click();
+    await page.waitForFunction(() => document.body.dataset.view === "browse");
+    assert.match(await page.locator(".crumbs").textContent() ?? "", /Barley 2024/);
+    assert.match(await page.locator("#selList").textContent() ?? "", /Barley 2024/);
   });
 });
 
-test("e2e: manage opens on groups and the selection survives switching views", async () => {
+test("e2e: a selection made in Browse survives a visit to Overview", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.route("**/api/experiments", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_TRIALS) }));
-    await page.goto(base);
-    await page.locator("#pageBody .row", { hasText: "Bean 2025" }).click();
-    await page.locator("#mainnav a", { hasText: "Manage" }).click();
-    await page.waitForFunction(() => document.body.dataset.view === "manage");
-    assert.equal(await page.locator("#paneTitle").textContent(), "Groups");
-    assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/);
+    await page.goto(base + "/#browse");
+    await page.locator("#rowlist .row").first().waitFor();
+    await openRow(page, "Trials");
+    await openRow(page, "Experiments");
+    await page.locator("#rowlist .row", { hasText: "Bean 2025" }).click();
+    await page.locator("#mainnav a", { hasText: "Overview" }).click();
+    await page.waitForFunction(() => document.body.dataset.view === "overview");
     await page.locator("#mainnav a", { hasText: "Browse" }).click();
     await page.waitForFunction(() => document.body.dataset.view === "browse");
     assert.match(await page.locator("#selList").textContent() ?? "", /Bean 2025/);

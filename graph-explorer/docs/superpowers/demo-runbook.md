@@ -46,4 +46,4 @@ Steps 1 → 2 → 3 (stop at the footer "Nothing has been written") → 4 → 5 
 ## Things to be honest about if asked
 - Variables and the Bean germplasm were already in PHIS from earlier imports, so the review says "reused". On a PHIS with none, it would say "New".
 - Bean is an assumed species; the variable naming (Plant/Leaf/Canopy) is not final.
-- The navbar (Overview · Set up · Import · Browse · Manage) is a first version: Set up and Import are simple pages, Manage is today's workspace opened on Groups. Today's path stays on Overview and the import dialog on purpose.
+- The navbar (Overview · Set up · Import · Browse) is a first version: Set up and Import are simple pages, Today's path stays on Overview and the import dialog on purpose.
