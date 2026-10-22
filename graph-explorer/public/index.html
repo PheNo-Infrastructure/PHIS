@@ -106,10 +106,16 @@ button { font-family: inherit; }
 .setup-optional-box { margin-top: 16px; }
 .setup-optional-head { margin: 0 0 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .setup-optional-head span { font-weight: 400; color: var(--ink-faint); }
-.adding-banner { padding: 10px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-.adding-banner[hidden] { display: none; }
-.adding-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
-.adding-hint { font-size: 12.5px; color: var(--ink-faint); }
+.adding-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
+.adding-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+.adding-bar input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg); font: inherit; }
+.adding-h { font-size: 13px; margin: 0 0 6px; }
+.adding-row { cursor: pointer; }
+.adding-row.linked { cursor: default; opacity: .6; }
+.adding-row.picked { background: var(--surface-2); }
+body[data-view="adding"] #explorerPane, body[data-view="adding"] #detailPane, body[data-view="adding"] #selectionPane,
+body[data-view="adding"] .topbar, body[data-view="adding"] #treePane, body[data-view="adding"] .hint-banner { display: none; }
+body[data-view="adding"] #mainnav { pointer-events: none; opacity: .45; }
 .setup-step.done .setup-tick { color: var(--accent); }
 .setup-tick { width: 18px; text-align: center; flex: none; }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -981,7 +987,6 @@ body[data-view="browse"] #pagePane { display: none; }
         <h2 id="paneTitle">Graph</h2>
         <span class="pane-count" id="paneCount"></span>
       </div>
-      <div class="adding-banner" id="addingBanner" hidden></div>
       <div class="rowlist" id="rowlist"></div>
     </section>
 
@@ -1524,10 +1529,11 @@ function openRelatedNode(item) {
    #overview (default) · #setup · #import are full-width pages; #browse is the workspace (list, detail, selection).
    The pages send you to the right spot in Browse; the selection lives there and survives every switch. */
 const VIEWS = ["overview", "setup", "import", "browse"];
-const PAGE_VIEWS = new Set(["overview", "setup", "import"]);
+const PAGE_VIEWS = new Set(["overview", "setup", "import", "adding"]); // "adding" has no hash: Set up locks you into it
 let view = "overview";
 const viewFromHash = () => VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
 function applyView(next) {
+  if (next !== "adding" && adding) { selection = adding.selection; adding = null; } // left by the back button
   view = next;
   document.body.dataset.view = next;
   document.querySelectorAll("#mainnav a").forEach(a => a.getAttribute("href") === "#" + next ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
@@ -1541,6 +1547,7 @@ function renderPage() {
   if (view === "overview") renderOverview(body);
   else if (view === "import") renderImportPage(body);
   else if (view === "setup") renderSetupPage(body);
+  else if (view === "adding") renderAddingPage(body);
 }
 
 // Rows on a page view: a click sends you to that resource in Browse (the pages are not part of the selection system).
@@ -1627,47 +1634,90 @@ function renderSetupPage(body) {
       ${st.category ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}</h3>
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
-    <p class="page-note">Each step opens Browse on that list with this trial selected: create a new one (linked to the trial at once) or link one that already exists.</p>
+    <p class="page-note">Each step lets you add to this experiment: create a new one (linked at once) or pick one that already exists.</p>
     <div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
     <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
       <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
   // Browse with the trial selected: on its own page, or straight on the list of the thing to add (its category).
-  const go = (path, categoryId) => {
-    selection = new Map([[trial.id, trial]]); anchorId = null;
-    navigateTo(path);
-    adding = categoryId ? { trial, categoryId } : null;
-    render();
-  };
+  const go = (path) => { selection = new Map([[trial.id, trial]]); anchorId = null; navigateTo(path); };
   document.getElementById("setupOpen").addEventListener("click", () => go(canonicalPathFor(trial)));
   document.getElementById("setupOther").addEventListener("click", () => { setupTrial = null; renderPage(); });
-  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => go(categoryPath(b.dataset.category), b.dataset.category)));
+  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => startAdding(trial, b.dataset.category)));
 }
 
-/* ---------------- adding to a trial: Browse scoped to one list ----------------
-   Set up sends you to the list of what you want to add. The trial stays selected while you are there, a banner offers
-   + New (made and linked to the trial in one step) and Link (the rows you picked, to the trial), and Done goes back. */
-let adding = null; // { trial, categoryId } while Browse is scoped
-function renderAddingBanner() {
-  const el = document.getElementById("addingBanner");
-  if (adding && currentPane().id !== adding.categoryId) adding = null;
-  if (!adding) { el.hidden = true; el.innerHTML = ""; return; }
-  if (!selection.has(adding.trial.id)) selection.set(adding.trial.id, adding.trial); // the trial stays selected
+/* ---------------- adding to a trial: locked into one list ----------------
+   Set up sends you here to add one kind of thing to a trial. Nothing else is on screen: no menu, no breadcrumbs, no
+   selection pane. Click existing rows to pick them, or + New to create one (made and linked to the trial at once); Done links
+   the picks, Cancel links nothing (what you created stays, it is already in PHIS). */
+let adding = null; // { trial, categoryId, picked: Map, created: [], filter, selection }
+function startAdding(trial, categoryId) {
+  adding = { trial, categoryId, picked: new Map(), created: [], filter: "", selection };
+  applyView("adding");
+}
+function endAdding() {
+  const t = adding.trial;
+  selection = adding.selection; // what was selected before is back, whatever creating added to it
+  adding = null;
+  delete NODE_DETAIL[t.id];
+  showView("setup");
+}
+async function finishAdding(link) {
+  if (link && adding.picked.size) {
+    const ok = await linkItems([{ type: adding.trial.type, id: adding.trial.id }, ...[...adding.picked.values()].map(v => ({ type: v.type, id: v.id }))]);
+    if (!ok) return; // the toast says why; stay, so nothing picked is lost
+  } else if (!link && adding.created.length) showToast("Nothing more was linked. What you created stays in PHIS, linked to the trial.");
+  endAdding();
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && view === "adding" && !e.target.closest("dialog")) finishAdding(false); });
+
+function paintAddingList() {
+  const list = document.getElementById("addingList");
+  if (!list) return;
+  const step = SETUP_STEPS.find(st => st.category === adding.categoryId);
+  const linked = new Set(((NODE_DETAIL[adding.trial.id]?.relations ?? []).find(r => r.label === step?.relation)?.items ?? []).map(i => i.id));
+  const q = adding.filter.trim().toLowerCase();
+  const items = (Array.isArray(CATEGORY_ITEMS[adding.categoryId]) ? CATEGORY_ITEMS[adding.categoryId] : [])
+    .filter(it => it && it.type !== "category" && (!q || String(it.label).toLowerCase().includes(q)));
+  list.innerHTML = "";
+  if (!items.length) { list.innerHTML = `<div class="empty-hint">${q ? "Nothing matches." : "Nothing here yet. Use + New."}</div>`; return; }
+  items.slice(0, 300).forEach(it => {
+    const isLinked = linked.has(it.id), isPicked = adding.picked.has(it.id);
+    const row = document.createElement("div");
+    row.className = "row adding-row" + (isPicked ? " picked" : "") + (isLinked ? " linked" : "");
+    row.setAttribute("style", typeStyle(it.type));
+    row.dataset.id = it.id;
+    row.innerHTML = `<span class="setup-tick">${isPicked || isLinked ? "✓" : "○"}</span><span class="row-main"><span class="row-label">${escapeHtml(it.label)}</span>
+      <span class="row-type">${isLinked ? "already linked to this trial" : typeName(it.type)}</span></span>`;
+    if (!isLinked) row.addEventListener("click", () => { isPicked ? adding.picked.delete(it.id) : adding.picked.set(it.id, it); renderPage(); });
+    list.appendChild(row);
+  });
+  if (items.length > 300) list.insertAdjacentHTML("beforeend", `<div class="empty-hint">Showing 300 of ${items.length}: type in the filter to narrow.</div>`);
+}
+function renderAddingPage(body) {
   const type = TYPE_FOR_CATEGORY[adding.categoryId], nice = typeName(type);
-  const picked = [...selection.values()].filter(v => v.id !== adding.trial.id && v.type === type).length;
-  el.hidden = false;
-  el.innerHTML = `<div class="adding-title">Adding <b>${escapeHtml(currentPane().label)}</b> to <b>${escapeHtml(adding.trial.label)}</b></div>
-    <div class="adding-actions">
-      <button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button>
-      <button class="btn small" id="addingLink"${picked ? "" : " disabled"}>${picked ? `Link ${picked} selected` : "Link existing"}</button>
-      <button class="btn ghost small" id="addingDone">Done</button>
-    </div>
-    <div class="adding-hint">Click a row to pick an existing one (ctrl+click for several), then Link.</div>`;
+  const label = ROOT.flatMap(g => CATEGORY_ITEMS[g.id]).find(c => c.id === adding.categoryId)?.label ?? nice;
+  const names = (arr, removable) => arr.length ? arr.map(v => `<div class="row"><span class="row-main"><span class="row-label">${escapeHtml(v.label)}</span></span>${removable ? `<button class="sel-remove" data-id="${escapeHtml(v.id)}" aria-label="Remove ${escapeHtml(v.label)}">&times;</button>` : ""}</div>`).join("")
+    : `<div class="empty-hint">None yet.</div>`;
+  body.innerHTML = `<div class="page-head"><h3 class="overview-h">Adding <b>${escapeHtml(label)}</b> to <b>${escapeHtml(adding.trial.label)}</b></h3>
+      <span><button class="btn ghost" id="addingCancel">Cancel</button> <button class="btn" id="addingDone">Done${adding.picked.size ? ` · link ${adding.picked.size}` : ""}</button></span></div>
+    <p class="page-note">Pick ${escapeHtml(nice)} that already exist, or create a new one (it is linked to the trial at once). Done links your picks; Cancel links nothing.</p>
+    <div class="adding-grid">
+      <div><div class="adding-bar"><input type="text" id="addingFilter" placeholder="Filter ${escapeHtml(label)}…" value="${escapeHtml(adding.filter)}" aria-label="Filter"><button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button></div>
+        <div class="rowlist" id="addingList"></div></div>
+      <div><h4 class="adding-h">To link when you press Done</h4><div id="addingPicked">${names([...adding.picked.values()], true)}</div>
+        <h4 class="adding-h">Created and linked just now</h4><div id="addingCreated">${names(adding.created, false)}</div></div>
+    </div>`;
+  paintAddingList();
+  document.getElementById("addingFilter").addEventListener("input", (e) => { adding.filter = e.target.value; paintAddingList(); });
   document.getElementById("addingNew").addEventListener("click", async () => {
     const v = await askCreateValues(type);
-    if (v) createNode(type, v.name, [{ type: adding.trial.type, id: adding.trial.id }], `linked to ${adding.trial.label}`, v.fields);
+    if (!v) return;
+    const made = await createNode(type, v.name, [{ type: adding.trial.type, id: adding.trial.id }], `linked to ${adding.trial.label}`, v.fields);
+    if (made && adding) { adding.created.push(made); renderPage(); }
   });
-  document.getElementById("addingLink").addEventListener("click", () => document.getElementById("linkSelectionBtn")?.click());
-  document.getElementById("addingDone").addEventListener("click", () => { const t = adding.trial; adding = null; delete NODE_DETAIL[t.id]; showView("setup"); });
+  document.getElementById("addingCancel").addEventListener("click", () => finishAdding(false));
+  document.getElementById("addingDone").addEventListener("click", () => finishAdding(true));
+  body.querySelectorAll("#addingPicked .sel-remove").forEach(b => b.addEventListener("click", () => { adding.picked.delete(b.dataset.id); renderPage(); }));
 }
 
 /* ---------------- Import page: what was imported before, and a way to import more ---------------- */
@@ -3699,6 +3749,7 @@ async function linkItems(items, experiments, extra = {}) {
     } else {
       showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
     }
+    return true;
   } catch (err) {
     showToast(`Failed to link: ${err}`);
   }
@@ -4378,7 +4429,6 @@ function render() {
 // Everything that shows the selection: the list (browse), the selection pane (what's gathered)
 // and the tree along the bottom (how it connects) — all always visible, no switching.
 function refreshLeftPane() {
-  renderAddingBanner();
   renderRows();
   renderSelectionList();
   renderTree();

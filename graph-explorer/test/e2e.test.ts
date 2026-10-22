@@ -3702,30 +3702,66 @@ test("e2e: set up page separates what is required from what is optional", async 
   });
 });
 
-test("e2e: a set up step opens Browse on that list, the trial stays selected, and + New links to it at once", async () => {
+const TWO_FACTORS = [
+  { id: "phis:id/factor/f1", type: "factor", label: "Irrigation" },
+  { id: "phis:id/factor/f2", type: "factor", label: "Sowing density" },
+];
+async function openAddingFactors(page: import("playwright").Page, base: string) {
+  await setupStubs(page);
+  await page.route("**/api/factors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_FACTORS) }));
+  await page.goto(base + "/#setup");
+  await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+  await page.locator("#pageBody .setup-optional-head").click();
+  await page.locator("#pageBody .setup-optional .setup-step", { hasText: "Factors" }).locator(".setup-go").click();
+  await page.waitForFunction(() => document.body.dataset.view === "adding");
+}
+
+test("e2e: a set up step locks Browse into adding to the trial: no navigation, no selection pane, Cancel or Done", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await setupStubs(page);
-    await page.route("**/api/factors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+    await openAddingFactors(page, base);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Adding Factors to Barley 2024/);
+    assert.equal(await page.locator("#selectionPane").isVisible(), false);
+    assert.equal(await page.locator(".crumbs").isVisible(), false);
+    assert.equal(await page.locator("#mainnav").evaluate((el) => getComputedStyle(el).pointerEvents), "none");
+    assert.deepEqual(await page.locator("#addingList .row .row-label").allTextContents(), ["Irrigation", "Sowing density"]);
+    assert.equal(await page.locator("#addingCancel").isVisible(), true);
+    assert.equal(await page.locator("#addingDone").isVisible(), true);
+  });
+});
+
+test("e2e: adding — + New creates and links to the trial at once, and lists it as added", async () => {
+  await withServerAndBrowser(async (base, page) => {
     let sent: any = null;
-    await page.route("**/api/create", (r) => { sent = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/factor/f9", type: "factor", label: "Irrigation" }) }); });
-    await page.goto(base + "/#setup");
-    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
-    await page.locator("#pageBody .setup-optional-head").click();
-    await page.locator("#pageBody .setup-optional .setup-step", { hasText: "Factors" }).locator(".setup-go").click();
-    await page.waitForFunction(() => document.body.dataset.view === "browse");
-    assert.match(await page.locator("#addingBanner").textContent() ?? "", /Adding Factors to Barley 2024/);
+    await page.route("**/api/create", (r) => { sent = r.request().postDataJSON(); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/factor/f9", type: "factor", label: "Temperature" }) }); });
+    await openAddingFactors(page, base);
     await page.locator("#addingNew").click();
     const form = page.locator("dialog.create-dialog");
-    await form.locator("input[name=name]").fill("Irrigation");
-    await form.locator("textarea[name=levels]").fill("wet\ndry");
+    await form.locator("input[name=name]").fill("Temperature");
+    await form.locator("textarea[name=levels]").fill("cold\nwarm");
     await form.locator("button[value=ok]").click();
-    await page.waitForFunction(() => document.querySelectorAll("#selList .sel-item").length >= 2); // the trial and the new factor
+    await page.locator("#addingCreated .row").first().waitFor();
     assert.equal(sent.type, "factor");
     assert.deepEqual(sent.links.map((l: any) => l.id), ["phis:id/experiment/e1"]);
-    await page.locator("#addingDone").click();
-    await page.waitForFunction(() => document.body.dataset.view === "setup");
-    assert.equal(await page.locator("#addingBanner").isVisible(), false);
+    assert.match(await page.locator("#addingCreated").textContent() ?? "", /Temperature/);
+    assert.equal(await page.evaluate(() => document.body.dataset.view), "adding"); // still locked in
   });
+});
+
+test("e2e: adding — picked rows are linked on Done, Cancel links nothing", async () => {
+  for (const finish of ["Done", "Cancel"]) {
+    await withServerAndBrowser(async (base, page) => {
+      const links: any[] = [];
+      await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
+      await openAddingFactors(page, base);
+      await page.locator("#addingList .row", { hasText: "Irrigation" }).click();
+      assert.equal(await page.locator("#addingList .row.picked").count(), 1);
+      assert.match(await page.locator("#addingPicked").textContent() ?? "", /Irrigation/);
+      await page.locator(`#adding${finish}`).click();
+      await page.waitForFunction(() => document.body.dataset.view === "setup");
+      if (finish === "Done") assert.deepEqual(links[0].items.map((i: any) => i.id), ["phis:id/experiment/e1", "phis:id/factor/f1"]);
+      else assert.equal(links.length, 0);
+    });
+  }
 });
 
 test("e2e: a selection made in Browse survives a visit to Overview", async () => {
