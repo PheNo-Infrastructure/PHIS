@@ -3706,24 +3706,30 @@ const TWO_FACTORS = [
   { id: "phis:id/factor/f1", type: "factor", label: "Irrigation" },
   { id: "phis:id/factor/f2", type: "factor", label: "Sowing density" },
 ];
-async function openAddingFactors(page: import("playwright").Page, base: string) {
+async function openAdding(page: import("playwright").Page, base: string, step: string, route: string, items: unknown[]) {
   await setupStubs(page);
-  await page.route("**/api/factors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TWO_FACTORS) }));
+  await page.route(route, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(items) }));
   await page.goto(base + "/#setup");
   await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
-  await page.locator("#pageBody .setup-optional-head").click();
-  await page.locator("#pageBody .setup-optional .setup-step", { hasText: "Factors" }).locator(".setup-go").click();
+  const stepRow = page.locator("#pageBody .setup-step").filter({ has: page.locator(".setup-label", { hasText: new RegExp(`^${step}$`) }) });
+  if (!(await stepRow.isVisible())) await page.locator("#pageBody .setup-optional-head").click();
+  await stepRow.locator(".setup-go").click();
   await page.waitForFunction(() => document.body.dataset.view === "adding");
 }
+const TWO_OBJECTS = [
+  { id: "phis:id/so/o1", type: "scientific_object", label: "Plant A" },
+  { id: "phis:id/so/o2", type: "scientific_object", label: "Plant B" },
+];
+const openAddingFactors = (page: import("playwright").Page, base: string) => openAdding(page, base, "Factors", "**/api/factors", TWO_FACTORS);
 
 test("e2e: a set up step locks Browse into adding to the trial: no navigation, no selection pane, Cancel or Done", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await openAddingFactors(page, base);
-    assert.match(await page.locator("#pageBody").textContent() ?? "", /Adding Factors to Barley 2024/);
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Adding Scientific Objects to Barley 2024/);
     assert.equal(await page.locator("#selectionPane").isVisible(), false);
     assert.equal(await page.locator(".crumbs").isVisible(), false);
     assert.equal(await page.locator("#mainnav").evaluate((el) => getComputedStyle(el).pointerEvents), "none");
-    assert.deepEqual(await page.locator("#addingList .row .row-label").allTextContents(), ["Irrigation", "Sowing density"]);
+    assert.deepEqual(await page.locator("#addingList .row .row-label").allTextContents(), ["Plant A", "Plant B"]);
     assert.equal(await page.locator("#addingCancel").isVisible(), true);
     assert.equal(await page.locator("#addingDone").isVisible(), true);
   });
@@ -3760,16 +3766,54 @@ test("e2e: adding — picked rows are linked on Done, Cancel links nothing", asy
     await withServerAndBrowser(async (base, page) => {
       const links: any[] = [];
       await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
-      await openAddingFactors(page, base);
-      await page.locator("#addingList .row", { hasText: "Irrigation" }).click();
+      await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
+      await page.locator("#addingList .row", { hasText: "Plant A" }).click();
       assert.equal(await page.locator("#addingList .row.picked").count(), 1);
-      assert.match(await page.locator("#addingPicked").textContent() ?? "", /Irrigation/);
+      assert.match(await page.locator("#addingPicked").textContent() ?? "", /Plant A/);
       await page.locator(`#adding${finish}`).click();
       await page.waitForFunction(() => document.body.dataset.view === "setup");
-      if (finish === "Done") assert.deepEqual(links[0].items.map((i: any) => i.id), ["phis:id/experiment/e1", "phis:id/factor/f1"]);
+      if (finish === "Done") assert.deepEqual(links[0].items.map((i: any) => i.id), ["phis:id/experiment/e1", "phis:id/so/o1"]);
       else assert.equal(links.length, 0);
     });
   }
+});
+
+test("e2e: factors can only be created for the trial (they belong to one experiment): no list to pick from", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openAddingFactors(page, base);
+    assert.equal(await page.locator("#addingList").count(), 0);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /belongs to one experiment/);
+    assert.equal(await page.locator("#addingNew").isVisible(), true);
+  });
+});
+
+test("e2e: germplasm has no Add button on Set up: it is set on the scientific objects", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await setupStubs(page);
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    await page.locator("#pageBody .setup-optional-head").click();
+    const row = page.locator("#pageBody .setup-optional .setup-step", { hasText: "Germplasm" });
+    assert.equal(await row.locator(".setup-go").count(), 0);
+    assert.match(await row.textContent() ?? "", /scientific objects/i);
+  });
+});
+
+test("e2e: persons are picked with a role and cannot be created from an experiment", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const links: any[] = [];
+    await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
+    await openAdding(page, base, "Persons", "**/api/persons", [{ id: "phis:id/person/p1", type: "person", label: "Ada Lovelace" }]);
+    assert.equal(await page.locator("#addingNew").count(), 0);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Persons.*first|make the person first/i);
+    const roles = await page.locator("#addingRole option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+    assert.ok(roles.length >= 2, "a role to choose");
+    await page.locator("#addingList .row", { hasText: "Ada" }).click();
+    await page.locator("#addingRole").selectOption(roles[1]);
+    await page.locator("#addingDone").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    assert.equal(links[0].role, roles[1]);
+  });
 });
 
 test("e2e: a selection made in Browse survives a visit to Overview", async () => {

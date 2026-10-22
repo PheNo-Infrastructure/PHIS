@@ -108,6 +108,7 @@ button { font-family: inherit; }
 .setup-optional-head span { font-weight: 400; color: var(--ink-faint); }
 .adding-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
 .adding-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+.adding-note { color: var(--ink-faint); font-size: 13px; flex: 1; }
 .adding-bar input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg); font: inherit; }
 .adding-h { font-size: 13px; margin: 0 0 6px; }
 .adding-row { cursor: pointer; }
@@ -1587,12 +1588,22 @@ function renderOverview(body) {
 const SETUP_STEPS = [
   { label: "Scientific Objects", relation: "Scientific objects", category: "cat-scientificobjects", hint: "what you measure: plants, plots, pots" },
   { label: "Factors", relation: "Factors", category: "cat-factors", optional: true, hint: "treatments and design, e.g. drought" },
-  { label: "Germplasm", relation: "Species", category: "cat-germplasm", optional: true, hint: "the plant material" },
+  { label: "Germplasm", relation: "Species", category: "cat-germplasm", optional: true, hint: "the plant material, set on the Scientific Objects" },
   { label: "Facilities", relation: "Facilities", category: "cat-facilities", optional: true, hint: "where it takes place" },
   { label: "Projects", relation: "Projects", category: "cat-projects", optional: true, hint: "the project that funds it" },
   { label: "Persons", relation: "Scientific supervisors", category: "cat-persons", optional: true, hint: "who supervises it" },
   { label: "Groups", relation: "Shared with", category: "cat-groups", optional: true, hint: "who it is shared with" },
 ];
+// What can be done from an experiment, straight from what PHIS lets us write (the same rules as + New and Link in Browse):
+// create = a new one made and linked to the trial; pick = an existing one linked to it. A factor belongs to ONE experiment
+// (made here, never picked); germplasm is set on the scientific objects, not on the experiment; a person is picked with a role.
+const PICKABLE = new Set(["scientific_object", "facility", "project", "group", "person"]);
+function addCaps(categoryId, owner = "experiment") {
+  const t = TYPE_FOR_CATEGORY[categoryId], c = CREATABLE[t];
+  const create = !!c && t !== "germplasm" && (c.fromOnly ? c.fromOnly.includes(owner)
+    : !!(c.linkFields[owner] || (t !== owner && LINKABLE_TYPES.has(t) && LINKABLE_TYPES.has(owner) && !inExperimentOnly(t, owner))));
+  return { create, pick: PICKABLE.has(t), role: t === "person" };
+}
 function setupSteps(detail) {
   const has = rel => (detail?.relations ?? []).some(r => r.label === rel && r.items.length > 0);
   return [{ label: "Experiment", done: true, hint: "exists in PHIS" },
@@ -1631,7 +1642,7 @@ function renderSetupPage(body) {
   const steps = setupSteps(NODE_DETAIL[trial.id]);
   const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
       <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span></span>
-      ${st.category ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
+      ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}</h3>
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
     <p class="page-note">Each step lets you add to this experiment: create a new one (linked at once) or pick one that already exists.</p>
@@ -1671,7 +1682,9 @@ async function finishAdding(link) {
       adding.pending.shift();
     }
     if (adding.picked.size) {
-      const ok = await linkItems([...trialLink, ...[...adding.picked.values()].map(v => ({ type: v.type, id: v.id }))]);
+      const role = document.getElementById("addingRole")?.value;
+      if (addCaps(adding.categoryId).role && !role) { showToast("Say which role first: the people you picked need one."); return; }
+      const ok = await linkItems([...trialLink, ...[...adding.picked.values()].map(v => ({ type: v.type, id: v.id }))], undefined, role ? { role } : {});
       if (!ok) { renderPage(); return; } // the toast says why; stay, so nothing picked is lost
     }
   }
@@ -1679,6 +1692,11 @@ async function finishAdding(link) {
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && view === "adding" && !e.target.closest("dialog")) finishAdding(false); });
 
+// Why there is nothing to pick from, in the words of what PHIS does.
+function addNote(type, nice) {
+  const one = CREATABLE[type]?.onlyOne;
+  return one ? `A ${nice} belongs to one ${one}, so existing ones can't be added here. Make a new one.` : `Existing ${nice} can't be added here.`;
+}
 function paintAddingList() {
   const list = document.getElementById("addingList");
   if (!list) return;
@@ -1703,7 +1721,7 @@ function paintAddingList() {
   if (items.length > 300) list.insertAdjacentHTML("beforeend", `<div class="empty-hint">Showing 300 of ${items.length}: type in the filter to narrow.</div>`);
 }
 function renderAddingPage(body) {
-  const type = TYPE_FOR_CATEGORY[adding.categoryId], nice = typeName(type);
+  const type = TYPE_FOR_CATEGORY[adding.categoryId], nice = typeName(type), caps = addCaps(adding.categoryId);
   const label = ROOT.flatMap(g => CATEGORY_ITEMS[g.id]).find(c => c.id === adding.categoryId)?.label ?? nice;
   const names = (arr, removable) => arr.length ? arr.map(v => `<div class="row"><span class="row-main"><span class="row-label">${escapeHtml(v.label)}</span></span>${removable ? `<button class="sel-remove" data-id="${escapeHtml(v.id)}" aria-label="Remove ${escapeHtml(v.label)}">&times;</button>` : ""}</div>`).join("")
     : `<div class="empty-hint">None yet.</div>`;
@@ -1711,14 +1729,16 @@ function renderAddingPage(body) {
       <span><button class="btn ghost" id="addingCancel">Cancel</button> <button class="btn" id="addingDone">Done${adding.picked.size + adding.pending.length ? ` · add ${adding.picked.size + adding.pending.length}` : ""}</button></span></div>
     <p class="page-note">Pick ${escapeHtml(nice)} that already exist, or add a new one. Nothing is saved until you press Done; Cancel changes nothing.</p>
     <div class="adding-grid">
-      <div><div class="adding-bar"><input type="text" id="addingFilter" placeholder="Filter ${escapeHtml(label)}…" value="${escapeHtml(adding.filter)}" aria-label="Filter"><button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button></div>
-        <div class="rowlist" id="addingList"></div></div>
-      <div><h4 class="adding-h">To link when you press Done</h4><div id="addingPicked">${names([...adding.picked.values()], true)}</div>
+      <div><div class="adding-bar">${caps.pick ? `<input type="text" id="addingFilter" placeholder="Filter ${escapeHtml(label)}…" value="${escapeHtml(adding.filter)}" aria-label="Filter">` : `<span class="adding-note">${escapeHtml(addNote(type, nice))}</span>`}${caps.create ? `<button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button>` : ""}</div>
+        ${caps.create ? "" : `<p class="adding-note">${escapeHtml(type === "person" ? "A person can't be made from an experiment: make the person first in Browse, then pick them here." : `This app can't create a ${nice} from an experiment.`)}</p>`}
+        ${caps.pick ? `<div class="rowlist" id="addingList"></div>` : ""}</div>
+      <div>${caps.role ? `<h4 class="adding-h">Role</h4><select id="addingRole" aria-label="Role"><option value="">Choose a role…</option>${(PERSON_ROLES[adding.trial.type] || []).map(r => `<option value="${escapeHtml(r.field)}">${escapeHtml(r.label)}</option>`).join("")}</select>` : ""}
+        <h4 class="adding-h">To link when you press Done</h4><div id="addingPicked">${names([...adding.picked.values()], true)}</div>
         <h4 class="adding-h">To create and link when you press Done</h4><div id="addingPending">${names(adding.pending.map((q, i) => ({ id: String(i), label: q.name })), true)}</div></div>
     </div>`;
   paintAddingList();
-  document.getElementById("addingFilter").addEventListener("input", (e) => { adding.filter = e.target.value; paintAddingList(); });
-  document.getElementById("addingNew").addEventListener("click", async () => {
+  document.getElementById("addingFilter")?.addEventListener("input", (e) => { adding.filter = e.target.value; paintAddingList(); });
+  document.getElementById("addingNew")?.addEventListener("click", async () => {
     const v = await askCreateValues(type);
     if (!v) return;
     adding.pending.push({ type, name: v.name, fields: v.fields });
