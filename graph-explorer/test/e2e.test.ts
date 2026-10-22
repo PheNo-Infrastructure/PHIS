@@ -3652,14 +3652,14 @@ test("e2e: setupSteps marks a step done only when its relation has items", async
     const out = await page.evaluate(() => {
       const rel = (label, n) => ({ label, items: Array.from({ length: n }, (_, i) => ({ id: `x${i}`, label: `x${i}` })) });
       return {
-        full: setupSteps({ relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Species", 1), rel("Facilities", 2), rel("Organizations", 1), rel("Projects", 1), rel("Scientific supervisors", 1), rel("Shared with", 1), rel("Annotations", 1)] }).map(s => [s.label, s.done]),
+        full: setupSteps({ relations: [rel("Scientific objects", 20), rel("Factors", 1), rel("Facilities", 2), rel("Organizations", 1), rel("Projects", 1), rel("Scientific supervisors", 1), rel("Shared with", 1), rel("Annotations", 1)] }).map(s => [s.label, s.done]),
         empty: setupSteps({ relations: [rel("Scientific objects", 0)] }).map(s => [s.label, s.done]),
         none: setupSteps(undefined).map(s => s.done),
       };
     });
-    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Factors", true], ["Germplasm", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
-    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false, false, false]);
-    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.full, [["Experiment", true], ["Scientific Objects", true], ["Factors", true], ["Facilities", true], ["Organizations", true], ["Projects", true], ["Persons", true], ["Groups", true], ["Annotations", true]]);
+    assert.deepEqual(out.empty.map(([, d]) => d), [true, false, false, false, false, false, false, false, false]);
+    assert.deepEqual(out.none, [true, false, false, false, false, false, false, false, false]);
   });
 });
 
@@ -3697,7 +3697,7 @@ test("e2e: set up page separates what is required from what is optional", async 
     assert.deepEqual(await page.locator("#pageBody .setup-required .setup-label").allTextContents(), ["Experiment", "Scientific Objects"]);
     assert.equal(await page.locator("#pageBody .setup-optional").isVisible(), false, "optional steps start folded");
     await page.locator("#pageBody .setup-optional-head").click();
-    assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Germplasm", "Facilities", "Organizations", "Projects", "Persons", "Groups", "Annotations"]);
+    assert.deepEqual(await page.locator("#pageBody .setup-optional .setup-label").allTextContents(), ["Factors", "Facilities", "Organizations", "Projects", "Persons", "Groups", "Annotations"]);
     assert.match(await page.locator("#pageBody .setup-optional-head").textContent() ?? "", /Optional/);
   });
 });
@@ -3787,15 +3787,38 @@ test("e2e: factors can only be created for the trial (they belong to one experim
   });
 });
 
-test("e2e: germplasm has no Add button on Set up: it is set on the scientific objects", async () => {
+test("e2e: germplasm is not a step of its own: it is set on the scientific objects while adding them", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await setupStubs(page);
-    await page.goto(base + "/#setup");
-    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    const links: any[] = [];
+    await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
+    await page.route("**/api/germplasm", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "phis:id/germ/g1", type: "germplasm", label: "Barley" }]) }));
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", TWO_OBJECTS);
+    assert.equal(await page.locator("#addingGermplasm").count(), 1);
+    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
+    await page.locator("#addingGermplasm").selectOption({ label: "Barley" });
+    await page.locator("#addingDone").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    assert.deepEqual(links[0].items.map((i: any) => i.id), ["phis:id/experiment/e1", "phis:id/so/o1"]);
+    assert.deepEqual(links[1].items.map((i: any) => i.id), ["phis:id/so/o1", "phis:id/germ/g1"]);
+    assert.deepEqual(links[1].experiments, ["phis:id/experiment/e1"]);
+  });
+  await withServerAndBrowser(async (base, page) => {
+    await openAddingFactors(page, base);
+    assert.equal(await page.locator("#addingGermplasm").count(), 0);
+    await page.locator("#addingCancel").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
     await page.locator("#pageBody .setup-optional-head").click();
-    const row = page.locator("#pageBody .setup-optional .setup-step", { hasText: "Germplasm" });
-    assert.equal(await row.locator(".setup-go").count(), 0);
-    assert.match(await row.textContent() ?? "", /scientific objects/i);
+    assert.equal(await page.locator("#pageBody .setup-label", { hasText: /^Germplasm$/ }).count(), 0);
+  });
+});
+
+test("e2e: shift-click picks a range in the adding list", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openAdding(page, base, "Scientific Objects", "**/api/scientific-objects", [
+      ...TWO_OBJECTS, { id: "phis:id/so/o3", type: "scientific_object", label: "Plant C" }, { id: "phis:id/so/o4", type: "scientific_object", label: "Plant D" }]);
+    await page.locator("#addingList .row", { hasText: "Plant A" }).click();
+    await page.locator("#addingList .row", { hasText: "Plant C" }).click({ modifiers: ["Shift"] });
+    assert.deepEqual(await page.locator("#addingList .row.picked .row-label").allTextContents(), ["Plant A", "Plant B", "Plant C"]);
   });
 });
 

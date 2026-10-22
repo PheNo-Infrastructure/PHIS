@@ -108,6 +108,7 @@ button { font-family: inherit; }
 .setup-optional-head span { font-weight: 400; color: var(--ink-faint); }
 .adding-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
 .adding-bar { display: flex; gap: 8px; margin-bottom: 8px; }
+.adding-opt { font-weight: 400; color: var(--ink-faint); }
 .adding-note { color: var(--ink-faint); font-size: 13px; flex: 1; }
 .adding-bar input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg); font: inherit; }
 .adding-h { font-size: 13px; margin: 0 0 6px; }
@@ -1586,9 +1587,8 @@ function renderOverview(body) {
    The trial is the one experiment in the selection. A step is done when the experiment's page lists something for it;
    unfinished steps are filled with the Selection pane's + New, which links what it creates to the selected trial. */
 const SETUP_STEPS = [
-  { label: "Scientific Objects", relation: "Scientific objects", category: "cat-scientificobjects", hint: "what you measure: plants, plots, pots" },
+  { label: "Scientific Objects", relation: "Scientific objects", category: "cat-scientificobjects", hint: "what you measure: plants, plots, pots, with their germplasm" },
   { label: "Factors", relation: "Factors", category: "cat-factors", optional: true, hint: "treatments and design, e.g. drought" },
-  { label: "Germplasm", relation: "Species", category: "cat-germplasm", optional: true, hint: "the plant material, set on the Scientific Objects" },
   { label: "Facilities", relation: "Facilities", category: "cat-facilities", optional: true, hint: "where it takes place" },
   { label: "Organizations", relation: "Organizations", category: "cat-organizations", optional: true, hint: "the institutes behind it" },
   { label: "Projects", relation: "Projects", category: "cat-projects", optional: true, hint: "the project that funds it" },
@@ -1675,7 +1675,8 @@ function endAdding() {
   showView("setup");
 }
 async function finishAdding(link) {
-  const summary = { created: [], linked: [] };
+  const summary = { created: [], linked: [], germplasm: "" };
+  const objects = []; // the scientific objects added now (made or picked), to set germplasm on
   if (link) {
     const trialLink = [{ type: adding.trial.type, id: adding.trial.id }];
     while (adding.pending.length) { // one at a time: a failure stops here and keeps the rest
@@ -1683,6 +1684,7 @@ async function finishAdding(link) {
       const made = await createNode(q.type, q.name, trialLink, `linked to ${adding.trial.label}`, q.fields);
       if (!made) { renderPage(); return; }
       summary.created.push(made.label);
+      if (made.type === "scientific_object") objects.push({ type: made.type, id: made.id });
       adding.pending.shift();
     }
     if (adding.picked.size) {
@@ -1692,11 +1694,18 @@ async function finishAdding(link) {
       const ok = await linkItems([...trialLink, ...picks.map(v => ({ type: v.type, id: v.id }))], undefined, role ? { role } : {});
       if (!ok) { renderPage(); return; } // the toast says why; stay, so nothing picked is lost
       summary.linked = picks.map(v => v.label);
+      picks.filter(v => v.type === "scientific_object").forEach(v => objects.push({ type: v.type, id: v.id }));
+    }
+    const g = (CATEGORY_ITEMS["cat-germplasm"] || []).find(x => x.id === adding.germplasm);
+    if (g && objects.length) { // in this experiment's own copy of each object: no question about which experiment
+      const ok = await linkItems([...objects, { type: "germplasm", id: g.id }], [adding.trial.id]);
+      if (!ok) { renderPage(); return; }
+      summary.germplasm = g.label;
     }
   }
   const label = adding.trial.label;
   endAdding();
-  const said = [summary.created.length && `created ${andList(summary.created)}`, summary.linked.length && `linked ${andList(summary.linked)}`].filter(Boolean);
+  const said = [summary.created.length && `created ${andList(summary.created)}`, summary.linked.length && `linked ${andList(summary.linked)}`, summary.germplasm && `set germplasm ${summary.germplasm}`].filter(Boolean);
   if (said.length) showToast(`${label}: ${said.join("; ")}.`); // one line for everything, instead of whichever toast came last
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && view === "adding" && !e.target.closest("dialog")) finishAdding(false); });
@@ -1722,6 +1731,7 @@ function paintAddingList() {
     .filter(it => it && it.type !== "category" && (!q || String(it.label).toLowerCase().includes(q)));
   list.innerHTML = "";
   if (!items.length) { list.innerHTML = `<div class="empty-hint">${q ? "Nothing matches." : "Nothing here yet. Use + New."}</div>`; return; }
+  adding.shown = items.slice(0, 300).map(it => it.id);
   items.slice(0, 300).forEach(it => {
     const isLinked = linked.has(it.id), isPicked = adding.picked.has(it.id);
     const row = document.createElement("div");
@@ -1730,7 +1740,16 @@ function paintAddingList() {
     row.dataset.id = it.id;
     row.innerHTML = `<span class="setup-tick">${isPicked || isLinked ? "✓" : "○"}</span><span class="row-main"><span class="row-label">${escapeHtml(it.label)}</span>
       <span class="row-type">${isLinked ? "already linked to this trial" : typeName(it.type)}</span></span>`;
-    if (!isLinked) row.addEventListener("click", () => { isPicked ? adding.picked.delete(it.id) : adding.picked.set(it.id, it); renderPage(); });
+    // Click toggles a row; shift+click picks everything between it and the last row clicked.
+    if (!isLinked) row.addEventListener("click", (e) => {
+      const byId = new Map(items.map(x => [x.id, x]));
+      if (e.shiftKey && adding.anchor && adding.shown.includes(adding.anchor)) {
+        const [lo, hi] = [adding.shown.indexOf(adding.anchor), adding.shown.indexOf(it.id)].sort((a, b) => a - b);
+        adding.shown.slice(lo, hi + 1).filter(id => !linked.has(id)).forEach(id => adding.picked.set(id, byId.get(id)));
+      } else isPicked ? adding.picked.delete(it.id) : adding.picked.set(it.id, it);
+      adding.anchor = it.id;
+      renderPage();
+    });
     list.appendChild(row);
   });
   if (items.length > 300) list.insertAdjacentHTML("beforeend", `<div class="empty-hint">Showing 300 of ${items.length}: type in the filter to narrow.</div>`);
@@ -1747,12 +1766,14 @@ function renderAddingPage(body) {
       <div><div class="adding-bar">${caps.pick ? `<input type="text" id="addingFilter" placeholder="Filter ${escapeHtml(label)}…" value="${escapeHtml(adding.filter)}" aria-label="Filter">` : `<span class="adding-note">${escapeHtml(addNote(type, nice))}</span>`}${caps.create ? `<button class="btn small" id="addingNew">+ New ${escapeHtml(nice)}</button>` : ""}</div>
         ${caps.create ? "" : `<p class="adding-note">${escapeHtml(type === "person" ? "A person can't be made from an experiment: make the person first in Browse, then pick them here." : `This app can't create a ${nice} from an experiment.`)}</p>`}
         ${caps.pick ? `<div class="rowlist" id="addingList"></div>` : ""}</div>
-      <div>${caps.role ? `<h4 class="adding-h">Role</h4><select id="addingRole" aria-label="Role"><option value="">Choose a role…</option>${(PERSON_ROLES[adding.trial.type] || []).map(r => `<option value="${escapeHtml(r.field)}">${escapeHtml(r.label)}</option>`).join("")}</select>` : ""}
+      <div>${adding.categoryId === "cat-scientificobjects" ? `<h4 class="adding-h">Germplasm for these objects <span class="adding-opt">(optional)</span></h4><select id="addingGermplasm" aria-label="Germplasm"><option value="">None</option>${(CATEGORY_ITEMS["cat-germplasm"] || []).filter(g => g.type === "germplasm").map(g => `<option value="${escapeHtml(g.id)}"${adding.germplasm === g.id ? " selected" : ""}>${escapeHtml(g.label)}</option>`).join("")}</select>` : ""}
+        ${caps.role ? `<h4 class="adding-h">Role</h4><select id="addingRole" aria-label="Role"><option value="">Choose a role…</option>${(PERSON_ROLES[adding.trial.type] || []).map(r => `<option value="${escapeHtml(r.field)}">${escapeHtml(r.label)}</option>`).join("")}</select>` : ""}
         <h4 class="adding-h">Already in this experiment</h4><div id="addingExisting">${names(alreadyInTrial(), false)}</div>
         <h4 class="adding-h">To link when you press Done</h4><div id="addingPicked">${names([...adding.picked.values()], true)}</div>
         <h4 class="adding-h">To create and link when you press Done</h4><div id="addingPending">${names(adding.pending.map((q, i) => ({ id: String(i), label: q.name })), true)}</div></div>
     </div>`;
   paintAddingList();
+  document.getElementById("addingGermplasm")?.addEventListener("change", (e) => { adding.germplasm = e.target.value; });
   document.getElementById("addingFilter")?.addEventListener("input", (e) => { adding.filter = e.target.value; paintAddingList(); });
   document.getElementById("addingNew")?.addEventListener("click", async () => {
     const v = await askCreateValues(type);
