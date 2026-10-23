@@ -49,6 +49,7 @@ RUN mkdir -p opensilex-front/front/theme/pheno \
     && cp /patches/pheno-theme/public/* opensilex-front/front/public/ \
     && rm -r opensilex-front/front/theme/pheno/public \
     && sed -i 's/OpenSilex/PheNo/g; s/OpenSILEX/PheNo/g' opensilex-front/front/public/index.html \
+    && sed -i 's/#5dc599/#3d8526/g; s/\.opensilex-logo {/.opensilex-logo { width: 150px; height: 150px;/' opensilex-front/front/public/index.html \
     && sh /patches/pheno-colors.sh /build \
     && test -f opensilex-front/front/theme/pheno/pheno.yml
 
