@@ -6,6 +6,7 @@ import type { TrialData } from "./plugins.ts";
 export type Edits = {
   experiment?: { name?: string; startDate?: string };
   germplasm?: Record<string, string>; // file's germplasm name -> new name
+  germplasmCodes?: Record<string, string>; // file's germplasm name -> its code (TraitFinder's G_alias); empty = no code
   factors?: Record<string, { name?: string; levels?: Record<string, string> }>; // file's factor -> new name, and its levels' new names
   variables?: Record<string, string>; // file's variable name -> new name
 };
@@ -24,7 +25,7 @@ export function parseEdits(raw: string | undefined): Edits {
   try { e = JSON.parse(decodeURIComponent(raw)); } catch { throw unreadable(); }
   if (!e || typeof e !== "object" || Array.isArray(e)) throw unreadable();
   const factors = e.factors ?? {};
-  if ((e.germplasm !== undefined && !isStringMap(e.germplasm)) || (e.variables !== undefined && !isStringMap(e.variables))
+  if ((e.germplasm !== undefined && !isStringMap(e.germplasm)) || (e.germplasmCodes !== undefined && !isStringMap(e.germplasmCodes)) || (e.variables !== undefined && !isStringMap(e.variables))
     || (e.experiment !== undefined && (typeof e.experiment !== "object" || Object.values(e.experiment).some((v) => typeof v !== "string")))
     || typeof factors !== "object" || Object.values(factors).some((f: any) => !f || typeof f !== "object" || (f.name !== undefined && typeof f.name !== "string") || (f.levels !== undefined && !isStringMap(f.levels)))) throw unreadable();
   return e;
@@ -78,6 +79,13 @@ export function applyEdits(trial: TrialData, edits: Edits | undefined): TrialDat
   const germplasm = rename(names.germplasm, edits.germplasm, "germplasm", "germplasm");
   for (const o of out.objects) if (o.germplasm) o.germplasm = germplasm.get(o.germplasm)!;
   if (out.germplasmCodes) out.germplasmCodes = Object.fromEntries(Object.entries(out.germplasmCodes).map(([n, c]) => [germplasm.get(n) ?? n, c]));
+
+  for (const [orig, code] of Object.entries(edits.germplasmCodes ?? {})) {
+    const name = germplasm.get(orig);
+    if (name === undefined) throw new EditError(`The file has no germplasm "${orig}".`);
+    out.germplasmCodes = { ...(out.germplasmCodes ?? {}) };
+    if (code.trim()) out.germplasmCodes[name] = code.trim(); else delete out.germplasmCodes[name];
+  }
 
   for (const f of Object.keys(edits.factors ?? {})) if (!names.factors.some((x) => x.name === f)) throw new EditError(`The file has no factor "${f}".`);
   const factorNames = rename(names.factors.map((f) => f.name), Object.fromEntries(Object.entries(edits.factors ?? {}).filter(([, v]) => v.name !== undefined).map(([k, v]) => [k, v.name!])), "factor", "factors");

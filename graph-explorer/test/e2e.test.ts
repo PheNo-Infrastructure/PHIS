@@ -1889,6 +1889,13 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
     await grid.locator(".d-chart").first().locator('.d-col[data-col="0"]').dispatchEvent("click");
     assert.equal(await grid.locator("#distDay").inputValue(), "0", "clicking a scan's bar shows that scan per plant");
     assert.equal(await grid.locator(".d-day-chart").nth(1).locator("rect").count(), 2, "the single plant has a histogram at the first scan");
+    await grid.locator(".d-day-chart").first().locator(".d-plant").first().dispatchEvent("click");
+    const one = page.locator("#chartDetail");
+    await one.waitFor();
+    assert.equal(await one.locator(".d-col").count(), 2, "a bar per scan");
+    assert.equal(await one.locator("tbody tr").count(), 2, "a row per scan");
+    assert.match(await one.locator("tbody tr").first().textContent() ?? "", /30\.0 %.*70\.0 %/, "its shares per range");
+    await one.locator(".g-close").click();
     const left = (sel: string) => grid.locator(sel).first().evaluate((el) => el.getBoundingClientRect().left);
     assert.equal(Math.round(await left(".d-day .g-row-charts")), Math.round(await left(".g-row-charts")), "the one-scan charts line up with the charts above");
     const close = await grid.locator("#gridClose").boundingBox(), dlgBox = await grid.boundingBox();
@@ -3918,8 +3925,8 @@ test("e2e: Set up says whether the trial is an existing one or a new one, and th
     await page.route("**/api/instance", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ host: "phis-test.pheno.no", test: true }) }));
     await page.route("**/api/create", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/experiment/new1", type: "experiment", label: "Fresh" }) }));
     await page.goto(base + "/#setup");
-    await page.locator("#instanceBar.test").waitFor();
-    assert.match(await page.locator("#instanceBar").textContent() ?? "", /TEST INSTANCE.*phis-test\.pheno\.no/);
+    await page.locator(".subtitle.test").waitFor();
+    assert.match(await page.locator(".subtitle").textContent() ?? "", /phis-test\.pheno\.no \(test server\)/);
     assert.match(await page.locator("#pageBody").textContent() ?? "", /Start a new trial/);
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     assert.match(await page.locator("#pageBody .setup-pill").textContent() ?? "", /Existing trial/);

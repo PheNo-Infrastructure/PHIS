@@ -75,7 +75,7 @@ export async function handleRequest(req: import("node:http").IncomingMessage, re
     let host = "";
     try { host = new URL(process.env.PHIS_HOST ?? "").hostname; } catch { /* unset or not a URL: no name */ }
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ host, test: /test/i.test(host) }));
+    res.end(JSON.stringify({ host, test: /test/i.test(host) || process.env.PHIS_INSTANCE === "test" }));
     return;
   }
 

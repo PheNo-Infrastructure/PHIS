@@ -90,3 +90,10 @@ test("parseEdits: reads the page's JSON, and turns anything else into a plain er
   assert.throws(() => parseEdits(encodeURIComponent('{"germplasm":{"A":5}}')), /edits could not be read/);
   assert.throws(() => parseEdits(encodeURIComponent('[1]')), /edits could not be read/);
 });
+
+test("applyEdits: a germplasm's code can be changed or removed, by the file's name for it", () => {
+  const out = applyEdits(trial(), { germplasm: { Bean: "Common bean" }, germplasmCodes: { Bean: " G9 ", Olve: "" } });
+  assert.deepEqual(out.germplasmCodes, { "Common bean": "G9" });
+  assert.throws(() => applyEdits(trial(), { germplasmCodes: { Nope: "G1" } }), /no germplasm "Nope"/);
+  assert.throws(() => parseEdits(encodeURIComponent('{"germplasmCodes":{"A":5}}')), /edits could not be read/);
+});

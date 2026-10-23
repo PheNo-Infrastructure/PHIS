@@ -123,8 +123,7 @@ body[data-view="adding"] .topbar, body[data-view="adding"] #treePane, body[data-
 body[data-view="adding"] #mainnav { pointer-events: none; opacity: .45; }
 .setup-step.done .setup-tick { color: var(--accent); }
 .setup-tick { width: 18px; text-align: center; flex: none; }
-#instanceBar { padding: 6px 16px; font-size: 12.5px; text-align: center; background: var(--surface-2); color: var(--ink-muted); }
-#instanceBar.test { background: #f6d97a; color: #3b2f00; font-weight: 600; }
+.subtitle.test { color: #8a5a00; font-weight: 600; }
 .setup-pill { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
 .setup-pill.new { background: #3d8526; color: #fff; }
 .setup-pill.existing { background: var(--surface-2); color: var(--ink-muted); border: 1px solid var(--border); }
@@ -330,6 +329,7 @@ body[data-view="browse"] #pagePane { display: none; }
   font-weight: 500;
 }
 /* Menu rows: one line; the plain-words hint shows when the row is hovered or focused. */
+.row-main.cat .row-label { flex: none; max-width: 100%; }
 .row-main.cat .row-type { font-family: inherit; font-size: 11.5px; text-transform: none; color: var(--ink-faint); opacity: 0; transition: opacity .12s; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
 .row:hover .row-main.cat .row-type, .row:focus-within .row-main.cat .row-type { opacity: 1; }
 .row-type {
@@ -552,7 +552,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .d-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .d-legend .d-note { margin-left: auto; color: var(--ink-faint); }
 .d-chart rect, .d-day-chart rect { stroke: rgba(0, 0, 0, .15); stroke-width: .4; vector-effect: non-scaling-stroke; }
-.d-chart .d-col { cursor: pointer; }
+.d-chart .d-col, .d-day-chart .d-plant { cursor: pointer; }
+.d-day-chart .d-plant:hover rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
 .d-day-head { font-size: 13px; padding-top: 4px; }
@@ -993,7 +994,6 @@ body[data-view="browse"] #pagePane { display: none; }
     <span class="masthead-right"><span class="subtitle">phis.pheno.no &middot; design prototype</span></span>
   </div>
 
-  <div id="instanceBar" hidden></div>
   <div class="topbar">
     <div class="searchrow">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/><path d="M11 11L14.2 14.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -2733,11 +2733,35 @@ function distDayHtml(plan, data, colors, st) {
     const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values[day]);
     if (!pts.length) return "";
     const bw = 100 / pts.length;
-    const bars = pts.map((p, i) => stackedBars(p.values[day], colors, data.bins, i * bw + bw * 0.1, bw * 0.8, plantLabelIn(st, p.id))).join("");
+    const bars = pts.map((p, i) => `<g class="d-plant" data-plant="${e(p.id)}">${stackedBars(p.values[day], colors, data.bins, i * bw + bw * 0.1, bw * 0.8, plantLabelIn(st, p.id))}</g>`).join("");
     const names = pts.length <= 12 ? `<div class="d-names">${pts.map(p => `<span title="${e(plantLabelIn(st, p.id))}">${e(plantLabelIn(st, p.id))}</span>`).join("")}</div>` : "";
     return `<div class="g-chart d-day-chart"><div class="g-ct"><b style="color:${ch.kind === "plant" ? "var(--ink)" : colorVar(ch.colorIndex)}">${e(ch.title)}</b><span>${pts.length} plant${pts.length === 1 ? "" : "s"}</span></div><div class="g-plot"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div>${names}</div>`;
   }).join("");
-  return `<div class="d-day"><div class="g-row"><div class="d-day-head"><b>One scan</b><select id="distDay">${data.columns.map((c, i) => `<option value="${i}"${i === day ? " selected" : ""}>${e(whenText(c.key))}</option>`).join("")}</select></div><div class="g-row-charts">${panels || `<div class="hx-note">No plant has this histogram at that scan.</div>`}</div></div><div class="hx-note">One bar per plant. Click a bar above to jump to its scan.</div></div>`;
+  return `<div class="d-day"><div class="g-row"><div class="d-day-head"><b>One scan</b><select id="distDay">${data.columns.map((c, i) => `<option value="${i}"${i === day ? " selected" : ""}>${e(whenText(c.key))}</option>`).join("")}</select></div><div class="g-row-charts">${panels || `<div class="hx-note">No plant has this histogram at that scan.</div>`}</div></div><div class="hx-note">One bar per plant. Click a bar above to jump to its scan; click a plant's bar for all its scans.</div></div>`;
+}
+
+// One plant's histogram at every scan: a stacked bar per scan, and the shares as a table.
+function openDistPlantDetail(p, data, colors, st) {
+  if (!p) return;
+  document.getElementById("chartDetail")?.remove();
+  const e = escapeHtml, label = plantLabelIn(st, p.id), n = data.columns.length, bw = 100 / n;
+  const bars = data.columns.map((c, i) => p.values[i] ? `<g class="d-col">${stackedBars(p.values[i], colors, data.bins, i * bw + bw * 0.08, bw * 0.84, whenText(c.key))}</g>` : "").join("");
+  const head = data.bins.map((b, i) => `<th><i style="background:${colors[i]}"></i>${e(b.label)}</th>`).join("");
+  const rows = data.columns.map((c, i) => `<tr><th class="obs-row">${e(whenText(c.key))}</th>${data.bins.map((_, b) => `<td class="obs">${p.values[i] ? `${p.values[i][b].toFixed(1)} %` : "–"}</td>`).join("")}</tr>`).join("");
+  const dlg = document.createElement("dialog");
+  dlg.className = "meas-dialog chart-detail d-detail";
+  dlg.id = "chartDetail";
+  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %</div></div>
+      <span><button class="btn ghost small g-open">Open ${e(label)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+    <div class="g-chart d-chart"><div class="g-plot" style="height:220px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[n - 1].key))}</span></div></div>
+    <div class="meas-values obs-wrap"><table class="obs-table"><thead><tr><th>Scan</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.addEventListener("click", ev => {
+    if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
+    if (ev.target.closest(".g-open")) { dlg.close(); document.getElementById("chartGrid")?.close(); openRelatedNode({ id: p.id, type: "scientific_object", label }); }
+  });
+  dlg.showModal();
 }
 
 async function renderDistributionBody(dlg, body, plan, sel, v) {
@@ -2757,6 +2781,7 @@ async function renderDistributionBody(dlg, body, plan, sel, v) {
     body.innerHTML = legend + plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}"><div class="g-row-label">${e(r.label)}</div><div class="g-row-charts">${r.charts.map(c => distChartHtml(c, data, colors)).join("")}</div></div>`).join("")
       + distDayHtml(plan, data, colors, sel.st);
     body.querySelectorAll(".d-col").forEach(g => g.addEventListener("click", () => { distState.day = Number(g.dataset.col); draw(); }));
+    body.querySelectorAll(".d-plant").forEach(g => g.addEventListener("click", () => openDistPlantDetail(data.plants.find(p => sameId(p.id, g.dataset.plant)), data, colors, sel.st)));
     body.querySelector("#distDay").addEventListener("change", ev => { distState.day = Number(ev.target.value); draw(); });
   };
   draw();
@@ -4756,12 +4781,8 @@ function findItemById(id) {
   try {
     const { host, test } = await (await fetch("api/instance")).json();
     if (!host) return;
-    const bar = document.getElementById("instanceBar");
-    bar.hidden = false;
-    bar.classList.toggle("test", !!test);
-    bar.textContent = test ? `TEST INSTANCE · ${host} · practice freely, this is not the production data` : `Connected to ${host}`;
     const sub = document.querySelector(".subtitle");
-    if (sub) sub.textContent = `${host} · design prototype`;
+    if (sub) { sub.textContent = `${host}${test ? " (test server)" : ""} · design prototype`; sub.classList.toggle("test", !!test); }
   } catch { /* no banner */ }
 })();
 (function setupSelection() {
@@ -5010,7 +5031,9 @@ function wireImportEditing(plan, apply) {
   const field = (label, attrs, value, type = "text") => `<label>${e(label)}</label><input type="${type}" ${attrs} value="${e(value)}">`;
   const builders = {
     experiment: () => field("Experiment name", 'data-k="name"', plan.experiment.name) + field("Start date", 'data-k="startDate"', plan.experiment.startDate, "date"),
-    germplasm: () => plan.original.germplasm.map((o) => field(o, `data-orig="${e(o)}"`, had.germplasm?.[o] ?? o)).join(""),
+    germplasm: () => plan.original.germplasm.map((o) => field(o, `data-orig="${e(o)}"`, had.germplasm?.[o] ?? o)
+      + field(`${o}: code`, `data-code="${e(o)}" placeholder="none"`, had.germplasmCodes?.[o] ?? plan.original.codes?.[o] ?? "")).join("")
+      + `<p class="import-note">A code is the variety's short name (TraitFinder's G_alias). A variety that already has a different code in PHIS keeps that one.</p>`,
     factors: () => plan.original.factors.map((f) => field(`${f.name} (factor)`, `data-factor="${e(f.name)}"`, had.factors?.[f.name]?.name ?? f.name)
       + f.levels.map((l) => field(`${f.name}: ${l}`, `data-factor="${e(f.name)}" data-level="${e(l)}"`, had.factors?.[f.name]?.levels?.[l] ?? l)).join("")).join(""),
     variables: () => editableVariables(plan).map((o) => field(o, `data-orig="${e(o)}"`, had.variables?.[o] ?? o)).join("")
@@ -5027,6 +5050,11 @@ function wireImportEditing(plan, apply) {
     } else if (kind === "germplasm" || kind === "variables") {
       const x = {};
       for (const inp of editor.querySelectorAll("input[data-orig]")) if (val(inp) !== inp.dataset.orig) x[inp.dataset.orig] = val(inp);
+      if (kind === "germplasm") {
+        const c = {};
+        for (const inp of editor.querySelectorAll("input[data-code]")) if (val(inp) !== (plan.original.codes?.[inp.dataset.code] ?? "")) c[inp.dataset.code] = val(inp);
+        if (Object.keys(c).length) next.germplasmCodes = c; else delete next.germplasmCodes;
+      }
       if (kind === "variables") for (const [o, n] of Object.entries(had.variables ?? {})) if (!editor.querySelector(`input[data-orig="${CSS.escape(o)}"]`)) x[o] = n; // not shown here, so unchanged
       set(kind, x);
     } else {
@@ -5079,7 +5107,7 @@ function importPlanHtml(p) {
   const nv = v.existing.length + v.missing.length;
   const ed = p.edits ?? {}, orig = p.original;
   const editable = { experiment: !!orig, germplasm: !!orig?.germplasm.length, factors: !!orig?.factors.length, variables: !!orig && editableVariables(p).length > 0 };
-  const editBtn = (kind) => editable[kind] ? `<button type="button" class="import-edit" data-edit="${kind}" title="Change this before importing">✎ Edit</button>${ed[kind] ? `<span class="import-edited">edited</span>` : ""}` : "";
+  const editBtn = (kind) => editable[kind] ? `<button type="button" class="import-edit" data-edit="${kind}" title="Change this before importing">✎ Edit</button>${ed[kind] || (kind === "germplasm" && ed.germplasmCodes) ? `<span class="import-edited">edited</span>` : ""}` : "";
   const tiles = [
     ...(p.objects.count ? [[p.objects.count.toLocaleString("en"), typeName("scientific_object", p.objects.count), true]] : []),
     ...(p.factors.length ? [[String(p.factors.length), p.factors.length === 1 ? "factor" : "factors", p.factors.some(f => !f.exists)]] : []),

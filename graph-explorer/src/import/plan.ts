@@ -144,7 +144,7 @@ export async function prepare(files: Files, edits?: Edits) {
     },
     options: { devices, persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
     // What the file itself called things (the page keys its edits by these) and the edits applied.
-    original: { experiment: original.experiment, ...namesIn(original) },
+    original: { experiment: original.experiment, ...namesIn(original), codes: original.germplasmCodes ?? {} },
     edits: edits ?? {},
     warnings,
   };
