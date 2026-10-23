@@ -574,7 +574,10 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .d-detail th.only { text-decoration: underline; }
 .d-detail th i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
 .d-day-chart .d-plant:hover rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
-.d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.d-chart .d-col:hover rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.d-chart .d-bg { fill: var(--accent); opacity: .24; }
+.d-chart:has(.d-col.on) .d-col:not(.on):not(:hover) { opacity: .55; }
 .d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
 .d-day-head { font-size: 13px; }
 .d-day.flash { animation: dayflash 2.6s ease-out; border-radius: var(--radius); }
@@ -2862,7 +2865,9 @@ function distChartHtml(ch, data, colors) {
   const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
   if (!data.columns.length || !pts.length) return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-empty">no values for ${e(data.group.name)}</div></div>`;
   const means = distributionMeans(pts, data.columns.length), bw = 100 / means.length;
-  const bars = means.map((m, i) => m ? `<g class="d-col${distState.day === i ? " on" : ""}" data-col="${i}">${stackedBars(m, colors, data.bins, i * bw + bw * 0.08, bw * 0.84, whenText(data.columns[i].key))}</g>` : "").join("");
+  const shown = distState.day ?? means.length - 1; // the scan the One scan part shows: its bar is marked, the others step back
+  const bg = `<rect class="d-bg" x="${(shown * bw).toFixed(2)}" y="0" width="${bw.toFixed(2)}" height="100"/>`;
+  const bars = bg + means.map((m, i) => m ? `<g class="d-col${shown === i ? " on" : ""}" data-col="${i}">${stackedBars(m, colors, data.bins, i * bw + bw * 0.08, bw * 0.84, whenText(data.columns[i].key))}</g>` : "").join("");
   return `<div class="g-chart d-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[data.columns.length - 1].key))}</span></div></div>`;
 }
 
@@ -2968,7 +2973,7 @@ async function renderChartGrid() {
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label data-tip="Changes the values: every plant becomes a percentage of its own first scan (first scan = 100). Compare how fast plants grow, whatever size they started at."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
-      <label data-tip="Changes only the scale, not the values: every chart uses the same vertical axis, so a higher line really is a higher value. Off: each chart is stretched to fill its own height. Together with % of first scan: percentages on one common scale."><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
+      <label data-tip="Changes only the scale, not the values: every chart uses the same vertical axis, so a higher line really is a higher value. Off: each chart is stretched to fill its own height. It spans every plant of the grid, also when only the mean ± SD band is drawn. Together with % of first scan: percentages on one common scale."><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>`}
       </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());

@@ -1885,6 +1885,8 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
     assert.equal(await grid.locator(".d-chart").first().locator(".d-col").count(), 2, "a bar per scan");
     assert.equal(await grid.locator(".d-chart").nth(1).locator(".d-col").count(), 1, "the group's only plant has no histogram at the second scan");
     assert.equal(await grid.locator("#distDay").inputValue(), "1", "the one-scan view starts at the last scan");
+    assert.equal(await grid.locator(".d-chart").first().locator(".d-bg").count(), 1, "the scan shown below is marked in the chart above");
+    assert.equal(await grid.locator(".d-chart").first().locator(".d-col.on").getAttribute("data-col"), "1");
     assert.equal(await grid.locator(".d-day-chart").first().locator("rect").count(), 4, "two plants x two ranges");
     await grid.locator(".d-chart").first().locator('.d-col[data-col="0"]').dispatchEvent("click");
     assert.equal(await grid.locator("#distDay").inputValue(), "0", "clicking a scan's bar shows that scan per plant");
