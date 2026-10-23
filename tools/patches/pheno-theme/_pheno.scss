@@ -75,3 +75,17 @@ a:hover { color: $pheno-forest; }
   max-height: 40vh;
   object-fit: contain;
 }
+
+// Login: bootstrap "success" outline (Feide button) and link-style buttons
+.btn-outline-success {
+  color: $pheno-leaf-dark;
+  border-color: $pheno-leaf-dark;
+  &:hover, &:focus, &:active {
+    background-color: $pheno-leaf-dark !important;
+    border-color: $pheno-leaf-dark !important;
+    color: #fff;
+  }
+}
+.btn-link { color: $pheno-leaf-dark; &:hover, &:focus { color: $pheno-forest; } }
+.show > .btn-link.dropdown-toggle { color: $pheno-forest; }
+.dropdown-item.active, .dropdown-item:active { background-color: $pheno-leaf-dark; }
