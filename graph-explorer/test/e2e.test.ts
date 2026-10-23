@@ -3180,10 +3180,17 @@ test("e2e: the chart windows are part of Back / Forward: each opens as a step, A
     await page.locator("#chartDetail").waitFor();
     const n = await page.evaluate(() => history.state.n);
     await page.locator("#chartDetail .g-close").click();
-    await page.waitForFunction((x) => history.state.n === x - 1 && !document.getElementById("chartDetail"), n);
-    assert.equal(await page.locator("#chartGrid").isVisible(), true, "Close on the detail is the same step back");
+    await page.waitForFunction((x) => history.state.n === x + 1 && !document.getElementById("chartDetail"), n);
+    assert.equal(await page.locator("#chartGrid").isVisible(), true, "closing is an action of its own: a new state, the grid stays");
+    await page.goBack();
+    await page.locator("#chartDetail").waitFor();
+    assert.equal(await page.evaluate(() => history.state.n), n, "so Alt+Left after closing a chart opens it again");
+    await page.goForward();
+    await page.waitForFunction(() => !document.getElementById("chartDetail"));
     await page.locator("#gridClose").click();
     await page.waitForFunction(() => !document.getElementById("chartGrid"));
+    await page.goBack();
+    await page.locator("#chartGrid .g-chart").first().waitFor();
   });
 });
 
@@ -3388,6 +3395,7 @@ test("e2e: overlay lays a row's charts on top of each other (plant lines and mea
     assert.equal(await grid.locator(".g-chart.overlay").count(), 1, "one chart for the row");
     assert.equal(await grid.locator(".g-mean").count(), 0, "no bold mean line unless statistics is on");
     assert.equal(await grid.locator(".g-line").count(), 3, "every plant's line, as in the separate charts");
+    assert.equal(await grid.locator(".g-ys").count(), 2, "each series' own highest value is marked on the shared axis");
     assert.equal(await grid.locator("button.g-leg").count(), 2, "a legend entry per level");
     const hi = Number((await grid.locator(".g-chart.overlay .g-yh").innerText()).trim().replace(/ mm$/, ""));
     assert.ok(hi > 34.5, `the scale now fits the plant lines too, not only the means (${hi})`);
