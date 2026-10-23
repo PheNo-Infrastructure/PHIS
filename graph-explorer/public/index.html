@@ -87,6 +87,7 @@ button { font-family: inherit; }
   border-left: 1px solid var(--border-strong);
 }
 .masthead .subtitle {
+  user-select: text;
   font-size: 12.5px;
   color: var(--ink-faint);
   font-family: var(--font-mono);
@@ -101,7 +102,16 @@ button { font-family: inherit; }
 .overview-card-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
-.setup-step { cursor: default; }
+.setup-step { cursor: default; flex-wrap: wrap; }
+/* A file's review inside a step: the sections lose their own title (the step names them) but keep their Edit button. */
+.setup-preview { flex: 0 0 100%; padding: 0 0 6px 30px; }
+.setup-preview .import-section { grid-template-columns: 1fr; border-left-width: 3px; margin-top: 6px; }
+.setup-preview .import-section > :not(h3) { grid-column: 1; }
+.setup-preview .import-section > h3 { grid-column: 1; grid-row: auto; order: 5; text-align: right; }
+.setup-preview .import-section > h3::before, .setup-preview .import-section > h3 .h-title { display: none; }
+.setup-preview .import-section > h3:not(:has(.import-edit)) { display: none; }
+.setup-import-top { margin: 0 0 8px; }
+.setup-import-foot { position: sticky; bottom: 0; padding: 10px 12px; margin-top: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); z-index: 2; }
 .setup-used { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .setup-chip { background: var(--surface-2); border-radius: 999px; padding: 1px 9px; font-size: 12.5px; }
 .setup-more { color: var(--ink-faint); font-size: 12.5px; padding: 1px 4px; }
@@ -557,8 +567,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .d-day-chart .d-plant:hover rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
-.d-day-head { font-size: 13px; padding-top: 4px; }
-.d-day-head select { display: block; margin: 4px 0; font: inherit; font-size: 12px; }
+.d-day-head { font-size: 13px; }
+.d-day-head select { margin-left: 6px; font: inherit; font-size: 12px; }
 .d-day .g-row { margin-bottom: 0; }
 .d-day-head small { color: var(--ink-faint); margin-left: 8px; }
 .d-day-chart { cursor: default; }
@@ -571,6 +581,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .g-pager button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
 .g-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; margin-bottom: 10px; }
 .g-row-label { font-weight: 600; font-size: 13px; padding-top: 4px; }
+.grid-dialog .g-row { grid-template-columns: minmax(0, 1fr); gap: 2px; margin-bottom: 8px; }
+.grid-dialog .g-row-label { padding: 0; font-size: 12px; color: var(--ink-muted); }
 .g-row-charts { display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 8px; }
 /* In the chart window the charts share its width (so they follow the window, also when resized); a row takes its share of the window's height. */
 .grid-dialog .g-plot { height: clamp(110px, calc((90vh - 150px) / var(--rows) - 70px), 520px); }
@@ -1661,6 +1673,44 @@ async function newExperimentFromSetup() {
   const made = await createNode("experiment", v.name, [], "", v.fields);
   if (made) { setupTrial = { id: made.id, type: "experiment", label: made.label, isNew: true }; if (view === "setup") renderPage(); }
 }
+// The steps of a trial. With `preview` the import buttons are left out: a file's review is being shown inside them.
+function setupStepsHtml(trial, preview = false) {
+  const steps = setupSteps(NODE_DETAIL[trial.id]);
+  const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}" data-step="${escapeHtml(st.label)}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
+      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span>
+        ${st.items.length ? `<span class="setup-used">${st.items.slice(0, 4).map(n => `<span class="setup-chip">${escapeHtml(n)}</span>`).join("")}${st.items.length > 4 ? `<span class="setup-more">+${st.items.length - 4} more</span>` : ""}</span>` : ""}</span>
+      ${preview ? "" : `${st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>${setupFileInputHtml}` : ""}
+      ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}`}</div>`;
+  return `<div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
+    <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
+      <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
+}
+// A file's review, placed in the steps it fills: Data gets the values, the variables and who made them; Scientific Objects
+// the objects and their germplasm; Factors the factors. What is about the whole file (what it is, warnings, new vocabulary)
+// goes on top, the button that writes it is at the bottom. The ✎ Edit buttons stay on their sections.
+function paintSetupPlan(out, plan, trial) {
+  const parts = document.createElement("div");
+  parts.innerHTML = importPlanHtml(plan);
+  out.innerHTML = setupStepsHtml(trial, true);
+  const place = (step, names) => {
+    const row = [...out.querySelectorAll(".setup-step")].find(r => r.dataset.step === step);
+    const box = document.createElement("div");
+    box.className = "setup-preview";
+    names.forEach(n => { const el = parts.querySelector(`[data-section="${n}"]`); if (el) box.appendChild(el); });
+    if (row && box.children.length) row.appendChild(box);
+    return box.children.length > 0;
+  };
+  place("Data", ["measurements", "variables", "choices"]);
+  place("Scientific Objects", ["objects", "germplasm"]);
+  if (place("Factors", ["factors"])) out.querySelector(".setup-optional-box").open = true;
+  const top = document.createElement("div");
+  top.className = "setup-import-top";
+  [...parts.children].filter(el => el.matches(".ranking-hint, .import-warning, .import-names") || el.dataset.section === "vocabulary").forEach(el => top.appendChild(el));
+  out.prepend(top);
+  const foot = parts.querySelector("#importFooter");
+  if (foot) { foot.classList.add("setup-import-foot"); out.appendChild(foot); }
+}
+
 function renderSetupPage(body) {
   if (!setupTrial) {
     body.innerHTML = `<div class="page-head"><h3 class="overview-h">Which trial?</h3></div>
@@ -1681,20 +1731,11 @@ function renderSetupPage(body) {
   }
   const trial = setupTrial;
   loadNodeDetail(trial);
-  const steps = setupSteps(NODE_DETAIL[trial.id]);
   const importHere = importSession?.inSetup && sameId(importSession.into.id, trial.id);
-  const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
-      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span>
-        ${st.items.length ? `<span class="setup-used">${st.items.slice(0, 4).map(n => `<span class="setup-chip">${escapeHtml(n)}</span>`).join("")}${st.items.length > 4 ? `<span class="setup-more">+${st.items.length - 4} more</span>` : ""}</span>` : ""}</span>
-      ${st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>${setupFileInputHtml}` : ""}
-      ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}<span class="setup-pill ${trial.isNew ? "new" : "existing"}">${trial.isNew ? "New trial" : "Existing trial"}</span></h3>
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
     <p class="page-note">${trial.isNew ? "A new trial, nothing in it yet." : "This trial already exists in PHIS: what you add is added to it."} Start with the data: a file can fill in most of the rest. Otherwise each step lets you add to this experiment, a new one (linked at once) or one that already exists.</p>
-    ${importHere ? `<div class="setup-import"><div class="page-head"><b>Importing into ${escapeHtml(trial.label)}</b><button class="btn ghost small" id="setupImportCancel">Cancel</button></div><div id="importPlan"></div></div>` : ""}
-    <div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
-    <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
-      <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
+    ${importHere ? `<div class="setup-import"><div class="page-head"><b>Importing into ${escapeHtml(trial.label)}</b><button class="btn ghost small" id="setupImportCancel">Cancel</button></div></div><div id="importPlan">${setupStepsHtml(trial, true)}</div>` : setupStepsHtml(trial)}`;
   // Browse with the trial selected: on its own page, or straight on the list of the thing to add (its category).
   const go = (path) => { selection = new Map([[trial.id, trial]]); anchorId = null; navigateTo(path); };
   document.getElementById("setupOpen").addEventListener("click", () => go(canonicalPathFor(trial)));
@@ -2712,6 +2753,27 @@ function stackedBars(shares, colors, bins, x, w, title) {
   return out;
 }
 
+// A row's name, as a line above its charts, unless every chart's title already starts with it ("Treatment: 15C" under "Treatment").
+const rowLabelHtml = r => r.charts.every(c => String(c.title).startsWith(r.label + ":")) ? "" : `<div class="g-row-label">${escapeHtml(r.label)}</div>`;
+
+// How many charts go side by side: the layout whose charts come out largest in this window, without being flatter than 4:1 or
+// taller than wide. `counts` = charts per row; `extra` = further full rows (the one-scan row of a distribution).
+function fitChartLayout(counts, extra = 0) {
+  const W = Math.min(innerWidth * 0.96, 2200) - 40, H = innerHeight * 0.9 - 150;
+  let best = null;
+  for (let c = 1; c <= Math.min(6, Math.max(...counts)); c++) {
+    const lines = counts.reduce((n, k) => n + Math.ceil(k / c), 0) + extra;
+    const w = (W - 8 * (c - 1)) / c, h = Math.min(520, Math.max(110, H / lines - 70));
+    const aspect = w / h, score = w * h * (aspect > 4 ? 4 / aspect : 1) * (aspect < 1 ? aspect : 1);
+    if (!best || score > best.score) best = { cols: c, rows: lines, score };
+  }
+  return best ?? { cols: 1, rows: 1 };
+}
+window.addEventListener("resize", () => {
+  clearTimeout(window.__gridResize);
+  window.__gridResize = setTimeout(() => { if (document.getElementById("chartGrid")?.open) renderChartGrid(); }, 120);
+});
+
 // One chart: the group's mean share per bin at every scan (one bar per scan); a single plant shows its own.
 function distChartHtml(ch, data, colors) {
   const e = escapeHtml;
@@ -2776,7 +2838,7 @@ async function renderDistributionBody(dlg, body, plan, sel, v) {
   const colors = distColors(data.bins.length);
   const legend = `<div class="d-legend">${data.bins.map((b, i) => `<span><i style="background:${colors[i]}"></i>${e(b.label)}</span>`).join("")}<span class="d-note">each bar adds up to 100 %</span></div>`;
   const draw = () => {
-    body.innerHTML = legend + plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}"><div class="g-row-label">${e(r.label)}</div><div class="g-row-charts">${r.charts.map(c => distChartHtml(c, data, colors)).join("")}</div></div>`).join("")
+    body.innerHTML = legend + plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => distChartHtml(c, data, colors)).join("")}</div></div>`).join("")
       + distDayHtml(plan, data, colors, sel.st);
     body.querySelectorAll(".d-col").forEach(g => g.addEventListener("click", () => { distState.day = Number(g.dataset.col); draw(); }));
     body.querySelectorAll(".d-plant").forEach(g => g.addEventListener("click", () => openDistPlantDetail(data.plants.find(p => sameId(p.id, g.dataset.plant)), data, colors, sel.st)));
@@ -2791,13 +2853,13 @@ async function renderChartGrid() {
   if (!dlg || !sel || !sel.plan.variables.length) return;
   const { plan } = sel, e = escapeHtml;
   dlg.className = "grid-dialog";
-  // The window follows the content (one chart, a few, many) and the charts follow the window.
-  const most = gridState.overlay ? 1 : Math.min(6, Math.max(1, ...plan.rows.map(r => r.charts.length)));
+  // The window follows the content (one chart, a few, many) and the charts follow the window: see fitChartLayout.
   gridState.vi = Math.max(0, Math.min(gridState.vi, plan.variables.length - 1));
   const v = plan.variables[gridState.vi];
-  dlg.style.setProperty("--cols", String(most));
-  dlg.style.setProperty("--rows", String(plan.rows.length + (v.kind === "distribution" ? 1 : 0)));
-  dlg.style.setProperty("--wcols", String(gridState.overlay ? 3 : most));
+  const fit = fitChartLayout(gridState.overlay ? plan.rows.map(() => 1) : plan.rows.map(r => r.charts.length), v.kind === "distribution" ? 1 : 0);
+  dlg.style.setProperty("--cols", String(fit.cols));
+  dlg.style.setProperty("--rows", String(fit.rows));
+  dlg.style.setProperty("--wcols", String(gridState.overlay ? 3 : fit.cols));
   const pager = plan.variables.length > 1
     ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
@@ -2826,7 +2888,7 @@ async function renderChartGrid() {
   if (!dlg.isConnected || dlg.querySelector("#gridBody") !== body) return; // closed, or a newer render took over
   const yr = yRange(plan.rows.flatMap(r => r.charts.flatMap(c => c.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean).map(p => p.values.map(x => x?.v ?? null)))));
   body.innerHTML = plan.rows.map(r => gridState.overlay ? overlayRowHtml(r, data, yr, gridState)
-    : `<div class="g-row" data-row="${e(r.label)}"><div class="g-row-label">${e(r.label)}</div><div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, gridState)).join("")}</div></div>`).join("");
+    : `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, gridState)).join("")}</div></div>`).join("");
   const hoverGroup = [];
   if (gridState.overlay) {
     body.querySelectorAll(".g-chart.overlay .g-plot").forEach(plot => wireOverlayRow(plot, plan.rows.find(r => r.label === plot.dataset.row), data, gridState.hiddenSeries, hoverGroup));
@@ -4798,7 +4860,7 @@ function findItemById(id) {
     // Anything interactive must be skipped: the preventDefault below also swallows the native
     // behaviour of whatever was pressed (a <select> never opens). A modal <dialog> is skipped
     // wholesale — nothing inside a form should start a marquee.
-    if (e.target.closest(".row-nav, .crumb, .chip, .newmenu, .ranking-overlay, dialog, input, select, textarea, button")) return;
+    if (e.target.closest(".row-nav, .crumb, .chip, .newmenu, .ranking-overlay, dialog, input, select, textarea, button, .masthead, .selectable")) return;
     e.preventDefault();
     document.body.style.userSelect = "none";
 
@@ -4971,7 +5033,7 @@ function wireImportPage(opts) {
     const out = document.getElementById("importPlan");
     const kept = Object.fromEntries(CHOICE_IDS.map((id) => [id, document.getElementById(id)?.value]));
     const note = document.getElementById("importNote")?.checked;
-    out.innerHTML = importPlanHtml(plan);
+    if (opts.inSetup) paintSetupPlan(out, plan, opts.into); else out.innerHTML = importPlanHtml(plan);
     for (const id of CHOICE_IDS) { const el = document.getElementById(id); if (el && kept[id] !== undefined && [...(el.options ?? [{ value: kept[id] }])].some((o) => o.value === kept[id])) el.value = kept[id]; }
     if (note !== undefined && document.getElementById("importNote")) document.getElementById("importNote").checked = note;
     wireImportRun(f, plan, close);
@@ -4989,14 +5051,15 @@ function wireImportPage(opts) {
     importEdits = opts.into ? { experiment: { name: opts.into.label } } : {};
     if (!f) { out.innerHTML = ""; return; }
     importSession = { ...opts, live: true }; // from now on the page keeps what it shows
-    out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>`;
+    const steps = opts.inSetup ? setupStepsHtml(opts.into, true) : "";
+    out.innerHTML = `<p class="ranking-hint">Reading ${escapeHtml(f.name)}…</p>${steps}`;
     try {
       const res = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f), body: f });
       const body = await res.json();
       if (res.ok) render(f, body);
-      else out.innerHTML = `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>`;
+      else out.innerHTML = `<div class="import-warning">${escapeHtml(body.error || `Couldn't read the file (${res.status}).`)}</div>${steps}`;
     } catch (err) {
-      out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>`;
+      out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>${steps}`;
     }
   };
   document.getElementById("importFile")?.addEventListener("change", (e) => readFile(e.target.files[0]));
@@ -5114,47 +5177,47 @@ function importPlanHtml(p) {
   return `
     <p class="ranking-hint">Recognised as <b>${escapeHtml(p.instrument)}</b>.</p>
     ${p.warnings.map(w => `<div class="import-warning">${escapeHtml(w)}</div>`).join("")}
-    ${p.vocabulary.length ? `<div class="import-section">
-      <h3>Vocabulary<small>words this PHIS doesn't have yet</small></h3>
+    ${p.vocabulary.length ? `<div data-section="vocabulary" class="import-section">
+      <h3><span class="h-title">Vocabulary<small>words this PHIS doesn't have yet</small></span></h3>
       <p>Adds ${escapeHtml(andList(p.vocabulary.map(v => v.label)))}. Done once; later imports reuse ${p.vocabulary.length === 1 ? "it" : "them"}.</p>
     </div>` : ""}
     ${Object.keys(ed).length ? `<p class="import-names">You changed some of the file's names. <button type="button" class="import-undo" id="importUndoEdits">Undo all changes</button></p>` : ""}
     <div class="import-tiles">${tiles.map(([n, label, isNew]) => `<div class="import-tile${isNew ? " is-new" : ""}"><b>${escapeHtml(n)}</b><span>${escapeHtml(label)}</span></div>`).join("")}</div>
-    <div class="import-section${p.experiment.exists ? "" : " is-new"}">
-      <h3>Experiment<small>your trial</small>${editBtn("experiment")}</h3>
+    <div data-section="experiment" class="import-section${p.experiment.exists ? "" : " is-new"}">
+      <h3><span class="h-title">Experiment<small>your trial</small></span>${editBtn("experiment")}</h3>
       ${p.experiment.exists
         ? `<p>Already in PHIS: <b>${escapeHtml(p.experiment.name)}</b>. The import fills in what it lacks; nothing already in PHIS is changed.</p>`
         : `<p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>`}
       ${p.experiment.sameName ? `<div class="import-warning">${p.experiment.sameName} experiments in PHIS have this name, so it isn't clear which one to fill in.</div>` : ""}
     </div>
-    <div class="import-section${newCount ? " is-new" : ""}">
-      <h3>Germplasm<small>plant material: species, varieties, lines</small>${editBtn("germplasm")}</h3>
+    <div data-section="germplasm" class="import-section${newCount ? " is-new" : ""}">
+      <h3><span class="h-title">Germplasm<small>plant material: species, varieties, lines</small></span>${editBtn("germplasm")}</h3>
       ${g.existing.length ? `<p>Already in PHIS, reused: ${g.existing.length} <span class="import-names">(${list(g.existing.map(x => x.name))})</span></p>` : ""}
       ${newCount ? `<p>New: ${newCount} <span class="import-names">(${list(g.missing)})</span></p>
         <p><label>Species for the new germplasm: <select id="importSpecies"><option value="">Choose…</option>${p.speciesOptions.map(o => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.label)}</option>`).join("")}<option value="__new__">Not listed — add a species…</option></select></label> <input id="importNewSpecies" type="text" placeholder="Name of the new species" hidden></p>` : ""}
       ${g.codes.length ? `<p>Codes set: ${g.codes.length} <span class="import-names">(${list(g.codes.map(c => `${c.name} = ${c.code}`))})</span></p>` : ""}
       ${g.ambiguous.map(a => `<div class="import-warning">"${escapeHtml(a.name)}" matches ${a.ids.length} germplasm in PHIS — it isn't clear which one is meant.</div>`).join("")}
     </div>
-    <div class="import-section${p.factors.some(f => !f.exists) ? " is-new" : ""}">
-      <h3>Factors<small>treatments and design</small>${editBtn("factors")}</h3>
+    <div data-section="factors" class="import-section${p.factors.some(f => !f.exists) ? " is-new" : ""}">
+      <h3><span class="h-title">Factors<small>treatments and design</small></span>${editBtn("factors")}</h3>
       ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.exists ? (f.newLevels.length ? `already in PHIS; adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))}` : "already in PHIS, with all its levels") : `${f.levels.length} levels`} <span class="import-names">(${list(f.levels, 12)})</span></p>`).join("") : "<p>None.</p>"}
     </div>
-    <div class="import-section${p.objects.count ? " is-new" : ""}">
-      <h3>${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></h3>
+    <div data-section="objects" class="import-section${p.objects.count ? " is-new" : ""}">
+      <h3><span class="h-title">${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></span></h3>
       <p>New: ${p.objects.count}${p.objects.kinds.length ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.parent && `in ${sample.parent}${sample.position ? `, position ${sample.position}` : ""}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
       ${p.objects.existing ? `<p>Already in PHIS: ${p.objects.existing}${p.objects.fills.count ? `; fills in what ${p.objects.fills.count} of them lack: ${escapeHtml(andList(fillsText(p.objects.fills.what)))}` : ", nothing to fill in"}.</p>` : ""}
       ${p.objects.conflicts?.count ? `<div class="import-warning">PHIS and the file disagree in ${p.objects.conflicts.count} ${p.objects.conflicts.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(p.objects.conflicts.examples.join("; "))}).</div>` : ""}
     </div>
-    ${v.existing.length + v.missing.length + newGroups.length + grownGroups.length ? `<div class="import-section${v.missing.length || newGroups.length ? " is-new" : ""}">
-      <h3>Variables<small>what is measured: a trait of the plant, how, and in what unit</small>${editBtn("variables")}</h3>
+    ${v.existing.length + v.missing.length + newGroups.length + grownGroups.length ? `<div data-section="variables" class="import-section${v.missing.length || newGroups.length ? " is-new" : ""}">
+      <h3><span class="h-title">Variables<small>what is measured: a trait of the plant, how, and in what unit</small></span>${editBtn("variables")}</h3>
       ${v.existing.length ? `<p>Already in PHIS, reused: ${v.existing.length} <span class="import-names">(${list(v.existing)})</span></p>` : ""}
       ${v.missing.length ? `<p>New: ${v.missing.length} <span class="import-names">(${list(v.missing, 30)})</span></p>` : ""}
       ${v.parts.length ? `<p>Also adds what they're made of: ${escapeHtml(andList(partsText(v.parts)))}.</p>` : ""}
       ${newGroups.length ? `<p>Variable groups (a histogram's bins together): New: ${newGroups.length} <span class="import-names">(${list(newGroups.map(g => g.name))})</span></p>` : ""}
       ${grownGroups.length ? `<p>Existing groups that get more variables: ${grownGroups.length} <span class="import-names">(${list(grownGroups.map(g => g.name))})</span></p>` : ""}
     </div>` : ""}
-    ${m && (m.count || skipped || m.alreadyInPhis || m.differ?.count) ? `<div class="import-section${m.count ? " is-new" : ""}">
-      <h3>Measurements<small>the values: one per plant, variable and scan time</small></h3>
+    ${m && (m.count || skipped || m.alreadyInPhis || m.differ?.count) ? `<div data-section="measurements" class="import-section${m.count ? " is-new" : ""}">
+      <h3><span class="h-title">Measurements<small>the values: one per plant, variable and scan time</small></span></h3>
       <p>New: ${m.count.toLocaleString("en")} values <span class="import-names">(${m.objects} ${typeName("scientific_object", m.objects)}, ${m.variables} ${m.variables === 1 ? "variable" : "variables"}, scanned on ${m.days} ${m.days === 1 ? "day" : "days"}${m.first ? ` from ${escapeHtml(m.first.slice(0, 10))} to ${escapeHtml(m.last.slice(0, 10))}` : ""})</span></p>
       ${m.alreadyInPhis ? `<p>Already in PHIS, skipped: ${m.alreadyInPhis.toLocaleString("en")}.</p>` : ""}
       ${m.differ?.count ? `<div class="import-warning">PHIS has a different value in ${m.differ.count.toLocaleString("en")} ${m.differ.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(m.differ.examples.join("; "))}).</div>` : ""}
@@ -5173,8 +5236,8 @@ function importChoicesHtml(p) {
   const o = p.options;
   if (!o) return "";
   const opts = (list, picked) => list.map(x => `<option value="${escapeHtml(x.id)}"${x.id === picked ? " selected" : ""}>${escapeHtml(x.label)}</option>`).join("");
-  return `<div class="import-section">
-    <h3>Made by${p.experiment.exists ? "" : " and visible to"}<small>so the data can be traced${p.experiment.exists ? "" : " and shared"}</small></h3>
+  return `<div data-section="choices" class="import-section">
+    <h3><span class="h-title">Made by${p.experiment.exists ? "" : " and visible to"}<small>so the data can be traced${p.experiment.exists ? "" : " and shared"}</small></span></h3>
     <div class="import-form">
       <label for="importDevice">Measured with</label>
       <select id="importDevice"><option value="">No device</option>${opts(o.devices, o.matchedDevice)}</select>

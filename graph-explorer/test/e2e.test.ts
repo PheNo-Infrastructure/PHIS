@@ -3228,11 +3228,13 @@ test("e2e: the charts fill the chart window and follow the window's size (no siz
     await page.setViewportSize({ width: 1800, height: 1000 });
     const wide = await width();
     await page.setViewportSize({ width: 1100, height: 800 });
+    await page.waitForFunction((w) => Math.round(document.querySelector("#chartGrid .g-plot")!.getBoundingClientRect().width) !== w, wide);
     const narrow = await width();
     assert.ok(narrow < wide, `the charts shrink with the window (${narrow} < ${wide})`);
     const box = (await grid.locator(".g-plot").first().boundingBox())!;
     assert.ok(box.height >= 110 && box.y + box.height < 800, "a chart is tall enough to read and fits the window");
     await page.setViewportSize({ width: 1100, height: 1300 });
+    await page.waitForFunction((h) => Math.round(document.querySelector("#chartGrid .g-plot")!.getBoundingClientRect().height) !== h, Math.round(box.height));
     assert.ok((await grid.locator(".g-plot").first().boundingBox())!.height > box.height, "and uses more of a taller window");
 
     await grid.locator("#gridStats").check();
@@ -3961,6 +3963,32 @@ test("e2e: the click / ctrl / shift hint only shows where it applies (Browse)", 
       await page.waitForFunction((x) => document.body.dataset.view === x, v);
       assert.equal(await page.locator(".hint-banner").isVisible(), false, `hidden on ${v}`);
     }
+  });
+});
+
+test("e2e: an import into a trial fills the Set up steps themselves: the values under Data, the objects and germplasm under Scientific Objects, one button at the bottom", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await setupStubs(page);
+    const plan = { instrument: "TraitFinder (PlantEye)", experiment: { name: "Barley 2024", startDate: "2025-10-22", exists: true },
+      germplasm: { existing: [{ name: "Bean", id: "g1" }], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [{ name: "Treatment", levels: ["15C", "18C"] }], vocabulary: [],
+      variables: { existing: ["NDVI"], missing: [], parts: [] }, objects: { count: 3, kinds: [{ type: "plant", count: 3 }], sample: [] }, warnings: [],
+      measurements: { count: 12, objects: 3, variables: 1, days: 4, first: "2025-10-22", last: "2025-11-01", skipped: { empty: 0, notNumbers: { count: 0, examples: [] }, contradictions: { count: 0, examples: [] } } },
+      original: { experiment: { name: "Barley 2024", startDate: "2025-10-22" }, germplasm: ["Bean"], factors: [{ name: "Treatment", levels: ["15C", "18C"] }], variables: [], codes: { Bean: "G1" } }, edits: {} };
+    await page.route("**/api/import/plan", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan) }));
+    await page.goto(base + "/#setup");
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator("#setupImport").click()]);
+    await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
+    const step = (name: string) => page.locator(`#pageBody .setup-step[data-step="${name}"]`);
+    await step("Data").locator(".setup-preview").waitFor();
+    assert.match(await step("Data").locator(".setup-preview").textContent() ?? "", /12 values/);
+    assert.match(await step("Scientific Objects").locator(".setup-preview").textContent() ?? "", /New: 3.*Already in PHIS, reused: 1/s);
+    assert.match(await step("Factors").locator(".setup-preview").textContent() ?? "", /Treatment: 2 levels/);
+    assert.equal(await page.locator("#pageBody .setup-optional-box").evaluate((el) => (el as HTMLDetailsElement).open), true, "Factors is opened to show what the file brings");
+    assert.equal(await page.locator("#pageBody .import-section h3").first().isVisible() && await page.locator("#pageBody .setup-preview .import-section h3 .h-title").first().isVisible(), false, "a section's own title is not repeated inside its step");
+    assert.equal(await page.locator("#pageBody #importRunBtn").count(), 1, "one button writes it");
+    await step("Scientific Objects").locator('.import-edit[data-edit="germplasm"]').click();
+    assert.equal(await step("Scientific Objects").locator('input[data-code="Bean"]').inputValue(), "G1", "the code can be edited there too");
   });
 });
 
