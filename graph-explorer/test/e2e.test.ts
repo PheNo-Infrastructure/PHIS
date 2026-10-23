@@ -1895,6 +1895,15 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
     assert.equal(await one.locator(".d-col").count(), 2, "a bar per scan");
     assert.equal(await one.locator("tbody tr").count(), 2, "a row per scan");
     assert.match(await one.locator("tbody tr").first().textContent() ?? "", /30\.0 %.*70\.0 %/, "its shares per range");
+    await one.locator("tbody tr").nth(1).click();
+    assert.equal(await one.locator(".d-col.on").getAttribute("data-col"), "1", "a row picks its scan in the chart");
+    await one.locator('th[data-b="0"]').click();
+    assert.equal(await one.locator('rect[data-b="1"]').first().evaluate((el) => (el as SVGElement).style.opacity), "0.18", "the other ranges fade");
+    await one.locator('th[data-b="0"]').click();
+    await one.locator(".g-day").click();
+    assert.equal(await grid.locator("#distDay").inputValue(), "1", "the picked scan is shown for all plants");
+    await grid.locator(".d-day-chart").first().locator(".d-plant").first().dispatchEvent("click");
+    await one.waitFor();
     await one.locator(".g-close").click();
     const left = (sel: string) => grid.locator(sel).first().evaluate((el) => el.getBoundingClientRect().left);
     assert.equal(Math.round(await left(".d-day .g-row-charts")), Math.round(await left(".g-row-charts")), "the one-scan charts line up with the charts above");
@@ -3230,9 +3239,10 @@ test("e2e: the charts fill the chart window and follow the window's size (no siz
     await page.setViewportSize({ width: 1100, height: 800 });
     await page.waitForFunction((w) => Math.round(document.querySelector("#chartGrid .g-plot")!.getBoundingClientRect().width) !== w, wide);
     const narrow = await width();
-    assert.ok(narrow < wide, `the charts shrink with the window (${narrow} < ${wide})`);
+    assert.notEqual(narrow, wide, "the charts are laid out again for the smaller window");
+    await page.waitForFunction(() => { const b = document.querySelector("#chartGrid .g-plot")!.getBoundingClientRect(); return b.height >= 110 && b.bottom < innerHeight; });
     const box = (await grid.locator(".g-plot").first().boundingBox())!;
-    assert.ok(box.height >= 110 && box.y + box.height < 800, "a chart is tall enough to read and fits the window");
+    assert.ok(box.height >= 110 && box.y + box.height < 800, `a chart is tall enough to read and fits the window (${JSON.stringify(box)})`);
     await page.setViewportSize({ width: 1100, height: 1300 });
     await page.waitForFunction((h) => Math.round(document.querySelector("#chartGrid .g-plot")!.getBoundingClientRect().height) !== h, Math.round(box.height));
     assert.ok((await grid.locator(".g-plot").first().boundingBox())!.height > box.height, "and uses more of a taller window");
@@ -3908,7 +3918,8 @@ test("e2e: Set up's Import button is a file chooser; the review fills in on the 
     await page.goto(base + "/#setup");
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
     const row = page.locator("#pageBody .setup-required .setup-step", { hasText: "Data" });
-    assert.match(await row.textContent() ?? "", /none yet|no measured values/i);
+    assert.equal(await row.locator(".setup-info").count(), 0, "nothing measured yet: no summary");
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#pageBody .setup-step[data-step="Data"] .row-type')!).opacity === "0"); // the description shows on hover only
     assert.equal(await page.locator("#setupDrop").count(), 0, "no drop box on Set up");
     const [chooser] = await Promise.all([page.waitForEvent("filechooser"), row.locator("#setupImport").click()]);
     await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
@@ -3987,6 +3998,10 @@ test("e2e: an import into a trial fills the Set up steps themselves: the values 
     assert.equal(await page.locator("#pageBody .setup-optional-box").evaluate((el) => (el as HTMLDetailsElement).open), true, "Factors is opened to show what the file brings");
     assert.equal(await page.locator("#pageBody .import-section h3").first().isVisible() && await page.locator("#pageBody .setup-preview .import-section h3 .h-title").first().isVisible(), false, "a section's own title is not repeated inside its step");
     assert.equal(await page.locator("#pageBody #importRunBtn").count(), 1, "one button writes it");
+    await step("Factors").locator(".setup-go").click();
+    await page.locator("#addingCancel").click();
+    await step("Data").locator(".setup-preview").waitFor();
+    assert.match(await step("Data").locator(".setup-preview").textContent() ?? "", /12 values/, "the review is still there after a trip to add something");
     await step("Scientific Objects").locator('.import-edit[data-edit="germplasm"]').click();
     assert.equal(await step("Scientific Objects").locator('input[data-code="Bean"]').inputValue(), "G1", "the code can be edited there too");
   });

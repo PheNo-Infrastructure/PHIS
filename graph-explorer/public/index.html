@@ -1,4 +1,5 @@
 <title>PHIS Data Portal</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 112 121%22%3E%3Cpath fill=%22%2387CF82%22 d=%22M1.7 44.8L0.0 44.8L0.0 84.4C0.0 104.7 20.2 117.7 42.6 120.4L42.6 74.6C42.6 58.1 28.1 44.8 1.7 44.8L1.7 44.8%22/%3E%3Cpath fill=%22%233D8526%22 d=%22M98.0 1.1L111.1 14.2C110.8 15.1 110.5 16.0 110.2 16.9L95.0 1.6C90.7 2.4 86.7 3.6 83.1 5.1L105.8 27.8C105.4 28.6 105.0 29.4 104.6 30.1L80.6 6.1C77.3 7.6 74.3 9.4 71.6 11.4L99.1 39.1C98.8 39.5 98.5 40.0 98.2 40.4C98.0 40.6 97.8 40.9 97.7 41.1L69.6 12.9C66.6 15.5 64.0 18.3 61.8 21.4L90.0 49.7C89.4 50.2 88.8 50.8 88.2 51.3L60.4 23.5C58.5 26.6 57.0 30.0 55.9 33.5L79.8 57.5C79.1 58.0 78.4 58.4 77.6 58.8L55.1 36.3C54.3 39.9 53.9 43.7 53.9 47.6L53.9 48.9L68.0 63.1C67.1 63.4 66.2 63.7 65.3 63.9L53.9 52.4L53.9 120.7C84.4 118.6 111.4 94.2 111.6 63.0L111.6 0.1C106.8 0.1 102.2 0.5 98.0 1.1L98.0 1.1%22/%3E%3Cpath fill=%22%233D8526%22 d=%22M63.3 3.2L60.2 0.0L56.7 0.0L61.2 4.6C61.9 4.1 62.6 3.6 63.3 3.2L63.3 3.2%22/%3E%3Cpath fill=%22%233D8526%22 d=%22M37.0 0.0L51.1 14.1C51.6 13.5 52.1 12.8 52.7 12.2L40.5 0.0L37.0 0.0%22/%3E%3Cpath fill=%22%233D8526%22 d=%22M18.9 0.0L44.8 26.0C45.1 25.1 45.4 24.3 45.8 23.4L22.4 0.0L18.9 0.0%22/%3E%3Cpath fill=%22%233D8526%22 d=%22M42.4 37.5L5.0 0.0L1.6 0.0L42.3 40.8C42.3 39.7 42.4 38.6 42.4 37.5L42.4 37.5%22/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root {
@@ -103,6 +104,7 @@ button { font-family: inherit; }
 .overview-card p { margin: 0 0 12px; color: var(--ink-soft, var(--ink)); }
 .overview-h { font-size: 15px; margin: 0 0 8px; }
 .setup-step { cursor: default; flex-wrap: wrap; }
+.setup-info { margin-left: 10px; font-size: 12px; color: var(--ink-muted); }
 /* A file's review inside a step: the sections lose their own title (the step names them) but keep their Edit button. */
 .setup-preview { flex: 0 0 100%; padding: 0 0 6px 30px; }
 .setup-preview .import-section { grid-template-columns: 1fr; border-left-width: 3px; margin-top: 6px; }
@@ -550,7 +552,7 @@ body[data-view="browse"] #pagePane { display: none; }
 .var-grid .chip { display: flex; align-items: center; margin: 0; white-space: nowrap; overflow: hidden; }
 .var-grid .chip-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .var-grid .chip > span:last-child { margin-left: auto; padding-left: 8px; flex: none; }
-.grid-dialog { --cols: 6; --rows: 1; --gh: 120px; width: min(2200px, 96vw, max(780px, calc(var(--wcols, var(--cols)) * 460px + 160px))); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
+.grid-dialog { --cols: 6; --gh: 120px; width: min(2200px, 96vw, max(780px, calc(var(--wcols, var(--cols)) * 460px + 160px))); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
 .grid-dialog { resize: both; max-width: 100vw; max-height: 100vh; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 .g-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 12.5px; }
@@ -564,6 +566,11 @@ body[data-view="browse"] #pagePane { display: none; }
 .d-legend .d-note { margin-left: auto; color: var(--ink-faint); }
 .d-chart rect, .d-day-chart rect { stroke: rgba(0, 0, 0, .15); stroke-width: .4; vector-effect: non-scaling-stroke; }
 .d-chart .d-col, .d-day-chart .d-plant { cursor: pointer; }
+.d-detail tbody tr { cursor: pointer; }
+.d-detail tbody tr.on th, .d-detail tbody tr.on td { background: var(--surface-2); font-weight: 600; }
+.d-detail th[data-b] { cursor: pointer; }
+.d-detail th.only { text-decoration: underline; }
+.d-detail th i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; }
 .d-day-chart .d-plant:hover rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
@@ -585,7 +592,14 @@ body[data-view="browse"] #pagePane { display: none; }
 .grid-dialog .g-row-label { padding: 0; font-size: 12px; color: var(--ink-muted); }
 .g-row-charts { display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 8px; }
 /* In the chart window the charts share its width (so they follow the window, also when resized); a row takes its share of the window's height. */
-.grid-dialog .g-plot { height: clamp(110px, calc((90vh - 150px) / var(--rows) - 70px), 520px); }
+.grid-dialog[open] { display: flex; flex-direction: column; height: 90vh; }
+.grid-dialog #gridBody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.grid-dialog .g-row, .grid-dialog .d-day { flex: 1 1 0; min-height: 150px; display: flex; flex-direction: column; }
+.grid-dialog .d-day .g-row { flex: 1 1 0; margin-bottom: 0; }
+.grid-dialog .g-row-charts { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
+.grid-dialog .g-chart { display: flex; flex-direction: column; min-height: 0; }
+.grid-dialog .g-plot { flex: 1; height: auto; min-height: 80px; }
+.grid-dialog .g-chart.overlay .g-plot { height: auto; }
 .g-chart { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px 6px; cursor: pointer; }
 .g-chart:hover { border-color: var(--accent); }
 .g-ct { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
@@ -1571,7 +1585,7 @@ let view = "overview";
 const viewFromHash = () => VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
 function applyView(next) {
   if (next !== "adding" && adding) { selection = adding.selection; adding = null; } // left by the back button
-  if (importSession && next !== (importSession.inSetup ? "setup" : "import")) importSession = null; // leaving the page ends an import session (a run in progress keeps going on the server)
+  if (importSession && next !== "adding" && next !== (importSession.inSetup ? "setup" : "import")) importSession = null; // leaving the page ends an import session (a run in progress keeps going on the server)
   view = next;
   document.body.dataset.view = next;
   document.querySelectorAll("#mainnav a").forEach(a => a.getAttribute("href") === "#" + next ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
@@ -1649,10 +1663,9 @@ function setupSteps(detail) {
   const has = rel => itemsOf(rel).length > 0;
   const vars = detail?.structure?.variables ?? [];
   const values = vars.reduce((n, v) => n + (Number(v.count) || 0), 0);
-  const step = st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), items: itemsOf(st.relation).map(i => i.label),
-    hint: has(st.relation) ? st.hint : `none yet · ${st.hint}` });
-  const data = { label: "Data", import: true, done: values > 0, items: [],
-    hint: values > 0 ? `${values.toLocaleString("en")} measured values · ${vars.length} ${vars.length === 1 ? "variable" : "variables"}` : "none yet · measurements from an instrument file" };
+  const step = st => ({ label: st.label, category: st.category, optional: !!st.optional, done: has(st.relation), items: itemsOf(st.relation).map(i => i.label), hint: st.hint, info: "" });
+  const data = { label: "Data", import: true, done: values > 0, items: [], hint: "measurements from an instrument file",
+    info: values > 0 ? `${values.toLocaleString("en")} measured values · ${vars.length} ${vars.length === 1 ? "variable" : "variables"}` : "" };
   const [objects, ...rest] = SETUP_STEPS;
   return [data, step(objects), ...rest.map(step)]; // the data can decide the rest (a file brings objects, factors, germplasm), so it is first
 }
@@ -1677,10 +1690,10 @@ async function newExperimentFromSetup() {
 function setupStepsHtml(trial, preview = false) {
   const steps = setupSteps(NODE_DETAIL[trial.id]);
   const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}" data-step="${escapeHtml(st.label)}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
-      <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span>
+      <span class="row-main cat"><span class="row-label setup-label">${escapeHtml(st.label)}</span>${st.info ? `<span class="setup-info">${escapeHtml(st.info)}</span>` : ""}<span class="row-type">${escapeHtml(st.hint)}</span>
         ${st.items.length ? `<span class="setup-used">${st.items.slice(0, 4).map(n => `<span class="setup-chip">${escapeHtml(n)}</span>`).join("")}${st.items.length > 4 ? `<span class="setup-more">+${st.items.length - 4} more</span>` : ""}</span>` : ""}</span>
-      ${preview ? "" : `${st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>${setupFileInputHtml}` : ""}
-      ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}`}</div>`;
+      ${preview ? "" : st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>${setupFileInputHtml}` : ""}
+      ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
   return `<div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
     <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
       <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
@@ -1745,7 +1758,7 @@ function renderSetupPage(body) {
     document.getElementById("setupImportCancel").addEventListener("click", () => { importSession = null; renderPage(); });
   }
   document.getElementById("setupOther").addEventListener("click", () => { setupTrial = null; renderPage(); });
-  body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => startAdding(trial, b.dataset.category)));
+  body.onclick = (ev) => { const b = ev.target.closest(".setup-go"); if (b) startAdding(trial, b.dataset.category); }; // the steps are redrawn inside the page (a review), so one handler for all
 }
 
 /* ---------------- adding to a trial: locked into one list ----------------
@@ -1754,6 +1767,7 @@ function renderSetupPage(body) {
    queued ones linked to the trial, then links the picks); Cancel writes nothing. */
 let adding = null; // { trial, categoryId, picked: Map, pending: [{ type, name, fields }], filter, selection }
 function startAdding(trial, categoryId) {
+  if (importSession?.inSetup) importSession = { ...importSession, resume: true }; // the file under review comes back with its edits
   adding = { trial, categoryId, picked: new Map(), pending: [], filter: "", selection };
   applyView("adding");
 }
@@ -2748,7 +2762,7 @@ function stackedBars(shares, colors, bins, x, w, title) {
   shares.forEach((sh, b) => {
     const h = Math.max(0, sh);
     y -= h;
-    out += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${colors[b]}"><title>${escapeHtml(title)} · ${escapeHtml(bins[b].label)}: ${sh.toFixed(1)} %</title></rect>`;
+    out += `<rect data-b="${b}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${colors[b]}"><title>${escapeHtml(title)} · ${escapeHtml(bins[b].label)}: ${sh.toFixed(1)} %</title></rect>`;
   });
   return out;
 }
@@ -2758,21 +2772,21 @@ const rowLabelHtml = r => r.charts.every(c => String(c.title).startsWith(r.label
 
 // How many charts go side by side: the layout whose charts come out largest in this window, without being flatter than 4:1 or
 // taller than wide. `counts` = charts per row; `extra` = further full rows (the one-scan row of a distribution).
-function fitChartLayout(counts, extra = 0) {
-  const W = Math.min(innerWidth * 0.96, 2200) - 40, H = innerHeight * 0.9 - 150;
+function fitChartLayout(counts, extra = 0, W = Math.min(innerWidth * 0.96, 2200) - 40, H = innerHeight * 0.9 - 130) {
   let best = null;
   for (let c = 1; c <= Math.min(6, Math.max(...counts)); c++) {
     const lines = counts.reduce((n, k) => n + Math.ceil(k / c), 0) + extra;
-    const w = (W - 8 * (c - 1)) / c, h = Math.min(520, Math.max(110, H / lines - 70));
+    const w = (W - 8 * (c - 1)) / c, h = Math.max(110, H / lines - 40);
     const aspect = w / h, score = w * h * (aspect > 4 ? 4 / aspect : 1) * (aspect < 1 ? aspect : 1);
     if (!best || score > best.score) best = { cols: c, rows: lines, score };
   }
   return best ?? { cols: 1, rows: 1 };
 }
-window.addEventListener("resize", () => {
-  clearTimeout(window.__gridResize);
-  window.__gridResize = setTimeout(() => { if (document.getElementById("chartGrid")?.open) renderChartGrid(); }, 120);
-});
+// The window's size is what the page asked for; once it is open, its own size (the user can drag it) decides the columns.
+function applyChartFit(dlg) {
+  if (!dlg._fit || !dlg.clientWidth) return;
+  dlg.style.setProperty("--cols", String(fitChartLayout(dlg._fit.counts, dlg._fit.extra, dlg.clientWidth - 40, dlg.clientHeight - 130).cols));
+}
 
 // One chart: the group's mean share per bin at every scan (one bar per scan); a single plant shows its own.
 function distChartHtml(ch, data, colors) {
@@ -2801,25 +2815,36 @@ function distDayHtml(plan, data, colors, st) {
 }
 
 // One plant's histogram at every scan: a stacked bar per scan, and the shares as a table.
-function openDistPlantDetail(p, data, colors, st) {
+function openDistPlantDetail(p, data, colors, st, showDay) {
   if (!p) return;
   document.getElementById("chartDetail")?.remove();
   const e = escapeHtml, label = plantLabelIn(st, p.id), n = data.columns.length, bw = 100 / n;
-  const bars = data.columns.map((c, i) => p.values[i] ? `<g class="d-col">${stackedBars(p.values[i], colors, data.bins, i * bw + bw * 0.08, bw * 0.84, whenText(c.key))}</g>` : "").join("");
-  const head = data.bins.map((b, i) => `<th><i style="background:${colors[i]}"></i>${e(b.label)}</th>`).join("");
-  const rows = data.columns.map((c, i) => `<tr><th class="obs-row">${e(whenText(c.key))}</th>${data.bins.map((_, b) => `<td class="obs">${p.values[i] ? `${p.values[i][b].toFixed(1)} %` : "–"}</td>`).join("")}</tr>`).join("");
+  const bars = data.columns.map((c, i) => p.values[i] ? `<g class="d-col" data-col="${i}">${stackedBars(p.values[i], colors, data.bins, i * bw + bw * 0.08, bw * 0.84, whenText(c.key))}</g>` : "").join("");
+  const head = data.bins.map((b, i) => `<th data-b="${i}" title="Click to follow just this range"><i style="background:${colors[i]}"></i>${e(b.label)}</th>`).join("");
+  const rows = data.columns.map((c, i) => `<tr data-col="${i}"><th class="obs-row">${e(whenText(c.key))}</th>${data.bins.map((_, b) => `<td class="obs">${p.values[i] ? `${p.values[i][b].toFixed(1)} %` : "–"}</td>`).join("")}</tr>`).join("");
   const dlg = document.createElement("dialog");
   dlg.className = "meas-dialog chart-detail d-detail";
   dlg.id = "chartDetail";
-  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %</div></div>
-      <span><button class="btn ghost small g-open">Open ${e(label)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %. Click a bar or a row to pick a scan, a range's name to follow just that range.</div></div>
+      <span><button class="btn ghost small g-day" hidden>Show this scan for all plants</button> <button class="btn ghost small g-open">Open ${e(label)}</button> <button class="btn ghost small g-close">Close</button></span></div>
     <div class="g-chart d-chart"><div class="g-plot" style="height:220px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[n - 1].key))}</span></div></div>
     <div class="meas-values obs-wrap"><table class="obs-table"><thead><tr><th>Scan</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
   document.body.appendChild(dlg);
   dlg.addEventListener("close", () => dlg.remove());
+  let scan = null, only = null; // the scan picked (bar or row), the one range followed (name above its column)
+  const paint = () => {
+    dlg.querySelectorAll(".d-col, tbody tr").forEach(el => el.classList.toggle("on", scan !== null && Number(el.dataset.col) === scan));
+    dlg.querySelectorAll("th[data-b]").forEach(th => th.classList.toggle("only", only === Number(th.dataset.b)));
+    dlg.querySelectorAll("rect[data-b]").forEach(r => { r.style.opacity = only === null || Number(r.dataset.b) === only ? "" : "0.18"; });
+    dlg.querySelector(".g-day").hidden = scan === null;
+  };
   dlg.addEventListener("click", ev => {
     if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
-    if (ev.target.closest(".g-open")) { dlg.close(); document.getElementById("chartGrid")?.close(); openRelatedNode({ id: p.id, type: "scientific_object", label }); }
+    if (ev.target.closest(".g-open")) { dlg.close(); document.getElementById("chartGrid")?.close(); openRelatedNode({ id: p.id, type: "scientific_object", label }); return; }
+    if (ev.target.closest(".g-day")) { dlg.close(); showDay(scan); return; }
+    const th = ev.target.closest("th[data-b]"), pick = ev.target.closest("[data-col]");
+    if (th) { only = only === Number(th.dataset.b) ? null : Number(th.dataset.b); paint(); }
+    else if (pick) { scan = scan === Number(pick.dataset.col) ? null : Number(pick.dataset.col); paint(); }
   });
   dlg.showModal();
 }
@@ -2841,7 +2866,7 @@ async function renderDistributionBody(dlg, body, plan, sel, v) {
     body.innerHTML = legend + plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => distChartHtml(c, data, colors)).join("")}</div></div>`).join("")
       + distDayHtml(plan, data, colors, sel.st);
     body.querySelectorAll(".d-col").forEach(g => g.addEventListener("click", () => { distState.day = Number(g.dataset.col); draw(); }));
-    body.querySelectorAll(".d-plant").forEach(g => g.addEventListener("click", () => openDistPlantDetail(data.plants.find(p => sameId(p.id, g.dataset.plant)), data, colors, sel.st)));
+    body.querySelectorAll(".d-plant").forEach(g => g.addEventListener("click", () => openDistPlantDetail(data.plants.find(p => sameId(p.id, g.dataset.plant)), data, colors, sel.st, i => { distState.day = i; draw(); })));
     body.querySelector("#distDay").addEventListener("change", ev => { distState.day = Number(ev.target.value); draw(); });
   };
   draw();
@@ -2856,10 +2881,11 @@ async function renderChartGrid() {
   // The window follows the content (one chart, a few, many) and the charts follow the window: see fitChartLayout.
   gridState.vi = Math.max(0, Math.min(gridState.vi, plan.variables.length - 1));
   const v = plan.variables[gridState.vi];
-  const fit = fitChartLayout(gridState.overlay ? plan.rows.map(() => 1) : plan.rows.map(r => r.charts.length), v.kind === "distribution" ? 1 : 0);
+  dlg._fit = { counts: gridState.overlay ? plan.rows.map(() => 1) : plan.rows.map(r => r.charts.length), extra: v.kind === "distribution" ? 1 : 0 };
+  const fit = fitChartLayout(dlg._fit.counts, dlg._fit.extra);
   dlg.style.setProperty("--cols", String(fit.cols));
-  dlg.style.setProperty("--rows", String(fit.rows));
   dlg.style.setProperty("--wcols", String(gridState.overlay ? 3 : fit.cols));
+  applyChartFit(dlg);
   const pager = plan.variables.length > 1
     ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
@@ -3040,6 +3066,7 @@ function openChartGrid() {
   dlg.id = "chartGrid";
   document.body.appendChild(dlg);
   dlg.addEventListener("close", () => dlg.remove());
+  new ResizeObserver(() => applyChartFit(dlg)).observe(dlg);
   gridState.vi = 0;
   dlg.showModal();
   renderChartGrid();
@@ -5048,7 +5075,7 @@ function wireImportPage(opts) {
   };
   const readFile = async (f) => {
     const out = document.getElementById("importPlan");
-    importEdits = opts.into ? { experiment: { name: opts.into.label } } : {};
+    if (!opts.resume) importEdits = opts.into ? { experiment: { name: opts.into.label } } : {};
     if (!f) { out.innerHTML = ""; return; }
     importSession = { ...opts, live: true }; // from now on the page keeps what it shows
     const steps = opts.inSetup ? setupStepsHtml(opts.into, true) : "";

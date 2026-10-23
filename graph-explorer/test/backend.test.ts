@@ -167,6 +167,7 @@ test("GET / serves the mockup HTML", async () => {
     assert.match(res.headers.get("content-type") ?? "", /text\/html/);
     const text = await res.text();
     assert.match(text, /<title>PHIS Data Portal<\/title>/);
+    assert.match(text, /<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,/, "the PheNo leaf is the tab icon");
   });
 });
 
