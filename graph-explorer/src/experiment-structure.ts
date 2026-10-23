@@ -39,7 +39,7 @@ export function binOf(id: string, name: string): Bin | null {
   const r = BIN.exec(name);
   if (!r) return null;
   const lo = Number(r[1]), hi = Number(r[2]);
-  return { id, label: `${lo} – ${hi}`, lo, hi };
+  return { id, label: `${lo} to ${hi}`, lo, hi };
 }
 async function distributionsOf(variables: { id: string; label: string; count: number }[]): Promise<Structure["distributions"]> {
   try {

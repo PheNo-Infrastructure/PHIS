@@ -2972,7 +2972,6 @@ test("e2e: the grid window adapts to the number of charts (one chart is drawn la
     await grid.locator(".g-chart").first().waitFor();
     const size = () => page.evaluate(() => { const d = document.getElementById("chartGrid")!; const c = d.querySelector(".g-chart")!.getBoundingClientRect(); return { dlg: d.getBoundingClientRect().width, chart: c.width, k: d.style.getPropertyValue("--k") }; });
     const two = await size();
-    assert.equal(two.k, "1.4", "two charts: wider columns");
     assert.ok(two.dlg < (await page.evaluate(() => innerWidth)) * 0.96, "the window shrinks to its content");
     await grid.locator("#gridClose").click();
     await page.evaluate(() => { selection = new Map([...selection].filter(([k]) => k === "var-1")); refreshLeftPane(); renderDetail(); renderActionbar(); });
@@ -2981,7 +2980,6 @@ test("e2e: the grid window adapts to the number of charts (one chart is drawn la
     await grid.locator(".g-chart").first().waitFor();
     assert.equal(await grid.locator(".g-chart").count(), 1);
     const one = await size();
-    assert.equal(one.k, "1.8");
     assert.ok(one.chart > two.chart, "a lone chart is larger than one among two");
   });
 });
@@ -3221,32 +3219,31 @@ async function openGridFor(page: import("playwright").Page, base: string) {
   await page.locator("#chartGrid .g-chart").first().waitFor();
 }
 
-test("e2e: the grid has a size switch (S / M / L) that changes the charts' width and height, and the settings are remembered", async () => {
+test("e2e: the charts fill the chart window and follow the window's size (no size buttons); the settings are remembered", async () => {
   await withServerAndBrowser(async (base, page) => {
     await openGridFor(page, base);
     const grid = page.locator("#chartGrid");
-    const size = async () => { const b = (await grid.locator(".g-plot").first().boundingBox())!; return [Math.round(b.width), Math.round(b.height)]; };
-    await grid.locator('button[data-size="s"]').click();
-    const [ws, hs] = await size();
-    await grid.locator('button[data-size="m"]').click();
-    const [wm, hm] = await size();
-    await grid.locator('button[data-size="l"]').click();
-    const [wl, hl] = await size();
-    assert.deepEqual([hs, hm, hl], [134, 238, 364], "plot heights per size (the base 96/170/260 times 1.4: the grid has two charts)");
-    assert.ok(ws < wm && wm < wl, `widths grow with the size (${ws} < ${wm} < ${wl})`);
+    assert.equal(await grid.locator("[data-size]").count(), 0, "no S / M / L");
+    const width = async () => Math.round((await grid.locator(".g-plot").first().boundingBox())!.width);
+    await page.setViewportSize({ width: 1800, height: 1000 });
+    const wide = await width();
+    await page.setViewportSize({ width: 1100, height: 800 });
+    const narrow = await width();
+    assert.ok(narrow < wide, `the charts shrink with the window (${narrow} < ${wide})`);
+    const box = (await grid.locator(".g-plot").first().boundingBox())!;
+    assert.ok(box.height < box.width && box.height > box.width / 3, "a chart is wider than tall, in proportion");
 
     await grid.locator("#gridStats").check();
     const saved = JSON.parse(await page.evaluate(() => localStorage.getItem("ge.grid") ?? "null"));
-    assert.deepEqual(saved, { size: "l", sharedY: true, stats: true, overlay: false, norm: false });
+    assert.deepEqual(saved, { sharedY: true, stats: true, overlay: false, norm: false });
   });
 });
 
 test("e2e: saved grid settings are applied when the grid opens", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await page.addInitScript(() => localStorage.setItem("ge.grid", JSON.stringify({ size: "s", sharedY: false, stats: true, overlay: false })));
+    await page.addInitScript(() => localStorage.setItem("ge.grid", JSON.stringify({ sharedY: false, stats: true, overlay: false })));
     await openGridFor(page, base);
     const grid = page.locator("#chartGrid");
-    assert.equal(await grid.locator('button[data-size="s"].on').count(), 1);
     assert.equal(await grid.locator("#gridStats").isChecked(), true);
     assert.equal(await grid.locator("#gridShared").isChecked(), false);
   });
@@ -3950,6 +3947,18 @@ test("e2e: the menu's plain-words hint shows only when the row is hovered", asyn
     assert.equal(await hint.evaluate((el) => getComputedStyle(el).opacity), "0");
     await hint.locator("xpath=ancestor::div[contains(@class,'row')][1]").hover();
     await page.waitForFunction(() => Number(getComputedStyle(document.querySelector("#explorerPane .row-main.cat .row-type")!).opacity) > 0.9);
+  });
+});
+
+test("e2e: the click / ctrl / shift hint only shows where it applies (Browse)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    await page.locator(".hint-banner").waitFor({ state: "visible" });
+    for (const v of ["overview", "setup", "import"]) {
+      await page.goto(base + "/#" + v);
+      await page.waitForFunction((x) => document.body.dataset.view === x, v);
+      assert.equal(await page.locator(".hint-banner").isVisible(), false, `hidden on ${v}`);
+    }
   });
 });
 

@@ -166,7 +166,7 @@ test("GET / serves the mockup HTML", async () => {
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type") ?? "", /text\/html/);
     const text = await res.text();
-    assert.match(text, /<title>PHIS Web Portal<\/title>/);
+    assert.match(text, /<title>PHIS Data Portal<\/title>/);
   });
 });
 
@@ -3601,7 +3601,7 @@ test("structure: a variable group whose members are histogram bins with values h
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
     const { structure } = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-6`)).json();
-    assert.deepEqual(structure.distributions, [{ id: "vg-ndvi", label: "NDVI distribution", bins: [{ id: "var-a", label: "-1 – 0.3", lo: -1, hi: 0.3 }, { id: "var-b", label: "0.3 – 1", lo: 0.3, hi: 1 }] }]);
+    assert.deepEqual(structure.distributions, [{ id: "vg-ndvi", label: "NDVI distribution", bins: [{ id: "var-a", label: "-1 to 0.3", lo: -1, hi: 0.3 }, { id: "var-b", label: "0.3 to 1", lo: 0.3, hi: 1 }] }]);
   });
 });
 
@@ -3632,7 +3632,7 @@ test("GET /api/experiment-distribution: a bin group's shares for every plant, on
     assert.match(searchUrl, /variables=var-a/);
     assert.match(searchUrl, /variables=var-b/);
     assert.deepEqual(body.group, { id: "vg-ndvi", name: "NDVI distribution" });
-    assert.deepEqual(body.bins, [{ id: "var-a", label: "-1 – 0.3", lo: -1, hi: 0.3 }, { id: "var-b", label: "0.3 – 1", lo: 0.3, hi: 1 }]);
+    assert.deepEqual(body.bins, [{ id: "var-a", label: "-1 to 0.3", lo: -1, hi: 0.3 }, { id: "var-b", label: "0.3 to 1", lo: 0.3, hi: 1 }]);
     assert.deepEqual(body.columns.map((c: any) => c.key), ["2025-10-22", "2025-10-23"]);
     assert.deepEqual(body.plants, [
       { id: "so-p1", values: [[30, 70], [20, 80]] },
