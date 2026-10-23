@@ -61,4 +61,4 @@ security:
 
 front:
   theme: "opensilex-front#pheno"
-  applicationName: "PheNo"
+  applicationName: "PheNo PHIS"

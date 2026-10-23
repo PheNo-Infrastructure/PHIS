@@ -15,6 +15,7 @@ find . -path ./node_modules -prune -o -path '*/node_modules' -prune -o \
     -e 's/#007bff\b/#3d8526/gI' \
     -e 's/#448aff\b/#3d8526/gI' \
     -e 's/#536dfe\b/#3d8526/gI' \
+    -e 's/#2e7ffd\b/#3d8526/gI' \
     -e 's/rgb\(\s*0\s*,\s*163\s*,\s*141\s*\)/rgb(61, 133, 38)/gI' \
     -e 's/rgba\(\s*0\s*,\s*162\s*,\s*140\s*,/rgba(61, 133, 38,/gI'
 echo "pheno colors applied"
