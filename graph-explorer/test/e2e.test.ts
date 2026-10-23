@@ -3231,7 +3231,9 @@ test("e2e: the charts fill the chart window and follow the window's size (no siz
     const narrow = await width();
     assert.ok(narrow < wide, `the charts shrink with the window (${narrow} < ${wide})`);
     const box = (await grid.locator(".g-plot").first().boundingBox())!;
-    assert.ok(box.height < box.width && box.height > box.width / 3, "a chart is wider than tall, in proportion");
+    assert.ok(box.height >= 110 && box.y + box.height < 800, "a chart is tall enough to read and fits the window");
+    await page.setViewportSize({ width: 1100, height: 1300 });
+    assert.ok((await grid.locator(".g-plot").first().boundingBox())!.height > box.height, "and uses more of a taller window");
 
     await grid.locator("#gridStats").check();
     const saved = JSON.parse(await page.evaluate(() => localStorage.getItem("ge.grid") ?? "null"));
@@ -3922,7 +3924,7 @@ test("e2e: Set up says whether the trial is an existing one or a new one, and th
     await page.route("**/api/instance", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ host: "phis-test.pheno.no", test: true }) }));
     await page.route("**/api/create", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/experiment/new1", type: "experiment", label: "Fresh" }) }));
     await page.goto(base + "/#setup");
-    await page.locator(".subtitle.test").waitFor();
+    await page.waitForFunction(() => /test server/.test(document.querySelector(".subtitle")?.textContent ?? ""));
     assert.match(await page.locator(".subtitle").textContent() ?? "", /phis-test\.pheno\.no \(test server\)/);
     assert.match(await page.locator("#pageBody").textContent() ?? "", /Start a new trial/);
     await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
@@ -3986,6 +3988,17 @@ test("e2e: after an import, one button goes to Set up for that experiment", asyn
     await page.locator("#importSetupBtn").click();
     await page.waitForFunction(() => document.body.dataset.view === "setup");
     assert.match(await page.locator("#pageBody .overview-h").first().textContent() ?? "", /Barley 2024/);
+  });
+});
+
+test("e2e: the adding list shows the click / shift+click hint, without the Browse-only parts", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openAddingFactors(page, base);
+    assert.equal(await page.locator(".hint-banner").isVisible(), true);
+    const shown = (await page.locator(".hint-banner span:visible").allTextContents()).join(" ");
+    assert.match(shown, /click.*select/);
+    assert.match(shown, /shift.*range/);
+    assert.doesNotMatch(shown, /ctrl|open/);
   });
 });
 

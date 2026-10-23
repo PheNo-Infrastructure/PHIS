@@ -119,12 +119,12 @@ button { font-family: inherit; }
 .adding-row.linked { cursor: default; opacity: .6; }
 .adding-row.picked { background: var(--surface-2); }
 body[data-view="adding"] #explorerPane, body[data-view="adding"] #detailPane, body[data-view="adding"] #selectionPane,
-body[data-view="adding"] .topbar, body[data-view="adding"] #treePane, body[data-view="adding"] .hint-banner { display: none; }
-body:not([data-view="browse"]) .hint-banner { display: none; }
+body[data-view="adding"] .topbar, body[data-view="adding"] #treePane { display: none; }
+body:not([data-view="browse"]):not([data-view="adding"]) .hint-banner { display: none; }
+body[data-view="adding"] .hint-banner .browse-only { display: none; }
 body[data-view="adding"] #mainnav { pointer-events: none; opacity: .45; }
 .setup-step.done .setup-tick { color: var(--accent); }
 .setup-tick { width: 18px; text-align: center; flex: none; }
-.subtitle.test { color: #8a5a00; font-weight: 600; }
 .setup-pill { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
 .setup-pill.new { background: #3d8526; color: #fff; }
 .setup-pill.existing { background: var(--surface-2); color: var(--ink-muted); border: 1px solid var(--border); }
@@ -572,10 +572,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .g-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; margin-bottom: 10px; }
 .g-row-label { font-weight: 600; font-size: 13px; padding-top: 4px; }
 .g-row-charts { display: grid; grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 8px; }
-/* In the chart window the charts share its width (so they follow the window, also when resized); a chart is about twice as wide as tall,
-   but never so tall that the rows no longer fit the window. */
-.grid-dialog .g-plot { height: auto; aspect-ratio: 2.2 / 1; max-height: calc((88vh - 190px) / var(--rows)); }
-.grid-dialog .g-chart.overlay .g-plot { aspect-ratio: 3.4 / 1; }
+/* In the chart window the charts share its width (so they follow the window, also when resized); a row takes its share of the window's height. */
+.grid-dialog .g-plot { height: clamp(110px, calc((90vh - 150px) / var(--rows) - 70px), 520px); }
 .g-chart { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px 6px; cursor: pointer; }
 .g-chart:hover { border-color: var(--accent); }
 .g-ct { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
@@ -1043,9 +1041,9 @@ body[data-view="browse"] #pagePane { display: none; }
 
   <div class="hint-banner">
     <span><kbd>click</kbd> select</span>
-    <span><kbd>ctrl</kbd>+<kbd>click</kbd> toggle</span>
+    <span class="browse-only"><kbd>ctrl</kbd>+<kbd>click</kbd> toggle</span>
     <span><kbd>shift</kbd>+<kbd>click</kbd> range</span>
-    <span><kbd>&rsaquo;</kbd> open</span>
+    <span class="browse-only"><kbd>&rsaquo;</kbd> open</span>
   </div>
 </div>
 
@@ -4781,7 +4779,7 @@ function findItemById(id) {
     const { host, test } = await (await fetch("api/instance")).json();
     if (!host) return;
     const sub = document.querySelector(".subtitle");
-    if (sub) { sub.textContent = `${host}${test ? " (test server)" : ""} · design prototype`; sub.classList.toggle("test", !!test); }
+    if (sub) { sub.textContent = `${host}${test ? " (test server)" : ""} · design prototype`; }
   } catch { /* no banner */ }
 })();
 (function setupSelection() {
