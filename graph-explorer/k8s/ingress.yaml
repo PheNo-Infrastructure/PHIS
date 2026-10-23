@@ -6,12 +6,11 @@ kind: Ingress
 metadata:
   name: graph-explorer
   annotations:
-    nginx.ingress.kubernetes.io/auth-type: basic
-    nginx.ingress.kubernetes.io/auth-secret: graph-explorer-basic-auth
-    nginx.ingress.kubernetes.io/auth-realm: "PHIS Graph Explorer"
-    # Imports stream progress for minutes and upload instrument ZIPs.
+    # Open on purpose (2026-10, decided with the owner): it talks to the phis-test instance, whose data can be reset (demo:reset).
+    # It was behind basic auth (auth-type / auth-secret graph-explorer-basic-auth); put those annotations back to close it again.
+    # Imports stream progress for minutes and upload instrument ZIPs; the upload size is capped since nobody is logged in.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
 spec:
   ingressClassName: nginx
   rules:
