@@ -70,6 +70,15 @@ export async function handleRequest(req: import("node:http").IncomingMessage, re
     return;
   }
 
+  // Which OpenSILEX this server acts on, so the page can say so (the host name only, never the account).
+  if (pathname === "/api/instance" && req.method === "GET") {
+    let host = "";
+    try { host = new URL(process.env.PHIS_HOST ?? "").hostname; } catch { /* unset or not a URL: no name */ }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ host, test: /test/i.test(host) }));
+    return;
+  }
+
   try {
     for (const handler of routeHandlers) {
       if (await handler(req, res, { pathname, searchParams })) return;

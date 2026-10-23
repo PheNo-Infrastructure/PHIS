@@ -1889,6 +1889,10 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
     await grid.locator(".d-chart").first().locator('.d-col[data-col="0"]').dispatchEvent("click");
     assert.equal(await grid.locator("#distDay").inputValue(), "0", "clicking a scan's bar shows that scan per plant");
     assert.equal(await grid.locator(".d-day-chart").nth(1).locator("rect").count(), 2, "the single plant has a histogram at the first scan");
+    const left = (sel: string) => grid.locator(sel).first().evaluate((el) => el.getBoundingClientRect().left);
+    assert.equal(Math.round(await left(".d-day .g-row-charts")), Math.round(await left(".g-row-charts")), "the one-scan charts line up with the charts above");
+    const close = await grid.locator("#gridClose").boundingBox(), dlgBox = await grid.boundingBox();
+    assert.ok(close && dlgBox && close.x + close.width > dlgBox.x + dlgBox.width - 60 && close.y < dlgBox.y + 60, "Close sits in the top right corner");
   });
 });
 
@@ -2936,7 +2940,7 @@ test("e2e: Show chart grid appears once a variable and something chartable are p
       assert.match(await grid.locator(".g-row").first().innerText(), /GroupID/);
       assert.equal(await grid.locator(".g-chart").count(), 2, "a chart per level of the picked factor");
       assert.equal(await grid.locator(".g-chart").first().locator(".g-line").count(), 2, "its plants as thin lines");
-      assert.equal(await grid.locator(".g-chart").first().locator(".g-mean").count(), 1);
+      assert.equal(await grid.locator(".g-chart").first().locator(".g-mean").count(), 0, "no bold mean line unless statistics is on");
       assert.match(await grid.locator(".g-title").innerText(), /Plant Height/);
 
       await grid.locator("#gridNext").click();
@@ -3291,7 +3295,7 @@ test("e2e: overlay lays a row's charts on top of each other (plant lines and mea
     await grid.locator("#gridOverlay").check();
     assert.equal(await grid.locator(".g-row").count(), 1);
     assert.equal(await grid.locator(".g-chart.overlay").count(), 1, "one chart for the row");
-    assert.equal(await grid.locator(".g-mean").count(), 2, "a mean line per level");
+    assert.equal(await grid.locator(".g-mean").count(), 0, "no bold mean line unless statistics is on");
     assert.equal(await grid.locator(".g-line").count(), 3, "every plant's line, as in the separate charts");
     assert.equal(await grid.locator("button.g-leg").count(), 2, "a legend entry per level");
     const hi = Number((await grid.locator(".g-chart.overlay .g-yh").innerText()).trim().replace(/ mm$/, ""));
@@ -3306,9 +3310,9 @@ test("e2e: overlay lays a row's charts on top of each other (plant lines and mea
     assert.match(tip, /GroupID: 2 · mean 13/);
 
     await grid.locator("button.g-leg", { hasText: "GroupID: 2" }).click();
-    assert.equal(await grid.locator(".g-mean").count(), 1, "clicking a legend entry hides that line");
+    assert.equal(await grid.locator(".g-line").count(), 2, "clicking a legend entry hides that level's lines");
     await grid.locator("button.g-leg", { hasText: "GroupID: 2" }).click();
-    assert.equal(await grid.locator(".g-mean").count(), 2, "and shows it again");
+    assert.equal(await grid.locator(".g-line").count(), 3, "and shows them again");
 
     await grid.locator("#gridStats").check();
     assert.equal(await grid.locator(".g-line").count(), 0);
@@ -3888,7 +3892,7 @@ test("e2e: the germplasm sub-menu goes back without choosing", async () => {
   });
 });
 
-test("e2e: Set up's Import button is a file chooser; the file goes to the Import page, into this experiment (its name is used)", async () => {
+test("e2e: Set up's Import button is a file chooser; the review fills in on the Set up page itself, into this experiment (its name is used)", async () => {
   await withServerAndBrowser(async (base, page) => {
     await setupStubs(page);
     let header = "";
@@ -3900,10 +3904,45 @@ test("e2e: Set up's Import button is a file chooser; the file goes to the Import
     assert.equal(await page.locator("#setupDrop").count(), 0, "no drop box on Set up");
     const [chooser] = await Promise.all([page.waitForEvent("filechooser"), row.locator("#setupImport").click()]);
     await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
-    await page.waitForFunction(() => document.body.dataset.view === "import");
     await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
-    assert.match(await page.locator("#pageBody").textContent() ?? "", /Barley 2024/);
+    assert.equal(await page.evaluate(() => document.body.dataset.view), "setup", "the page stays on Set up");
+    assert.match(await page.locator("#pageBody .setup-import").textContent() ?? "", /Importing into Barley 2024/);
+    assert.ok(await page.locator("#pageBody .setup-required").isVisible(), "the steps stay under the review");
     assert.deepEqual(JSON.parse(decodeURIComponent(header)), { experiment: { name: "Barley 2024" } });
+  });
+});
+
+test("e2e: Set up says whether the trial is an existing one or a new one, and the page says when it is a test instance", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await setupStubs(page);
+    await page.route("**/api/instance", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ host: "phis-test.pheno.no", test: true }) }));
+    await page.route("**/api/create", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "phis:id/experiment/new1", type: "experiment", label: "Fresh" }) }));
+    await page.goto(base + "/#setup");
+    await page.locator("#instanceBar.test").waitFor();
+    assert.match(await page.locator("#instanceBar").textContent() ?? "", /TEST INSTANCE.*phis-test\.pheno\.no/);
+    assert.match(await page.locator("#pageBody").textContent() ?? "", /Start a new trial/);
+    await page.locator("#pageBody .row", { hasText: "Barley 2024" }).click();
+    assert.match(await page.locator("#pageBody .setup-pill").textContent() ?? "", /Existing trial/);
+    await page.locator("#setupOther").click();
+    await page.locator("#setupNew").click();
+    const form = page.locator("dialog.create-dialog");
+    await form.locator("input[name=name]").fill("Fresh");
+    await form.locator("input[name=objective]").fill("Test");
+    await form.locator("input[name=start_date]").fill("2026-10-22");
+    await form.locator("button[value=ok]").click();
+    await page.locator("#pageBody .setup-pill.new").waitFor();
+    assert.match(await page.locator("#pageBody .setup-pill").textContent() ?? "", /New trial/);
+  });
+});
+
+test("e2e: the menu's plain-words hint shows only when the row is hovered", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    const hint = page.locator("#explorerPane .row-main.cat .row-type").first();
+    await hint.waitFor({ state: "attached" });
+    assert.equal(await hint.evaluate((el) => getComputedStyle(el).opacity), "0");
+    await hint.locator("xpath=ancestor::div[contains(@class,'row')][1]").hover();
+    await page.waitForFunction(() => Number(getComputedStyle(document.querySelector("#explorerPane .row-main.cat .row-type")!).opacity) > 0.9);
   });
 });
 

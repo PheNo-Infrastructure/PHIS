@@ -123,6 +123,14 @@ body[data-view="adding"] .topbar, body[data-view="adding"] #treePane, body[data-
 body[data-view="adding"] #mainnav { pointer-events: none; opacity: .45; }
 .setup-step.done .setup-tick { color: var(--accent); }
 .setup-tick { width: 18px; text-align: center; flex: none; }
+#instanceBar { padding: 6px 16px; font-size: 12.5px; text-align: center; background: var(--surface-2); color: var(--ink-muted); }
+#instanceBar.test { background: #f6d97a; color: #3b2f00; font-weight: 600; }
+.setup-pill { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+.setup-pill.new { background: #3d8526; color: #fff; }
+.setup-pill.existing { background: var(--surface-2); color: var(--ink-muted); border: 1px solid var(--border); }
+.setup-new { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 18px; padding: 12px 16px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.setup-new p { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.setup-import { margin: 0 0 18px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .page-note { margin: 0 0 10px; color: var(--ink-faint); font-size: 13px; }
 #pagePane { grid-column: 1 / -1; }
@@ -321,6 +329,9 @@ body[data-view="browse"] #pagePane { display: none; }
   white-space: nowrap;
   font-weight: 500;
 }
+/* Menu rows: one line; the plain-words hint shows when the row is hovered or focused. */
+.row-main.cat .row-type { font-family: inherit; font-size: 11.5px; text-transform: none; color: var(--ink-faint); opacity: 0; transition: opacity .12s; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.row:hover .row-main.cat .row-type, .row:focus-within .row-main.cat .row-type { opacity: 1; }
 .row-type {
   flex: none;
   font-family: var(--font-mono);
@@ -531,7 +542,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .grid-dialog { --k: 1; --cols: 6; --gw: calc(340px * var(--k)); --gh: calc(170px * var(--k)); width: min(2200px, 96vw, max(780px, calc(var(--cols) * (var(--gw) + 8px) + 160px))); max-height: 94vh; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); overflow: auto; }
 .grid-dialog { resize: both; max-width: 100vw; max-height: 100vh; }
 .grid-dialog::backdrop { background: rgba(0, 0, 0, .5); }
-.g-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
+.g-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 12.5px; }
+.g-head-main { flex: 1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .g-title { font-size: 16px; font-weight: 600; }
 .import-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-muted); }
 .import-drop.drag-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -543,7 +555,9 @@ body[data-view="browse"] #pagePane { display: none; }
 .d-chart .d-col { cursor: pointer; }
 .d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
-.d-day-head { margin-bottom: 6px; font-size: 13px; }
+.d-day-head { font-size: 13px; padding-top: 4px; }
+.d-day-head select { display: block; margin: 4px 0; font: inherit; font-size: 12px; }
+.d-day .g-row { margin-bottom: 0; }
 .d-day-head small { color: var(--ink-faint); margin-left: 8px; }
 .d-day-chart { cursor: default; }
 .d-day-chart:hover { border-color: var(--border); }
@@ -979,6 +993,7 @@ body[data-view="browse"] #pagePane { display: none; }
     <span class="masthead-right"><span class="subtitle">phis.pheno.no &middot; design prototype</span></span>
   </div>
 
+  <div id="instanceBar" hidden></div>
   <div class="topbar">
     <div class="searchrow">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/><path d="M11 11L14.2 14.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -1323,13 +1338,14 @@ function rowEl(item, note) {
   row.className = "row" + (isSelected ? " selected" : "") + (note === "can't link" ? " row-cant" : "");
   row.setAttribute("style", typeStyle(item.type));
   row.dataset.id = item.id;
+  if (item.type === "category" && item.hint) row.title = item.hint;
   // The experiment(s) a thing belongs to: one for a factor, any number for a scientific object.
   const scopes = [item.scope ?? []].flat().map(id => (CATEGORY_ITEMS["cat-experiments"] || []).find(e => sameId(e.id, id))?.label ?? "an experiment");
   const scopeName = scopes.length > 3 ? `${scopes.slice(0, 3).join(", ")} +${scopes.length - 3} more` : scopes.join(", ");
   const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (scopes.length ? ` · in ${escapeHtml(scopeName)}` : "") + (note ? ` · ${note}` : "");
   row.innerHTML = `
     <span class="row-dot"></span>
-    <span class="row-main${item.type === "category" || scopes.length ? " stacked" : ""}">
+    <span class="row-main${item.type === "category" ? " cat" : scopes.length ? " stacked" : ""}">
       <span class="row-label">${escapeHtml(item.label)}</span>
       <span class="row-type">${typeLine}</span>
     </span>
@@ -1544,7 +1560,7 @@ let view = "overview";
 const viewFromHash = () => VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
 function applyView(next) {
   if (next !== "adding" && adding) { selection = adding.selection; adding = null; } // left by the back button
-  if (next !== "import") importSession = null; // leaving the page ends an import session (a run in progress keeps going on the server)
+  if (importSession && next !== (importSession.inSetup ? "setup" : "import")) importSession = null; // leaving the page ends an import session (a run in progress keeps going on the server)
   view = next;
   document.body.dataset.view = next;
   document.querySelectorAll("#mainnav a").forEach(a => a.getAttribute("href") === "#" + next ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
@@ -1554,7 +1570,7 @@ function showView(next) { if (location.hash === "#" + next) applyView(next); els
 window.addEventListener("hashchange", () => applyView(viewFromHash()));
 function renderPage() {
   const body = document.getElementById("pageBody");
-  if (view === "import" && importSession?.live && body.querySelector("#importPlan")) return; // a file is being handled: leave it
+  if ((view === "import" || view === "setup") && importSession?.live && body.querySelector("#importPlan")) return; // a file is being handled: leave it
   body.innerHTML = "";
   if (view === "overview") renderOverview(body);
   else if (view === "import") renderImportPage(body);
@@ -1638,18 +1654,19 @@ function wireSetupImport(into) {
   const input = document.getElementById("setupFile"), btn = document.getElementById("setupImport");
   if (!input || !btn) return;
   btn.addEventListener("click", () => input.click());
-  input.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) openImport({ ...(into ? { into } : {}), file: f }); });
+  input.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) { if (into) { importSession = { into, file: f, inSetup: true }; renderPage(); } else openImport({ file: f }); } });
 }
 async function newExperimentFromSetup() {
   const v = await askCreateValues("experiment");
   if (!v) return;
   const made = await createNode("experiment", v.name, [], "", v.fields);
-  if (made) { setupTrial = { id: made.id, type: "experiment", label: made.label }; if (view === "setup") renderPage(); }
+  if (made) { setupTrial = { id: made.id, type: "experiment", label: made.label, isNew: true }; if (view === "setup") renderPage(); }
 }
 function renderSetupPage(body) {
   if (!setupTrial) {
-    body.innerHTML = `<div class="page-head"><h3 class="overview-h">Which trial?</h3><button class="btn" id="setupNew">+ New experiment</button></div>
-      <p class="page-note">Pick a trial to see what is set up and what is left, or start a new one. To create one from an instrument file, use Import.</p>
+    body.innerHTML = `<div class="page-head"><h3 class="overview-h">Which trial?</h3></div>
+      <div class="setup-new"><p><b>Start a new trial</b><br>An empty experiment you fill in step by step. To create one from an instrument file, use Import.</p><button class="btn" id="setupNew">+ New experiment</button></div>
+      <h4 class="adding-h">Or continue an existing trial</h4>
       <div class="rowlist" id="setupTrials"></div>`;
     document.getElementById("setupNew").addEventListener("click", newExperimentFromSetup);
     const list = document.getElementById("setupTrials");
@@ -1666,14 +1683,16 @@ function renderSetupPage(body) {
   const trial = setupTrial;
   loadNodeDetail(trial);
   const steps = setupSteps(NODE_DETAIL[trial.id]);
+  const importHere = importSession?.inSetup && sameId(importSession.into.id, trial.id);
   const stepHtml = st => `<div class="row setup-step${st.done ? " done" : ""}"><span class="setup-tick">${st.done ? "✓" : "○"}</span>
       <span class="row-main"><span class="row-label setup-label">${escapeHtml(st.label)}</span><span class="row-type">${escapeHtml(st.hint)}</span>
         ${st.items.length ? `<span class="setup-used">${st.items.slice(0, 4).map(n => `<span class="setup-chip">${escapeHtml(n)}</span>`).join("")}${st.items.length > 4 ? `<span class="setup-more">+${st.items.length - 4} more</span>` : ""}</span>` : ""}</span>
       ${st.import ? `<button class="btn small" id="setupImport">${st.done ? "Import more" : "Import"} ›</button>${setupFileInputHtml}` : ""}
       ${st.category && (addCaps(st.category).create || addCaps(st.category).pick) ? `<button class="btn small setup-go" data-category="${st.category}">${st.done ? "Add more" : "Add"} ›</button>` : ""}</div>`;
-  body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}</h3>
+  body.innerHTML = `<div class="page-head"><h3 class="overview-h">${escapeHtml(trial.label)}<span class="setup-pill ${trial.isNew ? "new" : "existing"}">${trial.isNew ? "New trial" : "Existing trial"}</span></h3>
       <span><button class="btn ghost small" id="setupOther">Another trial</button> <button class="btn small" id="setupOpen">Open in Browse</button></span></div>
-    <p class="page-note">Start with the data: a file can fill in most of the rest. Otherwise each step lets you add to this experiment, a new one (linked at once) or one that already exists.</p>
+    <p class="page-note">${trial.isNew ? "A new trial, nothing in it yet." : "This trial already exists in PHIS: what you add is added to it."} Start with the data: a file can fill in most of the rest. Otherwise each step lets you add to this experiment, a new one (linked at once) or one that already exists.</p>
+    ${importHere ? `<div class="setup-import"><div class="page-head"><b>Importing into ${escapeHtml(trial.label)}</b><button class="btn ghost small" id="setupImportCancel">Cancel</button></div><div id="importPlan"></div></div>` : ""}
     <div class="setup-required">${steps.filter(st => !st.optional).map(stepHtml).join("")}</div>
     <details class="setup-optional-box"><summary class="setup-optional-head">Optional <span>· the experiment works without these · ${steps.filter(st => st.optional && st.done).length} of ${steps.filter(st => st.optional).length} done</span></summary>
       <div class="setup-optional">${steps.filter(st => st.optional).map(stepHtml).join("")}</div></details>`;
@@ -1681,6 +1700,10 @@ function renderSetupPage(body) {
   const go = (path) => { selection = new Map([[trial.id, trial]]); anchorId = null; navigateTo(path); };
   document.getElementById("setupOpen").addEventListener("click", () => go(canonicalPathFor(trial)));
   wireSetupImport(trial);
+  if (importHere) {
+    wireImportPage(importSession);
+    document.getElementById("setupImportCancel").addEventListener("click", () => { importSession = null; renderPage(); });
+  }
   document.getElementById("setupOther").addEventListener("click", () => { setupTrial = null; renderPage(); });
   body.querySelectorAll(".setup-go").forEach(b => b.addEventListener("click", () => startAdding(trial, b.dataset.category)));
 }
@@ -2577,7 +2600,7 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
     if (up.length > 1) svg += `<polygon class="g-band" fill="${color}" points="${[...up, ...down].join(" ")}"/>`;
   }
   const scatter = !!(view.selected && view.selected.size);
-  const mean = scatter ? [] : path(stats.map(s => s ? s.mean : null));
+  const mean = scatter || !(opts.stats || ch.kind === "plant") ? [] : path(stats.map(s => s ? s.mean : null));
   if (scatter) pts.forEach(p => p.values.forEach((v, i) => { if (v && view.selected.has(`${p.id}|${i}`)) dots += `<span class="g-pt g-obs" style="left:${X(i).toFixed(1)}%;top:${Y(v.v).toFixed(1)}%;background:${color}" title="${e(`${v.v} · ${whenText(data.columns[i].key)}`)}"></span>`; }));
   if (mean.length > 1) svg += `<polyline class="g-mean" stroke="${color}" points="${mean.join(" ")}"/>`;
   else if (mean.length === 1) { const [x, y] = mean[0].split(","); dots = `<span class="g-pt" style="left:${x}%;top:${y}%;background:${color}"></span>`; }
@@ -2641,7 +2664,7 @@ function overlayRowHtml(row, data, yr, opts) {
       if (up.length > 1) svg += `<polygon class="g-band" fill="${x.color}" points="${[...up, ...down].join(" ")}"/>`;
     }
     if (lines(x)) x.plants.forEach(p => { const d = pts(p.values.map(v => v?.v ?? null)); if (d.length > 1) svg += `<polyline class="g-line" stroke="${x.color}" points="${d.join(" ")}"/>`; });
-    const m = pts(x.stats.map(st => st ? st.mean : null));
+    const m = band || x.ch.kind === "plant" ? pts(x.stats.map(st => st ? st.mean : null)) : [];
     if (m.length > 1) svg += `<polyline class="g-mean" stroke="${x.color}" points="${m.join(" ")}"/>`;
   });
   const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "";
@@ -2714,7 +2737,7 @@ function distDayHtml(plan, data, colors, st) {
     const names = pts.length <= 12 ? `<div class="d-names">${pts.map(p => `<span title="${e(plantLabelIn(st, p.id))}">${e(plantLabelIn(st, p.id))}</span>`).join("")}</div>` : "";
     return `<div class="g-chart d-day-chart"><div class="g-ct"><b style="color:${ch.kind === "plant" ? "var(--ink)" : colorVar(ch.colorIndex)}">${e(ch.title)}</b><span>${pts.length} plant${pts.length === 1 ? "" : "s"}</span></div><div class="g-plot"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div>${names}</div>`;
   }).join("");
-  return `<div class="d-day"><div class="d-day-head"><b>One scan</b> <select id="distDay">${data.columns.map((c, i) => `<option value="${i}"${i === day ? " selected" : ""}>${e(whenText(c.key))}</option>`).join("")}</select> <small>one bar per plant; click a bar above to jump to its scan</small></div><div class="g-row-charts">${panels || `<div class="hx-note">No plant has this histogram at that scan.</div>`}</div></div>`;
+  return `<div class="d-day"><div class="g-row"><div class="d-day-head"><b>One scan</b><select id="distDay">${data.columns.map((c, i) => `<option value="${i}"${i === day ? " selected" : ""}>${e(whenText(c.key))}</option>`).join("")}</select></div><div class="g-row-charts">${panels || `<div class="hx-note">No plant has this histogram at that scan.</div>`}</div></div><div class="hx-note">One bar per plant. Click a bar above to jump to its scan.</div></div>`;
 }
 
 async function renderDistributionBody(dlg, body, plan, sel, v) {
@@ -2754,13 +2777,12 @@ async function renderChartGrid() {
   const pager = plan.variables.length > 1
     ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
-  dlg.innerHTML = `<div class="g-head"><span class="g-title">${e(v.label)}</span>${pager}<span style="flex:1"></span>
-      <span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
+  dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}<span class="g-size" title="Chart size">${["s", "m", "l"].map(k => `<button data-size="${k}" class="${gridState.size === k ? "on" : ""}">${k.toUpperCase()}</button>`).join("")}</span>
       ${v.kind === "distribution" ? "" : `<label title="One chart per row: the row's charts on top of each other"><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label title="Every plant as a percentage of its own first scan, to compare growth shapes"><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
       <label><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>`}
-      <button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
+      </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());
   dlg.querySelector("#gridPrev")?.addEventListener("click", () => { gridState.vi--; renderChartGrid(); });
   dlg.querySelector("#gridNext")?.addEventListener("click", () => { gridState.vi++; renderChartGrid(); });
@@ -4730,6 +4752,18 @@ function findItemById(id) {
    page, not just over the row list. Native text-selection is killed at
    mousedown time so a fast drag never races the browser's own selection
    gesture into a second, unrelated highlight box. */
+(async function showInstance() {
+  try {
+    const { host, test } = await (await fetch("api/instance")).json();
+    if (!host) return;
+    const bar = document.getElementById("instanceBar");
+    bar.hidden = false;
+    bar.classList.toggle("test", !!test);
+    bar.textContent = test ? `TEST INSTANCE · ${host} · practice freely, this is not the production data` : `Connected to ${host}`;
+    const sub = document.querySelector(".subtitle");
+    if (sub) sub.textContent = `${host} · design prototype`;
+  } catch { /* no banner */ }
+})();
 (function setupSelection() {
   let tracking = false, startX = 0, startY = 0, mod = "plain", box = null;
   let downItem = null;   // the row (item + type) the mousedown actually started on, if any
@@ -4947,11 +4981,11 @@ function wireImportPage(opts) {
       out.innerHTML = `<div class="import-warning">Couldn't read the file: ${escapeHtml(String(err))}</div>`;
     }
   };
-  document.getElementById("importFile").addEventListener("change", (e) => readFile(e.target.files[0]));
+  document.getElementById("importFile")?.addEventListener("change", (e) => readFile(e.target.files[0]));
   const drop = document.getElementById("importDrop");
-  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag-over"); });
-  drop.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drag-over"); readFile(e.dataTransfer.files[0]); });
+  drop?.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("drag-over"); });
+  drop?.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop?.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("drag-over"); readFile(e.dataTransfer.files[0]); });
   if (opts.file) readFile(opts.file);
 }
 // A ZIP goes as it is; a CSV says its name (the experiment is named from it).
@@ -5237,9 +5271,9 @@ function wireImportRun(file, plan, close) {
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
         ...(c.note === true ? ["recorded an annotation about the import"] : c.note === false ? ["could not save the annotation about the import (the data is in PHIS)"] : []),
       ];
-      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn" id="importSetupBtn">Set up this experiment</button><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn" id="importSetupBtn">${importSession?.inSetup ? "Back to the steps" : "Set up this experiment"}</button><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
-      document.getElementById("importSetupBtn").addEventListener("click", () => { setupTrial = { id: body.experiment.id, type: "experiment", label: body.experiment.label }; importSession = null; showView("setup"); });
+      document.getElementById("importSetupBtn").addEventListener("click", () => { if (!importSession?.inSetup) setupTrial = { id: body.experiment.id, type: "experiment", label: body.experiment.label, isNew: !plan.experiment.exists }; importSession = null; showView("setup"); renderPage(); });
     } catch (err) {
       footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;
     }
