@@ -53,6 +53,13 @@ function makeZip(files: Record<string, string>, stored: string[] = []): Buffer {
   return Buffer.concat([...locals, dir, end]);
 }
 
+test("readZip refuses a ZIP that would unpack into something huge (the app is open to anyone with the link)", () => {
+  const bomb = makeZip({ "big.csv": "0".repeat(101 * 1024 * 1024) });
+  assert.ok(bomb.length < 1024 * 1024, "a ZIP of a few hundred KB");
+  assert.throws(() => readZip(bomb), /larger than 100 MB once unpacked/);
+  assert.equal(readZip(makeZip({ "ok.csv": "a,b\n1,2\n" })).size, 1, "a normal file is fine");
+});
+
 test("readZip reads stored and deflated entries; parseCsv handles quotes, BOM, CRLF and blank lines", () => {
   const zip = readZip(makeZip({ "a.csv": "x", "Sheets/b.csv": "y".repeat(500) }, ["a.csv"]));
   assert.equal(zip.get("a.csv")!.toString(), "x");

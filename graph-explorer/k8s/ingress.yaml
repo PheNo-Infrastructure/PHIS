@@ -8,9 +8,9 @@ metadata:
   annotations:
     # Open on purpose (2026-10, decided with the owner): it talks to the phis-test instance, whose data can be reset (demo:reset).
     # It was behind basic auth (auth-type / auth-secret graph-explorer-basic-auth); put those annotations back to close it again.
-    # Imports stream progress for minutes and upload instrument ZIPs; the upload size is capped since nobody is logged in.
+    # Imports stream progress for minutes and upload instrument ZIPs; every request body is capped at 60m (the import route itself refuses over 50 MB) since nobody is logged in.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+    nginx.ingress.kubernetes.io/proxy-body-size: "60m"
 spec:
   ingressClassName: nginx
   rules:

@@ -5,10 +5,14 @@ import { inflateRawSync } from "node:zlib";
 // ponytail: stored/deflate entries found through the central directory only — no ZIP64 or
 // encryption. Enough for instrument sheet exports (a few MB); a multi-GB scan archive
 // (e.g. TraitFinder's .ply files) would need ZIP64.
+// The app is open to anyone who has the link, so a small ZIP must not be able to inflate into gigabytes.
+const MAX_ENTRY_BYTES = 100 * 1024 * 1024, MAX_TOTAL_BYTES = 200 * 1024 * 1024, MAX_ENTRIES = 2000;
 export function readZip(buf: Buffer): Map<string, Buffer> {
   const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   if (eocd < 0) throw new Error("This isn't a ZIP file.");
   const count = buf.readUInt16LE(eocd + 10);
+  if (count > MAX_ENTRIES) throw new Error(`The ZIP holds ${count} files; this app reads at most ${MAX_ENTRIES}.`);
+  let total = 0;
   let p = buf.readUInt32LE(eocd + 16);
   const files = new Map<string, Buffer>();
   for (let i = 0; i < count; i++) {
@@ -24,7 +28,15 @@ export function readZip(buf: Buffer): Map<string, Buffer> {
     const data = buf.subarray(start, start + size);
     if (!name.endsWith("/")) {
       if (method !== 0 && method !== 8) throw new Error(`${name} uses a ZIP compression this app can't read.`);
-      files.set(name, method === 0 ? data : inflateRawSync(data));
+      let content: Buffer;
+      try { content = method === 0 ? data : inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES }); }
+      catch (err) {
+        if (err instanceof RangeError) throw new Error(`${name} is larger than ${MAX_ENTRY_BYTES / 1024 / 1024} MB once unpacked; this app doesn't read files that large.`);
+        throw new Error("The ZIP file is damaged.");
+      }
+      total += content.length;
+      if (total > MAX_TOTAL_BYTES) throw new Error(`The ZIP is larger than ${MAX_TOTAL_BYTES / 1024 / 1024} MB once unpacked; this app doesn't read files that large.`);
+      files.set(name, content);
     }
     p = next;
   }
