@@ -47,6 +47,33 @@ a:hover { color: $pheno-forest; }
 .nav-pills .nav-link.active, .nav-pills .show > .nav-link { background-color: $pheno-leaf-dark; }
 .progress-bar { background-color: $pheno-leaf-dark; }
 
-// Login: forest overlay and straw page tint
-.lavalite-overlay { background-color: rgba($pheno-forest, 0.55); }
-body, .wrapper, .page-wrap { background-color: $pheno-straw-light; }
+// Login: forest overlay
+.lavalite-overlay { background-color: transparent; }
+
+// Logo: the PheNo logo is a wide wordmark, the default slots are small squares
+.auth-wrapper .authentication-form .logo-centered {
+  width: 300px;
+  max-width: 100%;
+  img { width: 100%; height: auto; }
+}
+.header-top .app-logo .header-brand {
+  .logo-img { width: auto; margin-top: 0; }
+  .header-brand-img {
+    position: static;
+    transform: none;
+    max-width: none;
+    height: 34px;
+    width: auto;
+    margin: 8px 0;
+  }
+  .text { display: none; }
+}
+
+// Dashboard watermark: same wide logo, keep it modest
+.dashboardCentralLogo {
+  max-width: 420px;
+  width: 60%;
+  height: auto !important;
+  max-height: 40vh;
+  object-fit: contain;
+}

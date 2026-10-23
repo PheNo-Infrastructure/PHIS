@@ -43,7 +43,13 @@ RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["o
 # front.theme: "opensilex-front#pheno"). Missing images (login backgrounds,
 # icons) are taken from the default theme first, then PheNo's own overwrite them.
 # pheno-colors.sh rewrites hardcoded colors in the Vue sources.
-RUN mkdir -p opensilex-front/front/theme/pheno     && cp -r opensilex-front/front/theme/opensilex/images opensilex-front/front/theme/pheno/images     && cp -r /patches/pheno-theme/. opensilex-front/front/theme/pheno/     && sh /patches/pheno-colors.sh /build     && test -f opensilex-front/front/theme/pheno/pheno.yml
+RUN mkdir -p opensilex-front/front/theme/pheno \
+    && cp -r opensilex-front/front/theme/opensilex/images opensilex-front/front/theme/pheno/images \
+    && cp -r /patches/pheno-theme/. opensilex-front/front/theme/pheno/ \
+    && cp /patches/pheno-theme/public/* opensilex-front/front/public/ \
+    && rm -r opensilex-front/front/theme/pheno/public \
+    && sh /patches/pheno-colors.sh /build \
+    && test -f opensilex-front/front/theme/pheno/pheno.yml
 
 # Build OpenSILEX with frontend
 # The first attempt always fails for one or both of:
