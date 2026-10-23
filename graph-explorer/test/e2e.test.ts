@@ -3093,6 +3093,10 @@ test("e2e: the chart detail: statistics toggle, observations can be picked into 
     assert.equal(await d.locator(".g-mean").count(), 0, "a scatter shows just the picked points");
     await cell(1, 1).click({ modifiers: ["Control"] });
     assert.equal(await d.locator(".g-obs").count(), 2, "ctrl adds");
+    assert.equal(await d.locator(".g-mean").count(), 1, "the statistics are of the picked observations: their mean per scan");
+    await d.locator(".g-dstats").uncheck();
+    assert.equal(await d.locator(".g-mean").count(), 0, "and the toggle still works with observations picked");
+    await d.locator(".g-dstats").check();
     await cell(1, 2).click({ modifiers: ["Shift"] });
     assert.equal(await d.locator("td.obs.sel").count(), 2, "shift picks the range from the last click: plant 2, scans 2 to 3");
     await d.locator('th.obs-row[data-c="0"]').click();
@@ -3155,6 +3159,26 @@ test("e2e: the chart grid works when the experiment page was opened as a local v
 });
 
 
+test("e2e: in a chart's detail a plant is highlighted or hidden, never both; the toggles explain themselves on hover", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    for (const id of ["gridOverlay", "gridNorm", "gridShared", "gridStats"]) assert.ok((await page.locator(`#${id}`).locator("xpath=..").getAttribute("data-tip"))!.length > 20, `${id} has an explanation`);
+    await page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-ct').click();
+    const b = page.locator("#chartDetail .g-plant").first();
+    await b.click();
+    assert.equal(await b.evaluate((el) => el.classList.contains("on")), true);
+    await b.click({ modifiers: ["Control"] });
+    assert.deepEqual(await b.evaluate((el) => [el.classList.contains("on"), el.classList.contains("off")]), [false, true], "hiding a highlighted plant takes the highlight off");
+    await b.click();
+    assert.deepEqual(await b.evaluate((el) => [el.classList.contains("on"), el.classList.contains("off")]), [true, false], "highlighting a hidden plant shows it again");
+  });
+});
+
 test("e2e: the chart detail dialog can open the level or plant it shows", async () => {
   await withServerAndBrowser(async (base, page) => {
     await routeOverview(page);
@@ -3169,6 +3193,11 @@ test("e2e: the chart detail dialog can open the level or plant it shows", async 
     assert.equal(await page.locator("#chartDetail").count(), 0, "the dialogs close");
     assert.equal(await page.locator("#chartGrid").count(), 0);
     assert.match(await page.locator("#selfChip").innerText(), /GroupID: 1/, "and the level's page is open");
+    await page.goBack();
+    await idle(page);
+    assert.doesNotMatch(await page.locator("#selfChip").innerText(), /GroupID: 1/, "Alt+Left goes back to the experiment's page");
+    await page.locator("#chartGrid").waitFor();
+    assert.equal(await page.locator("#chartGrid .g-chart").count() > 0, true, "and the charts are open again");
   });
 });
 
@@ -4004,6 +4033,13 @@ test("e2e: an import into a trial fills the Set up steps themselves: the values 
     assert.match(await step("Data").locator(".setup-preview").textContent() ?? "", /12 values/, "the review is still there after a trip to add something");
     await step("Scientific Objects").locator('.import-edit[data-edit="germplasm"]').click();
     assert.equal(await step("Scientific Objects").locator('input[data-code="Bean"]').inputValue(), "G1", "the code can be edited there too");
+    await step("Scientific Objects").locator(".import-editor [data-act=cancel]").click();
+    await page.route("**/api/import/run**", (r) => r.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { experiment: { id: "phis:id/experiment/e1", type: "experiment", label: "Barley 2024" }, created: { objects: 3, factors: 0, germplasm: 0, values: 12 } } }) + "\n" }));
+    await page.locator("#importRunBtn").click();
+    await page.locator("#importSetupBtn").waitFor();
+    assert.equal(await page.locator("#pageBody .setup-preview").count(), 0, "after the run the steps show what PHIS now holds, not the preview");
+    assert.equal(await page.locator("#pageBody #setupImport").count(), 1, "and Import more is back");
+    assert.equal(await page.locator("#importFooter").isVisible(), true, "while the result stays");
   });
 });
 
