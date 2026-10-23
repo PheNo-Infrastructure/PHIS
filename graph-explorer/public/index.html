@@ -577,8 +577,8 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .d-chart .d-col:hover rect, .d-chart .d-col.on rect { stroke: var(--ink); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
 .d-day { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
 .d-day-head { font-size: 13px; }
-.d-day.flash { animation: dayflash 1.4s ease-out; }
-@keyframes dayflash { 0% { background: color-mix(in srgb, var(--accent) 28%, transparent); } 100% { background: transparent; } }
+.d-day.flash { animation: dayflash 2.6s ease-out; border-radius: var(--radius); }
+@keyframes dayflash { 0%, 35% { background: color-mix(in srgb, var(--accent) 38%, transparent); outline: 3px solid var(--accent); outline-offset: 2px; } 100% { background: transparent; outline: 3px solid transparent; outline-offset: 2px; } }
 .d-day-head select { margin-left: 6px; font: inherit; font-size: 12px; }
 .d-day .g-row { margin-bottom: 0; }
 .d-day-head small { color: var(--ink-faint); margin-left: 8px; }
@@ -2773,12 +2773,22 @@ function overlayRowHtml(row, data, yr, opts) {
     if (m.length > 1) svg += `<polyline class="g-mean" stroke="${x.color}" points="${m.join(" ")}"/>`;
   });
   const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "";
-  // One axis for every series, so the axis names only the highest of all; each series' own highest value is marked at its height, in its colour.
-  const tops = live.length > 1 ? live.map(x => {
-    const top = band ? Math.max(...x.stats.filter(Boolean).map(st => st.mean + (st.sd ?? 0))) : Math.max(...x.plants.flatMap(p => p.values.map(v => v?.v ?? -Infinity)));
-    return Number.isFinite(top) ? `<span class="g-ys" style="top:${Y(top).toFixed(1)}%;color:${x.color}" title="${e(x.ch.title)}: highest value">${sig4(top)}${unit}</span>` : "";
-  }).join("") : "";
-  return wrap(`<div class="g-plot" data-row="${e(row.label)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${tops}<span class="g-yh">${sig4(range.hi)}${unit}</span><span class="g-yl">${sig4(range.lo)}${unit}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div>`);
+  // Several series share one axis: each names its own highest and lowest value, at that height and in its colour, instead of the axis
+  // naming only the extremes of all (labels that would meet are nudged apart). A single series keeps the plain axis labels.
+  let labels = "", axis = `<span class="g-yh">${sig4(range.hi)}${unit}</span><span class="g-yl">${sig4(range.lo)}${unit}</span>`;
+  if (live.length > 1) {
+    const found = [];
+    live.forEach(x => {
+      const vals = band ? x.stats.filter(Boolean).flatMap(st => [st.mean - (st.sd ?? 0), st.mean + (st.sd ?? 0)]) : x.plants.flatMap(p => p.values.map(v => v?.v)).filter(v => v != null);
+      if (!vals.length) return;
+      found.push({ y: Y(Math.max(...vals)), v: Math.max(...vals), kind: "max", color: x.color, title: x.ch.title }, { y: Y(Math.min(...vals)), v: Math.min(...vals), kind: "min", color: x.color, title: x.ch.title });
+    });
+    found.sort((a, b) => a.y - b.y);
+    found.forEach((f, i) => { if (i && f.y < found[i - 1].y + 3.6) f.y = found[i - 1].y + 3.6; });
+    labels = found.map(f => `<span class="g-ys" data-kind="${f.kind}" style="top:${f.y.toFixed(1)}%;color:${f.color}" title="${e(f.title)}: ${f.kind === "max" ? "highest" : "lowest"} value">${sig4(f.v)}${unit}</span>`).join("");
+    axis = "";
+  }
+  return wrap(`<div class="g-plot" data-row="${e(row.label)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${labels}${axis}<span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div>`);
 }
 function wireOverlayRow(plot, row, data, hiddenSeries, group) {
   const live = row.charts.map((ch, i) => {
@@ -2875,10 +2885,11 @@ function distDayHtml(plan, data, colors, st) {
 function showOneScan() {
   const el = document.querySelector("#chartGrid .d-day");
   if (!el) return;
-  el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
   el.classList.remove("flash");
   void el.offsetWidth;
   el.classList.add("flash");
+  showToast(`Showing ${el.querySelector("#distDay option:checked")?.textContent ?? "that scan"} for every plant, in One scan below.`, 4000);
 }
 // One plant's histogram at every scan: a stacked bar per scan, and the shares as a table.
 function openDistPlantDetail(p, data, colors, st, showDay, restored) {
@@ -2956,8 +2967,8 @@ async function renderChartGrid() {
     ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
-      <label data-tip="Every plant as a percentage of its own first scan (first scan = 100), to compare growth shapes whatever the size."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
-      <label data-tip="All charts use the same vertical scale, so they can be compared. Off: each chart fits its own values."><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
+      <label data-tip="Changes the values: every plant becomes a percentage of its own first scan (first scan = 100). Compare how fast plants grow, whatever size they started at."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
+      <label data-tip="Changes only the scale, not the values: every chart uses the same vertical axis, so a higher line really is a higher value. Off: each chart is stretched to fill its own height. Together with % of first scan: percentages on one common scale."><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
       <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>`}
       </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());

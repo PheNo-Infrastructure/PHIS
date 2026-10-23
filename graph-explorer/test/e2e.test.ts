@@ -3395,9 +3395,10 @@ test("e2e: overlay lays a row's charts on top of each other (plant lines and mea
     assert.equal(await grid.locator(".g-chart.overlay").count(), 1, "one chart for the row");
     assert.equal(await grid.locator(".g-mean").count(), 0, "no bold mean line unless statistics is on");
     assert.equal(await grid.locator(".g-line").count(), 3, "every plant's line, as in the separate charts");
-    assert.equal(await grid.locator(".g-ys").count(), 2, "each series' own highest value is marked on the shared axis");
+    assert.equal(await grid.locator(".g-ys").count(), 4, "each series names its own highest and lowest value, so the axis labels are gone");
+    assert.equal(await grid.locator(".g-chart.overlay .g-yh").count(), 0);
     assert.equal(await grid.locator("button.g-leg").count(), 2, "a legend entry per level");
-    const hi = Number((await grid.locator(".g-chart.overlay .g-yh").innerText()).trim().replace(/ mm$/, ""));
+    const hi = Math.max(...(await grid.locator('.g-chart.overlay .g-ys[data-kind="max"]').allInnerTexts()).map((t) => Number(t.trim().replace(/ mm$/, ""))));
     assert.ok(hi > 34.5, `the scale now fits the plant lines too, not only the means (${hi})`);
 
     const plot = grid.locator(".g-chart.overlay .g-plot");
