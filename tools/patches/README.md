@@ -19,7 +19,38 @@ before the Maven build. Palette and logo from the PheNo Design guidelines.
   stylesheet cannot override. Re-check the color list on each OpenSILEX upgrade.
 - Activate with `front: { theme: "opensilex-front#pheno" }` in
   `k8s/opensilex/opensilex.yml` (only after an image containing the theme is
-  deployed, otherwise the theme lookup 404s).
+  deployed, otherwise the theme lookup 404s). Prod and test both set
+  `applicationName: "PheNo PHIS"` there too (test: `k8s/test/opensilex.yml`).
+- `opensilex-front/front/public/` is outside the theme, so the build step also
+  copies `pheno-theme/public/*` over it (favicons with transparent background,
+  loading-screen mark `opensilex.png`) and `sed`s `index.html`: tab title and
+  loader texts to "PheNo PHIS", loader ring `#5dc599` -> `#3d8526`, logo sized
+  150px and nudged `translateY(8px)`, ring margin 6px -> 3px (upstream quirk
+  puts the ring 3px off centre). The 8px was picked by comparing 0/4/6/8/10/13px
+  renders side by side (mark bbox is centred but its square top corner crowds
+  the ring, so it looks high).
+- Login carousel keeps the default photos; only the OpenSILEX-branded first
+  slide `opensilex-login-bg.png` is replaced by a photo.
+
+### Changing the theme later
+
+Theme edits need a new image (the theme lives in the OpenSILEX jar): run the
+`build-opensilex.yml` workflow with `opensilex_tag=1.5.4` and a new
+`image_version` (never reuse a tag). The Maven step is flaky upstream
+(swagger-codegen skips 2 models); rerun once before debugging. Then roll
+`phis-test` (`kubectl set image deployment/opensilex opensilex=<image> -n phis-test`),
+check, and bump the tag in `k8s/opensilex/deployment.yaml` on `main` for prod
+(Flux rolls it; PVCs untouched). A browser that already loaded the app shows
+the old colours/favicon until a hard reload (Ctrl+Shift+R).
+
+Quick preview without a build: compile the default theme SCSS plus
+`pheno-theme/_pheno.scss` with sass and swap it into the live page with
+Playwright `route()` on `/rest/vuejs/theme/<module>/<theme>/style.css` and
+`/resource?filePath=`. Scoped Vue colours only show after a real build.
+
+Known leftovers: login language button shows the raw key
+`LoginComponent.language.nb` and a light-blue focus ring; bootstrap "info"
+cyan buttons/badges are not recoloured.
 
 ## Active Patches
 
