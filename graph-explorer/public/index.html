@@ -614,6 +614,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .g-line.hov { stroke-width: 2.8; opacity: 1 !important; }
 .g-chart.stats .g-line, .g-chart.scatter .g-line { opacity: .12; }
 .g-chart.scatter .g-line.em { opacity: .5; }
+.g-chart.stats .g-line.em { opacity: 1; stroke-width: 2.6; }
 .g-mean { stroke-width: 2.4; }
 .g-band { opacity: .2; stroke: none; }
 .g-yh, .g-yl { position: absolute; left: 2px; font-size: 10px; color: var(--ink-faint); pointer-events: none; line-height: 1; }
@@ -1948,15 +1949,49 @@ function renderImportPage(body) {
 const historyPaths = new Map([[0, path]]);
 let historyCount = 0;
 history.replaceState({ n: 0 }, "", location.href);
-let chartReturn = null; // the history entry a chart window was left from ("Open <plant>"): going back to it opens the charts again
+const historyUi = new Map([[0, null]]); // entry number -> which chart windows were open there ({ grid: { vi }, detail: { kind, ... } } or null)
+const uiNow = () => {
+  const g = document.getElementById("chartGrid"), d = document.getElementById("chartDetail");
+  return g?.open ? { grid: { vi: gridState.vi }, detail: d?.open ? d._ui ?? null : null } : null;
+};
+// A window just opened: it gets an entry of its own (or, restored by Back/Forward, the entry we are on) and closes when that entry is left.
+function registerOverlay(dlg, ui, restoredAt) {
+  dlg._ui = ui;
+  if (restoredAt === undefined) {
+    history.pushState({ n: ++historyCount }, "", location.href);
+    historyPaths.set(historyCount, path);
+    historyUi.set(historyCount, uiNow());
+    dlg._entry = historyCount;
+  } else dlg._entry = restoredAt;
+  // Closed by the user (Close, Escape) while still on its own entry: that is going back one step. Left by navigating: nothing to undo.
+  dlg.addEventListener("close", () => { dlg.remove(); if (history.state?.n === dlg._entry) history.back(); });
+}
+const syncUi = () => { const n = history.state?.n; if (historyUi.get(n)?.grid) historyUi.set(n, uiNow()); }; // the grid's current variable
+async function applyUi(ui) {
+  const g = document.getElementById("chartGrid"), d = document.getElementById("chartDetail");
+  if (!ui) { d?.close(); g?.close(); return; }
+  const n = history.state.n;
+  if (!g?.open) { if (!chartableSelection()) return; openChartGrid({ vi: ui.grid.vi, n }); }
+  if (!ui.detail) { document.getElementById("chartDetail")?.close(); return; }
+  if (d?.open && JSON.stringify(d._ui) === JSON.stringify(ui.detail)) return;
+  d?.close();
+  const sel = chartableSelection(), v = sel?.plan.variables[gridState.vi];
+  if (!v) return;
+  if (ui.detail.kind === "plant") {
+    const data = await loadDistribution(sel.experiment, v.id);
+    openDistPlantDetail(data.plants.find(p => sameId(p.id, ui.detail.id)), data, distColors(data.bins.length), sel.st, i => { distState.day = i; renderChartGrid(); }, n);
+  } else {
+    let data = await loadOverview(sel.experiment, v.id);
+    if (gridState.norm) data = normaliseOverview(data);
+    const ch = sel.plan.rows.flatMap(r => r.charts).find(c => c.key === ui.detail.key);
+    if (ch) openChartDetail(ch, data, sel.st, n);
+  }
+}
 window.addEventListener("popstate", (e) => {
   const p = historyPaths.get(e.state?.n);
-  if (p) showPath(p);
-  if (p && chartReturn && e.state.n === chartReturn.n) {
-    const back = chartReturn;
-    chartReturn = null;
-    if (chartableSelection()) { openChartGrid(); gridState.vi = back.vi; renderChartGrid(); }
-  }
+  if (!p) return;
+  showPath(p);
+  applyUi(historyUi.get(e.state.n) ?? null);
 });
 
 function navigateTo(newPath) {
@@ -2648,13 +2683,13 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   const Y = v => 12 + 76 * (1 - (v - range.lo) / (range.hi - range.lo));
   const path = vals => vals.map((v, i) => v == null ? null : `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).filter(Boolean);
   const color = ch.kind === "plant" ? "var(--ink)" : colorVar(ch.colorIndex);
-  let svg = "", dots = "";
+  let svg = "", dots = "", top = ""; // top: the highlighted plants, drawn after the band and the mean
   if (ch.kind !== "plant") pts.forEach(p => {
     const d = path(p.values.map(v => v?.v ?? null));
     if (view.hidden.has(p.id)) return;
     const emph = ch.emphasis.some(x => sameId(x, p.id)) || view.highlight.has(p.id);
     if (opts.stats && !view.big && !emph) return; // with statistics on, only the mean and its band are drawn
-    if (d.length > 1) svg += `<polyline class="g-line${emph ? " em" : ""}" data-id="${e(p.id)}" stroke="${color}" points="${d.join(" ")}"/>`;
+    if (d.length > 1) { const line = `<polyline class="g-line${emph ? " em" : ""}" data-id="${e(p.id)}" stroke="${color}" points="${d.join(" ")}"/>`; if (emph) top += line; else svg += line; }
   });
   if (band) {
     const up = [], down = [];
@@ -2666,7 +2701,8 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   if (scatter) pts.forEach(p => p.values.forEach((v, i) => { if (v && view.selected.has(`${p.id}|${i}`)) dots += `<span class="g-pt g-obs" style="left:${X(i).toFixed(1)}%;top:${Y(v.v).toFixed(1)}%;background:${color}" title="${e(`${v.v} · ${whenText(data.columns[i].key)}`)}"></span>`; }));
   if (mean.length > 1) svg += `<polyline class="g-mean" stroke="${color}" points="${mean.join(" ")}"/>`;
   else if (mean.length === 1) { const [x, y] = mean[0].split(","); dots += `<span class="g-pt" style="left:${x}%;top:${y}%;background:${color}"></span>`; }
-  return `<div class="g-chart${opts.stats ? " stats" : ""}${scatter ? " scatter" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-yh">${sig4(range.hi)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div></div>`;
+  svg += top;
+  return `<div class="g-chart${opts.stats ? " stats" : ""}${scatter ? " scatter" : ""}" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg>${dots}<span class="g-yh">${sig4(range.hi)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-yl">${sig4(range.lo)}${data.variable.unit ? " " + e(unitText(data.variable.unit)) : ""}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div></div>`;
 }
 
 // Hover: the nearest scan. Every chart of a grid (the `group`) marks that same scan and shows its own text there.
@@ -2731,7 +2767,7 @@ function overlayRowHtml(row, data, yr, opts) {
     if (m.length > 1) svg += `<polyline class="g-mean" stroke="${x.color}" points="${m.join(" ")}"/>`;
   });
   const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "";
-  return wrap(`<div class="g-plot" data-row="${e(row.label)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg><span class="g-yh">${sig4(range.hi)}${unit}</span><span class="g-yl">${sig4(range.lo)}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div>`);
+  return wrap(`<div class="g-plot" data-row="${e(row.label)}"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${svg}</svg><span class="g-yh">${sig4(range.hi)}${unit}</span><span class="g-yl">${sig4(range.lo)}${unit}</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[nCols - 1].key))}</span></div>`);
 }
 function wireOverlayRow(plot, row, data, hiddenSeries, group) {
   const live = row.charts.map((ch, i) => {
@@ -2825,7 +2861,7 @@ function distDayHtml(plan, data, colors, st) {
 }
 
 // One plant's histogram at every scan: a stacked bar per scan, and the shares as a table.
-function openDistPlantDetail(p, data, colors, st, showDay) {
+function openDistPlantDetail(p, data, colors, st, showDay, restoredAt) {
   if (!p) return;
   document.getElementById("chartDetail")?.remove();
   const e = escapeHtml, label = plantLabelIn(st, p.id), n = data.columns.length, bw = 100 / n;
@@ -2840,7 +2876,6 @@ function openDistPlantDetail(p, data, colors, st, showDay) {
     <div class="g-chart d-chart"><div class="g-plot" style="height:220px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[n - 1].key))}</span></div></div>
     <div class="meas-values obs-wrap"><table class="obs-table"><thead><tr><th>Scan</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
   document.body.appendChild(dlg);
-  dlg.addEventListener("close", () => dlg.remove());
   let scan = null, only = null; // the scan picked (bar or row), the one range followed (name above its column)
   const paint = () => {
     dlg.querySelectorAll(".d-col, tbody tr").forEach(el => el.classList.toggle("on", scan !== null && Number(el.dataset.col) === scan));
@@ -2850,13 +2885,14 @@ function openDistPlantDetail(p, data, colors, st, showDay) {
   };
   dlg.addEventListener("click", ev => {
     if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
-    if (ev.target.closest(".g-open")) { dlg.close(); document.getElementById("chartGrid")?.close(); chartReturn = { n: history.state?.n ?? 0, vi: gridState.vi }; openRelatedNode({ id: p.id, type: "scientific_object", label }); return; }
+    if (ev.target.closest(".g-open")) { dlg.close(); document.getElementById("chartGrid")?.close(); openRelatedNode({ id: p.id, type: "scientific_object", label }); return; }
     if (ev.target.closest(".g-day")) { dlg.close(); showDay(scan); return; }
     const th = ev.target.closest("th[data-b]"), pick = ev.target.closest("[data-col]");
     if (th) { only = only === Number(th.dataset.b) ? null : Number(th.dataset.b); paint(); }
     else if (pick) { scan = scan === Number(pick.dataset.col) ? null : Number(pick.dataset.col); paint(); }
   });
   dlg.showModal();
+  registerOverlay(dlg, { kind: "plant", id: p.id }, restoredAt);
 }
 
 async function renderDistributionBody(dlg, body, plan, sel, v) {
@@ -2876,7 +2912,7 @@ async function renderDistributionBody(dlg, body, plan, sel, v) {
     body.innerHTML = legend + plan.rows.map(r => `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => distChartHtml(c, data, colors)).join("")}</div></div>`).join("")
       + distDayHtml(plan, data, colors, sel.st);
     body.querySelectorAll(".d-col").forEach(g => g.addEventListener("click", () => { distState.day = Number(g.dataset.col); draw(); }));
-    body.querySelectorAll(".d-plant").forEach(g => g.addEventListener("click", () => openDistPlantDetail(data.plants.find(p => sameId(p.id, g.dataset.plant)), data, colors, sel.st, i => { distState.day = i; draw(); })));
+    body.querySelectorAll(".d-plant").forEach(g => g.addEventListener("click", () => openDistPlantDetail(data.plants.find(p => sameId(p.id, g.dataset.plant)), data, colors, sel.st, i => { distState.day = i; renderChartGrid(); })));
     body.querySelector("#distDay").addEventListener("change", ev => { distState.day = Number(ev.target.value); draw(); });
   };
   draw();
@@ -2890,6 +2926,7 @@ async function renderChartGrid() {
   dlg.className = "grid-dialog";
   // The window follows the content (one chart, a few, many) and the charts follow the window: see fitChartLayout.
   gridState.vi = Math.max(0, Math.min(gridState.vi, plan.variables.length - 1));
+  syncUi();
   const v = plan.variables[gridState.vi];
   dlg._fit = { counts: gridState.overlay ? plan.rows.map(() => 1) : plan.rows.map(r => r.charts.length), extra: v.kind === "distribution" ? 1 : 0 };
   const fit = fitChartLayout(dlg._fit.counts, dlg._fit.extra);
@@ -2986,7 +3023,7 @@ function wireLineHover(plot, plants, data, labelOf) {
 // One chart's full numbers: a big chart (click it for full screen; the window can be resized), the statistics toggle,
 // and the actual observations as a scan × plant table. Picking observations (click, ctrl, shift, row/column headers)
 // turns the chart into a scatter of just those points; mean ± SD of a scan shows when hovering the chart.
-function openChartDetail(ch, data, st) {
+function openChartDetail(ch, data, st, restoredAt) {
   document.getElementById("chartDetail")?.remove();
   const e = escapeHtml;
   const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
@@ -3051,7 +3088,6 @@ function openChartDetail(ch, data, st) {
         : { id: levelId, type: "factor_level", label: ch.title, factor: st.factors.find(x => x.levels.some(l => l.id === levelId))?.id };
       dlg.close();
       document.getElementById("chartGrid")?.close();
-      chartReturn = { n: history.state?.n ?? 0, vi: gridState.vi };
       openRelatedNode(item);
       return;
     }
@@ -3062,24 +3098,25 @@ function openChartDetail(ch, data, st) {
     paint();
   });
   const ro = new ResizeObserver(() => fit());
-  dlg.addEventListener("close", () => { ro.disconnect(); dlg.remove(); });
+  dlg.addEventListener("close", () => ro.disconnect());
   dlg.showModal();
+  registerOverlay(dlg, { kind: "chart", key: ch.key }, restoredAt);
   ro.observe(dlg);
   fit();
   paint();
 }
 
-function openChartGrid() {
+function openChartGrid(restore) {
   if (!chartableSelection()) { showToast("Open the experiment's page to chart it.", 3000); return; }
   document.getElementById("chartGrid")?.remove();
   const dlg = document.createElement("dialog");
   dlg.className = "grid-dialog";
   dlg.id = "chartGrid";
   document.body.appendChild(dlg);
-  dlg.addEventListener("close", () => dlg.remove());
   new ResizeObserver(() => applyChartFit(dlg)).observe(dlg);
-  gridState.vi = 0;
+  gridState.vi = restore?.vi ?? 0;
   dlg.showModal();
+  registerOverlay(dlg, null, restore?.n);
   renderChartGrid();
 }
 
@@ -5402,7 +5439,9 @@ function wireImportRun(file, plan, close) {
       footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn" id="importSetupBtn">${importSession?.inSetup ? "Back to the steps" : "Set up this experiment"}</button><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       if (into && document.getElementById("importPlan")?.contains(document.getElementById("importFooter"))) {
         const out = document.getElementById("importPlan"), foot = document.getElementById("importFooter");
+        const wasOpen = out.querySelector(".setup-optional-box")?.open;
         out.innerHTML = setupStepsHtml(into);
+        if (wasOpen) out.querySelector(".setup-optional-box").open = true;
         out.appendChild(foot);
         wireSetupImport(into);
       }

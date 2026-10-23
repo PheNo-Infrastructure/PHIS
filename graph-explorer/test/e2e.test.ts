@@ -3159,6 +3159,50 @@ test("e2e: the chart grid works when the experiment page was opened as a local v
 });
 
 
+test("e2e: the chart windows are part of Back / Forward: each opens as a step, Alt+Left closes it, Alt+Right opens it again", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    await page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-ct').click();
+    await page.locator("#chartDetail").waitFor();
+    await page.goBack();
+    await page.waitForFunction(() => !document.getElementById("chartDetail"));
+    assert.equal(await page.locator("#chartGrid").isVisible(), true, "back from a chart's detail: the grid is still there");
+    await page.goBack();
+    await page.waitForFunction(() => !document.getElementById("chartGrid"));
+    await page.goForward();
+    await page.locator("#chartGrid .g-chart").first().waitFor();
+    await page.goForward();
+    await page.locator("#chartDetail").waitFor();
+    const n = await page.evaluate(() => history.state.n);
+    await page.locator("#chartDetail .g-close").click();
+    await page.waitForFunction((x) => history.state.n === x - 1 && !document.getElementById("chartDetail"), n);
+    assert.equal(await page.locator("#chartGrid").isVisible(), true, "Close on the detail is the same step back");
+    await page.locator("#gridClose").click();
+    await page.waitForFunction(() => !document.getElementById("chartGrid"));
+  });
+});
+
+test("e2e: highlighted plants stay visible with statistics on", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator('button.dtab[data-dtab="plants"]').click();
+    await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+    await page.locator("#showGridBtn").click();
+    await page.locator('#chartGrid .g-chart[data-key="lv-g1"] .g-ct').click();
+    const d = page.locator("#chartDetail");
+    await d.locator(".g-plant").first().click();
+    assert.equal(await d.locator(".g-line.em").evaluate((el) => getComputedStyle(el).opacity), "1", "the highlighted plant is not faded with the others");
+    assert.equal(await d.locator(".g-plot svg").evaluate((svg) => svg.lastElementChild!.classList.contains("em")), true, "and is drawn on top of the band");
+  });
+});
+
 test("e2e: in a chart's detail a plant is highlighted or hidden, never both; the toggles explain themselves on hover", async () => {
   await withServerAndBrowser(async (base, page) => {
     await routeOverview(page);
@@ -3312,7 +3356,7 @@ test("e2e: every chart has a scale: the y range (with the unit) and the first an
     await openGridFor(page, base);
     const chart = page.locator('#chartGrid .g-chart[data-key="lv-g1"]');
     assert.match(await chart.locator(".g-yh").innerText(), /^36 mm$/, "top of the y-axis: the highest value in the grid, with the unit");
-    assert.equal((await chart.locator(".g-yl").innerText()).trim(), "11", "bottom of the y-axis");
+    assert.equal((await chart.locator(".g-yl").innerText()).trim(), "11 mm", "bottom of the y-axis, with the unit too");
     const x = (await chart.locator(".g-xa").innerText()).replace(/\s+/g, " ");
     assert.match(x, /22 Oct 2025.*24 Oct 2025/, "first and last scan");
     await page.locator("#chartGrid #gridShared").uncheck();
