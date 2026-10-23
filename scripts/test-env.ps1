@@ -32,8 +32,7 @@ function New-Keyfile {
 
 function Build-Files([string]$TmpDir, [string]$Ns, [string]$LbIp, [bool]$IncludeInitJob) {
     $secretFiles = 'mongodb-credentials.yaml', 'graphdb-credentials.yaml',
-                   'opensilex-credentials.yaml', 'feide-credentials.yaml', 'ghcr-pull-secret.yaml',
-                   'portal-credentials.yaml'
+                   'opensilex-credentials.yaml', 'feide-credentials.yaml', 'ghcr-pull-secret.yaml'
 
     $sources = @(Get-ChildItem "$BaseDir\*.yaml") +
                @(Get-Item "$BaseDir\opensilex.yml" -ErrorAction SilentlyContinue)
@@ -48,8 +47,7 @@ function Build-Files([string]$TmpDir, [string]$Ns, [string]$LbIp, [bool]$Include
 
         if ($fname -eq 'kustomization.yaml' -and -not $IncludeInitJob) {
             $content = ($content -split "`r?`n" |
-                Where-Object { $_ -notmatch 'opensilex-init-job\.yaml' } |
-                Where-Object { $_ -notmatch 'portal-graphdb-init-job\.yaml' }) -join "`n"
+                Where-Object { $_ -notmatch 'opensilex-init-job\.yaml' }) -join "`n"
         }
 
         Write-File (Join-Path $TmpDir $fname) $content
@@ -75,8 +73,7 @@ function Write-Secrets(
     [string]$TmpDir, [string]$Ns,
     [string]$MongoRoot, [string]$MongoApp, [string]$MongoKeyfile,
     [string]$GraphDbPass, [string]$AdminPass,
-    [string]$FeideId, [string]$FeideSecret, [string]$GhcrB64,
-    [string]$GraphDbPortalPass
+    [string]$FeideId, [string]$FeideSecret, [string]$GhcrB64
 ) {
     Write-File "$TmpDir\mongodb-credentials.yaml" @"
 apiVersion: v1
@@ -132,17 +129,6 @@ metadata:
 type: kubernetes.io/dockerconfigjson
 data:
   .dockerconfigjson: $GhcrB64
-"@
-    Write-File "$TmpDir\portal-credentials.yaml" @"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: portal-credentials
-  namespace: $Ns
-type: Opaque
-stringData:
-  phis-pass: "$AdminPass"
-  graphdb-portal-password: "$GraphDbPortalPass"
 "@
 }
 
@@ -204,35 +190,27 @@ function Invoke-Up {
     $mongoKeyfile     = New-Keyfile
     $graphDbPass      = New-RandomHex
     $adminPass        = New-RandomHex
-    $graphDbPortalPass = New-RandomHex
 
     $tmpDir = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
     New-Item -ItemType Directory -Path $tmpDir | Out-Null
 
     try {
         Write-Secrets $tmpDir $ns $mongoRoot $mongoApp $mongoKeyfile `
-                      $graphDbPass $adminPass $feideId $feideSecret $shared.GhcrB64 `
-                      $graphDbPortalPass
+                      $graphDbPass $adminPass $feideId $feideSecret $shared.GhcrB64
 
         Write-Host ""
         Write-Host "Deploying $ns (pass 1/2)..."
         Build-Files  $tmpDir $ns 'pending' $false
         kubectl apply -k ($tmpDir -replace '\\', '/')
 
-        Write-Host -NoNewline "Waiting for LoadBalancer IPs"
+        Write-Host -NoNewline "Waiting for LoadBalancer IP"
         $lbIp = $null
         while (-not $lbIp) {
             $lbIp = kubectl get svc opensilex -n $ns `
                     -o "jsonpath={.status.loadBalancer.ingress[0].ip}" 2>$null
             if (-not $lbIp) { Write-Host -NoNewline '.'; Start-Sleep 5 }
         }
-        $portalIp = $null
-        while (-not $portalIp) {
-            $portalIp = kubectl get svc portal -n $ns `
-                        -o "jsonpath={.status.loadBalancer.ingress[0].ip}" 2>$null
-            if (-not $portalIp) { Write-Host -NoNewline '.'; Start-Sleep 5 }
-        }
-        Write-Host " opensilex=$lbIp portal=$portalIp"
+        Write-Host " opensilex=$lbIp"
 
         Write-Host "Applying config with IP $lbIp (pass 2/2)..."
         Build-Files  $tmpDir $ns $lbIp $true
@@ -258,7 +236,6 @@ function Invoke-Up {
     Write-Host ("║  Environment:    {0,-45}║" -f $name)
     Write-Host ("║  Namespace:      {0,-45}║" -f $ns)
     Write-Host ("║  OpenSILEX URL:  {0,-45}║" -f "http://$lbIp/")
-    Write-Host ("║  Portal URL:     {0,-45}║" -f "http://${portalIp}:8501/")
     Write-Host ("║  Admin email:    {0,-45}║" -f "admin@opensilex.org")
     Write-Host ("║  Admin password: {0,-45}║" -f $adminPass)
     Write-Host "║                                                              ║"
@@ -304,17 +281,14 @@ function Invoke-List {
     $lines = kubectl get ns -o name 2>$null | Where-Object { $_ -match '^namespace/phis-' }
     if (-not $lines) { Write-Host "No test environments running."; return }
     Write-Host ""
-    Write-Host ("{0,-30}  {1,-28}  {2}" -f "Namespace", "OpenSILEX", "Portal")
-    Write-Host ("{0,-30}  {1,-28}  {2}" -f "─────────────────────────────", "───────────────────────────", "───────────────────────────")
+    Write-Host ("{0,-30}  {1}" -f "Namespace", "OpenSILEX")
+    Write-Host ("{0,-30}  {1}" -f "─────────────────────────────", "───────────────────────────")
     foreach ($line in $lines) {
         $ns = $line -replace '^namespace/', ''
         $ip = kubectl get svc opensilex -n $ns `
               -o "jsonpath={.status.loadBalancer.ingress[0].ip}" 2>$null
         if (-not $ip) { $ip = 'pending' }
-        $pip = kubectl get svc portal -n $ns `
-               -o "jsonpath={.status.loadBalancer.ingress[0].ip}" 2>$null
-        if (-not $pip) { $pip = 'pending' }
-        Write-Host ("{0,-30}  {1,-28}  http://{2}:8501/" -f $ns, "http://$ip/", $pip)
+        Write-Host ("{0,-30}  {1}" -f $ns, "http://$ip/")
     }
 }
 

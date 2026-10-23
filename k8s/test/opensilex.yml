@@ -58,3 +58,7 @@ security:
     connectionTitle:
       en: "Login with Feide"
       no: "Logg inn med Feide"
+
+front:
+  theme: "opensilex-front#pheno"
+  applicationName: "PheNo PHIS"

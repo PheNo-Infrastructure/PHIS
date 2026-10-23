@@ -47,3 +47,6 @@ graph-explorer/node_modules/
 # graph spike data (throwaway, from phis-test)
 graph-explorer/spike/graph.json
 graph-explorer/spike/graph.html
+
+# Terraform plan files (can contain secrets)
+*.tfplan

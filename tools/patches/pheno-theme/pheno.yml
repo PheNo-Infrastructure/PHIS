@@ -1,0 +1,15 @@
+# PheNo theme. Extends the default OpenSILEX theme; colors come from
+# _pheno.scss plus pheno-colors.sh (hardcoded colors in the Vue sources).
+# Config is not inherited from the parent theme, so iconClassesRDF is repeated.
+extend: opensilex-front#opensilex
+
+stylesheets:
+    - _pheno.scss
+
+fonts:
+
+iconClassesRDF:
+    "org:Site": "fa#map-marker-alt"
+    "http://www.w3.org/ns/org#Site": "fa#map-marker-alt"
+    "vocabulary:Facility": "ik#ik-globe"
+    "http://www.opensilex.org/vocabulary/oeso#Facility": "ik#ik-globe"

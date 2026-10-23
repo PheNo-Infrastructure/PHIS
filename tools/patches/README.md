@@ -2,6 +2,25 @@
 
 Patches applied to OpenSILEX source during the GitHub Actions image build (`build-opensilex.yml`).
 
+## PheNo theme (not a `.patch`)
+
+`pheno-theme/` + `pheno-colors.sh`, wired in by `opensilex-build-step.docker`
+before the Maven build. Palette and logo from the PheNo Design guidelines.
+
+- `pheno-theme/` is copied to `opensilex-front/front/theme/pheno/` (default
+  theme images first, PheNo logos on top). `pheno.yml` extends
+  `opensilex-front#opensilex`; `_pheno.scss` holds the palette overrides.
+  Theme config is **not** inherited, hence `iconClassesRDF` is repeated.
+  Resources are served from the active theme's own folder only (no fallback),
+  so every image the layout asks for must exist in `pheno/images`.
+- `pheno-colors.sh` rewrites hardcoded teal/blue hex colors (`#00a38d`,
+  `#007bff`, `#448aff`, ...) in `*/front/src` and the default theme to PheNo
+  greens. Needed because ~370 components use `<style scoped>`, which a theme
+  stylesheet cannot override. Re-check the color list on each OpenSILEX upgrade.
+- Activate with `front: { theme: "opensilex-front#pheno" }` in
+  `k8s/opensilex/opensilex.yml` (only after an image containing the theme is
+  deployed, otherwise the theme lookup 404s).
+
 ## Active Patches
 
 The build applies patches in filename order — `002` → `012` — via a shell glob

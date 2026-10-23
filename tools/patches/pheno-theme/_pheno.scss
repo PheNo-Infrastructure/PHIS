@@ -1,0 +1,91 @@
+// PheNo palette (PheNo Design guidelines)
+$pheno-straw-light: #F2F5DE;
+$pheno-straw-dark: #E3EBA1;
+$pheno-leaf-light: #87CF82;
+$pheno-leaf-dark: #3D8526;
+$pheno-forest: #264030;
+
+a { color: $pheno-leaf-dark; }
+a:hover { color: $pheno-forest; }
+
+.text-primary { color: $pheno-leaf-dark !important; }
+.bg-primary { background-color: $pheno-leaf-dark !important; }
+.border-primary { border-color: $pheno-leaf-dark !important; }
+
+.btn-primary {
+  background-color: $pheno-leaf-dark;
+  border-color: $pheno-leaf-dark;
+  &:hover, &:focus, &:active, &:not(:disabled):not(.disabled):active {
+    background-color: $pheno-forest !important;
+    border-color: $pheno-forest !important;
+  }
+}
+.btn-outline-primary {
+  color: $pheno-leaf-dark;
+  border-color: $pheno-leaf-dark;
+  &:hover, &:focus, &:active {
+    background-color: $pheno-leaf-dark !important;
+    border-color: $pheno-leaf-dark !important;
+    color: #fff;
+  }
+}
+.badge-primary { background-color: $pheno-leaf-dark; }
+.alert-primary, .alert-info { background-color: $pheno-straw-light; border-color: $pheno-straw-dark; color: $pheno-forest; }
+
+.form-control:focus, .custom-select:focus {
+  border-color: $pheno-leaf-light;
+  box-shadow: 0 0 0 0.2rem rgba($pheno-leaf-light, 0.35);
+}
+.custom-control-input:checked ~ .custom-control-label::before {
+  background-color: $pheno-leaf-dark;
+  border-color: $pheno-leaf-dark;
+}
+.page-item.active .page-link {
+  background-color: $pheno-leaf-dark;
+  border-color: $pheno-leaf-dark;
+}
+.nav-pills .nav-link.active, .nav-pills .show > .nav-link { background-color: $pheno-leaf-dark; }
+.progress-bar { background-color: $pheno-leaf-dark; }
+
+
+// Logo: the PheNo logo is a wide wordmark, the default slots are small squares
+.auth-wrapper .authentication-form .logo-centered {
+  width: 300px;
+  max-width: 100%;
+  img { width: 100%; height: auto; }
+}
+.header-top .app-logo .header-brand {
+  .logo-img { width: auto; margin-top: 0; }
+  .header-brand-img {
+    position: static;
+    transform: none;
+    max-width: none;
+    height: 34px;
+    width: auto;
+    margin: 8px 0;
+  }
+  .text { display: none; }
+}
+
+// Dashboard watermark: same wide logo, keep it modest
+.dashboardCentralLogo {
+  max-width: 420px;
+  width: 60%;
+  height: auto !important;
+  max-height: 40vh;
+  object-fit: contain;
+}
+
+// Login: bootstrap "success" outline (Feide button) and link-style buttons
+.btn-outline-success {
+  color: $pheno-leaf-dark;
+  border-color: $pheno-leaf-dark;
+  &:hover, &:focus, &:active {
+    background-color: $pheno-leaf-dark !important;
+    border-color: $pheno-leaf-dark !important;
+    color: #fff;
+  }
+}
+.btn-link { color: $pheno-leaf-dark; &:hover, &:focus { color: $pheno-forest; } }
+.show > .btn-link.dropdown-toggle { color: $pheno-forest; }
+.dropdown-item.active, .dropdown-item:active { background-color: $pheno-leaf-dark; }

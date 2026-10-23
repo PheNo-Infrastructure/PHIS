@@ -10,13 +10,13 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "512Mi"
+              memory: "3Gi"
             limits:
-              memory: "2Gi"
+              memory: "3Gi"
           env:
             - name: GDB_JAVA_OPTS
               value: >-
-                -Xmx1g -Xms256m
+                -XX:MaxRAMPercentage=80 -Xms256m
                 -Dgraphdb.home=/opt/graphdb/home
                 -Dgraphdb.workbench.cors.enable=false
         - name: graphdb-proxy
@@ -36,12 +36,9 @@ spec:
           resources:
             requests:
               cpu: "100m"
-              memory: "256Mi"
+              memory: "2Gi"
             limits:
-              memory: "1Gi"
-          env:
-            - name: JAVA_OPTS
-              value: "-Xmx512m -Xms256m"
+              memory: "2Gi"
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -55,3 +52,6 @@ spec:
           resources:
             requests:
               cpu: "100m"
+              memory: "1Gi"
+            limits:
+              memory: "1Gi"

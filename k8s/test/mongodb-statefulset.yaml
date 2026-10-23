@@ -111,7 +111,6 @@ spec:
               cpu: "250m"
               memory: "512Mi"
             limits:
-              cpu: "1000m"
               memory: "2Gi"
           volumeMounts:
             - name: mongodb-data

@@ -17,6 +17,14 @@ resource "azurerm_kubernetes_cluster" "phis" {
     node_count          = var.node_count
     vm_size             = var.node_vm_size
     os_disk_size_gb     = var.node_os_disk_size_gb
+    # Lets a vm_size change rotate the pool (temporary pool, drain, recreate)
+    # instead of replacing the whole cluster.
+    temporary_name_for_rotation = "rotation"
+
+    # Matches what is live (set outside Terraform), so plans don't drop it.
+    upgrade_settings {
+      max_surge = "10%"
+    }
   }
 
   # SystemAssigned: the cluster control-plane gets an identity automatically.

@@ -32,9 +32,11 @@ variable "kubernetes_version" {
 }
 
 variable "node_vm_size" {
+  # E4as_v7: 4 vCPU / 32 GB, memory is the bottleneck (2026-10-02). E4as_v5 is
+  # NotAvailableForSubscription in westeurope; v7 also allows 12 data disks (v3: 8).
   description = "VM SKU for the single AKS node"
   type        = string
-  default     = "Standard_D4s_v3"
+  default     = "Standard_E4as_v7"
 }
 
 variable "node_count" {

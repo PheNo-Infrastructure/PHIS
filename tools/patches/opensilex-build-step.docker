@@ -39,6 +39,20 @@ RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["o
     && grep -q 'opensilex-Register' opensilex-front/front/src/components/index.ts \
     && echo "index.ts patched OK"
 
+# PheNo theme: new theme folder next to the default one (selected with
+# front.theme: "opensilex-front#pheno"). Missing images (login backgrounds,
+# icons) are taken from the default theme first, then PheNo's own overwrite them.
+# pheno-colors.sh rewrites hardcoded colors in the Vue sources.
+RUN mkdir -p opensilex-front/front/theme/pheno \
+    && cp -r opensilex-front/front/theme/opensilex/images opensilex-front/front/theme/pheno/images \
+    && cp -r /patches/pheno-theme/. opensilex-front/front/theme/pheno/ \
+    && cp /patches/pheno-theme/public/* opensilex-front/front/public/ \
+    && rm -r opensilex-front/front/theme/pheno/public \
+    && sed -i 's/OpenSilex/PheNo PHIS/g; s/OpenSILEX/PheNo PHIS/g' opensilex-front/front/public/index.html \
+    && sed -i 's/#5dc599/#3d8526/g; s/\.opensilex-logo {/.opensilex-logo { width: 150px; height: 150px;/' opensilex-front/front/public/index.html \
+    && sh /patches/pheno-colors.sh /build \
+    && test -f opensilex-front/front/theme/pheno/pheno.yml
+
 # Build OpenSILEX with frontend
 # The first attempt always fails for one or both of:
 #   1. vuelayers bind operator syntax incompatible with current Node
