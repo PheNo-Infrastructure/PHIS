@@ -3994,7 +3994,8 @@ test("e2e: Set up's Import button is a file chooser; the review fills in on the 
     assert.equal(await row.locator(".setup-info").count(), 0, "nothing measured yet: no summary");
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#pageBody .setup-step[data-step="Data"] .row-type')!).opacity === "0"); // the description shows on hover only
     assert.equal(await page.locator("#setupDrop").count(), 0, "no drop box on Set up");
-    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), row.locator("#setupImport").click()]);
+    await idle(page); // the page is drawn again when the trial's details arrive; click after that
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.locator("#setupImport").click()]);
     await chooser.setFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("a,b\n1,2\n") });
     await page.waitForFunction(() => document.querySelector("#importPlan .import-warning") !== null);
     assert.equal(await page.evaluate(() => document.body.dataset.view), "setup", "the page stays on Set up");
