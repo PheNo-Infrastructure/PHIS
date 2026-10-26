@@ -3009,6 +3009,21 @@ test("e2e: the address IS the share link: it rebuilds the exact state, also afte
   });
 });
 
+test("e2e: the logo and title go to Overview; Browse in the navbar starts at the root", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    await idle(page);
+    await openRow(page, "Scientific Organization");
+    assert.notEqual((await page.locator("#crumbs").innerText()).replace(/\s+/g, " ").trim(), "Graph");
+    await page.locator(".masthead .brand").click();
+    await page.waitForFunction(() => document.body.dataset.view === "overview");
+    await page.locator('#mainnav a[href="#browse"]').click();
+    await idle(page);
+    assert.equal(await page.evaluate(() => document.body.dataset.view), "browse");
+    assert.equal((await page.locator("#crumbs").innerText()).replace(/\s+/g, " ").trim(), "Graph", "Browse opens at the root, not where you left off");
+  });
+});
+
 test("e2e: a hostile share link is refused, not rendered", async () => {
   await withServerAndBrowser(async (base, page) => {
     await page.goto(base + "/#browse");
