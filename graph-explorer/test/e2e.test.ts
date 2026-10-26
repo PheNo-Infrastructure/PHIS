@@ -1141,40 +1141,20 @@ test("e2e: opening a real experiment shows its relations as chips with Rename an
   });
 });
 
-test("e2e: deleting an experiment that holds scientific objects: banner explains; 'Clear' deletes the only-here one, only REMOVES the shared one, then the experiment's own confirm follows", async () => {
+test("e2e: deleting an experiment that holds scientific objects: one counted card, one click, no typing", async () => {
   await withServerAndBrowser(async (base, page) => {
-    let cleared = false;
-    let openExp = "";
     const calls: string[] = [];
-    await page.route("**/api/node-detail*", (r) => {
-      const u = new URL(r.request().url());
-      const type = u.searchParams.get("type"), id = u.searchParams.get("id");
-      const json = (body: unknown) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
-      if (type === "scientific_object") {
-        const exps = [{ id: openExp, type: "experiment", label: "This Exp" }];
-        if (id === "so-shared") exps.push({ id: "exp-other", type: "experiment", label: "Other Exp" });
-        return json({ uri: id, actions: ["delete", "link"], relations: [{ label: "Experiments", field: "experiment", items: exps }] });
-      }
-      if (type !== "experiment") return json({ uri: "x", actions: [], relations: [] });
-      openExp = id!;
-      const relations: any[] = [{ label: "Organizations", field: "organisations", items: [{ id: "mock-org", type: "organization", label: "Mock Org" }] }];
-      if (!cleared) relations.push({ label: "Scientific objects", field: "scientific_object", blocksDelete: true, items: [
-        { id: "so-only", type: "scientific_object", label: "Only Plant" },
-        { id: "so-shared", type: "scientific_object", label: "Shared Plant" },
-      ] });
-      return json({ uri: id, actions: ["rename", "delete", "link"], deleteRemovesLinks: true, relations });
-    });
-    await page.route("**/api/elsewhere*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ "so-shared": [{ id: "exp-other", label: "Other Exp" }] }) }));
-    await page.route("**/api/node*", (r) => {
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "x", actions: ["rename", "delete", "link"], deleteRemovesLinks: true,
+      relations: [{ label: "Scientific objects", field: "scientific_object", blocksDelete: true, items: [{ id: "so-1", type: "scientific_object", label: "Plant" }] }],
+    }) }));
+    await page.route("**/api/experiment-delete**", (r) => {
       const req = r.request();
-      if (req.url().includes("node-detail")) return r.fallback();
-      if (req.method() === "DELETE") calls.push("DELETE " + new URL(req.url()).searchParams.get("type") + ":" + new URL(req.url()).searchParams.get("id"));
-      else if (req.method() === "PUT") calls.push("UNLINK " + req.postDataJSON().unlink.uri);
-      if (calls.length === 2) cleared = true;
-      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, relations: [] }) });
+      if (req.method() === "GET") return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ name: "Trial – 2025", objects: 24, trays: 4, shared: 1, values: 1200, factors: 1, provenances: [], notes: 1 }) });
+      calls.push("DELETE name=" + new URL(req.url()).searchParams.get("name"));
+      return r.fulfill({ status: 200, contentType: "application/x-ndjson", body: JSON.stringify({ result: { name: "Trial – 2025", deleted: 23, removed: 1, factors: 1, kept: [] } }) + "\n" });
     });
-    const confirms: string[] = [];
-    page.on("dialog", (d) => { confirms.push(d.message()); d.accept(); });
+    page.on("dialog", (d) => { calls.push("DIALOG " + d.type()); d.accept(); });
 
     await page.goto(base + "/#browse");
     await idle(page);
@@ -1185,16 +1165,49 @@ test("e2e: deleting an experiment that holds scientific objects: banner explains
     await page.locator("#deleteNodeBtn").click();
     await idle(page);
 
-    assert.match((await page.locator(".unlink-intro-text").textContent()) ?? "", /CAN'T DELETE YET.*holds 2 scientific objects.*orphaned/s);
-    // Each blocker chip is individually removable (× = remove from this experiment only).
-    assert.equal(await page.locator(".chip[data-openid='so-shared'] .chip-unlink").count(), 1);
-    await page.locator("#deleteBlockersBtn").click();
+    const card = page.locator(".del-card");
+    await card.locator("#deleteEverythingBtn:not([disabled])").waitFor();
+    const text = (await card.textContent()) ?? "";
+    assert.match(text, /24 scientific objects.*1,200 measured values.*1 factor.*1 annotation.*also in other experiments/s);
+    await card.locator("#deleteEverythingBtn").click();
     await idle(page);
+    assert.deepEqual(calls, ["DELETE name=Trial – 2025"], "the name comes from the preview; no prompt or confirm");
+  });
+});
 
-    assert.match(confirms[0], /Only Plant — only here: deleted from PHIS entirely/);
-    assert.match(confirms[0], /Shared Plant — also in Other Exp: removed from .* only, kept there/);
-    assert.deepEqual(calls, ["DELETE scientific_object:so-only", "UNLINK so-shared", `DELETE experiment:${openExp}`]);
-    assert.match(confirms[1], /unlinked from: Mock Org/);
+test("e2e: an experiment reads Rename - Unlink - Delete; Unlink removes objects one by one (x) or all at once, after a confirm", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const puts: string[] = [];
+    const objs = ["so-1", "so-2", "so-3"];
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "x", actions: ["rename", "delete", "link"], deleteRemovesLinks: true,
+      relations: objs.length ? [{ label: "Scientific objects", field: "scientific_object", blocksDelete: true, items: objs.map((id) => ({ id, type: "scientific_object", label: id })) }] : [],
+    }) }));
+    await page.route("**/api/node", (r) => {
+      if (r.request().method() !== "PUT") return r.fallback();
+      puts.push(r.request().postDataJSON().unlink.uri);
+      objs.splice(objs.indexOf(puts[puts.length - 1]), 1);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ relations: objs.length ? [{ label: "Scientific objects", field: "scientific_object", blocksDelete: true, items: objs.map((id) => ({ id, type: "scientific_object", label: id })) }] : [] }) });
+    });
+    const confirms: string[] = [];
+    page.on("dialog", (d) => { confirms.push(d.message()); d.accept(); });
+    await page.goto(base + "/#browse");
+    await idle(page);
+    await openRow(page, "Scientific Organization");
+    await openRow(page, "Experiments");
+    await page.locator("#rowlist .row .row-nav").first().click();
+    await idle(page);
+    const labels = await page.locator(".node-title-row .btn").allTextContents();
+    assert.deepEqual(labels.map((t) => t.trim()), ["Rename", "Unlink…", "Delete…"]);
+    await page.locator("#unlinkModeBtn").click();
+    await idle(page);
+    await page.locator(".chip[data-openid='so-1'] .chip-unlink").click();
+    await idle(page);
+    assert.deepEqual(puts, ["so-1"]);
+    await page.locator("#unlinkAllBtn").click();
+    await idle(page);
+    assert.match(confirms[0], /Remove all 2 objects/);
+    assert.deepEqual(puts, ["so-1", "so-2", "so-3"]);
   });
 });
 
@@ -2853,6 +2866,25 @@ test("e2e: the Overview lists factors with their levels; 'Pick plants' jumps to 
   });
 });
 
+test("e2e: tab switches and 'Pick plants' on an experiment are steps in Back / Forward", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openStructuredExperiment(page, base, null);
+    const body = page.locator("#detailBody");
+    const tab = async () => (await page.locator("button.dtab.on").innerText()).trim().split(/\s/)[0];
+    assert.equal(await tab(), "Overview");
+    await body.locator('.ov-fac[data-fac="fac-r"] button.go-plants:not([data-level])').click();
+    assert.equal(await tab(), "Plants");
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-r"]').count(), 1);
+    await page.goBack();
+    await idle(page);
+    assert.equal(await tab(), "Overview", "Alt+Left leaves the plants and stays on the experiment");
+    await page.goForward();
+    await idle(page);
+    assert.equal(await tab(), "Plants");
+    assert.equal(await body.locator('.hx-fac[data-fac="fac-r"]').count(), 1, "Alt+Right restores the grouping too");
+  });
+});
+
 test("e2e: on the Overview, shift-click on a factor's level chips picks the range within that factor (labels without the count); across factors it falls back to a plain pick", async () => {
   await withServerAndBrowser(async (base, page) => {
     await openStructuredExperiment(page, base, null);
@@ -2936,6 +2968,44 @@ async function withTwoVariables(fn: () => Promise<void>) {
   STRUCT.variables.push({ id: "var-2", label: "NDVI", count: 9 });
   try { await fn(); } finally { STRUCT.variables.length = 1; }
 }
+
+test("e2e: a share link rebuilds the exact state: page, picks, grid toggles, the open chart window with its own toggles", async () => {
+  await withTwoVariables(async () => {
+    await withServerAndBrowser(async (base, page) => {
+      await routeOverview(page, []);
+      await openStructuredExperiment(page, base, "variables");
+      await page.locator("#variablesBody .chip", { hasText: "NDVI" }).click({ modifiers: ["Control"] });
+      await page.locator('button.dtab[data-dtab="plants"]').click();
+      await page.locator('.hx-head[data-id="fac-g"]').click({ modifiers: ["Control"] });
+      await page.locator("#showGridBtn").click();
+      const grid = page.locator("#chartGrid");
+      await grid.locator(".g-chart").first().waitFor();
+      await grid.locator("#gridStats").check();
+      await grid.locator("#gridOverlay").check();
+      await grid.locator("#gridOverlay").uncheck();
+      await grid.locator(".g-chart").first().click();
+      const detail = page.locator("#chartDetail");
+      await detail.locator(".g-plant").first().waitFor();
+      await detail.locator(".g-plant").first().click(); // highlight a line
+      await detail.locator("td.obs").first().click(); // pick an observation
+      await detail.locator(".g-dstats").uncheck();
+
+      const link = await page.evaluate(async () => `#${view}&s=${await pack(stateNow())}`);
+      assert.match(link, /^#browse&s=[\w-]+$/);
+      await page.goto("about:blank");
+      await page.goto(base + "/" + link);
+      await page.locator("#chartDetail .g-plant").first().waitFor();
+      assert.equal(await page.evaluate(() => location.hash), "#browse", "the address is cleaned once the link is opened");
+      assert.equal(await page.locator("#chartGrid #gridStats").isChecked(), true, "grid toggle restored");
+      assert.equal(await page.locator("#chartGrid #gridOverlay").isChecked(), false);
+      assert.match(await page.locator("#chartGrid .g-title").innerText(), /NDVI/);
+      assert.equal(await page.locator("#chartDetail .g-dstats").isChecked(), false, "the chart window's own toggle");
+      assert.equal(await page.locator("#chartDetail .g-plant.on").count(), 1, "the highlighted plant");
+      assert.equal(await page.locator("#chartDetail td.obs.sel").count(), 1, "the picked observation");
+      assert.deepEqual(await page.evaluate(() => [...selection.keys()].sort()), ["fac-g", "var-2"].sort());
+    });
+  });
+});
 
 test("e2e: Show chart grid appears once a variable and something chartable are picked; the grid has a row per factor, a chart per level, and pages per variable", async () => {
   await withTwoVariables(async () => {
@@ -3575,7 +3645,7 @@ test("e2e: layout — the blocked-delete banner, a long title and a long chip st
       await idle(page);
       const r = await page.evaluate(() => {
         const body = document.getElementById("detailBody")!.getBoundingClientRect();
-        const text = document.querySelector(".unlink-intro-text")!.getBoundingClientRect();
+        const text = document.querySelector(".del-card-body")!.getBoundingClientRect();
         const wide = [...document.querySelectorAll<HTMLElement>("#detailBody *")]
           .filter((el) => el.getBoundingClientRect().right > body.right + 1 && getComputedStyle(el).position !== "fixed")
           .map((el) => el.tagName + "." + el.className);
