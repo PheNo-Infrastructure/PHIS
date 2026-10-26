@@ -1166,10 +1166,14 @@ test("e2e: deleting an experiment that holds scientific objects: one counted car
     await idle(page);
 
     const card = page.locator(".del-card");
-    await card.locator("#deleteEverythingBtn:not([disabled])").waitFor();
+    await page.waitForFunction(() => /will be deleted for good/.test(document.getElementById("delCardBody")!.textContent!));
+    assert.equal(await card.locator("#deleteEverythingBtn").isDisabled(), true, "the counts are in, but the word is not typed yet");
+    await card.locator("#wordInput").fill("delet");
+    assert.equal(await card.locator("#deleteEverythingBtn").isDisabled(), true, "part of the word is not the word");
     const text = (await card.textContent()) ?? "";
     assert.match(text, /24 scientific objects.*1,200 measured values.*1 factor.*1 annotation.*also in other experiments/s);
-    await card.locator("#deleteEverythingBtn").click();
+    await card.locator("#wordInput").fill("delete");
+    await card.locator("#deleteEverythingBtn:not([disabled])").click();
     await idle(page);
     assert.deepEqual(calls, ["DELETE name=Trial – 2025"], "the name comes from the preview; no prompt or confirm");
   });
@@ -1204,9 +1208,11 @@ test("e2e: an experiment reads Rename - Unlink - Delete; Unlink removes objects 
     await page.locator(".chip[data-openid='so-1'] .chip-unlink").click();
     await idle(page);
     assert.deepEqual(puts, ["so-1"]);
+    assert.equal(await page.locator("#unlinkAllBtn").isDisabled(), true, "Unlink all waits for its word");
+    await page.locator("#wordInput").fill("UNLINK");
     await page.locator("#unlinkAllBtn").click();
     await idle(page);
-    assert.match(confirms[0], /Remove all 2 objects/);
+    assert.deepEqual(confirms, [], "typing the word replaces the confirm dialog");
     assert.deepEqual(puts, ["so-1", "so-2", "so-3"]);
   });
 });

@@ -774,7 +774,8 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .del-card { background: #fbefee; border: 1px solid #d9a5a1; border-radius: var(--radius); padding: 14px 16px; color: #5c1f1b; display: flex; flex-direction: column; gap: 6px; }
 .del-card-title { font-size: 15px; font-weight: 700; }
 .del-card-body { font-size: 13px; line-height: 1.5; }
-.del-card-actions { display: flex; gap: 8px; margin-top: 6px; }
+.del-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.word-input { font: inherit; font-size: 12.5px; padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--ink); width: 190px; }
 
 .newmenu { position: relative; }
 .newmenu-list {
@@ -2302,6 +2303,9 @@ function deleteCardCounts(p) {
   ].join(" · ");
 }
 
+// A destructive button stays disabled until its word is typed: the deliberate step that a click on a button is not.
+const wordTyped = (input, word) => input.value.trim().toLowerCase() === word;
+
 async function deleteExperimentEverything(item, p) {
   try {
     showToast("Starting…", 600000);
@@ -2399,8 +2403,6 @@ async function unlinkAll(item) {
     .flatMap(rel => rel.items.map(it => ({ field: rel.field, uri: it.id, type: it.type })));
   // Keep one link of a required type (e.g. a site's last organization) — OpenSILEX refuses
   // removing it, which would abort the loop halfway; the view then offers deleting instead.
-  const gone = (node?.relations ?? []).filter(rel => rel.blocksDelete).reduce((n, rel) => n + rel.items.length, 0);
-  if (gone && !confirm(`Remove all ${gone} ${gone === 1 ? "object" : "objects"} from ${item.label}? They stay in PHIS (the ones used by other experiments stay there too), but any that belonged only to this experiment will belong to none.`)) return;
   const required = CREATABLE[item.type]?.requiresLink;
   const keep = required ? targets.filter(t => t.type === required).pop() : null;
   for (const { field, uri } of targets.filter(t => t !== keep)) {
@@ -3247,6 +3249,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     <div class="del-card-title">Delete this experiment?</div>
     <div class="del-card-body" id="delCardBody">Counting what is in it…</div>
     <div class="del-card-actions">
+      <input class="word-input" id="wordInput" placeholder="type DELETE to confirm" autocomplete="off" spellcheck="false" aria-label="Type DELETE to confirm">
       <button class="btn danger small" id="deleteEverythingBtn" disabled>Delete permanently</button>
       <button class="btn small" id="cancelDeleteBtn">Cancel</button>
     </div>
@@ -3273,11 +3276,12 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         <span class="unlink-intro-text">${lastReq
           ? `<b>UNLINK MODE</b> — a ${niceType} must belong to at least one ${typeName(lastReq.type)}, so <b>${escapeHtml(lastReq.label)}</b> can't be unlinked. Delete the ${niceType} instead — that also removes every link below.`
           : node.deleteRemovesLinks
-          ? `<b>UNLINK MODE</b> — remove any link below with its ×.`
+          ? `<b>UNLINK MODE</b> — remove any link below with its ×.${blockers.length ? ` <b>Unlink all</b> takes every scientific object out of this experiment; the ones that belong to no other experiment stay in PHIS, without one.` : ""}`
           : `<b>UNLINK MODE</b> — delete is blocked while ${escapeHtml(label)} is still linked to the items below.`}</span>
         <span class="unlink-intro-actions">
           ${lastReq ? `<button class="btn warn small" id="forceDeleteBtn">Delete ${niceType}</button>` : ""}
-          ${anyUnlinkable ? `<button class="btn warn small" id="unlinkAllBtn">Unlink all</button>` : ""}
+          ${blockers.length && anyUnlinkable ? `<input class="word-input" id="wordInput" placeholder="type UNLINK to confirm" autocomplete="off" spellcheck="false" aria-label="Type UNLINK to confirm">` : ""}
+          ${anyUnlinkable ? `<button class="btn warn small" id="unlinkAllBtn"${blockers.length ? " disabled" : ""}>Unlink all</button>` : ""}
           <button class="btn warn small" id="cancelUnlinkBtn">Cancel</button>
         </span>
       </div>`;
@@ -3388,14 +3392,17 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   if (deleting) {
     const delBtn = document.getElementById("deleteEverythingBtn");
     if (delBtn) {
-      const id = focusNode.id, body = document.getElementById("delCardBody");
+      const id = focusNode.id, body = document.getElementById("delCardBody"), word = document.getElementById("wordInput");
+      let ready = false; // the counts are in
+      const update = () => { delBtn.disabled = !(ready && wordTyped(word, "delete")); };
+      word.addEventListener("input", update);
       fetch(`api/experiment-delete/preview?id=${encodeURIComponent(id)}`).then(async res => {
         const p = await res.json();
         if (!res.ok) throw new Error(p.error || res.status);
         if (!body.isConnected) return; // the user moved on
         body.innerHTML = `${deleteCardCounts(p)} will be deleted for good.${p.shared ? ` ${p.shared} of the objects are also in other experiments and stay there.` : ""}`;
-        delBtn.disabled = false;
-        delBtn.addEventListener("click", () => deleteExperimentEverything(focusNode, p));
+        ready = true; update();
+        delBtn.addEventListener("click", () => { if (!delBtn.disabled) deleteExperimentEverything(focusNode, p); });
       }).catch(err => { if (body.isConnected) body.textContent = `Couldn't count what is in it: ${err.message || err}`; });
     }
     document.getElementById("cancelDeleteBtn").addEventListener("click", () => { deleteCardId = null; renderDetail(); });
@@ -3408,6 +3415,8 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         unlinkOne(focusNode, btn.dataset.field, btn.dataset.uri, btn.dataset.exp);
       });
     });
+    const unlinkWord = document.getElementById("wordInput");
+    if (unlinkWord) unlinkWord.addEventListener("input", () => { document.getElementById("unlinkAllBtn").disabled = !wordTyped(unlinkWord, "unlink"); });
     document.getElementById("unlinkAllBtn")?.addEventListener("click", () => unlinkAll(focusNode));
     document.getElementById("forceDeleteBtn")?.addEventListener("click", () => deleteNode(focusNode, true));
     document.getElementById("cancelUnlinkBtn").addEventListener("click", () => {
