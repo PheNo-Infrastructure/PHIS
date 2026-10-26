@@ -1116,10 +1116,10 @@ test("e2e: the Scientific Objects page shows a collapsible 'How scientific objec
     assert.match((await box.textContent()) ?? "", /is kept separately, so a change in one experiment never alters another/);
     await idle(page); // "toggle" fires async — let it be stored before reloading
 
-    await page.reload();
+    await page.evaluate(() => syncUrl());
+    await page.reload(); // the address brings the page back to the same place
     await idle(page);
-    await openRow(page, "Scientific Information");
-    await openRow(page, "Scientific Objects");
+    await page.locator("details.type-info").waitFor();
     assert.equal(await page.locator("details.type-info").evaluate((d: HTMLDetailsElement) => d.open), true, "open state remembered");
   });
 });
@@ -2969,7 +2969,7 @@ async function withTwoVariables(fn: () => Promise<void>) {
   try { await fn(); } finally { STRUCT.variables.length = 1; }
 }
 
-test("e2e: a share link rebuilds the exact state: page, picks, grid toggles, the open chart window with its own toggles", async () => {
+test("e2e: the address IS the share link: it rebuilds the exact state, also after a reload: page, picks, grid toggles, the open chart window with its own toggles", async () => {
   await withTwoVariables(async () => {
     await withServerAndBrowser(async (base, page) => {
       await routeOverview(page, []);
@@ -2990,12 +2990,14 @@ test("e2e: a share link rebuilds the exact state: page, picks, grid toggles, the
       await detail.locator("td.obs").first().click(); // pick an observation
       await detail.locator(".g-dstats").uncheck();
 
-      const link = await page.evaluate(async () => `#${view}&s=${await pack(stateNow())}`);
-      assert.match(link, /^#browse&s=[\w-]+$/);
+      await page.evaluate(() => syncUrl()); // (the page does this a moment after every change)
+      const link = await page.evaluate(() => location.href);
+      assert.match(link, /#browse&s=[\w-]+$/);
       await page.goto("about:blank");
-      await page.goto(base + "/" + link);
+      await page.goto(link);
       await page.locator("#chartDetail .g-plant").first().waitFor();
-      assert.equal(await page.evaluate(() => location.hash), "#browse", "the address is cleaned once the link is opened");
+      await page.evaluate(() => syncUrl());
+      assert.equal(await page.evaluate(() => location.href), link, "the opened state writes the same address back");
       assert.equal(await page.locator("#chartGrid #gridStats").isChecked(), true, "grid toggle restored");
       assert.equal(await page.locator("#chartGrid #gridOverlay").isChecked(), false);
       assert.match(await page.locator("#chartGrid .g-title").innerText(), /NDVI/);
