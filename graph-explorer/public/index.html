@@ -2048,19 +2048,24 @@ async function copyLink(btn) {
 document.addEventListener("click", ev => { const b = ev.target.closest(".share-link"); if (b) copyLink(b); });
 async function restoreShared(text) {
   const st = await unpack(text);
+  // A link is untrusted input: the type of an item reaches innerHTML (typeName), so it must look like a type; the rest is coerced.
+  const item = i => { if (typeof i?.id !== "string" || !/^[a-z_]+$/.test(i.type)) throw new Error("bad item"); return plain(i); };
+  if (!VIEWS.includes(st.view)) throw new Error("bad view");
+  const checked = { path: st.path.map(item), sel: st.sel.map(item) };
   applyView(st.view);
-  path = st.path.map(i => findItemById(i.id) ?? i);
-  selection = new Map(st.sel.map(i => [i.id, i]));
-  anchorId = st.anchor;
+  path = checked.path.map(i => findItemById(i.id) ?? i);
+  selection = new Map(checked.sel.map(i => [i.id, i]));
+  anchorId = typeof st.anchor === "string" ? st.anchor : null;
   Object.assign(detailTab, st.tab); Object.assign(plantsView, st.plants); Object.assign(varFilter, st.vf);
   const { hidden, ...toggles } = st.grid;
-  Object.assign(gridState, toggles, { hiddenSeries: new Set(hidden) });
-  distState.day = st.day;
+  for (const k of ["stats", "sharedY", "overlay", "norm"]) gridState[k] = toggles[k] === true;
+  gridState.hiddenSeries = new Set(hidden.map(String));
+  distState.day = Number.isInteger(st.day) ? st.day : null;
   history.replaceState(history.state, "", "#" + st.view); // the address is a snapshot, not the live state: drop it once opened
   await loadNodeDetail(path[path.length - 1]); // the experiment's structure is what the chart windows are built from
   showPath(path);
   historyPaths.set(history.state.n, path);
-  if (st.ui) await applyUi(st.ui);
+  if (st.ui) await applyUi({ ...st.ui, grid: { vi: Number(st.ui.grid?.vi) || 0 } });
 }
 
 function navigateTo(newPath) {

@@ -3007,6 +3007,23 @@ test("e2e: a share link rebuilds the exact state: page, picks, grid toggles, the
   });
 });
 
+test("e2e: a hostile share link is refused, not rendered", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    await idle(page);
+    const evil = await page.evaluate(async () => {
+      const st = stateNow();
+      st.path = [...st.path, { id: "x", type: "<img src=x onerror=window.__pwned=1>", label: "x" }];
+      return `#browse&s=${await pack(st)}`;
+    });
+    await page.goto("about:blank");
+    await page.goto(base + "/" + evil);
+    await page.locator("#toast.show").waitFor();
+    assert.equal(await page.evaluate(() => (window as any).__pwned), undefined);
+    assert.match(await page.locator("#toast").innerText(), /could not be opened/);
+  });
+});
+
 test("e2e: Show chart grid appears once a variable and something chartable are picked; the grid has a row per factor, a chart per level, and pages per variable", async () => {
   await withTwoVariables(async () => {
     await withServerAndBrowser(async (base, page) => {
