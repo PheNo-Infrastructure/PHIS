@@ -75,7 +75,7 @@ button { font-family: inherit; }
   justify-content: space-between;
   gap: 16px;
 }
-.masthead .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.masthead .brand { color: inherit; text-decoration: none; display: flex; align-items: center; gap: 14px; min-width: 0; }
 .masthead .logo { height: 34px; width: auto; flex: none; }
 .masthead .logo .la { fill: var(--logo-a); }
 .masthead .logo .lb { fill: var(--logo-b); }
@@ -134,7 +134,7 @@ body[data-view="adding"] #explorerPane, body[data-view="adding"] #detailPane, bo
 body[data-view="adding"] .topbar, body[data-view="adding"] #treePane { display: none; }
 body:not([data-view="browse"]):not([data-view="adding"]) .hint-banner { display: none; }
 body[data-view="adding"] .hint-banner .browse-only { display: none; }
-body[data-view="adding"] #mainnav { pointer-events: none; opacity: .45; }
+body[data-view="adding"] .brand, body[data-view="adding"] #mainnav { pointer-events: none; opacity: .45; }
 .setup-step.done .setup-tick { color: var(--accent); }
 .setup-tick { width: 18px; text-align: center; flex: none; }
 .setup-pill { display: inline-block; vertical-align: middle; margin-left: 10px; padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
@@ -614,7 +614,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .g-plot { position: relative; height: var(--gh, 96px); }
 .g-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .g-plot polyline { fill: none; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.g-line { stroke-width: 1; opacity: .35; }
+.g-line { stroke-width: var(--lw, 1); opacity: var(--lo, .35); }
 .g-line.em { stroke-width: 2.2; opacity: 1; }
 .g-line.hov { stroke-width: 2.8; opacity: 1 !important; }
 .g-chart.stats .g-line, .g-chart.scatter .g-line { opacity: .12; }
@@ -768,6 +768,14 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .btn.ghost:hover { color: var(--ink); background: var(--surface); }
 .btn.warn { border-color: var(--warn); color: var(--warn-ink); }
 .btn.warn:hover { background: var(--warn); color: var(--warn-soft); }
+.btn.danger { background: #a3302a; border-color: #a3302a; color: #fff; }
+.btn.danger:hover:not(:disabled) { background: #7f2420; }
+.btn.danger:disabled { opacity: 0.45; cursor: default; }
+.del-card { background: #fbefee; border: 1px solid #d9a5a1; border-radius: var(--radius); padding: 14px 16px; color: #5c1f1b; display: flex; flex-direction: column; gap: 6px; }
+.del-card-title { font-size: 15px; font-weight: 700; }
+.del-card-body { font-size: 13px; line-height: 1.5; }
+.del-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.word-input { font: inherit; font-size: 12.5px; padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--ink); width: 190px; }
 
 .newmenu { position: relative; }
 .newmenu-list {
@@ -1023,7 +1031,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 
 <div class="app">
   <div class="masthead">
-    <span class="brand"><svg class="logo" viewBox="0 0 498.4 120.7" role="img" aria-label="PheNo"><path class="la" d="M185.9 17.6C181.5 15.5 176.5 14.4 170.9 14.4L138.2 14.4L138.2 105.0L150.3 105.0L150.3 69.3L170.9 69.3C176.5 69.3 181.5 68.2 185.9 66.2C190.4 64.1 193.9 61.1 196.5 57.1C199.1 53.1 200.4 48.2 200.4 42.3C200.4 36.4 199.1 31.2 196.5 27.0C193.9 22.9 190.4 19.8 185.9 17.6M183.2 55.0C179.8 57.8 175.3 59.3 169.9 59.3L150.3 59.3L150.3 24.4L169.9 24.4C175.3 24.4 179.8 25.9 183.2 28.8C186.6 31.7 188.3 36.2 188.3 42.3C188.3 48.0 186.6 52.2 183.2 55.0"/><path class="la" d="M244.5 38.9C239.0 38.9 234.5 40.0 230.9 42.3C227.4 44.5 224.6 47.0 222.6 49.6L222.6 14.4L211.5 14.4L211.5 105.0L222.7 105.0L222.7 58.6C224.6 56.1 227.1 53.7 230.2 51.5C233.3 49.4 237.2 48.3 241.8 48.3C244.8 48.3 247.0 49.0 248.6 50.3C250.1 51.7 251.2 53.6 251.8 56.0C252.3 58.4 252.6 61.2 252.6 64.3L252.6 105.0L263.8 105.0L263.8 62.8C263.8 55.1 262.3 49.2 259.3 45.1C256.3 40.9 251.4 38.9 244.5 38.9L244.5 38.9"/><path class="la" d="M319.1 94.0C316.4 96.4 312.7 97.5 307.9 97.5C303.4 97.5 299.9 96.5 297.1 94.3C294.3 92.2 292.3 89.3 291.1 85.7C289.8 82.2 289.2 78.3 289.1 74.0L334.1 74.0C334.1 73.6 334.2 72.9 334.2 72.0C334.2 71.1 334.3 70.3 334.3 69.6C334.3 59.5 331.8 51.8 326.9 46.4C322.1 41.0 315.3 38.3 306.7 38.3C300.2 38.3 294.9 39.8 290.6 42.6C286.3 45.5 283.1 49.5 281.0 54.6C278.9 59.7 277.9 65.6 277.9 72.2C277.9 78.9 279.0 84.4 281.1 89.6C283.3 94.7 286.6 98.8 291.0 101.7C295.5 104.7 301.1 106.2 307.9 106.2C313.2 106.2 317.9 105.3 321.8 103.5C325.7 101.7 328.7 99.1 330.9 95.8C333.0 92.4 334.2 88.4 334.3 83.8L323.2 83.8C323.1 88.3 321.7 91.7 319.1 94.0M294.4 51.7C297.3 48.5 301.4 46.9 306.7 46.9C311.9 46.9 315.8 48.6 318.7 51.8C321.5 55.0 323.0 59.7 323.2 65.8L289.2 65.8C289.7 59.6 291.5 55.0 294.4 51.7"/><path class="lb" d="M412.1 86.5L362.5 14.4L350.2 14.4L350.2 105.0L361.6 105.0L361.6 32.8L411.2 105.0L423.5 105.0L423.5 14.4L412.1 14.4L412.1 86.5"/><path class="lb" d="M494.9 54.1C492.5 49.0 489.1 45.1 484.6 42.4C480.1 39.6 474.8 38.3 468.5 38.3C462.2 38.3 457.1 39.6 452.8 42.4C448.5 45.1 445.1 49.0 442.8 54.1C440.5 59.2 439.4 65.3 439.4 72.4C439.4 79.5 440.5 85.4 442.8 90.4C445.1 95.5 448.5 99.4 452.8 102.1C457.1 104.7 462.4 106.1 468.5 106.1C474.6 106.1 480.1 104.7 484.6 102.1C489.1 99.4 492.5 95.5 494.9 90.4C497.3 85.4 498.4 79.4 498.4 72.4C498.4 65.4 497.3 59.2 494.9 54.1M485.0 85.2C483.9 88.9 481.9 91.8 479.3 94.0C476.6 96.1 473.0 97.2 468.5 97.2C464.3 97.2 460.8 96.1 458.2 94.0C455.6 91.8 453.8 88.9 452.6 85.2C451.5 81.4 450.9 77.2 450.9 72.4C450.9 67.7 451.5 63.3 452.6 59.5C453.8 55.8 455.6 52.8 458.2 50.6C460.8 48.4 464.3 47.3 468.5 47.3C473.0 47.3 476.6 48.4 479.3 50.6C481.9 52.8 483.9 55.8 485.0 59.5C486.2 63.3 486.8 67.6 486.8 72.4C486.8 77.2 486.2 81.4 485.0 85.2L485.0 85.2"/><path class="la" d="M1.7 44.8L0.0 44.8L0.0 84.4C0.0 104.7 20.2 117.7 42.6 120.4L42.6 74.6C42.6 58.1 28.1 44.8 1.7 44.8L1.7 44.8"/><path class="lb" d="M98.0 1.1L111.1 14.2C110.8 15.1 110.5 16.0 110.2 16.9L95.0 1.6C90.7 2.4 86.7 3.6 83.1 5.1L105.8 27.8C105.4 28.6 105.0 29.4 104.6 30.1L80.6 6.1C77.3 7.6 74.3 9.4 71.6 11.4L99.1 39.1C98.8 39.5 98.5 40.0 98.2 40.4C98.0 40.6 97.8 40.9 97.7 41.1L69.6 12.9C66.6 15.5 64.0 18.3 61.8 21.4L90.0 49.7C89.4 50.2 88.8 50.8 88.2 51.3L60.4 23.5C58.5 26.6 57.0 30.0 55.9 33.5L79.8 57.5C79.1 58.0 78.4 58.4 77.6 58.8L55.1 36.3C54.3 39.9 53.9 43.7 53.9 47.6L53.9 48.9L68.0 63.1C67.1 63.4 66.2 63.7 65.3 63.9L53.9 52.4L53.9 120.7C84.4 118.6 111.4 94.2 111.6 63.0L111.6 0.1C106.8 0.1 102.2 0.5 98.0 1.1L98.0 1.1"/><path class="lb" d="M63.3 3.2L60.2 0.0L56.7 0.0L61.2 4.6C61.9 4.1 62.6 3.6 63.3 3.2L63.3 3.2"/><path class="lb" d="M37.0 0.0L51.1 14.1C51.6 13.5 52.1 12.8 52.7 12.2L40.5 0.0L37.0 0.0"/><path class="lb" d="M18.9 0.0L44.8 26.0C45.1 25.1 45.4 24.3 45.8 23.4L22.4 0.0L18.9 0.0"/><path class="lb" d="M42.4 37.5L5.0 0.0L1.6 0.0L42.3 40.8C42.3 39.7 42.4 38.6 42.4 37.5L42.4 37.5"/></svg><h1>PHIS Data Portal</h1></span>
+    <a class="brand" href="#overview" title="Overview"><svg class="logo" viewBox="0 0 498.4 120.7" role="img" aria-label="PheNo"><path class="la" d="M185.9 17.6C181.5 15.5 176.5 14.4 170.9 14.4L138.2 14.4L138.2 105.0L150.3 105.0L150.3 69.3L170.9 69.3C176.5 69.3 181.5 68.2 185.9 66.2C190.4 64.1 193.9 61.1 196.5 57.1C199.1 53.1 200.4 48.2 200.4 42.3C200.4 36.4 199.1 31.2 196.5 27.0C193.9 22.9 190.4 19.8 185.9 17.6M183.2 55.0C179.8 57.8 175.3 59.3 169.9 59.3L150.3 59.3L150.3 24.4L169.9 24.4C175.3 24.4 179.8 25.9 183.2 28.8C186.6 31.7 188.3 36.2 188.3 42.3C188.3 48.0 186.6 52.2 183.2 55.0"/><path class="la" d="M244.5 38.9C239.0 38.9 234.5 40.0 230.9 42.3C227.4 44.5 224.6 47.0 222.6 49.6L222.6 14.4L211.5 14.4L211.5 105.0L222.7 105.0L222.7 58.6C224.6 56.1 227.1 53.7 230.2 51.5C233.3 49.4 237.2 48.3 241.8 48.3C244.8 48.3 247.0 49.0 248.6 50.3C250.1 51.7 251.2 53.6 251.8 56.0C252.3 58.4 252.6 61.2 252.6 64.3L252.6 105.0L263.8 105.0L263.8 62.8C263.8 55.1 262.3 49.2 259.3 45.1C256.3 40.9 251.4 38.9 244.5 38.9L244.5 38.9"/><path class="la" d="M319.1 94.0C316.4 96.4 312.7 97.5 307.9 97.5C303.4 97.5 299.9 96.5 297.1 94.3C294.3 92.2 292.3 89.3 291.1 85.7C289.8 82.2 289.2 78.3 289.1 74.0L334.1 74.0C334.1 73.6 334.2 72.9 334.2 72.0C334.2 71.1 334.3 70.3 334.3 69.6C334.3 59.5 331.8 51.8 326.9 46.4C322.1 41.0 315.3 38.3 306.7 38.3C300.2 38.3 294.9 39.8 290.6 42.6C286.3 45.5 283.1 49.5 281.0 54.6C278.9 59.7 277.9 65.6 277.9 72.2C277.9 78.9 279.0 84.4 281.1 89.6C283.3 94.7 286.6 98.8 291.0 101.7C295.5 104.7 301.1 106.2 307.9 106.2C313.2 106.2 317.9 105.3 321.8 103.5C325.7 101.7 328.7 99.1 330.9 95.8C333.0 92.4 334.2 88.4 334.3 83.8L323.2 83.8C323.1 88.3 321.7 91.7 319.1 94.0M294.4 51.7C297.3 48.5 301.4 46.9 306.7 46.9C311.9 46.9 315.8 48.6 318.7 51.8C321.5 55.0 323.0 59.7 323.2 65.8L289.2 65.8C289.7 59.6 291.5 55.0 294.4 51.7"/><path class="lb" d="M412.1 86.5L362.5 14.4L350.2 14.4L350.2 105.0L361.6 105.0L361.6 32.8L411.2 105.0L423.5 105.0L423.5 14.4L412.1 14.4L412.1 86.5"/><path class="lb" d="M494.9 54.1C492.5 49.0 489.1 45.1 484.6 42.4C480.1 39.6 474.8 38.3 468.5 38.3C462.2 38.3 457.1 39.6 452.8 42.4C448.5 45.1 445.1 49.0 442.8 54.1C440.5 59.2 439.4 65.3 439.4 72.4C439.4 79.5 440.5 85.4 442.8 90.4C445.1 95.5 448.5 99.4 452.8 102.1C457.1 104.7 462.4 106.1 468.5 106.1C474.6 106.1 480.1 104.7 484.6 102.1C489.1 99.4 492.5 95.5 494.9 90.4C497.3 85.4 498.4 79.4 498.4 72.4C498.4 65.4 497.3 59.2 494.9 54.1M485.0 85.2C483.9 88.9 481.9 91.8 479.3 94.0C476.6 96.1 473.0 97.2 468.5 97.2C464.3 97.2 460.8 96.1 458.2 94.0C455.6 91.8 453.8 88.9 452.6 85.2C451.5 81.4 450.9 77.2 450.9 72.4C450.9 67.7 451.5 63.3 452.6 59.5C453.8 55.8 455.6 52.8 458.2 50.6C460.8 48.4 464.3 47.3 468.5 47.3C473.0 47.3 476.6 48.4 479.3 50.6C481.9 52.8 483.9 55.8 485.0 59.5C486.2 63.3 486.8 67.6 486.8 72.4C486.8 77.2 486.2 81.4 485.0 85.2L485.0 85.2"/><path class="la" d="M1.7 44.8L0.0 44.8L0.0 84.4C0.0 104.7 20.2 117.7 42.6 120.4L42.6 74.6C42.6 58.1 28.1 44.8 1.7 44.8L1.7 44.8"/><path class="lb" d="M98.0 1.1L111.1 14.2C110.8 15.1 110.5 16.0 110.2 16.9L95.0 1.6C90.7 2.4 86.7 3.6 83.1 5.1L105.8 27.8C105.4 28.6 105.0 29.4 104.6 30.1L80.6 6.1C77.3 7.6 74.3 9.4 71.6 11.4L99.1 39.1C98.8 39.5 98.5 40.0 98.2 40.4C98.0 40.6 97.8 40.9 97.7 41.1L69.6 12.9C66.6 15.5 64.0 18.3 61.8 21.4L90.0 49.7C89.4 50.2 88.8 50.8 88.2 51.3L60.4 23.5C58.5 26.6 57.0 30.0 55.9 33.5L79.8 57.5C79.1 58.0 78.4 58.4 77.6 58.8L55.1 36.3C54.3 39.9 53.9 43.7 53.9 47.6L53.9 48.9L68.0 63.1C67.1 63.4 66.2 63.7 65.3 63.9L53.9 52.4L53.9 120.7C84.4 118.6 111.4 94.2 111.6 63.0L111.6 0.1C106.8 0.1 102.2 0.5 98.0 1.1L98.0 1.1"/><path class="lb" d="M63.3 3.2L60.2 0.0L56.7 0.0L61.2 4.6C61.9 4.1 62.6 3.6 63.3 3.2L63.3 3.2"/><path class="lb" d="M37.0 0.0L51.1 14.1C51.6 13.5 52.1 12.8 52.7 12.2L40.5 0.0L37.0 0.0"/><path class="lb" d="M18.9 0.0L44.8 26.0C45.1 25.1 45.4 24.3 45.8 23.4L22.4 0.0L18.9 0.0"/><path class="lb" d="M42.4 37.5L5.0 0.0L1.6 0.0L42.3 40.8C42.3 39.7 42.4 38.6 42.4 37.5L42.4 37.5"/></svg><h1>PHIS Data Portal</h1></a>
     <nav id="mainnav" aria-label="Sections"><a href="#overview">Overview</a><a href="#import">Import</a><a href="#setup">Set up</a><a href="#browse">Browse</a></nav>
     <span class="masthead-right"><span class="subtitle">phis.pheno.no &middot; design prototype</span></span>
   </div>
@@ -1243,6 +1251,7 @@ let detailPath = [];
 // when the node still has relations (delete would just fail); cleared automatically once
 // every unlinkable relation is gone, or whenever a different node is opened.
 let unlinkTargetId = null;
+let deleteCardId = null; // the experiment whose counted delete card is open
 
 // "Link existing…" popover state — separate from `selection` since picking targets to link
 // TO the current selection is a distinct gathering step, not a change to what's selected in
@@ -1591,7 +1600,7 @@ function openRelatedNode(item) {
 const VIEWS = ["overview", "setup", "import", "browse"];
 const PAGE_VIEWS = new Set(["overview", "setup", "import", "adding"]); // "adding" has no hash: Set up locks you into it
 let view = "overview";
-const viewFromHash = () => VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview";
+const viewFromHash = () => { const h = location.hash.slice(1).split("&")[0]; return VIEWS.includes(h) ? h : "overview"; };
 function applyView(next) {
   if (next !== "adding" && adding) { selection = adding.selection; adding = null; } // left by the back button
   if (importSession && next !== "adding" && next !== (importSession.inSetup ? "setup" : "import")) importSession = null; // leaving the page ends an import session (a run in progress keeps going on the server)
@@ -1599,9 +1608,12 @@ function applyView(next) {
   document.body.dataset.view = next;
   document.querySelectorAll("#mainnav a").forEach(a => a.getAttribute("href") === "#" + next ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
   if (PAGE_VIEWS.has(next)) renderPage();
+  scheduleUrl();
 }
 function showView(next) { if (location.hash === "#" + next) applyView(next); else location.hash = next; }
 window.addEventListener("hashchange", () => applyView(viewFromHash()));
+// Browse in the navbar always starts at the root (the pages send you to a specific spot; this is the front door).
+document.querySelector('#mainnav a[href="#browse"]').addEventListener("click", ev => { ev.preventDefault(); navigateTo([path[0]]); });
 function renderPage() {
   const body = document.getElementById("pageBody");
   if ((view === "import" || view === "setup") && importSession?.live && body.querySelector("#importPlan")) return; // a file is being handled: leave it
@@ -1955,17 +1967,21 @@ function renderImportPage(body) {
 const historyPaths = new Map([[0, path]]);
 let historyCount = 0;
 history.replaceState({ n: 0 }, "", location.href);
+const historyTabs = new Map([[0, { tab: {}, plants: {} }]]); // entry number -> an experiment page's tab and plants grouping there
+const tabsNow = () => ({ tab: { ...detailTab }, plants: structuredClone(plantsView) });
 const historyUi = new Map([[0, null]]); // entry number -> which chart windows were open there ({ grid: { vi }, detail: { kind, ... } } or null)
 const uiNow = () => {
   const g = document.getElementById("chartGrid"), d = document.getElementById("chartDetail");
-  return g?.open ? { grid: { vi: gridState.vi }, detail: d?.open ? d._ui ?? null : null } : null;
+  return g?.open ? { grid: { vi: gridState.vi }, detail: d?.open && d._ui ? structuredClone(d._ui) : null } : null;
 };
 // The history is a log of what the user did: opening a chart window, closing it and picking another variable are each a new state,
 // and Back goes one state back (a closed window opens again). Going back or forward only restores a state; it adds none.
 function pushUiState() {
+  scheduleUrl();
   history.pushState({ n: ++historyCount }, "", location.href);
   historyPaths.set(historyCount, path);
   historyUi.set(historyCount, uiNow());
+  historyTabs.set(historyCount, tabsNow());
 }
 // A window just opened (restored = by Back/Forward, which already is a state). Closing it by the user is a new state;
 // closing it for the page or for a restored state (`_silent`) is not.
@@ -1988,20 +2004,81 @@ async function applyUi(ui) {
   if (ui.detail.kind === "plant") {
     const data = await loadDistribution(sel.experiment, v.id);
     const showScan = i => { distState.day = i; renderChartGrid().then(showOneScan); };
-    openDistPlantDetail(data.plants.find(p => sameId(p.id, ui.detail.id)), data, distColors(data.bins.length), sel.st, showScan, true);
+    openDistPlantDetail(data.plants.find(p => sameId(p.id, ui.detail.id)), data, distColors(data.bins.length), sel.st, showScan, true, ui.detail);
   } else {
     let data = await loadOverview(sel.experiment, v.id);
     if (gridState.norm) data = normaliseOverview(data);
     const ch = sel.plan.rows.flatMap(r => r.charts).find(c => c.key === ui.detail.key);
-    if (ch) openChartDetail(ch, data, sel.st, true);
+    if (ch) openChartDetail(ch, data, sel.st, true, ui.detail);
   }
 }
 window.addEventListener("popstate", (e) => {
   const p = historyPaths.get(e.state?.n);
-  if (!p) return;
+  if (!p) {
+    const s = location.hash.match(/&s=([\w-]+)/)?.[1];
+    if (s) restoreShared(s).catch(() => showToast("That link could not be opened."));
+    return;
+  }
+  const t = historyTabs.get(e.state.n);
+  if (t) {
+    for (const k of Object.keys(detailTab)) delete detailTab[k];
+    for (const k of Object.keys(plantsView)) delete plantsView[k];
+    Object.assign(detailTab, t.tab); Object.assign(plantsView, structuredClone(t.plants));
+  }
   showPath(p);
   applyUi(historyUi.get(e.state.n) ?? null);
 });
+
+/* ---------------- share link: the address ----------------
+   The same state the history keeps (page, tab, chart windows) plus what the charts depend on (selection, chart toggles),
+   packed into the address after "&s=" on every step. Opening such an address (a copied link, a reload, Back after a reload) rebuilds that state. */
+const plain = o => Object.fromEntries(Object.entries(o).filter(([, v]) => ["string", "number", "boolean"].includes(typeof v)));
+const stateNow = () => ({
+  view, path: path.map(plain), sel: [...selection.values()].map(plain), anchor: anchorId,
+  tab: detailTab, plants: plantsView, vf: varFilter,
+  grid: { stats: gridState.stats, sharedY: gridState.sharedY, overlay: gridState.overlay, norm: gridState.norm, hidden: [...gridState.hiddenSeries] },
+  day: distState.day, ui: uiNow(),
+});
+async function pack(obj) {
+  const bytes = new Uint8Array(await new Response(new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
+  return btoa(Array.from(bytes, b => String.fromCharCode(b)).join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function unpack(text) {
+  const bin = atob(text.replace(/-/g, "+").replace(/_/g, "/"));
+  return JSON.parse(await new Response(new Blob([Uint8Array.from(bin, c => c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text());
+}
+// The address always holds the current state, so copying it from the bar is the share link. Debounced: every render asks, one write follows.
+let restoring = true; // no writes until the page's first state (or the one in the opened link) is in place
+let urlTimer = 0;
+async function syncUrl() {
+  if (restoring) return;
+  const url = `#${view === "adding" ? "setup" : view}&s=${await pack(stateNow())}`;
+  if (url !== location.hash) history.replaceState(history.state, "", url);
+}
+function scheduleUrl() { clearTimeout(urlTimer); urlTimer = setTimeout(syncUrl, 150); }
+async function restoreShared(text) {
+  restoring = true;
+  try { await restoreFrom(await unpack(text)); } finally { restoring = false; scheduleUrl(); }
+}
+async function restoreFrom(st) {
+  // A link is untrusted input: the type of an item reaches innerHTML (typeName), so it must look like a type; the rest is coerced.
+  const item = i => { if (typeof i?.id !== "string" || !/^[a-z_]+$/.test(i.type)) throw new Error("bad item"); return plain(i); };
+  if (!VIEWS.includes(st.view)) throw new Error("bad view");
+  const checked = { path: st.path.map(item), sel: st.sel.map(item) };
+  applyView(st.view);
+  path = checked.path.map(i => findItemById(i.id) ?? i);
+  selection = new Map(checked.sel.map(i => [i.id, i]));
+  anchorId = typeof st.anchor === "string" ? st.anchor : null;
+  Object.assign(detailTab, st.tab); Object.assign(plantsView, st.plants); Object.assign(varFilter, st.vf);
+  const { hidden, ...toggles } = st.grid;
+  for (const k of ["stats", "sharedY", "overlay", "norm"]) gridState[k] = toggles[k] === true;
+  gridState.hiddenSeries = new Set(hidden.map(String));
+  distState.day = Number.isInteger(st.day) ? st.day : null;
+  await loadNodeDetail(path[path.length - 1]); // the experiment's structure is what the chart windows are built from
+  showPath(path);
+  historyPaths.set(history.state.n, path);
+  await applyUi(st.ui ? { ...st.ui, grid: { vi: Number(st.ui.grid?.vi) || 0 } } : null);
+}
 
 function navigateTo(newPath) {
   // Opening a node from a page view (Overview, Set up, Import) lands in the workspace: one history entry for both.
@@ -2009,6 +2086,8 @@ function navigateTo(newPath) {
   if (leaving) applyView("browse");
   showPath(newPath);
   historyPaths.set(++historyCount, path);
+  historyTabs.set(historyCount, tabsNow());
+  scheduleUrl();
   history.pushState({ n: historyCount }, "", leaving ? "#browse" : location.href);
 }
 
@@ -2017,6 +2096,7 @@ function showPath(newPath) {
   path = newPath;
   detailPath = []; // a real navigation ends any local detail opened from the tree
   unlinkTargetId = null; // opening any node starts on the normal view, not mid-unlink
+  deleteCardId = null;
   carryOverOffer = null;
   experimentChoice = null;
   deleteBlockedShown = null;
@@ -2173,7 +2253,12 @@ async function deleteNode(item, force = false) {
   }
   const blockers = (node?.relations ?? []).filter(rel => rel.blocksDelete);
   const related = (node?.relations ?? []).filter(rel => !rel.blocksDelete).flatMap(rel => rel.items);
-  if (!force && (blockers.length || (related.length && !node?.deleteRemovesLinks))) {
+  if (!force && blockers.length) {
+    deleteCardId = item.id;
+    render();
+    return;
+  }
+  if (!force && related.length && !node?.deleteRemovesLinks) {
     unlinkTargetId = item.id;
     render();
     return;
@@ -2203,104 +2288,25 @@ async function deleteNode(item, force = false) {
   }
 }
 
-// "Scientific objects" group label -> "1 scientific object" / "3 scientific objects".
-function countOf(n, groupLabels) {
-  const words = groupLabels.map(l => l.toLowerCase()).join(" and ");
-  return `${n} ${n === 1 ? words.replace(/s$/, "") : words}`;
-}
-
-// The blocked-delete path: clears the node's blocksDelete groups (e.g. an experiment's scientific
-// objects), then carries on with the delete the user started — the node's own confirm, which
-// names the links that go with it. Per item: one that lives ONLY here is deleted from PHIS
-// entirely; one that also lives elsewhere (a scientific object shared with another experiment)
-// is only removed from this node, via the group's unlink, so the other experiments keep it.
-// The confirm spells out which is which.
-async function deleteBlockers(item) {
-  const groups = (NODE_DETAIL[item.id]?.relations ?? []).filter(rel => rel.blocksDelete);
-  const entries = groups.flatMap(rel => rel.items.map(it => ({ it, field: rel.field })));
-  const niceType = typeName(item.type);
-  // Where else does each one live? One backend call that asks the experiments' side (/api/elsewhere);
-  // asking each object was minutes of silence for a 100-plant trial (found 2026-09-30).
-  if (entries.length > 10) showToast(`Checking where each of the ${entries.length} is used, before asking…`, 30000);
-  let elsewhere = {};
-  try {
-    const res = await fetch(`api/elsewhere?experiment=${encodeURIComponent(item.id)}`);
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.status);
-    elsewhere = await res.json();
-  } catch (err) {
-    showToast(`Couldn't check where they are used: ${err}`);
-    return;
-  }
-  for (const e of entries) e.elsewhere = elsewhere[e.it.id] ?? [];
-  els.toast.classList.remove("show");
-  const what = countOf(entries.length, groups.map(rel => rel.label));
-  const lines = entries.map(e => e.elsewhere.length
-    ? `• ${e.it.label} — also in ${e.elsewhere.map(o => o.label).join(", ")}: removed from ${item.label} only, kept there`
-    : `• ${e.it.label} — only here: deleted from PHIS entirely`);
-  if (!confirm(`${item.label} holds ${what}. To delete the ${niceType}:\n\n${lines.join("\n")}\n\nThis cannot be undone.`)) return;
-  for (const [i, e] of entries.entries()) {
-    if (entries.length > 10) showToast(`Removing ${i + 1} of ${entries.length}…`, 10000);
-    try {
-      const res = e.elsewhere.length
-        ? await fetch("api/node", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type: item.type, id: item.id, unlink: { field: e.field, uri: e.it.id } }),
-          })
-        : await fetch(`api/node?type=${encodeURIComponent(e.it.type)}&id=${encodeURIComponent(e.it.id)}`, { method: "DELETE" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        showToast(`Failed on ${e.it.label}: ${body.error || res.status}`);
-        invalidateNodeDetail(item.id); // show what's actually left
-        return;
-      }
-    } catch (err) {
-      showToast(`Failed on ${e.it.label}: ${err}`);
-      return;
-    }
-    if (e.elsewhere.length) delete NODE_DETAIL[e.it.id]; // its Experiments list just lost this one
-    else forgetNode(e.it);
-  }
-  delete NODE_DETAIL[item.id];
-  await loadNodeDetail(item);
-  showToast(`Cleared ${what} from ${item.label}`);
-  unlinkTargetId = null; // cancelling the next confirm lands on the normal view, Delete ready
-  if (!(NODE_DETAIL[item.id]?.relations ?? []).some(rel => rel.blocksDelete)) deleteNode(item);
-  else render();
-}
-
 // "Delete it and everything in it": an experiment with its objects, factors and measured values, in one counted step.
 // A separate, deliberate action (plain Delete never removes values): it shows what goes and what stays, and the experiment's
 // name has to be typed. The server does it in order and streams progress; what is also used by another experiment stays there.
-async function deleteExperimentEverything(item) {
-  let p;
-  try {
-    showToast("Counting what is in it…", 60000);
-    const res = await fetch(`api/experiment-delete/preview?id=${encodeURIComponent(item.id)}`);
-    p = await res.json();
-    if (!res.ok) throw new Error(p.error || res.status);
-  } catch (err) { showToast(`Couldn't count what is in it: ${err.message || err}`); return; }
-  els.toast.classList.remove("show");
-  const lines = [
-    `${p.objects.toLocaleString("en")} ${typeName("scientific_object", p.objects)}${p.trays ? ` (${p.trays} ${p.trays === 1 ? "is a block or tray" : "are blocks or trays"})` : ""}${p.shared ? ` — ${p.shared} also in other experiments, only taken out of this one` : ""}`,
-    ...(p.values ? [`${p.values.toLocaleString("en")} measured ${p.values === 1 ? "value" : "values"} — research data, gone for good`] : []),
-    ...(p.factors ? [`${p.factors} ${p.factors === 1 ? "factor" : "factors"} with their levels`] : []),
-    ...(p.provenances.length ? [`provenance${p.provenances.length === 1 ? "" : "s"} ${p.provenances.join("; ")} — unless still used by another experiment`] : []),
-    ...(p.notes ? [`${p.notes} ${p.notes === 1 ? "annotation" : "annotations"} about it (one that also concerns other things only loses this one)`] : []),
-    "the experiment itself",
-  ];
-  const typed = prompt(`DELETE ${p.name} AND EVERYTHING IN IT
+// The counts are shown on the delete card first (deleteCardHtml), so the button click is the confirmation;
+// the server still wants the exact name, which comes from the same preview instead of being typed.
+function deleteCardCounts(p) {
+  const n = (k, one, many) => p[k] ? [`<b>${p[k].toLocaleString("en")}</b> ${p[k] === 1 ? one : many}`] : [];
+  return [
+    ...n("objects", "scientific object", "scientific objects"),
+    ...n("values", "measured value", "measured values"),
+    ...n("factors", "factor", "factors"),
+    ...n("notes", "annotation", "annotations"),
+  ].join(" · ");
+}
 
-This permanently deletes:
-${lines.map(l => `• ${l}`).join("\n")}
+// A destructive button stays disabled until its word is typed: the deliberate step that a click on a button is not.
+const wordTyped = (input, word) => input.value.trim().toLowerCase() === word;
 
-Stays: germplasm, variables, people, groups.
-This cannot be undone.
-
-Type the experiment's name to confirm (a plain - works in place of a long dash):`, "");
-  if (typed === null) return;
-  const norm = (s) => s.replace(/[‐-―−]/g, "-").replace(/\s+/g, " ").trim().toLowerCase();
-  if (norm(typed) !== norm(p.name)) { showToast("That isn't the experiment's name. Nothing was deleted."); return; }
+async function deleteExperimentEverything(item, p) {
   try {
     showToast("Starting…", 600000);
     const res = await fetch(`api/experiment-delete?id=${encodeURIComponent(item.id)}&name=${encodeURIComponent(p.name)}`, { method: "DELETE" });
@@ -2326,7 +2332,7 @@ Type the experiment's name to confirm (a plain - works in place of a long dash):
       return;
     }
     forgetNode(item);
-    unlinkTargetId = null;
+    unlinkTargetId = deleteCardId = null;
     if (path[path.length - 1]?.id === item.id) { path = path.slice(0, -1); historyPaths.set(history.state?.n, path); }
     await reloadCategories(["cat-experiments", "cat-scientificobjects", "cat-factors", "cat-provenances"]);
     render();
@@ -2429,6 +2435,7 @@ async function unlinkAll(item) {
    selection overview you built. Outside tree mode, the › arrow still does
    a real, global navigation (`path`), same as before. */
 function renderDetail() {
+  scheduleUrl();
   const p = currentPane();
   const isOpenNode = p.id !== "root" && p.type !== "category";
 
@@ -2676,6 +2683,9 @@ function gridButtonHtml(grid) {
   return `<button class="btn primary" id="showGridBtn">Show chart grid</button>`;
 }
 
+// A line's look follows how many share the chart: one plant is drawn bold and solid, a crowd stays thin and faint.
+const lineLook = n => { const f = Math.min(1, Math.log10(Math.max(1, n)) / 1.5); return `style="--lw:${(2.4 - 1.4 * f).toFixed(2)};--lo:${(1 - 0.65 * f).toFixed(2)}"`; };
+
 // One chart: a group's plants as thin lines with the mean thick (and, with statistics, a mean ± SD band), or a single plant.
 function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden: new Set(), big: false }) {
   const e = escapeHtml;
@@ -2698,7 +2708,7 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
     if (view.hidden.has(p.id)) return;
     const emph = ch.emphasis.some(x => sameId(x, p.id)) || view.highlight.has(p.id);
     if (opts.stats && !view.big && !emph) return; // with statistics on, only the mean and its band are drawn
-    if (d.length > 1) { const line = `<polyline class="g-line${emph ? " em" : ""}" data-id="${e(p.id)}" stroke="${color}" points="${d.join(" ")}"/>`; if (emph) top += line; else svg += line; }
+    if (d.length > 1) { const line = `<polyline class="g-line${emph ? " em" : ""}" data-id="${e(p.id)}" ${lineLook(pts.length)} stroke="${color}" points="${d.join(" ")}"/>`; if (emph) top += line; else svg += line; }
   });
   if (band) {
     const up = [], down = [];
@@ -2771,7 +2781,7 @@ function overlayRowHtml(row, data, yr, opts) {
       x.stats.forEach((st, i) => { if (st && st.sd != null) { up.push(`${xs[i].toFixed(1)},${Y(st.mean + st.sd).toFixed(1)}`); down.unshift(`${xs[i].toFixed(1)},${Y(st.mean - st.sd).toFixed(1)}`); } });
       if (up.length > 1) svg += `<polygon class="g-band" fill="${x.color}" points="${[...up, ...down].join(" ")}"/>`;
     }
-    if (lines(x)) x.plants.forEach(p => { const d = pts(p.values.map(v => v?.v ?? null)); if (d.length > 1) svg += `<polyline class="g-line" stroke="${x.color}" points="${d.join(" ")}"/>`; });
+    if (lines(x)) x.plants.forEach(p => { const d = pts(p.values.map(v => v?.v ?? null)); if (d.length > 1) svg += `<polyline class="g-line" ${lineLook(x.plants.length)} stroke="${x.color}" points="${d.join(" ")}"/>`; });
     const m = band || x.ch.kind === "plant" ? pts(x.stats.map(st => st ? st.mean : null)) : [];
     if (m.length > 1) svg += `<polyline class="g-mean" stroke="${x.color}" points="${m.join(" ")}"/>`;
   });
@@ -2897,7 +2907,7 @@ function showOneScan() {
   showToast(`Showing ${el.querySelector("#distDay option:checked")?.textContent ?? "that scan"} for every plant, in One scan below.`, 4000);
 }
 // One plant's histogram at every scan: a stacked bar per scan, and the shares as a table.
-function openDistPlantDetail(p, data, colors, st, showDay, restored) {
+function openDistPlantDetail(p, data, colors, st, showDay, restored, initUi) {
   if (!p) return;
   document.getElementById("chartDetail")?.remove();
   const e = escapeHtml, label = plantLabelIn(st, p.id), n = data.columns.length, bw = 100 / n;
@@ -2912,8 +2922,11 @@ function openDistPlantDetail(p, data, colors, st, showDay, restored) {
     <div class="g-chart d-chart"><div class="g-plot" style="height:220px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[n - 1].key))}</span></div></div>
     <div class="meas-values obs-wrap"><table class="obs-table"><thead><tr><th>Scan</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
   document.body.appendChild(dlg);
-  let scan = null, only = null; // the scan picked (bar or row), the one range followed (name above its column)
+  const ui = { kind: "plant", id: p.id };
+  let scan = initUi?.scan ?? null, only = initUi?.only ?? null; // the scan picked (bar or row), the one range followed (name above its column)
   const paint = () => {
+    Object.assign(ui, { scan, only });
+    scheduleUrl();
     dlg.querySelectorAll(".d-col, tbody tr").forEach(el => el.classList.toggle("on", scan !== null && Number(el.dataset.col) === scan));
     dlg.querySelectorAll("th[data-b]").forEach(th => th.classList.toggle("only", only === Number(th.dataset.b)));
     dlg.querySelectorAll("rect[data-b]").forEach(r => { r.style.opacity = only === null || Number(r.dataset.b) === only ? "" : "0.18"; });
@@ -2928,7 +2941,8 @@ function openDistPlantDetail(p, data, colors, st, showDay, restored) {
     else if (pick) { scan = scan === Number(pick.dataset.col) ? null : Number(pick.dataset.col); paint(); }
   });
   dlg.showModal();
-  registerOverlay(dlg, { kind: "plant", id: p.id }, restored);
+  registerOverlay(dlg, ui, restored);
+  paint();
 }
 
 async function renderDistributionBody(dlg, body, plan, sel, v) {
@@ -2955,6 +2969,7 @@ async function renderDistributionBody(dlg, body, plan, sel, v) {
 }
 
 async function renderChartGrid() {
+  scheduleUrl();
   const dlg = document.getElementById("chartGrid");
   const sel = chartableSelection();
   if (!dlg || !sel || !sel.plan.variables.length) return;
@@ -3059,14 +3074,16 @@ function wireLineHover(plot, plants, data, labelOf) {
 // One chart's full numbers: a big chart (click it for full screen; the window can be resized), the statistics toggle,
 // and the actual observations as a scan × plant table. Picking observations (click, ctrl, shift, row/column headers)
 // turns the chart into a scatter of just those points; mean ± SD of a scan shows when hovering the chart.
-function openChartDetail(ch, data, st, restored) {
+function openChartDetail(ch, data, st, restored, initUi) {
   document.getElementById("chartDetail")?.remove();
   const e = escapeHtml;
   const plants = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean);
-  const view = { highlight: new Set(), hidden: new Set(), big: true, selected: new Set() };
+  const init = initUi ?? {};
+  const view = { highlight: new Set(init.hl), hidden: new Set(init.hid), big: true, selected: new Set(init.obs) };
   const unit = data.variable.unit ? ` (${e(data.variable.unit)})` : "";
   const single = ch.kind === "plant";
-  let showStats = true, anchor = null;
+  let showStats = init.stats ?? true, anchor = null;
+  const ui = { kind: "chart", key: ch.key }; // what a share link or Back restores: the window and what is toggled in it
   const cell = (pi, ci) => { const v = plants[pi].values[ci]; return v == null ? `<td class="obs-null">–</td>` : `<td class="obs" data-p="${pi}" data-c="${ci}" title="${e(`${v.v} · ${whenText(data.columns[ci].key)} ${v.at ?? ""}`.trim())}">${sig4(v.v)}</td>`; };
   const table = `<table class="obs-table"><thead><tr><th>Scan</th>${plants.map((p, pi) => `<th class="obs-col" data-p="${pi}">${e(plantLabelIn(st, p.id))}</th>`).join("")}</tr></thead><tbody>${data.columns.map((c, ci) => `<tr><th class="obs-row" data-c="${ci}">${e(whenText(c.key))}</th>${plants.map((p, pi) => cell(pi, ci)).join("")}</tr>`).join("")}</tbody></table>`;
   const dlg = document.createElement("dialog");
@@ -3081,7 +3098,10 @@ function openChartDetail(ch, data, st, restored) {
   document.body.appendChild(dlg);
   const keyOf = (pi, ci) => `${plants[pi].id}|${ci}`;
   const filled = (pi, ci) => plants[pi].values[ci] != null;
+  const syncUi = () => Object.assign(ui, { hl: [...view.highlight], hid: [...view.hidden], obs: [...view.selected], stats: showStats, full: dlg.classList.contains("full") });
   const paint = () => {
+    syncUi();
+    scheduleUrl();
     const box = dlg.querySelector("#detailPlot");
     box.innerHTML = gridChartHtml(ch, data, null, { stats: showStats, sharedY: false }, view);
     const plot = box.querySelector(".g-plot");
@@ -3101,7 +3121,7 @@ function openChartDetail(ch, data, st, restored) {
   };
   const range = (a, b) => { const out = []; for (let pi = Math.min(a.pi, b.pi); pi <= Math.max(a.pi, b.pi); pi++) for (let ci = Math.min(a.ci, b.ci); ci <= Math.max(a.ci, b.ci); ci++) out.push([pi, ci]); return out; };
   const fit = () => dlg.style.setProperty("--big-h", `${Math.max(160, Math.round(dlg.clientHeight * (dlg.classList.contains("full") ? 0.5 : 0.36)))}px`);
-  const toggleFull = () => { dlg.classList.toggle("full"); fit(); };
+  const toggleFull = () => { dlg.classList.toggle("full"); syncUi(); fit(); };
   dlg.addEventListener("click", ev => {
     if (ev.target === dlg || ev.target.closest(".g-close")) { dlg.close(); return; }
     if (ev.target.closest(".g-full") || ev.target.closest("#detailPlot")) { toggleFull(); return; }
@@ -3136,7 +3156,9 @@ function openChartDetail(ch, data, st, restored) {
   const ro = new ResizeObserver(() => fit());
   dlg.addEventListener("close", () => ro.disconnect());
   dlg.showModal();
-  registerOverlay(dlg, { kind: "chart", key: ch.key }, restored);
+  registerOverlay(dlg, ui, restored);
+  dlg.querySelector(".g-dstats").checked = showStats;
+  if (init.full) dlg.classList.add("full");
   ro.observe(dlg);
   fit();
   paint();
@@ -3185,13 +3207,14 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   const canRename = canEdit && actions.includes("rename");
   const canDelete = canEdit && actions.includes("delete");
   const blockers = canEdit ? (node.relations ?? []).filter(rel => rel.blocksDelete) : [];
-  const unlinking = canEdit && unlinkTargetId === focusNode.id;
+  const deleting = canEdit && blockers.length > 0 && deleteCardId === focusNode.id;
+  const unlinking = canEdit && !deleting && unlinkTargetId === focusNode.id;
   // The button doesn't just delete when relations exist — it opens the unlink view instead —
   // so it says so upfront rather than promising a delete that's actually going to redirect.
   const hasRelations = canEdit && node.relations && node.relations.length > 0;
   // ...unless the type's delete simply takes its links along (and nothing blocks it).
-  const deleteRedirects = hasRelations && (blockers.length > 0 || !node.deleteRemovesLinks);
-  const deleteLabel = deleteRedirects ? "Delete…" : "Delete";
+  const deleteRedirects = hasRelations && blockers.length === 0 && !node.deleteRemovesLinks;
+  const deleteLabel = deleteRedirects || blockers.length ? "Delete…" : "Delete";
   // When Delete doesn't pass through unlink mode (deleteRemovesLinks), unlinking needs its own
   // way in — otherwise e.g. a scientific object could never be taken out of one experiment.
   const canUnlink = canEdit && !deleteRedirects && actions.includes("link") && (node.relations ?? []).some(rel => rel.field && rel.items.length);
@@ -3221,6 +3244,17 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     </div>`;
   }
 
+  // Only an experiment's scientific objects block delete (node-types.ts): one card, counted by the server.
+  if (deleting) html += `<div class="del-card">
+    <div class="del-card-title">Delete this experiment?</div>
+    <div class="del-card-body" id="delCardBody">Counting what is in it…</div>
+    <div class="del-card-actions">
+      <input class="word-input" id="wordInput" placeholder="type DELETE to confirm" autocomplete="off" spellcheck="false" aria-label="Type DELETE to confirm">
+      <button class="btn danger small" id="deleteEverythingBtn" disabled>Delete permanently</button>
+      <button class="btn small" id="cancelDeleteBtn">Cancel</button>
+    </div>
+  </div>`;
+
   if (isCategoryMembers) {
     // A category isn't a resource with relations — it's a group. Show
     // what's actually inside it as a REAL selectable list (not read-only
@@ -3238,31 +3272,26 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
       const lastReq = lastRequiredLink(type, node);
       const anyUnlinkable = node.relations.some(rel => rel.field && rel.items.some(it => it.id !== lastReq?.id));
       const niceType = typeName(type);
-      const blockerCount = blockers.flatMap(rel => rel.items).length;
-      const blockerWhat = countOf(blockerCount, blockers.map(rel => rel.label));
-      const them = blockerCount === 1 ? "it" : "them";
       html += `<div class="unlink-intro">
-        <span class="unlink-intro-text">${blockers.length
-          ? `<b>CAN'T DELETE YET</b> — ${escapeHtml(label)} still holds ${blockerWhat}. Deleting the ${niceType} with ${them} inside would leave ${them} orphaned in PHIS, so ${blockerCount === 1 ? "it has" : "they have"} to go first — remove one with its ×, or clear them all (anything also used by another experiment is only removed from this one).`
-          : lastReq
+        <span class="unlink-intro-text">${lastReq
           ? `<b>UNLINK MODE</b> — a ${niceType} must belong to at least one ${typeName(lastReq.type)}, so <b>${escapeHtml(lastReq.label)}</b> can't be unlinked. Delete the ${niceType} instead — that also removes every link below.`
           : node.deleteRemovesLinks
-          ? `<b>UNLINK MODE</b> — remove any link below with its ×.`
+          ? `<b>UNLINK MODE</b> — remove any link below with its ×.${blockers.length ? ` <b>Unlink all</b> takes every scientific object out of this experiment; the ones that belong to no other experiment stay in PHIS, without one.` : ""}`
           : `<b>UNLINK MODE</b> — delete is blocked while ${escapeHtml(label)} is still linked to the items below.`}</span>
         <span class="unlink-intro-actions">
-          ${blockers.length ? `<button class="btn warn small" id="deleteBlockersBtn">Clear ${blockerWhat}…</button>` : ""}
-          ${blockers.length && type === "experiment" ? `<button class="btn warn small" id="deleteEverythingBtn" title="Deletes the experiment with its objects and measured values, after showing exactly what and asking you to type its name">Delete it and everything in it…</button>` : ""}
-          ${lastReq && !blockers.length ? `<button class="btn warn small" id="forceDeleteBtn">Delete ${niceType}</button>` : ""}
-          ${anyUnlinkable ? `<button class="btn warn small" id="unlinkAllBtn">Unlink all</button>` : ""}
+          ${lastReq ? `<button class="btn warn small" id="forceDeleteBtn">Delete ${niceType}</button>` : ""}
+          ${blockers.length && anyUnlinkable ? `<input class="word-input" id="wordInput" placeholder="type UNLINK to confirm" autocomplete="off" spellcheck="false" aria-label="Type UNLINK to confirm">` : ""}
+          ${anyUnlinkable ? `<button class="btn warn small" id="unlinkAllBtn"${blockers.length ? " disabled" : ""}>Unlink all</button>` : ""}
           <button class="btn warn small" id="cancelUnlinkBtn">Cancel</button>
         </span>
       </div>`;
       node.relations.forEach(rel => { html += relGroupHtml(rel, { unlinkable: it => it.id !== lastReq?.id, unlinking: true }); });
-      if (!anyUnlinkable && !lastReq && !blockers.length) {
+      if (!anyUnlinkable && !lastReq) {
         html += `<div class="rel-group"><span style="color:var(--ink-faint); font-size:12.5px;">These can't be unlinked from here — nothing left to try automatically.</span></div>`;
       }
     } else {
-      if (node.structure) html += tabbedExperimentHtml(focusNode.id, node);
+      if (deleting) { /* the delete card above replaces the relations */ }
+      else if (node.structure) html += tabbedExperimentHtml(focusNode.id, node);
       else node.relations.forEach(rel => { html += relGroupHtml(rel, { withMeasurements: type === "scientific_object" }); });
     }
   } else {
@@ -3277,20 +3306,21 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
 
   els.detailBody.innerHTML = html;
   wireTypeInfo(els.detailBody);
-  els.detailBody.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { detailTab[focusNode.id] = b.dataset.dtab; renderDetail(); }));
-  els.detailBody.querySelector("button.go-vars")?.addEventListener("click", () => { detailTab[focusNode.id] = "variables"; renderDetail(); });
+  els.detailBody.querySelectorAll("[data-dtab]").forEach(b => b.addEventListener("click", () => { if (detailTab[focusNode.id] === b.dataset.dtab) return; detailTab[focusNode.id] = b.dataset.dtab; renderDetail(); pushUiState(); }));
+  els.detailBody.querySelector("button.go-vars")?.addEventListener("click", () => { detailTab[focusNode.id] = "variables"; renderDetail(); pushUiState(); });
   els.detailBody.querySelectorAll("button.go-plants[data-by]").forEach(b => b.addEventListener("click", () => {
     plantsView[focusNode.id] = { by: b.dataset.by, q: "" };
     detailTab[focusNode.id] = "plants";
     plantsFocus = b.dataset.level ?? null;
     renderDetail();
+    pushUiState();
   }));
   if (plantsFocus) {
     const box = [...els.detailBody.querySelectorAll(".hx-level[data-level]")].find(x => x.dataset.level === plantsFocus);
     plantsFocus = null;
     if (box) { box.scrollIntoView({ block: "center" }); box.classList.add("flash"); }
   }
-  els.detailBody.querySelectorAll("button.pill[data-by]").forEach(b => b.addEventListener("click", () => { plantsView[focusNode.id].by = b.dataset.by; renderDetail(); }));
+  els.detailBody.querySelectorAll("button.pill[data-by]").forEach(b => b.addEventListener("click", () => { plantsView[focusNode.id].by = b.dataset.by; renderDetail(); pushUiState(); }));
   els.detailBody.querySelectorAll("input[data-filter]").forEach(inp => inp.addEventListener("input", () => {
     const st = NODE_DETAIL[focusNode.id].structure;
     if (inp.dataset.filter === "plants") {
@@ -3359,6 +3389,25 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
     renderActionbar();
   });
 
+  if (deleting) {
+    const delBtn = document.getElementById("deleteEverythingBtn");
+    if (delBtn) {
+      const id = focusNode.id, body = document.getElementById("delCardBody"), word = document.getElementById("wordInput");
+      let ready = false; // the counts are in
+      const update = () => { delBtn.disabled = !(ready && wordTyped(word, "delete")); };
+      word.addEventListener("input", update);
+      fetch(`api/experiment-delete/preview?id=${encodeURIComponent(id)}`).then(async res => {
+        const p = await res.json();
+        if (!res.ok) throw new Error(p.error || res.status);
+        if (!body.isConnected) return; // the user moved on
+        body.innerHTML = `${deleteCardCounts(p)} will be deleted for good.${p.shared ? ` ${p.shared} of the objects are also in other experiments and stay there.` : ""}`;
+        ready = true; update();
+        delBtn.addEventListener("click", () => { if (!delBtn.disabled) deleteExperimentEverything(focusNode, p); });
+      }).catch(err => { if (body.isConnected) body.textContent = `Couldn't count what is in it: ${err.message || err}`; });
+    }
+    document.getElementById("cancelDeleteBtn").addEventListener("click", () => { deleteCardId = null; renderDetail(); });
+  }
+
   if (unlinking) {
     els.detailBody.querySelectorAll(".chip-unlink").forEach(btn => {
       btn.addEventListener("click", (e) => {
@@ -3366,10 +3415,10 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         unlinkOne(focusNode, btn.dataset.field, btn.dataset.uri, btn.dataset.exp);
       });
     });
+    const unlinkWord = document.getElementById("wordInput");
+    if (unlinkWord) unlinkWord.addEventListener("input", () => { document.getElementById("unlinkAllBtn").disabled = !wordTyped(unlinkWord, "unlink"); });
     document.getElementById("unlinkAllBtn")?.addEventListener("click", () => unlinkAll(focusNode));
     document.getElementById("forceDeleteBtn")?.addEventListener("click", () => deleteNode(focusNode, true));
-    document.getElementById("deleteBlockersBtn")?.addEventListener("click", () => deleteBlockers(focusNode));
-    document.getElementById("deleteEverythingBtn")?.addEventListener("click", () => deleteExperimentEverything(focusNode));
     document.getElementById("cancelUnlinkBtn").addEventListener("click", () => {
       unlinkTargetId = null;
       renderDetail();
@@ -4520,6 +4569,7 @@ function wireLinkMenu(buttonId, onOpen) {
 }
 
 function renderActionbar() {
+  scheduleUrl();
   const bar = els.actionbar;
   // The popover is rebuilt below, so a mode left over from one closed with × must not leak
   // into linkPickerCandidatesByType's normal "Link existing…" answer.
@@ -4767,6 +4817,7 @@ function renderActionbar() {
 }
 
 function render() {
+  scheduleUrl();
   renderCrumbs();
   refreshLeftPane();
   renderDetail();
@@ -5490,4 +5541,9 @@ function wireImportRun(file, plan, close) {
 }
 
 applyView(viewFromHash());
+{
+  const shared = location.hash.match(/&s=([\w-]+)/)?.[1];
+  if (shared) restoreShared(shared).catch(() => showToast("That link could not be opened."));
+  else { restoring = false; scheduleUrl(); }
+}
 </script>
