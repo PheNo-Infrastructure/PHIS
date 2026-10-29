@@ -589,7 +589,9 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .d-day-chart:hover { border-color: var(--border); }
 .d-names { display: flex; font-size: 9px; color: var(--ink-faint); margin-top: 2px; }
 .d-names span { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.g-pager { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.g-pager { display: flex; gap: 4px; align-items: flex-start; flex: 1 1 100%; } /* the arrows stay at the ends; only the variable buttons wrap */
+.g-pager-vars { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.g-pager > button { flex: none; }
 .g-pager button, .g-head button { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 12px; font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer; }
 .g-pager button:disabled { opacity: .4; cursor: default; }
 .g-pager button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
@@ -3020,7 +3022,7 @@ async function renderChartGrid() {
   dlg.style.setProperty("--wcols", String(gridState.overlay ? 3 : fit.cols));
   applyChartFit(dlg);
   const pager = plan.variables.length > 1
-    ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
+    ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button><div class="g-pager-vars">${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}</div><button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<span class="g-opts"><label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label data-tip="Changes the values: every plant becomes a percentage of its own first scan (first scan = 100). Compare how fast plants grow, whatever size they started at."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
