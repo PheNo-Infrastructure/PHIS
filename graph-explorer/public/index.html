@@ -2721,10 +2721,12 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   if (!nCols || !pts.length) return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-empty">no values for ${e(data.variable.name)}</div></div>`;
   if (nCols === 1 && ch.kind !== "plant" && pts.length > 1 && !(view.selected && view.selected.size)) { // measured once: a line has nothing to show, the spread of the values does
     const h = histogram(pts.map(p => p.values[0]?.v ?? null));
-    const top = Math.max(...h.counts), w = 96 / h.counts.length, edge = k => h.lo + (h.hi - h.lo) * k / h.counts.length;
-    const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "", color = colorVar(ch.colorIndex);
-    const bars = h.counts.map((c, k) => c ? `<rect x="${(2 + k * w).toFixed(2)}" y="${(88 - 76 * c / top).toFixed(2)}" width="${(w - 0.6).toFixed(2)}" height="${(76 * c / top).toFixed(2)}" fill="${color}" opacity=".75"><title>${e(`${sig4(edge(k))} to ${sig4(edge(k + 1))}${unit}: ${c} ${c === 1 ? "object" : "objects"}`)}</title></rect>` : "").join("");
-    return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><span class="g-yh">${top} ${top === 1 ? "object" : "objects"}</span><span class="g-yl">0</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${sig4(h.lo)}${unit}</span><span>${sig4(h.hi)}${unit}</span></div></div>`;
+    // A frequency polygon: the bins' counts joined by one line (the mean line's look), down to zero one bin beyond each end.
+    const top = Math.max(...h.counts), slots = h.counts.length + 2, w = 96 / slots, color = colorVar(ch.colorIndex);
+    const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "";
+    const xy = [[0, 0], ...h.counts.map((c, k) => [k + 1, c]), [slots - 1, 0]].map(([k, c]) => `${(2 + (k + 0.5) * w).toFixed(2)},${(88 - 76 * c / top).toFixed(2)}`);
+    const bars = `<polygon class="g-band" fill="${color}" points="${xy.join(" ")}"/><polyline class="g-mean" stroke="${color}" points="${xy.join(" ")}"/>`;
+    return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><span class="g-yh">${top} ${top === 1 ? "object" : "objects"}</span><span class="g-yl">0</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa" style="padding:0 ${(96 / (h.counts.length + 2)).toFixed(1)}%"><span>${sig4(h.lo)}${unit}</span><span>${sig4(h.hi)}${unit}</span></div></div>`;
   }
   const ts = data.columns.map(c => timeOf(c.key)), t0 = Math.min(...ts), t1 = Math.max(...ts);
   const X = i => 2 + 96 * (t1 === t0 ? 0.5 : (ts[i] - t0) / (t1 - t0));

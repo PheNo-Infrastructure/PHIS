@@ -4436,7 +4436,7 @@ test("e2e: browse top level follows PHIS's own menu order", async () => {
   });
 });
 
-test("e2e: an experiment with no factor charts in one click: 'Chart all objects' opens one chart of all of them, measured-once values as a histogram", async () => {
+test("e2e: an experiment with no factor charts in one click: 'Chart all objects' opens one chart of all of them, measured-once values as a line over value ranges", async () => {
   const objects = Array.from({ length: 14 }, (_, i) => ({ id: `so-s${i + 1}`, label: `seed-${i + 1}` }));
   const noFactor = { truncated: false, variables: [{ id: "var-1", label: "Length", count: 14 }], factors: [], other: objects };
   await withServerAndBrowser(async (base, page) => {
@@ -4452,7 +4452,7 @@ test("e2e: an experiment with no factor charts in one click: 'Chart all objects'
     assert.match(await grid.locator(".g-chart").innerText(), /14 objects/);
     assert.match(await grid.locator(".g-chart").innerText(), /All objects/, "every object of the experiment is in it");
     assert.doesNotMatch(await grid.innerText(), /unitless/);
-    assert.ok(await grid.locator(".g-plot rect").count() >= 4, "values measured once are drawn as bars");
+    assert.equal(await grid.locator(".g-plot polyline.g-mean").count(), 1, "values measured once are drawn as one line over the value ranges");
     assert.equal(await grid.locator(".g-line").count(), 0);
   });
 });
