@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { meanSd, groupColumns, yRange, arrangeCharts, normaliseOverview, distributionMeans } from "../src/chart-math.js";
+import { meanSd, groupColumns, yRange, arrangeCharts, normaliseOverview, distributionMeans, histogram } from "../src/chart-math.js";
 
 test("meanSd: mean and sample SD over the numbers present; one value has SD null; nothing gives null", () => {
   assert.deepEqual(meanSd([2, 4, 6]), { mean: 4, sd: 2, n: 3 });
@@ -97,4 +97,27 @@ test("distributionMeans: per scan, the mean share of each bin over the plants th
   const plants = [{ values: [[30, 70], [20, 80], null] }, { values: [[40, 60], null, null] }];
   assert.deepEqual(distributionMeans(plants, 3), [[35, 65], [20, 80], null]);
   assert.deepEqual(distributionMeans([], 2), [null, null]);
+});
+
+test("histogram: equal-width bins over the numbers present, the highest value in the last bin; flat or empty sets are handled", () => {
+  assert.deepEqual(histogram([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 5), { lo: 0, hi: 10, counts: [2, 2, 2, 2, 3], n: 11 });
+  assert.deepEqual(histogram([4, 4, 4]), { lo: 4, hi: 4, counts: [3], n: 3 });
+  assert.deepEqual(histogram([2, null as any, "x" as any]), { lo: 2, hi: 2, counts: [1], n: 1 });
+  assert.equal(histogram([]), null);
+});
+
+test("arrangeCharts: a crowd of single picks is one chart; a few stay one chart each", () => {
+  const few = arrangeCharts([v("v1"), ...[1, 2, 3].map((n) => plant(n))], ST);
+  assert.equal(few.rows[0].charts.length, 3);
+  const all = Array.from({ length: 13 }, (_, i) => plant(i + 1, ["#all"]));
+  const crowd = arrangeCharts([v("v1"), ...all], { ...ST, factors: [], other: all.map((p) => P(Number(p.label.slice(2)))) });
+  assert.equal(crowd.rows.length, 1);
+  assert.equal(crowd.rows[0].charts.length, 1);
+  assert.deepEqual([crowd.rows[0].charts[0].title, crowd.rows[0].charts[0].sub, crowd.rows[0].charts[0].plantIds.length], ["All objects", "13 objects", 13]);
+});
+
+test("arrangeCharts: a crowd that is only part of the experiment's objects is 'Selected objects'", () => {
+  const some = Array.from({ length: 13 }, (_, i) => plant(i + 1, ["#all"]));
+  const r = arrangeCharts([v("v1"), ...some], { ...ST, factors: [], other: Array.from({ length: 20 }, (_, i) => P(i + 1)) });
+  assert.equal(r.rows[0].charts[0].title, "Selected objects");
 });

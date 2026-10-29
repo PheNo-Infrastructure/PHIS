@@ -558,7 +558,7 @@ body[data-view="browse"] #pagePane { display: none; }
 label[data-tip] { position: relative; cursor: help; }
 label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: max-content; max-width: 260px; padding: 6px 9px; background: var(--ink); color: var(--bg); border-radius: 6px; font-size: 12px; font-weight: 400; line-height: 1.35; white-space: normal; pointer-events: none; }
 .g-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 12.5px; }
-.g-head-main { flex: 1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.g-head-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .g-title { font-size: 16px; font-weight: 600; }
 .import-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-muted); }
 .import-drop.drag-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -589,7 +589,12 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .d-day-chart:hover { border-color: var(--border); }
 .d-names { display: flex; font-size: 9px; color: var(--ink-faint); margin-top: 2px; }
 .d-names span { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.g-pager { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.g-pager { display: flex; gap: 4px; align-items: flex-start; flex: 1 1 100%; min-width: 0; } /* the arrows stay at the ends; only the variable buttons wrap */
+.g-pager-vars { display: flex; flex-wrap: nowrap; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; position: relative; scrollbar-width: none; }
+.g-pager-vars::-webkit-scrollbar { display: none; }
+.g-pager-vars button { flex: 0 1 auto; min-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* shrink to fit the row; scrolling (no bar) only when even that is not enough */
+.g-pager-vars button.on { flex-shrink: 0; }
+.g-pager > button { flex: none; }
 .g-pager button, .g-head button { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 12px; font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer; }
 .g-pager button:disabled { opacity: .4; cursor: default; }
 .g-pager button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); font-weight: 600; }
@@ -638,6 +643,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .g-chart.overlay .g-plot { height: calc(var(--gh, 170px) * 1.6); }
 .g-chart.overlay .g-tip { bottom: auto; top: 6px; margin: 0; }
 .go-vars { display: inline-block; margin-top: 6px; }
+.go-all { display: inline-block; margin: 6px 6px 0 0; }
 .g-pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; }
 .g-empty { color: var(--ink-faint); font-size: 12px; line-height: var(--gh, 96px); text-align: center; }
 .g-plants { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -706,6 +712,12 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .obs-null { color: var(--ink-faint); }
 .g-obs { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border: 1px solid var(--surface); }
 .meas-dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.meas-dlg-head > div:first-child { min-width: 0; }
+.meas-dlg-head > button { flex: none; } /* Close stays top right however long the title is */
+.meas-dlg-tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; overflow-x: auto; margin: -4px 0 12px; } /* the toggles stay on one line */
+.g-opts[hidden] { display: none; }
+.g-opts { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; flex: none; }
+#gridClose { flex: none; }
 .meas-dlg-title { font-size: 16px; font-weight: 600; }
 .meas-dlg-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
 .meas-chart.big { height: var(--big-h, 220px); cursor: default; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -2601,6 +2613,7 @@ function overviewHtml(node) {
     const shown = st.variables.slice(0, 8);
     h += `<div class="rel-group"><div class="rel-label">Variables</div>
       <div class="chip-row var-grid">${shown.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en"), title: v.label })).join("")}</div>
+      ${objectCount(st) ? `<button class="go-plants go-all" title="Chart every variable across all ${objectCount(st)} objects, no picking needed">Chart all objects ›</button>` : ""}
       ${st.variables.length > shown.length ? `<button class="go-plants go-vars" title="All variables, with a filter">Show all ${st.variables.length} ›</button>` : ""}
       ${distributionsHtml(st)}
       <details class="how-charts"><summary>How charts work</summary><p>Pick variables (or a distribution) here or on the Variables tab, and plants, levels or whole factors below or on the Plants tab — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
@@ -2663,6 +2676,7 @@ function loadOverview(exp, varId) {
   if (!OVERVIEW[key]) {
     OVERVIEW[key] = fetch(`api/experiment-overview?experiment=${encodeURIComponent(exp)}&variable=${encodeURIComponent(varId)}`)
       .then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(b => Promise.reject(new Error(b.error || `PHIS answered ${r.status}`))))
+      .then(d => { if (/^unitless$/i.test(d.variable?.unit ?? "")) d.variable.unit = ""; return d; }) // "0 unitless" says nothing: no unit, no suffix
       .catch(err => { delete OVERVIEW[key]; throw err; });
   }
   return OVERVIEW[key];
@@ -2676,10 +2690,28 @@ function chartableSelection() {
   return { experiment: p.id, st, plan: arrangeCharts([...selection.values()], st) };
 }
 
+// An experiment's scientific objects, whether or not they are in a factor.
+const allObjects = st => [...new Map([...st.factors.flatMap(f => f.levels.flatMap(l => l.plants)), ...st.factors.flatMap(f => f.unset), ...st.other].map(x => [x.id, x])).values()];
+const objectCount = st => allObjects(st).length;
+
+// One click to charts of an experiment's variables across every object, no factor needed: the selection becomes those
+// variables (the picked ones, else all) plus all the objects, and the grid opens. Picking by hand stays for comparing groups.
+function chartAllObjects() {
+  const p = shownNode(), st = p && NODE_DETAIL[p.id]?.structure;
+  if (!st || !objectCount(st)) return;
+  let vars = [...selection.values()].filter(v => v.type === "variable" || v.type === "variable_group");
+  if (!vars.length) vars = st.variables.map(v => ({ id: v.id, type: "variable", label: v.label }));
+  selection = new Map([...vars, ...allObjects(st).map(x => ({ id: x.id, type: "scientific_object", label: x.label, vias: ["#all"] }))].map(i => [i.id, i]));
+  anchorId = null;
+  refreshLeftPane(); renderDetail(); renderActionbar();
+  openChartGrid();
+}
+document.addEventListener("click", ev => { if (ev.target.closest("#chartAllBtn, .go-all")) chartAllObjects(); });
+
 function gridButtonHtml(grid) {
   if (!grid || (!grid.plan.variables.length && !grid.plan.rows.length)) return "";
   if (!grid.plan.variables.length) return `<div class="selection-summary link-why">Pick a variable to chart (Variables tab).</div>`;
-  if (!grid.plan.rows.length) return `<div class="selection-summary link-why">Pick plants, levels or a factor to chart.</div>`;
+  if (!grid.plan.rows.length) return `<div class="selection-summary link-why">Pick plants, levels or a factor to chart.</div>${objectCount(grid.st) ? `<button class="btn primary" id="chartAllBtn">Chart across all ${objectCount(grid.st)} objects</button>` : ""}`;
   return `<button class="btn primary" id="showGridBtn">Show chart grid</button>`;
 }
 
@@ -2693,6 +2725,15 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
   const nCols = data.columns.length;
   if (!nCols || !pts.length) return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-empty">no values for ${e(data.variable.name)}</div></div>`;
+  if (nCols === 1 && ch.kind !== "plant" && pts.length > 1 && !(view.selected && view.selected.size)) { // measured once: a line has nothing to show, the spread of the values does
+    const h = histogram(pts.map(p => p.values[0]?.v ?? null));
+    // A frequency polygon: the bins' counts joined by one line (the mean line's look), down to zero one bin beyond each end.
+    const top = Math.max(...h.counts), slots = h.counts.length + 2, w = 96 / slots, color = colorVar(ch.colorIndex);
+    const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "";
+    const xy = [[0, 0], ...h.counts.map((c, k) => [k + 1, c]), [slots - 1, 0]].map(([k, c]) => `${(2 + (k + 0.5) * w).toFixed(2)},${(88 - 76 * c / top).toFixed(2)}`);
+    const bars = `<polygon class="g-band" fill="${color}" points="${xy.join(" ")}"/><polyline class="g-mean" stroke="${color}" points="${xy.join(" ")}"/>`;
+    return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><span class="g-yh">${top} ${top === 1 ? "object" : "objects"}</span><span class="g-yl">0</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa" style="padding:0 ${(96 / (h.counts.length + 2)).toFixed(1)}%"><span>${sig4(h.lo)}${unit}</span><span>${sig4(h.hi)}${unit}</span></div></div>`;
+  }
   const ts = data.columns.map(c => timeOf(c.key)), t0 = Math.min(...ts), t1 = Math.max(...ts);
   const X = i => 2 + 96 * (t1 === t0 ? 0.5 : (ts[i] - t0) / (t1 - t0));
   const pick = view.selected && view.selected.size ? view.selected : null; // picked observations: the statistics are of just those
@@ -2917,8 +2958,8 @@ function openDistPlantDetail(p, data, colors, st, showDay, restored, initUi) {
   const dlg = document.createElement("dialog");
   dlg.className = "meas-dialog chart-detail d-detail";
   dlg.id = "chartDetail";
-  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %. Click a bar or a row to pick a scan, a range's name to follow just that range.</div></div>
-      <span><button class="btn ghost small g-day" hidden title="Closes this window and sets the One scan part of the chart window to the scan you picked, so you see every plant at that scan">Show this scan for all plants</button> <button class="btn ghost small g-open">Open ${e(label)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %. Click a bar or a row to pick a scan, a range's name to follow just that range.</div></div><button class="btn ghost small g-close">Close</button></div>
+      <div class="meas-dlg-tools"><button class="btn ghost small g-day" hidden title="Closes this window and sets the One scan part of the chart window to the scan you picked, so you see every plant at that scan">Show this scan for all plants</button> <button class="btn ghost small g-open">Open ${e(label)}</button></div>
     <div class="g-chart d-chart"><div class="g-plot" style="height:220px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[n - 1].key))}</span></div></div>
     <div class="meas-values obs-wrap"><table class="obs-table"><thead><tr><th>Scan</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
   document.body.appendChild(dlg);
@@ -2984,14 +3025,27 @@ async function renderChartGrid() {
   dlg.style.setProperty("--wcols", String(gridState.overlay ? 3 : fit.cols));
   applyChartFit(dlg);
   const pager = plan.variables.length > 1
-    ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
+    ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button><div class="g-pager-vars">${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}" title="${e(x.label)}">${e(x.label)}</button>`).join("")}</div><button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
-  dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
+  dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<span class="g-opts"><label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label data-tip="Changes the values: every plant becomes a percentage of its own first scan (first scan = 100). Compare how fast plants grow, whatever size they started at."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
       <label data-tip="Changes only the scale, not the values: every chart uses the same vertical axis, so a higher line really is a higher value. Off: each chart is stretched to fill its own height. It spans every plant of the grid, also when only the mean ± SD band is drawn. Together with % of first scan: percentages on one common scale."><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
-      <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>`}
+      <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label></span>`}
       </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());
+  if (!dlg._keys) { // Left / Right step through the variables, like the arrow buttons (set once: the window is re-rendered, not rebuilt)
+    dlg._keys = true;
+    dlg.addEventListener("keydown", ev => {
+      const step = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
+      if (!step || ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.target.closest("input:not([type=checkbox]), select, textarea")) return;
+      const last = (chartableSelection()?.plan.variables.length ?? 1) - 1, next = gridState.vi + step;
+      if (next < 0 || next > last) return;
+      ev.preventDefault();
+      gridState.vi = next; pushUiState(); renderChartGrid();
+    });
+  }
+  const vars = dlg.querySelector(".g-pager-vars"), on = vars?.querySelector(".on"); // one line: keep the current variable in view
+  if (on) vars.scrollLeft = on.offsetLeft - (vars.clientWidth - on.offsetWidth) / 2;
   const pick = (vi) => { gridState.vi = vi; pushUiState(); renderChartGrid(); };
   dlg.querySelector("#gridPrev")?.addEventListener("click", () => pick(gridState.vi - 1));
   dlg.querySelector("#gridNext")?.addEventListener("click", () => pick(gridState.vi + 1));
@@ -3003,18 +3057,22 @@ async function renderChartGrid() {
   const body = dlg.querySelector("#gridBody");
   if (v.kind === "distribution") { await renderDistributionBody(dlg, body, plan, sel, v); return; }
   let data;
-  try { data = await loadOverview(sel.experiment, v.id); if (gridState.norm) data = normaliseOverview(data); }
+  try { data = await loadOverview(sel.experiment, v.id); if (gridState.norm && data.columns.length > 1) data = normaliseOverview(data); }
   catch (err) {
     body.innerHTML = `<div class="import-warning">Couldn't load ${e(v.label)}: ${e(String(err.message))} <button id="gridRetry">Retry</button></div>`;
     body.querySelector("#gridRetry").addEventListener("click", () => renderChartGrid());
     return;
   }
   if (!dlg.isConnected || dlg.querySelector("#gridBody") !== body) return; // closed, or a newer render took over
+  // Measured once, the toggles have nothing to act on (no lines to overlay, no growth to compare, no band): hidden, and not applied.
+  const single = data.columns.length === 1;
+  dlg.querySelector(".g-opts")?.toggleAttribute("hidden", single);
+  const opts = single ? { ...gridState, overlay: false, norm: false, stats: false } : gridState;
   const yr = yRange(plan.rows.flatMap(r => r.charts.flatMap(c => c.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean).map(p => p.values.map(x => x?.v ?? null)))));
-  body.innerHTML = plan.rows.map(r => gridState.overlay ? overlayRowHtml(r, data, yr, gridState)
-    : `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, gridState)).join("")}</div></div>`).join("");
+  body.innerHTML = plan.rows.map(r => opts.overlay ? overlayRowHtml(r, data, yr, opts)
+    : `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, opts)).join("")}</div></div>`).join("");
   const hoverGroup = [];
-  if (gridState.overlay) {
+  if (opts.overlay) {
     body.querySelectorAll(".g-chart.overlay .g-plot").forEach(plot => wireOverlayRow(plot, plan.rows.find(r => r.label === plot.dataset.row), data, gridState.hiddenSeries, hoverGroup));
     body.querySelectorAll("button.g-leg").forEach(b => b.addEventListener("click", () => {
       const k = b.dataset.sk;
@@ -3090,7 +3148,8 @@ function openChartDetail(ch, data, st, restored, initUi) {
   dlg.className = "meas-dialog chart-detail";
   dlg.id = "chartDetail";
   dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(ch.title)}<span class="meas-unit">${e(data.variable.name)}${unit}</span></div>
-      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><span><label class="g-opt" data-tip="Draws the mean (line) and its spread (± one standard deviation, band). With observations picked, only those are counted."><input type="checkbox" class="g-dstats" checked> show statistics (mean ± SD)</label> <button class="btn ghost small g-full" title="Full screen (or click the chart)">Full screen</button> <button class="btn ghost small g-open">Open ${e(ch.title)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><button class="btn ghost small g-close">Close</button></div>
+    <div class="meas-dlg-tools"><label class="g-opt" data-tip="Draws the mean (line) and its spread (± one standard deviation, band). With observations picked, only those are counted."><input type="checkbox" class="g-dstats" checked> show statistics (mean ± SD)</label> <button class="btn ghost small g-full" title="Full screen (or click the chart)">Full screen</button> <button class="btn ghost small g-open">Open ${e(ch.title)}</button></div>
     <div id="detailPlot" title="Click for full screen"></div>
     <div class="obs-bar hx-note"><span class="obs-count"></span> <button class="btn ghost small obs-clear" hidden>Clear selection</button></div>
     <div class="meas-values obs-wrap">${table}</div>

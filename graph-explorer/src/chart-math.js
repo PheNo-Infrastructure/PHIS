@@ -46,7 +46,20 @@ export function distributionMeans(plants, nCols) {
   });
 }
 
+// Bars for values measured once (one scan): `bins` equal-width bins from the lowest to the highest value. A flat set
+// (everything the same) is one bar. Nothing numeric gives null.
+export function histogram(values, bins = 12) {
+  const xs = values.filter((x) => typeof x === "number" && Number.isFinite(x));
+  if (!xs.length) return null;
+  const lo = Math.min(...xs), hi = Math.max(...xs);
+  if (lo === hi) return { lo, hi, counts: [xs.length], n: xs.length };
+  const counts = new Array(bins).fill(0);
+  for (const x of xs) counts[Math.min(bins - 1, Math.floor(((x - lo) / (hi - lo)) * bins))]++;
+  return { lo, hi, counts, n: xs.length };
+}
+
 const STANDALONE_VIAS = new Set(["", "#all", "#other"]); // not a factor box: a plant picked here is charted on its own
+const MANY_ALONE = 12; // more single picks than this is a crowd: one chart for all of them, not a chart each
 
 // What to chart for a selection in one experiment. `picks` = the selection's items, `st` = the experiment's structure.
 export function arrangeCharts(picks, st) {
@@ -89,6 +102,7 @@ export function arrangeCharts(picks, st) {
   instances.filter((x) => STANDALONE_VIAS.has(x.via) || x.via.endsWith("#unset")).forEach((x) => {
     if (!alone.some((a) => a.id === x.id)) alone.push(x);
   });
-  if (alone.length) rows.push({ label: "Plants", kind: "plants", charts: alone.map((x) => ({ key: `plant:${x.id}`, title: x.label, sub: "single plant", kind: "plant", plantIds: [x.id], emphasis: [], colorIndex: 0 })) });
+  if (alone.length > MANY_ALONE) rows.push({ label: "Plants", kind: "plants", charts: [{ key: "plants:all", title: alone.length === known.size ? "All objects" : "Selected objects", sub: `${alone.length} objects`, kind: "picked", plantIds: alone.map((x) => x.id), emphasis: [], colorIndex: 0 }] });
+  else if (alone.length) rows.push({ label: "Plants", kind: "plants", charts: alone.map((x) => ({ key: `plant:${x.id}`, title: x.label, sub: "single plant", kind: "plant", plantIds: [x.id], emphasis: [], colorIndex: 0 })) });
   return { variables, rows, outside };
 }

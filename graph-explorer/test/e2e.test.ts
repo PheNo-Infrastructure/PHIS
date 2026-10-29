@@ -3077,6 +3077,11 @@ test("e2e: Show chart grid appears once a variable and something chartable are p
       await grid.locator("#gridPrev").click();
       await grid.locator(".g-title", { hasText: "Plant Height" }).waitFor();
       assert.deepEqual(seen, ["var-1", "var-2"], "paging back reuses the cache");
+      await grid.locator(".g-title").click();
+      await page.keyboard.press("ArrowRight");
+      await grid.locator(".g-title", { hasText: "NDVI" }).waitFor();
+      await page.keyboard.press("ArrowLeft");
+      await grid.locator(".g-title", { hasText: "Plant Height" }).waitFor();
     });
   });
 });
@@ -4433,5 +4438,39 @@ test("e2e: browse top level follows PHIS's own menu order", async () => {
     await page.locator("#rowlist .row").first().waitFor();
     const labels = await page.locator("#rowlist .row .row-label").allTextContents();
     assert.equal(labels[0], "Scientific Organization");
+  });
+});
+
+test("e2e: an experiment with no factor charts in one click: 'Chart all objects' opens one chart of all of them, measured-once values as a line over value ranges", async () => {
+  const objects = Array.from({ length: 14 }, (_, i) => ({ id: `so-s${i + 1}`, label: `seed-${i + 1}` }));
+  const noFactor = { truncated: false, variables: [{ id: "var-1", label: "Length", count: 14 }], factors: [], other: objects };
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiment-overview*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      variable: { id: "var-1", name: "Length", unit: "mm" }, columns: [{ key: "2025-12-05", times: ["11:20"] }],
+      plants: objects.map((o, i) => ({ id: o.id, values: [{ v: 1 + (i % 4), at: "11:20" }] })),
+    }) }));
+    await openStructuredExperiment(page, base, null, noFactor);
+    await page.locator(".go-all").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    assert.equal(await grid.locator(".g-chart").count(), 1, "one chart for the crowd, not one per object");
+    assert.match(await grid.locator(".g-chart").innerText(), /14 objects/);
+    assert.match(await grid.locator(".g-chart").innerText(), /All objects/, "every object of the experiment is in it");
+    assert.doesNotMatch(await grid.innerText(), /unitless/);
+    assert.equal(await grid.locator(".g-plot polyline.g-mean").count(), 1, "values measured once are drawn as one line over the value ranges");
+    assert.equal(await grid.locator(".g-line").count(), 0);
+    assert.equal(await grid.locator(".g-opts").isVisible(), false, "overlay, % of first scan, shared y-axis and statistics mean nothing for values measured once");
+  });
+});
+
+test("e2e: a variable picked with nothing to compare offers 'Chart across all objects'", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page, []);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator("#chartAllBtn").click();
+    await page.locator("#chartGrid .g-chart").first().waitFor();
+    assert.equal(await page.locator("#chartGrid .g-chart").count(), 4, "STRUCT has 4 objects, each charted (few enough to stay separate)");
+    assert.equal(await page.locator("#chartGrid .g-opts").isVisible(), true, "three scans: the toggles stay");
   });
 });
