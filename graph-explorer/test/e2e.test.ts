@@ -4435,3 +4435,33 @@ test("e2e: browse top level follows PHIS's own menu order", async () => {
     assert.equal(labels[0], "Scientific Organization");
   });
 });
+
+test("e2e: an experiment with no factor charts in one click: 'Chart all objects' opens one chart of all of them, measured-once values as a histogram", async () => {
+  const objects = Array.from({ length: 14 }, (_, i) => ({ id: `so-s${i + 1}`, label: `seed-${i + 1}` }));
+  const noFactor = { truncated: false, variables: [{ id: "var-1", label: "Length", count: 14 }], factors: [], other: objects };
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/experiment-overview*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      variable: { id: "var-1", name: "Length", unit: "mm" }, columns: [{ key: "2025-12-05", times: ["11:20"] }],
+      plants: objects.map((o, i) => ({ id: o.id, values: [{ v: 1 + (i % 4), at: "11:20" }] })),
+    }) }));
+    await openStructuredExperiment(page, base, null, noFactor);
+    await page.locator(".go-all").click();
+    const grid = page.locator("#chartGrid");
+    await grid.locator(".g-chart").first().waitFor();
+    assert.equal(await grid.locator(".g-chart").count(), 1, "one chart for the crowd, not one per object");
+    assert.match(await grid.locator(".g-chart").innerText(), /14 objects/);
+    assert.ok(await grid.locator(".g-plot rect").count() >= 4, "values measured once are drawn as bars");
+    assert.equal(await grid.locator(".g-line").count(), 0);
+  });
+});
+
+test("e2e: a variable picked with nothing to compare offers 'Chart across all objects'", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await routeOverview(page, []);
+    await openStructuredExperiment(page, base, "variables");
+    await page.locator("#variablesBody .chip", { hasText: "Plant Height" }).click({ modifiers: ["Control"] });
+    await page.locator("#chartAllBtn").click();
+    await page.locator("#chartGrid .g-chart").first().waitFor();
+    assert.equal(await page.locator("#chartGrid .g-chart").count(), 4, "STRUCT has 4 objects, each charted (few enough to stay separate)");
+  });
+});

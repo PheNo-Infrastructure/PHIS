@@ -638,6 +638,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .g-chart.overlay .g-plot { height: calc(var(--gh, 170px) * 1.6); }
 .g-chart.overlay .g-tip { bottom: auto; top: 6px; margin: 0; }
 .go-vars { display: inline-block; margin-top: 6px; }
+.go-all { display: inline-block; margin: 6px 6px 0 0; }
 .g-pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; }
 .g-empty { color: var(--ink-faint); font-size: 12px; line-height: var(--gh, 96px); text-align: center; }
 .g-plants { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -2601,6 +2602,7 @@ function overviewHtml(node) {
     const shown = st.variables.slice(0, 8);
     h += `<div class="rel-group"><div class="rel-label">Variables</div>
       <div class="chip-row var-grid">${shown.map(v => chipHtml({ id: v.id, type: "variable", label: v.label, count: v.count.toLocaleString("en"), title: v.label })).join("")}</div>
+      ${objectCount(st) ? `<button class="go-plants go-all" title="Chart every variable across all ${objectCount(st)} objects, no picking needed">Chart all objects ›</button>` : ""}
       ${st.variables.length > shown.length ? `<button class="go-plants go-vars" title="All variables, with a filter">Show all ${st.variables.length} ›</button>` : ""}
       ${distributionsHtml(st)}
       <details class="how-charts"><summary>How charts work</summary><p>Pick variables (or a distribution) here or on the Variables tab, and plants, levels or whole factors below or on the Plants tab — ctrl-click, shift-click or drag — then press <b>Show chart grid</b> in the bar. Each factor becomes a row with a chart per level; plants picked inside a level overlay in that level's chart; single plants get their own chart. Page through variables at the top of the grid; click a chart for its numbers.</p></details></div>`;
@@ -2676,10 +2678,28 @@ function chartableSelection() {
   return { experiment: p.id, st, plan: arrangeCharts([...selection.values()], st) };
 }
 
+// An experiment's scientific objects, whether or not they are in a factor.
+const allObjects = st => [...new Map([...st.factors.flatMap(f => f.levels.flatMap(l => l.plants)), ...st.factors.flatMap(f => f.unset), ...st.other].map(x => [x.id, x])).values()];
+const objectCount = st => allObjects(st).length;
+
+// One click to charts of an experiment's variables across every object, no factor needed: the selection becomes those
+// variables (the picked ones, else all) plus all the objects, and the grid opens. Picking by hand stays for comparing groups.
+function chartAllObjects() {
+  const p = shownNode(), st = p && NODE_DETAIL[p.id]?.structure;
+  if (!st || !objectCount(st)) return;
+  let vars = [...selection.values()].filter(v => v.type === "variable" || v.type === "variable_group");
+  if (!vars.length) vars = st.variables.map(v => ({ id: v.id, type: "variable", label: v.label }));
+  selection = new Map([...vars, ...allObjects(st).map(x => ({ id: x.id, type: "scientific_object", label: x.label, vias: ["#all"] }))].map(i => [i.id, i]));
+  anchorId = null;
+  refreshLeftPane(); renderDetail(); renderActionbar();
+  openChartGrid();
+}
+document.addEventListener("click", ev => { if (ev.target.closest("#chartAllBtn, .go-all")) chartAllObjects(); });
+
 function gridButtonHtml(grid) {
   if (!grid || (!grid.plan.variables.length && !grid.plan.rows.length)) return "";
   if (!grid.plan.variables.length) return `<div class="selection-summary link-why">Pick a variable to chart (Variables tab).</div>`;
-  if (!grid.plan.rows.length) return `<div class="selection-summary link-why">Pick plants, levels or a factor to chart.</div>`;
+  if (!grid.plan.rows.length) return `<div class="selection-summary link-why">Pick plants, levels or a factor to chart.</div>${objectCount(grid.st) ? `<button class="btn primary" id="chartAllBtn">Chart across all ${objectCount(grid.st)} objects</button>` : ""}`;
   return `<button class="btn primary" id="showGridBtn">Show chart grid</button>`;
 }
 
@@ -2693,6 +2713,13 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
   const pts = ch.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(p => p && p.values.some(Boolean));
   const nCols = data.columns.length;
   if (!nCols || !pts.length) return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-empty">no values for ${e(data.variable.name)}</div></div>`;
+  if (nCols === 1 && ch.kind !== "plant" && pts.length > 1 && !(view.selected && view.selected.size)) { // measured once: a line has nothing to show, the spread of the values does
+    const h = histogram(pts.map(p => p.values[0]?.v ?? null));
+    const top = Math.max(...h.counts), w = 96 / h.counts.length, edge = k => h.lo + (h.hi - h.lo) * k / h.counts.length;
+    const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "", color = colorVar(ch.colorIndex);
+    const bars = h.counts.map((c, k) => c ? `<rect x="${(2 + k * w).toFixed(2)}" y="${(88 - 76 * c / top).toFixed(2)}" width="${(w - 0.6).toFixed(2)}" height="${(76 * c / top).toFixed(2)}" fill="${color}" opacity=".75"><title>${e(`${sig4(edge(k))} to ${sig4(edge(k + 1))}${unit}: ${c} ${c === 1 ? "object" : "objects"}`)}</title></rect>` : "").join("");
+    return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${sig4(h.lo)}${unit}</span><span>${sig4(h.hi)}${unit}</span></div></div>`;
+  }
   const ts = data.columns.map(c => timeOf(c.key)), t0 = Math.min(...ts), t1 = Math.max(...ts);
   const X = i => 2 + 96 * (t1 === t0 ? 0.5 : (ts[i] - t0) / (t1 - t0));
   const pick = view.selected && view.selected.size ? view.selected : null; // picked observations: the statistics are of just those
