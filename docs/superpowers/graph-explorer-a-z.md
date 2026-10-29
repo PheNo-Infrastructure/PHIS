@@ -103,6 +103,11 @@ Variable groups, germplasm groups, facility `variableGroups` and `locations`, `e
 creating variable parts, provenance `prov_agent`, annotations on anything, non-move events, areas/positions, manual data values.
 Order by what researchers ask for; each is small once the pattern is known.
 
+## Priority 5 — Import-time additions and "Replace germplasm" (user, 2026-10-29) — NOT STARTED
+Two parallel features, both general (every instrument), neither blocks the other:
+1. **Assign in the import review** (branch `graph-explorer/assign-edits`): select objects with the portal's selection rules, then set germplasm or a factor level on them (new edit `assign`, applied in `applyEdits`). Files like Boxeed carry neither; both stay optional, with a plain "No germplasm on N objects" notice (no promise of adding later until Set up is checked).
+2. **Replace germplasm** (after an import): relink the objects of a placeholder germplasm to another record, then retire the placeholder. For vague germplasm that is set now and rewritten at the open-access release (Pheno annual meeting 2026-10-28). Relink first, delete last (REST delete leaves dangling `hasGermplasm`). Unverified: that measured values carry no germplasm field (check the data DTO), objects in several experiments, a germplasm rename through the API. Harder kinds (experiment, object, variable) wait until this has proved the pattern.
+
 ## Probed facts that shape the work (all on phis-test, 2026-10-07 unless dated)
 - **Variable/germplasm groups (2026-10-08)**: `variables_group` holds `variables` (objects on GET, uris on POST/PUT); `germplasm_group` GET only says `germplasm_count` — members come from `GET .../{uri}/germplasm` (paged) and go back as `germplasm_list`. An update REPLACES the list in both. The germplasm-group list is a POST search (`/core/germplasm_group/search`, filters `name`, `germplasm`); variables groups filter by `variableUri`. Deleting a group leaves members alone.
 - **Persons and accounts are separate records.** A signed-up (Feide) user has an **account only**; a person must be created for

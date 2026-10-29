@@ -181,7 +181,7 @@ test("POST /api/import/plan refuses what it can't import, saying why", async () 
     assert.match(edited.error, /10\/29\/2025 01:19:34 PM.*straight from HortControl/);
     const unknown = await post(makeZip({ "notes.txt": "hi" }));
     assert.equal(unknown.status, 400);
-    assert.match(unknown.error, /None of the known instruments recognises these files \(TraitFinder \(HortControl export\)\)/);
+    assert.match(unknown.error, /None of the known instruments recognises these files \(Boxeed 2\.0 \(Labdeers seed sort\), TraitFinder \(HortControl export\)\)/);
   });
 });
 
