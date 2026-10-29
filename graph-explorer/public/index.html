@@ -558,7 +558,7 @@ body[data-view="browse"] #pagePane { display: none; }
 label[data-tip] { position: relative; cursor: help; }
 label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: max-content; max-width: 260px; padding: 6px 9px; background: var(--ink); color: var(--bg); border-radius: 6px; font-size: 12px; font-weight: 400; line-height: 1.35; white-space: normal; pointer-events: none; }
 .g-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 12.5px; }
-.g-head-main { flex: 1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.g-head-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .g-title { font-size: 16px; font-weight: 600; }
 .import-drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-muted); }
 .import-drop.drag-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -589,8 +589,10 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .d-day-chart:hover { border-color: var(--border); }
 .d-names { display: flex; font-size: 9px; color: var(--ink-faint); margin-top: 2px; }
 .d-names span { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.g-pager { display: flex; gap: 4px; align-items: flex-start; flex: 1 1 100%; } /* the arrows stay at the ends; only the variable buttons wrap */
-.g-pager-vars { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+.g-pager { display: flex; gap: 4px; align-items: flex-start; flex: 1 1 100%; min-width: 0; } /* the arrows stay at the ends; only the variable buttons wrap */
+.g-pager-vars { display: flex; flex-wrap: nowrap; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; position: relative; scrollbar-width: none; }
+.g-pager-vars::-webkit-scrollbar { display: none; }
+.g-pager-vars button { flex: none; white-space: nowrap; }
 .g-pager > button { flex: none; }
 .g-pager button, .g-head button { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 12px; font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer; }
 .g-pager button:disabled { opacity: .4; cursor: default; }
@@ -3030,6 +3032,8 @@ async function renderChartGrid() {
       <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label></span>`}
       </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());
+  const vars = dlg.querySelector(".g-pager-vars"), on = vars?.querySelector(".on"); // one line: keep the current variable in view
+  if (on) vars.scrollLeft = on.offsetLeft - (vars.clientWidth - on.offsetWidth) / 2;
   const pick = (vi) => { gridState.vi = vi; pushUiState(); renderChartGrid(); };
   dlg.querySelector("#gridPrev")?.addEventListener("click", () => pick(gridState.vi - 1));
   dlg.querySelector("#gridNext")?.addEventListener("click", () => pick(gridState.vi + 1));
