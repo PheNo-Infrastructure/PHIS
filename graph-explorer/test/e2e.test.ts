@@ -4454,6 +4454,7 @@ test("e2e: an experiment with no factor charts in one click: 'Chart all objects'
     assert.doesNotMatch(await grid.innerText(), /unitless/);
     assert.equal(await grid.locator(".g-plot polyline.g-mean").count(), 1, "values measured once are drawn as one line over the value ranges");
     assert.equal(await grid.locator(".g-line").count(), 0);
+    assert.equal(await grid.locator(".g-opts").isVisible(), false, "overlay, % of first scan, shared y-axis and statistics mean nothing for values measured once");
   });
 });
 
@@ -4465,5 +4466,6 @@ test("e2e: a variable picked with nothing to compare offers 'Chart across all ob
     await page.locator("#chartAllBtn").click();
     await page.locator("#chartGrid .g-chart").first().waitFor();
     assert.equal(await page.locator("#chartGrid .g-chart").count(), 4, "STRUCT has 4 objects, each charted (few enough to stay separate)");
+    assert.equal(await page.locator("#chartGrid .g-opts").isVisible(), true, "three scans: the toggles stay");
   });
 });

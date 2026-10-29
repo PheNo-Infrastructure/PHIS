@@ -710,6 +710,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .meas-dlg-head > div:first-child { min-width: 0; }
 .meas-dlg-head > button { flex: none; } /* Close stays top right however long the title is */
 .meas-dlg-tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; overflow-x: auto; margin: -4px 0 12px; } /* the toggles stay on one line */
+.g-opts[hidden] { display: none; }
 .g-opts { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; flex: none; }
 #gridClose { flex: none; }
 .meas-dlg-title { font-size: 16px; font-weight: 600; }
@@ -3038,18 +3039,22 @@ async function renderChartGrid() {
   const body = dlg.querySelector("#gridBody");
   if (v.kind === "distribution") { await renderDistributionBody(dlg, body, plan, sel, v); return; }
   let data;
-  try { data = await loadOverview(sel.experiment, v.id); if (gridState.norm) data = normaliseOverview(data); }
+  try { data = await loadOverview(sel.experiment, v.id); if (gridState.norm && data.columns.length > 1) data = normaliseOverview(data); }
   catch (err) {
     body.innerHTML = `<div class="import-warning">Couldn't load ${e(v.label)}: ${e(String(err.message))} <button id="gridRetry">Retry</button></div>`;
     body.querySelector("#gridRetry").addEventListener("click", () => renderChartGrid());
     return;
   }
   if (!dlg.isConnected || dlg.querySelector("#gridBody") !== body) return; // closed, or a newer render took over
+  // Measured once, the toggles have nothing to act on (no lines to overlay, no growth to compare, no band): hidden, and not applied.
+  const single = data.columns.length === 1;
+  dlg.querySelector(".g-opts")?.toggleAttribute("hidden", single);
+  const opts = single ? { ...gridState, overlay: false, norm: false, stats: false } : gridState;
   const yr = yRange(plan.rows.flatMap(r => r.charts.flatMap(c => c.plantIds.map(id => data.plants.find(p => sameId(p.id, id))).filter(Boolean).map(p => p.values.map(x => x?.v ?? null)))));
-  body.innerHTML = plan.rows.map(r => gridState.overlay ? overlayRowHtml(r, data, yr, gridState)
-    : `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, gridState)).join("")}</div></div>`).join("");
+  body.innerHTML = plan.rows.map(r => opts.overlay ? overlayRowHtml(r, data, yr, opts)
+    : `<div class="g-row" data-row="${e(r.label)}">${rowLabelHtml(r)}<div class="g-row-charts">${r.charts.map(c => gridChartHtml(c, data, yr, opts)).join("")}</div></div>`).join("");
   const hoverGroup = [];
-  if (gridState.overlay) {
+  if (opts.overlay) {
     body.querySelectorAll(".g-chart.overlay .g-plot").forEach(plot => wireOverlayRow(plot, plan.rows.find(r => r.label === plot.dataset.row), data, gridState.hiddenSeries, hoverGroup));
     body.querySelectorAll("button.g-leg").forEach(b => b.addEventListener("click", () => {
       const k = b.dataset.sk;
