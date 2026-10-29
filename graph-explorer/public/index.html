@@ -707,6 +707,11 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .obs-null { color: var(--ink-faint); }
 .g-obs { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border: 1px solid var(--surface); }
 .meas-dlg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.meas-dlg-head > div:first-child { min-width: 0; }
+.meas-dlg-head > button { flex: none; } /* Close stays top right however long the title is */
+.meas-dlg-tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; white-space: nowrap; overflow-x: auto; margin: -4px 0 12px; } /* the toggles stay on one line */
+.g-opts { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; flex: none; }
+#gridClose { flex: none; }
 .meas-dlg-title { font-size: 16px; font-weight: 600; }
 .meas-dlg-sub { font-size: 12px; color: var(--ink-faint); margin-top: 2px; }
 .meas-chart.big { height: var(--big-h, 220px); cursor: default; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -2944,8 +2949,8 @@ function openDistPlantDetail(p, data, colors, st, showDay, restored, initUi) {
   const dlg = document.createElement("dialog");
   dlg.className = "meas-dialog chart-detail d-detail";
   dlg.id = "chartDetail";
-  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %. Click a bar or a row to pick a scan, a range's name to follow just that range.</div></div>
-      <span><button class="btn ghost small g-day" hidden title="Closes this window and sets the One scan part of the chart window to the scan you picked, so you see every plant at that scan">Show this scan for all plants</button> <button class="btn ghost small g-open">Open ${e(label)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+  dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(label)}<span class="meas-unit">${e(data.group.name)}</span></div><div class="meas-dlg-sub">each bar adds up to 100 %. Click a bar or a row to pick a scan, a range's name to follow just that range.</div></div><button class="btn ghost small g-close">Close</button></div>
+      <div class="meas-dlg-tools"><button class="btn ghost small g-day" hidden title="Closes this window and sets the One scan part of the chart window to the scan you picked, so you see every plant at that scan">Show this scan for all plants</button> <button class="btn ghost small g-open">Open ${e(label)}</button></div>
     <div class="g-chart d-chart"><div class="g-plot" style="height:220px"><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg></div><div class="g-xa"><span>${e(whenText(data.columns[0].key))}</span><span>${e(whenText(data.columns[n - 1].key))}</span></div></div>
     <div class="meas-values obs-wrap"><table class="obs-table"><thead><tr><th>Scan</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
   document.body.appendChild(dlg);
@@ -3013,10 +3018,10 @@ async function renderChartGrid() {
   const pager = plan.variables.length > 1
     ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button>${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}<button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
-  dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
+  dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<span class="g-opts"><label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label data-tip="Changes the values: every plant becomes a percentage of its own first scan (first scan = 100). Compare how fast plants grow, whatever size they started at."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
       <label data-tip="Changes only the scale, not the values: every chart uses the same vertical axis, so a higher line really is a higher value. Off: each chart is stretched to fill its own height. It spans every plant of the grid, also when only the mean ± SD band is drawn. Together with % of first scan: percentages on one common scale."><input type="checkbox" id="gridShared" ${gridState.sharedY ? "checked" : ""}> shared y-axis</label>
-      <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label>`}
+      <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label></span>`}
       </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());
   const pick = (vi) => { gridState.vi = vi; pushUiState(); renderChartGrid(); };
@@ -3117,7 +3122,8 @@ function openChartDetail(ch, data, st, restored, initUi) {
   dlg.className = "meas-dialog chart-detail";
   dlg.id = "chartDetail";
   dlg.innerHTML = `<div class="meas-dlg-head"><div><div class="meas-dlg-title">${e(ch.title)}<span class="meas-unit">${e(data.variable.name)}${unit}</span></div>
-      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><span><label class="g-opt" data-tip="Draws the mean (line) and its spread (± one standard deviation, band). With observations picked, only those are counted."><input type="checkbox" class="g-dstats" checked> show statistics (mean ± SD)</label> <button class="btn ghost small g-full" title="Full screen (or click the chart)">Full screen</button> <button class="btn ghost small g-open">Open ${e(ch.title)}</button> <button class="btn ghost small g-close">Close</button></span></div>
+      <div class="meas-dlg-sub">${e(ch.sub)}</div></div><button class="btn ghost small g-close">Close</button></div>
+    <div class="meas-dlg-tools"><label class="g-opt" data-tip="Draws the mean (line) and its spread (± one standard deviation, band). With observations picked, only those are counted."><input type="checkbox" class="g-dstats" checked> show statistics (mean ± SD)</label> <button class="btn ghost small g-full" title="Full screen (or click the chart)">Full screen</button> <button class="btn ghost small g-open">Open ${e(ch.title)}</button></div>
     <div id="detailPlot" title="Click for full screen"></div>
     <div class="obs-bar hx-note"><span class="obs-count"></span> <button class="btn ghost small obs-clear" hidden>Clear selection</button></div>
     <div class="meas-values obs-wrap">${table}</div>
