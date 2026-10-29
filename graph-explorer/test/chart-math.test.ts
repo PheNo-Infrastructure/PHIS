@@ -113,5 +113,11 @@ test("arrangeCharts: a crowd of single picks is one chart; a few stay one chart 
   const crowd = arrangeCharts([v("v1"), ...all], { ...ST, factors: [], other: all.map((p) => P(Number(p.label.slice(2)))) });
   assert.equal(crowd.rows.length, 1);
   assert.equal(crowd.rows[0].charts.length, 1);
-  assert.deepEqual([crowd.rows[0].charts[0].title, crowd.rows[0].charts[0].sub, crowd.rows[0].charts[0].plantIds.length], ["Selected objects", "13 objects", 13]);
+  assert.deepEqual([crowd.rows[0].charts[0].title, crowd.rows[0].charts[0].sub, crowd.rows[0].charts[0].plantIds.length], ["All objects", "13 objects", 13]);
+});
+
+test("arrangeCharts: a crowd that is only part of the experiment's objects is 'Selected objects'", () => {
+  const some = Array.from({ length: 13 }, (_, i) => plant(i + 1, ["#all"]));
+  const r = arrangeCharts([v("v1"), ...some], { ...ST, factors: [], other: Array.from({ length: 20 }, (_, i) => P(i + 1)) });
+  assert.equal(r.rows[0].charts[0].title, "Selected objects");
 });

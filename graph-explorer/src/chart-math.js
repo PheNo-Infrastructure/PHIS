@@ -102,7 +102,7 @@ export function arrangeCharts(picks, st) {
   instances.filter((x) => STANDALONE_VIAS.has(x.via) || x.via.endsWith("#unset")).forEach((x) => {
     if (!alone.some((a) => a.id === x.id)) alone.push(x);
   });
-  if (alone.length > MANY_ALONE) rows.push({ label: "Plants", kind: "plants", charts: [{ key: "plants:all", title: "Selected objects", sub: `${alone.length} objects`, kind: "picked", plantIds: alone.map((x) => x.id), emphasis: [], colorIndex: 0 }] });
+  if (alone.length > MANY_ALONE) rows.push({ label: "Plants", kind: "plants", charts: [{ key: "plants:all", title: alone.length === known.size ? "All objects" : "Selected objects", sub: `${alone.length} objects`, kind: "picked", plantIds: alone.map((x) => x.id), emphasis: [], colorIndex: 0 }] });
   else if (alone.length) rows.push({ label: "Plants", kind: "plants", charts: alone.map((x) => ({ key: `plant:${x.id}`, title: x.label, sub: "single plant", kind: "plant", plantIds: [x.id], emphasis: [], colorIndex: 0 })) });
   return { variables, rows, outside };
 }

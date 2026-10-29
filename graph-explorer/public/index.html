@@ -2670,6 +2670,7 @@ function loadOverview(exp, varId) {
   if (!OVERVIEW[key]) {
     OVERVIEW[key] = fetch(`api/experiment-overview?experiment=${encodeURIComponent(exp)}&variable=${encodeURIComponent(varId)}`)
       .then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(b => Promise.reject(new Error(b.error || `PHIS answered ${r.status}`))))
+      .then(d => { if (/^unitless$/i.test(d.variable?.unit ?? "")) d.variable.unit = ""; return d; }) // "0 unitless" says nothing: no unit, no suffix
       .catch(err => { delete OVERVIEW[key]; throw err; });
   }
   return OVERVIEW[key];
@@ -2723,7 +2724,7 @@ function gridChartHtml(ch, data, yr, opts, view = { highlight: new Set(), hidden
     const top = Math.max(...h.counts), w = 96 / h.counts.length, edge = k => h.lo + (h.hi - h.lo) * k / h.counts.length;
     const unit = data.variable.unit ? " " + e(unitText(data.variable.unit)) : "", color = colorVar(ch.colorIndex);
     const bars = h.counts.map((c, k) => c ? `<rect x="${(2 + k * w).toFixed(2)}" y="${(88 - 76 * c / top).toFixed(2)}" width="${(w - 0.6).toFixed(2)}" height="${(76 * c / top).toFixed(2)}" fill="${color}" opacity=".75"><title>${e(`${sig4(edge(k))} to ${sig4(edge(k + 1))}${unit}: ${c} ${c === 1 ? "object" : "objects"}`)}</title></rect>` : "").join("");
-    return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${sig4(h.lo)}${unit}</span><span>${sig4(h.hi)}${unit}</span></div></div>`;
+    return `<div class="g-chart" data-key="${e(ch.key)}">${head}<div class="g-plot" data-key="${e(ch.key)}"${view.big ? ` style="height:var(--big-h, 220px)"` : ""}><svg viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><span class="g-yh">${top} ${top === 1 ? "object" : "objects"}</span><span class="g-yl">0</span><span class="g-cursor"></span><span class="g-tip"></span></div><div class="g-xa"><span>${sig4(h.lo)}${unit}</span><span>${sig4(h.hi)}${unit}</span></div></div>`;
   }
   const ts = data.columns.map(c => timeOf(c.key)), t0 = Math.min(...ts), t1 = Math.max(...ts);
   const X = i => 2 + 96 * (t1 === t0 ? 0.5 : (ts[i] - t0) / (t1 - t0));

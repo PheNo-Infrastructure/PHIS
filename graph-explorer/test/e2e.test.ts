@@ -4450,6 +4450,8 @@ test("e2e: an experiment with no factor charts in one click: 'Chart all objects'
     await grid.locator(".g-chart").first().waitFor();
     assert.equal(await grid.locator(".g-chart").count(), 1, "one chart for the crowd, not one per object");
     assert.match(await grid.locator(".g-chart").innerText(), /14 objects/);
+    assert.match(await grid.locator(".g-chart").innerText(), /All objects/, "every object of the experiment is in it");
+    assert.doesNotMatch(await grid.innerText(), /unitless/);
     assert.ok(await grid.locator(".g-plot rect").count() >= 4, "values measured once are drawn as bars");
     assert.equal(await grid.locator(".g-line").count(), 0);
   });
