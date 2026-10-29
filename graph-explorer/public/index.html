@@ -592,7 +592,8 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 .g-pager { display: flex; gap: 4px; align-items: flex-start; flex: 1 1 100%; min-width: 0; } /* the arrows stay at the ends; only the variable buttons wrap */
 .g-pager-vars { display: flex; flex-wrap: nowrap; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; position: relative; scrollbar-width: none; }
 .g-pager-vars::-webkit-scrollbar { display: none; }
-.g-pager-vars button { flex: none; white-space: nowrap; }
+.g-pager-vars button { flex: 0 1 auto; min-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* shrink to fit the row; scrolling (no bar) only when even that is not enough */
+.g-pager-vars button.on { flex-shrink: 0; }
 .g-pager > button { flex: none; }
 .g-pager button, .g-head button { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 12px; font: inherit; font-size: 12px; padding: 2px 10px; cursor: pointer; }
 .g-pager button:disabled { opacity: .4; cursor: default; }
@@ -3024,7 +3025,7 @@ async function renderChartGrid() {
   dlg.style.setProperty("--wcols", String(gridState.overlay ? 3 : fit.cols));
   applyChartFit(dlg);
   const pager = plan.variables.length > 1
-    ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button><div class="g-pager-vars">${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}">${e(x.label)}</button>`).join("")}</div><button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
+    ? `<div class="g-pager"><button id="gridPrev" ${gridState.vi === 0 ? "disabled" : ""}>‹</button><div class="g-pager-vars">${plan.variables.map((x, i) => `<button data-gvar="${i}" class="${i === gridState.vi ? "on" : ""}" title="${e(x.label)}">${e(x.label)}</button>`).join("")}</div><button id="gridNext" ${gridState.vi === plan.variables.length - 1 ? "disabled" : ""}>›</button></div>` : "";
   const note = plan.outside.length ? `<div class="hx-note">${plan.outside.length} picked object${plan.outside.length === 1 ? " is" : "s are"} not in this experiment and not charted: ${e(plan.outside.join(", "))}.</div>` : "";
   dlg.innerHTML = `<div class="g-head"><div class="g-head-main"><span class="g-title">${e(v.label)}</span>${pager}${v.kind === "distribution" ? "" : `<span class="g-opts"><label data-tip="One chart per row: the charts of the row drawn on top of each other, one colour each."><input type="checkbox" id="gridOverlay" ${gridState.overlay ? "checked" : ""}> overlay</label>
       <label data-tip="Changes the values: every plant becomes a percentage of its own first scan (first scan = 100). Compare how fast plants grow, whatever size they started at."><input type="checkbox" id="gridNorm" ${gridState.norm ? "checked" : ""}> % of first scan</label>
@@ -3032,6 +3033,17 @@ async function renderChartGrid() {
       <label data-tip="Draws each group's mean as a line and its spread (± one standard deviation) as a band, instead of every plant's line."><input type="checkbox" id="gridStats" ${gridState.stats ? "checked" : ""}> show statistics (mean ± SD)</label></span>`}
       </div><button id="gridClose">Close</button></div>${note}<div id="gridBody"><div class="hx-note">Loading ${e(v.label)}…</div></div>`;
   dlg.querySelector("#gridClose").addEventListener("click", () => dlg.close());
+  if (!dlg._keys) { // Left / Right step through the variables, like the arrow buttons (set once: the window is re-rendered, not rebuilt)
+    dlg._keys = true;
+    dlg.addEventListener("keydown", ev => {
+      const step = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
+      if (!step || ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.target.closest("input:not([type=checkbox]), select, textarea")) return;
+      const last = (chartableSelection()?.plan.variables.length ?? 1) - 1, next = gridState.vi + step;
+      if (next < 0 || next > last) return;
+      ev.preventDefault();
+      gridState.vi = next; pushUiState(); renderChartGrid();
+    });
+  }
   const vars = dlg.querySelector(".g-pager-vars"), on = vars?.querySelector(".on"); // one line: keep the current variable in view
   if (on) vars.scrollLeft = on.offsetLeft - (vars.clientWidth - on.offsetWidth) / 2;
   const pick = (vi) => { gridState.vi = vi; pushUiState(); renderChartGrid(); };

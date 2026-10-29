@@ -3077,6 +3077,11 @@ test("e2e: Show chart grid appears once a variable and something chartable are p
       await grid.locator("#gridPrev").click();
       await grid.locator(".g-title", { hasText: "Plant Height" }).waitFor();
       assert.deepEqual(seen, ["var-1", "var-2"], "paging back reuses the cache");
+      await grid.locator(".g-title").click();
+      await page.keyboard.press("ArrowRight");
+      await grid.locator(".g-title", { hasText: "NDVI" }).waitFor();
+      await page.keyboard.press("ArrowLeft");
+      await grid.locator(".g-title", { hasText: "Plant Height" }).waitFor();
     });
   });
 });
