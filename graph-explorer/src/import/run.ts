@@ -29,7 +29,7 @@ const andList = (items: (string | 0)[]) => {
 export type Progress = { step: string; done: number; total: number };
 // device / person: who made the data (optional, from the plan's lists). share: who sees a NEW experiment — "public" (the
 // default, as before), "private", or a group's uri. note: keep a note of the import (on by default in the page).
-export type Choices = { species?: string; newSpecies?: string; device?: string; person?: string; share?: string; note?: boolean; edits?: Edits };
+export type Choices = { species?: string; newSpecies?: string; devices?: string[]; person?: string; share?: string; note?: boolean; edits?: Edits };
 const MOTIVATION_DESCRIBING = "http://www.w3.org/ns/oa#describing";
 export async function runImport(files: Files, choices: Choices, progress: (p: Progress) => void = () => {}) {
   const { trial, plan, variables, variableGroupPlans, values, experiment, fills } = await prepare(files, choices.edits);
@@ -45,7 +45,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     if (sameName) blockers.push(`There is already a species named "${sameName.label}" in PHIS; choose it from the list.`);
     else if (choices.newSpecies !== undefined ? !newSpecies : !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
   }
-  if (choices.device && !plan.options.devices.some((d) => d.id === choices.device)) blockers.push("That device isn't in PHIS.");
+  if (choices.devices?.some((id) => !plan.options.devices.some((d) => d.id === id))) blockers.push("That device isn't in PHIS.");
   if (choices.person && !plan.options.persons.some((p) => p.id === choices.person)) blockers.push("That person isn't in PHIS.");
   const share = choices.share ?? "public";
   if (!experiment && !["public", "private"].includes(share) && !plan.options.groups.some((g) => g.id === share)) blockers.push("That group isn't in PHIS.");
@@ -178,7 +178,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
         `Imported from a ${plan.instrument} export by the Graph Explorer: ${values.length} values, scans from ${m.first!.replace("T", " ")} to ${m.last!.replace("T", " ")} (${tz}).`,
         m.first!, m.last!, tz,
         [
-          ...(choices.device ? [{ uri: choices.device, rdf_type: "vocabulary:Device" }] : []),
+          ...(choices.devices ?? []).map((uri) => ({ uri, rdf_type: "vocabulary:Device" })),
           ...(choices.person ? [{ uri: choices.person, rdf_type: "vocabulary:Operator" }] : []),
         ],
       );

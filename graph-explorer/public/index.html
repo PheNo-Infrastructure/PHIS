@@ -5248,14 +5248,16 @@ async function afterImport(body) {
 function openImport(opts = {}) { importSession = opts; if (view === "import") renderPage(); else showView("import"); }
 function wireImportPage(opts) {
   const close = () => { importSession = null; renderPage(); };
-  const CHOICE_IDS = ["importSpecies", "importNewSpecies", "importDevice", "importPerson", "importShare"];
+  const CHOICE_IDS = ["importSpecies", "importNewSpecies", "importPerson", "importShare"];
   // Applying an edit asks the server for a new plan; what was already chosen in the dialog is kept.
   const render = (f, plan) => {
     const out = document.getElementById("importPlan");
     const kept = Object.fromEntries(CHOICE_IDS.map((id) => [id, document.getElementById(id)?.value]));
     const note = document.getElementById("importNote")?.checked;
+    const devices = [...(document.getElementById("importDevice")?.selectedOptions ?? [])].map((o) => o.value);
     if (opts.inSetup) paintSetupPlan(out, plan, opts.into); else out.innerHTML = importPlanHtml(plan);
     for (const id of CHOICE_IDS) { const el = document.getElementById(id); if (el && kept[id] !== undefined && [...(el.options ?? [{ value: kept[id] }])].some((o) => o.value === kept[id])) el.value = kept[id]; }
+    for (const o of document.getElementById("importDevice")?.options ?? []) if (devices.includes(o.value)) o.selected = true;
     if (note !== undefined && document.getElementById("importNote")) document.getElementById("importNote").checked = note;
     wireImportRun(f, plan, close);
     wireImportEditing(plan, async (candidate) => {
@@ -5461,7 +5463,8 @@ function importChoicesHtml(p) {
     <h3><span class="h-title">Made by${p.experiment.exists ? "" : " and visible to"}<small>so the data can be traced${p.experiment.exists ? "" : " and shared"}</small></span></h3>
     <div class="import-form">
       <label for="importDevice">Measured with</label>
-      <select id="importDevice"><option value="">No device</option>${opts(o.devices, o.matchedDevice)}</select>
+      <select id="importDevice" multiple size="5">${opts(o.devices, o.matchedDevice)}</select>
+      <p class="import-note">Ctrl-click to pick more than one, e.g. the scanner and its software. None picked = no device.</p>
       ${o.matchedDevice ? `<p class="import-note">pre-selected because its name holds "${escapeHtml(o.matchedBecause)}", the instrument named in the file</p>` : ""}
       <label for="importPerson">Run by</label>
       <select id="importPerson"><option value="">No one</option>${opts(o.persons)}</select>
@@ -5538,7 +5541,10 @@ function wireImportRun(file, plan, close) {
     try {
       const q = new URLSearchParams();
       if (species) { if (species.value === "__new__") q.set("newSpecies", newSpecies.value.trim()); else q.set("species", species.value); }
-      for (const [id, key] of [["importDevice", "device"], ["importPerson", "person"], ["importShare", "share"]]) {
+      const devices = document.getElementById("importDevice");
+      for (const o of devices.selectedOptions) q.append("device", o.value);
+      devices.disabled = true;
+      for (const [id, key] of [["importPerson", "person"], ["importShare", "share"]]) {
         const el = document.getElementById(id);
         if (el && el.value) q.set(key, el.value);
         if (el) el.disabled = true;

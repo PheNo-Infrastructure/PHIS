@@ -480,14 +480,15 @@ test("POST /api/import/run with choices: the provenance names its device and per
   await withServer(async (base) => {
     const writes: { method: string; path: string; body: any }[] = [];
     mockPhisForRun(writes);
-    const q = new URLSearchParams({ species: "agrovoc:barley", device: "dev-tf", person: "per-1", share: "grp-1", note: "1" });
+    const q = new URLSearchParams({ species: "agrovoc:barley", person: "per-1", share: "grp-1", note: "1" });
+    q.append("device", "dev-tf"); q.append("device", "dev-other");
     const res = await realFetch(`${base}/api/import/run?${q}`, { method: "POST", body: EXPORT() });
     assert.equal(res.status, 200, await res.clone().text());
     const result = (await res.text()).trim().split("\n").map((l) => JSON.parse(l)).at(-1).result;
     assert.equal(result.created.note, true);
     const exp = writes.find((w) => w.path === "/core/experiments")!.body;
     assert.deepEqual([exp.is_public, exp.groups], [false, ["grp-1"]], "shared with the group only, not public");
-    assert.deepEqual(writes.find((w) => w.path === "/core/provenances")!.body.prov_agent, [{ uri: "dev-tf", rdf_type: "vocabulary:Device" }, { uri: "per-1", rdf_type: "vocabulary:Operator" }]);
+    assert.deepEqual(writes.find((w) => w.path === "/core/provenances")!.body.prov_agent, [{ uri: "dev-tf", rdf_type: "vocabulary:Device" }, { uri: "dev-other", rdf_type: "vocabulary:Device" }, { uri: "per-1", rdf_type: "vocabulary:Operator" }]);
     const note = writes.find((w) => w.path === "/core/annotations")!.body;
     assert.deepEqual(note.targets, ["exp:new", "prov:new"]);
     assert.equal(note.motivation, "http://www.w3.org/ns/oa#describing");
