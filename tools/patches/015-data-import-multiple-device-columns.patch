@@ -1,0 +1,86 @@
+diff --git a/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/ValidationContext.java b/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/ValidationContext.java
+--- a/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/ValidationContext.java
++++ b/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/ValidationContext.java
+@@ -35,6 +35,7 @@
+     private ParsedDateTimeMongo parsedDateTimeMongo;
+     private AnnotationModel annotationFromAnnotationColumn;
+     private DeviceModel deviceFromDeviceColumn;
++    private final List<DeviceModel> devicesFromDeviceColumns = new ArrayList<>();
+     private SPARQLNamedResourceModel target;
+     private SPARQLNamedResourceModel object;
+     private ProvEntityModel dataProvUsed;
+@@ -173,6 +174,26 @@
+         this.deviceFromDeviceColumn = deviceFromDeviceColumn;
+     }
+ 
++    public List<DeviceModel> getDevicesFromDeviceColumns() {
++        return devicesFromDeviceColumns;
++    }
++
++    /**
++     * A row can have several device columns (e.g. a scanner and its software). The first one stays the main
++     * device (duplicate and missing-device checks); all of them are kept as agents of the data.
++     */
++    public void addDeviceFromDeviceColumn(DeviceModel device) {
++        if (device == null) {
++            return;
++        }
++        if (deviceFromDeviceColumn == null) {
++            deviceFromDeviceColumn = device;
++        }
++        if (!devicesFromDeviceColumns.contains(device)) {
++            devicesFromDeviceColumns.add(device);
++        }
++    }
++
+     public SPARQLNamedResourceModel getTarget() {
+         return target;
+     }
+diff --git a/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/DataImportLogic.java b/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/DataImportLogic.java
+--- a/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/DataImportLogic.java
++++ b/opensilex-core/src/main/java/org/opensilex/core/data/bll/dataImport/DataImportLogic.java
+@@ -838,8 +838,11 @@
+         }
+ 
+         if (deviceFromDeviceColumn != null) {
+-            ProvEntityModel agent = createProvEntityModel(validationContext.getDaoContext(), rootDeviceTypes, deviceFromDeviceColumn);
+-            provenanceModel.setProvWasAssociatedWith(Collections.singletonList(agent));
++            List<ProvEntityModel> agents = new ArrayList<>();
++            for (DeviceModel device : validationContext.getDevicesFromDeviceColumns()) {
++                agents.add(createProvEntityModel(validationContext.getDaoContext(), rootDeviceTypes, device));
++            }
++            provenanceModel.setProvWasAssociatedWith(agents);
+         } else if (validationContext.isSensingDeviceFoundFromProvenance()) {
+             DeviceModel checkedDevice = validationContext.getDeviceContext().getVariableCheckedProvDevice().get(variable);
+             ProvEntityModel agent = createProvEntityModel(validationContext.getDaoContext(), rootDeviceTypes, checkedDevice);
+@@ -908,13 +911,15 @@
+         DataCSVValidationModel localCsvValidation = context.getLocalCsvValidation();
+ 
+         if (deviceFromDeviceColumn != null) {
+-            boolean variableIsChecked = deviceContext.getVariableCheckedDevice().containsKey(variable) &&
+-                    deviceContext.getVariableCheckedDevice().get(variable) == deviceFromDeviceColumn;
+-            if (!variableIsChecked) {
+-                if (!daoContext.getVariableDAO().variableIsAssociatedToDevice(deviceFromDeviceColumn, varURI)) {
+-                    localCsvValidation.addVariableToDevice(deviceFromDeviceColumn, varURI);
++            for (DeviceModel device : context.getDevicesFromDeviceColumns()) {
++                String checkKey = variable + " " + device.getUri();
++                boolean variableIsChecked = deviceContext.getVariableCheckedDevice().get(checkKey) == device;
++                if (!variableIsChecked) {
++                    if (!daoContext.getVariableDAO().variableIsAssociatedToDevice(device, varURI)) {
++                        localCsvValidation.addVariableToDevice(device, varURI);
++                    }
++                    deviceContext.getVariableCheckedDevice().put(checkKey, device);
+                 }
+-                deviceContext.getVariableCheckedDevice().put(variable, deviceFromDeviceColumn);
+             }
+         } else if ((context.isSensingDeviceFoundFromProvenance())) {
+             handleProvenanceDeviceAssociation(context, colIndex, variable, varURI);
+@@ -1082,7 +1087,7 @@
+ 
+             }
+         }
+-        context.setDeviceFromDeviceColumn(deviceFromDeviceColumn);
++        context.addDeviceFromDeviceColumn(deviceFromDeviceColumn);
+     }
+ 
+     private void validateDateColumn(ValidationContext context, int colIndex) throws TimezoneException, TimezoneAmbiguityException {
