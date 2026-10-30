@@ -11,7 +11,7 @@ const MAX_UPLOAD = 50 * 1024 * 1024;
 
 // Both take the instrument's ZIP (or its CSV, with X-File-Name) as-is as the body, and optionally X-Import-Edits (the review's edits).
 //   POST /api/import/plan               -> what would be created or reused; writes nothing
-//   POST /api/import/run?species=<uri>|newSpecies=<name>&device=<uri>&person=<uri>&share=<public|private|group uri>&note=1
+//   POST /api/import/run?species=<uri>|newSpecies=<name>&device=<uri>[&device=<uri>…]&person=<uri>&share=<public|private|group uri>&note=1
 //                                       -> writes it, streaming progress (species: for new germplasm; device/person: who made
 //                                          the data; share: who sees a new experiment; note: keep a note of the import)
 export const handleImport: RouteHandler = async (req, res, { pathname, searchParams }) => {
@@ -63,7 +63,7 @@ export const handleImport: RouteHandler = async (req, res, { pathname, searchPar
   const line = (o: unknown) => res.write(JSON.stringify(o) + "\n");
   try {
     const result = await runImport(files, {
-      species: searchParams.get("species") || undefined, newSpecies: searchParams.get("newSpecies") ?? undefined, device: searchParams.get("device") || undefined, person: searchParams.get("person") || undefined,
+      species: searchParams.get("species") || undefined, newSpecies: searchParams.get("newSpecies") ?? undefined, devices: searchParams.getAll("device").filter(Boolean), person: searchParams.get("person") || undefined,
       share: searchParams.get("share") || undefined, note: searchParams.get("note") === "1", edits,
     }, (p) => {
       if (!streaming) { res.writeHead(200, { "Content-Type": "application/x-ndjson" }); streaming = true; }

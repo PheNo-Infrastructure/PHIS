@@ -188,6 +188,10 @@ body[data-view="browse"] #pagePane { display: none; }
 .import-form > label, .import-form > .import-field-name { font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
 .import-form select, .import-form input[type="text"], .import-form input[type="date"] { width: 100%; max-width: 380px; box-sizing: border-box; font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg); color: var(--ink); }
 .import-form .import-note, .import-form .import-check { grid-column: 2; }
+.import-form .import-devices { display: flex; flex-wrap: wrap; gap: 4px; max-width: 380px; }
+.import-form .import-devices input { flex: 1 1 140px; }
+.import-form .import-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 2px 4px 2px 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--type-device-soft); }
+.import-form .import-chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
 .import-form .import-note { margin: -4px 0 0; font-size: 12px; color: var(--ink-faint); }
 .import-form .import-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
 .import-form .import-sub { grid-column: 1 / -1; font-weight: 700; font-size: 12.5px; margin-top: 4px; }
@@ -5248,12 +5252,13 @@ async function afterImport(body) {
 function openImport(opts = {}) { importSession = opts; if (view === "import") renderPage(); else showView("import"); }
 function wireImportPage(opts) {
   const close = () => { importSession = null; renderPage(); };
-  const CHOICE_IDS = ["importSpecies", "importNewSpecies", "importDevice", "importPerson", "importShare"];
+  const CHOICE_IDS = ["importSpecies", "importNewSpecies", "importPerson", "importShare"];
   // Applying an edit asks the server for a new plan; what was already chosen in the dialog is kept.
   const render = (f, plan) => {
     const out = document.getElementById("importPlan");
     const kept = Object.fromEntries(CHOICE_IDS.map((id) => [id, document.getElementById(id)?.value]));
     const note = document.getElementById("importNote")?.checked;
+    importPickedDevices = document.getElementById("importDevice") ? [...document.querySelectorAll("#importDevice [data-id]")].map((c) => c.dataset.id) : null;
     if (opts.inSetup) paintSetupPlan(out, plan, opts.into); else out.innerHTML = importPlanHtml(plan);
     for (const id of CHOICE_IDS) { const el = document.getElementById(id); if (el && kept[id] !== undefined && [...(el.options ?? [{ value: kept[id] }])].some((o) => o.value === kept[id])) el.value = kept[id]; }
     if (note !== undefined && document.getElementById("importNote")) document.getElementById("importNote").checked = note;
@@ -5453,6 +5458,8 @@ function importPlanHtml(p) {
 
 // Who made the data and who can see it — all optional. The device is only PRE-selected when its name holds the instrument's
 // own name (and says so); the person is never guessed; a new experiment stays public unless another choice is made.
+let importPickedDevices = null; // device uris kept across a re-render of the plan; null = start from the matched one
+const deviceChipHtml = (id, devices) => `<span class="import-chip" data-id="${escapeHtml(id)}">${escapeHtml(devices.find(d => d.id === id)?.label ?? id)}<button type="button" aria-label="Remove">×</button></span>`;
 function importChoicesHtml(p) {
   const o = p.options;
   if (!o) return "";
@@ -5460,8 +5467,9 @@ function importChoicesHtml(p) {
   return `<div data-section="choices" class="import-section">
     <h3><span class="h-title">Made by${p.experiment.exists ? "" : " and visible to"}<small>so the data can be traced${p.experiment.exists ? "" : " and shared"}</small></span></h3>
     <div class="import-form">
-      <label for="importDevice">Measured with</label>
-      <select id="importDevice"><option value="">No device</option>${opts(o.devices, o.matchedDevice)}</select>
+      <span class="import-field-name">Measured with</span>
+      <div class="import-devices" id="importDevice">${(importPickedDevices ?? (o.matchedDevice ? [o.matchedDevice] : [])).map(id => deviceChipHtml(id, o.devices)).join("")}<input id="importDeviceAdd" list="importDeviceList" placeholder="Type to find a device…" autocomplete="off"><datalist id="importDeviceList">${o.devices.map(d => `<option value="${escapeHtml(d.label)}">`).join("")}</datalist></div>
+      <p class="import-note">Add every device that made the data, e.g. the scanner and its software. None added = no device.</p>
       ${o.matchedDevice ? `<p class="import-note">pre-selected because its name holds "${escapeHtml(o.matchedBecause)}", the instrument named in the file</p>` : ""}
       <label for="importPerson">Run by</label>
       <select id="importPerson"><option value="">No one</option>${opts(o.persons)}</select>
@@ -5519,6 +5527,13 @@ function wireImportRun(file, plan, close) {
   if (!btn) return;
   const species = document.getElementById("importSpecies");
   const newSpecies = document.getElementById("importNewSpecies");
+  const deviceBox = document.getElementById("importDevice"), deviceAdd = document.getElementById("importDeviceAdd");
+  deviceAdd?.addEventListener("change", () => {
+    const d = plan.options.devices.find(x => x.label === deviceAdd.value.trim() && !deviceBox.querySelector(`[data-id="${CSS.escape(x.id)}"]`));
+    if (d) deviceAdd.insertAdjacentHTML("beforebegin", deviceChipHtml(d.id, plan.options.devices));
+    if (d || !deviceAdd.value.trim()) deviceAdd.value = "";
+  });
+  deviceBox?.addEventListener("click", (e) => e.target.closest(".import-chip button")?.parentElement.remove());
   const sync = () => {
     const adding = !!species && species.value === "__new__";
     if (newSpecies) newSpecies.hidden = !adding;
@@ -5538,7 +5553,9 @@ function wireImportRun(file, plan, close) {
     try {
       const q = new URLSearchParams();
       if (species) { if (species.value === "__new__") q.set("newSpecies", newSpecies.value.trim()); else q.set("species", species.value); }
-      for (const [id, key] of [["importDevice", "device"], ["importPerson", "person"], ["importShare", "share"]]) {
+      for (const c of deviceBox?.querySelectorAll("[data-id]") ?? []) { q.append("device", c.dataset.id); c.querySelector("button").hidden = true; }
+      if (deviceAdd) deviceAdd.disabled = true;
+      for (const [id, key] of [["importPerson", "person"], ["importShare", "share"]]) {
         const el = document.getElementById(id);
         if (el && el.value) q.set(key, el.value);
         if (el) el.disabled = true;
