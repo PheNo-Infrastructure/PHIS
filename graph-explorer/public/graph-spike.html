@@ -836,6 +836,7 @@ async function openInPortal(n) {
   // In the portal a click works as in Browse: a plain click opens the resource, Ctrl+click adds it to the selection.
   function pick(id, event) {
     if (!embedded || mods(event)) return select(id, id && mods(event));
+    if (!id) { cur = null; return setSelection([], "replace"); } // a click on empty space clears the selection and the highlight
     setCurrent(id);
     if (id && kindOf(id) !== "fold") openInPortal(g.getNodeAttributes(id));
   }
