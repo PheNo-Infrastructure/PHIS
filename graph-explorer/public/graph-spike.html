@@ -45,7 +45,6 @@
 const COLORS = { fold:"#8fb8b3", organization:"#46739b", facility:"#279b8f", site:"#9e7fbd", project:"#ba801c", experiment:"#c07299", device:"#8c8c7d" }; // the PheNo palette (organization = the portal's organization blue)
 const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device" };
 const FILTERS = ["organization", "site", "project", "experiment", "facility", "device"]; // a folded group follows its facilities
-const ORPHAN = "#d33";
 const HINT = document.documentElement.classList.contains("embed") ? '<p class="muted">Click a resource to open it; Ctrl+click adds or removes it from the selection, and dragging a box on empty space selects everything inside it. What is selected is shared with the Selection pane, where it can be linked or unlinked. Right-drag moves the view. A group opens when you open something linked to it. Drag a node and the graph follows; ForceAtlas keeps the layout running when on.</p>' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -77,7 +76,7 @@ async function openInPortal(n) {
   const styleOf = (id) => {
     const a = g.getNodeAttributes(id), deg = g.degree(id);
     const orphan = deg === 0;
-    return { orphan, color: orphan ? ORPHAN : COLORS[a.kind], size: a.kind === "fold" ? 7 + Math.sqrt(a.count) * 2 : 4 + Math.sqrt(deg) * 3 };
+    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 7 + Math.sqrt(a.count) * 2 : 4 + Math.sqrt(deg) * 3 };
   };
   data.nodes.forEach(({ type, ...n }) => g.addNode(n.id, { ...n, kind:type, x:Math.random(), y:Math.random() }));
   data.edges.forEach(ed => g.hasEdge(ed.source, ed.target) || g.addEdge(ed.source, ed.target));
@@ -460,12 +459,12 @@ async function openInPortal(n) {
   function renderChips() {
     const legend = document.getElementById("legend");
     legend.innerHTML = FILTERS.map(t => `<button class="chip" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}</button>`).join("")
-      + `<span class="chip static"><i style="background:${COLORS.fold}"></i>Folded group</span><span class="chip static"><i style="background:${ORPHAN}"></i>No links</span>`;
+      + `<span class="chip static"><i style="background:${COLORS.fold}"></i>Folded group</span>`;
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = () => { hiddenKinds.has(b.dataset.t) ? hiddenKinds.delete(b.dataset.t) : hiddenKinds.add(b.dataset.t); refreshView(); });
   }
   function stats() {
     let shown = 0, orphans = 0; g.forEachNode((id, a) => { if (isVisible(id)) { shown++; a.orphan && orphans++; } });
-    document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link (red).`;
+    document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link.`;
   }
   function refreshView() { computeFocus(); refresh(); fitView(); stats(); renderChips(); renderPanel(); }
 
