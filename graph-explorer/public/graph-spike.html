@@ -146,7 +146,8 @@ async function openInPortal(n) {
     }
     for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
   }
-  const isVisible = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
+  const isVisible = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
+    (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
   const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
   // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   // The selection as PHIS things: a folded group is every facility and device inside it.
@@ -184,7 +185,7 @@ async function openInPortal(n) {
     if (!L.length) { lit = null; tintIds = new Set(); return; }
     lit = new Set(L); litSel = new Set(L);
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
-    tintIds = new Set(lit);
+    tintIds = new Set([...lit].filter(id => L.includes(id) || !(memberFold.has(id) && open.has(memberFold.get(id))))); // the members of an opened group are named, not painted
     for (const f of [...lit]) if (open.has(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && lit.add(id));
     for (const f of L) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
     const v = verdictNow();
@@ -465,10 +466,10 @@ async function openInPortal(n) {
   function burst() {
     if (!liveOn) startLive();
     clearTimeout(burstTimer);
-    burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); }, 1100);
+    burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); if (outOfView(g.nodes().filter(isVisible))) easeFit(); }, 2200); // long enough for a big group to find its shape; the view then eases out only if something has drifted off it
   }
   function settle(newIds) { // new nodes find their place while everything on screen stays put
-    const wasLive = liveOn; stopLive(); relax(150, id => !newIds.has(id)); if (wasLive) startLive();
+    const wasLive = liveOn; stopLive(); relax(400, id => !newIds.has(id)); if (wasLive) startLive();
   }
   document.getElementById("reset").onclick = () => {
     const wasLive = liveOn; stopLive();
@@ -513,6 +514,7 @@ async function openInPortal(n) {
       ids.add(id);
     }
     facs.forEach(f => g.addEdge(fid, f)); // facilities hang off the group node, their devices off them
+    for (const parent of g.neighbors(fid)) { const k = g.getNodeAttribute(parent, "kind"); if (k === "organization" || k === "site") facs.forEach(f => g.hasEdge(parent, f) || g.addEdge(parent, f)); } // the group stands for its facilities having these parents, so while it is open they link to them directly
     links.forEach(([a, b]) => g.hasEdge(a, b) || g.addEdge(a, b));
     outside.forEach(([x, m]) => g.hasNode(x) && !g.hasEdge(x, m) && g.addEdge(x, m)); // which facility an experiment uses
     ids.forEach(id => g.mergeNodeAttributes(id, styleOf(id)));
@@ -534,7 +536,7 @@ async function openInPortal(n) {
     for (const fid of [...open]) if (!next.has(fid)) { fold(fid); open.delete(fid); }
     for (const fid of next) if (!open.has(fid)) { open.add(fid); expand(fid).forEach(i => added.add(i)); }
     computeFocus();
-    if (added.size) { settle(added); if (outOfView(added)) easeFit(); } // the view only moves when something would land outside it; no shaking of the rest
+    if (added.size) { settle(added); if (outOfView(added)) easeFit(); burst(); } // the view only moves when something would land outside it; no shaking of the rest
   }
   compact.onchange = () => { apply(false); relax(150); refresh(); fitView(); stats(); renderPanel(); };
   function setFocus(id, hops) {
