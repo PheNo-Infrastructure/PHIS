@@ -152,8 +152,17 @@ body[data-view="overview"] #detailPane, body[data-view="setup"] #detailPane, bod
 body[data-view="overview"] .crumbs, body[data-view="setup"] .crumbs, body[data-view="import"] .crumbs,
 body[data-view="overview"] #selectionPane, body[data-view="setup"] #selectionPane, body[data-view="import"] #selectionPane,
 body[data-view="browse"] #pagePane { display: none; }
-#graphPane { margin-top: 16px; }
-#graphPane iframe { display: block; width: 100%; height: 640px; border: 0; }
+#graphPane iframe { display: block; width: 100%; height: min(640px, calc(100vh - 80px)); border: 0; }
+/* Browse: the graph sits under the list and detail, and the Selection pane runs down beside both and follows the screen, so linking never needs a scroll back up.
+   The detail scrolls inside its pane instead of pushing the graph away. */
+@media (min-width: 761px) {
+  body[data-view="browse"] #explorerPane { grid-column: 1; grid-row: 1; }
+  body[data-view="browse"] #detailPane { grid-column: 2; grid-row: 1; }
+  body[data-view="browse"] #detailPane .detail-body { max-height: min(70vh, 720px); overflow: auto; }
+  body[data-view="browse"] #graphPane { grid-column: 1 / 3; grid-row: 2; }
+  body[data-view="browse"] #selectionPane { grid-column: 3; grid-row: 1 / span 2; position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+  body[data-view="browse"] #selectionPane .sel-list { flex: 0 1 auto; min-height: 0; }
+}
 body:not([data-view="browse"]) #graphPane { display: none; }
 
 /* ---------- instrument import: reuses the ranking dialog's overlay/modal ---------- */
@@ -1090,13 +1099,13 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
       <div class="sel-list" id="selList"></div>
       <div class="actionbar" id="actionbar"></div>
     </section>
-  </div>
 
-  <!-- The graph of the structure layer: a quick scroll down from the panes. It loads when it comes into view. -->
-  <section class="pane" id="graphPane" aria-label="Graph">
-    <div class="pane-head"><h2>Graph</h2><span class="pane-count">click opens, ctrl+click selects, drag a box to select</span></div>
-    <iframe src="graph-spike?embed=1" loading="lazy" title="Graph of the structure layer"></iframe>
-  </section>
+    <!-- The graph of the structure layer, under the list and detail: a quick scroll down. The Selection pane runs down beside it. It loads when it comes into view. -->
+    <section class="pane" id="graphPane" aria-label="Graph">
+      <div class="pane-head"><h2>Graph</h2><span class="pane-count">click opens, ctrl+click selects, drag a box to select</span></div>
+      <iframe src="graph-spike?embed=1" loading="lazy" title="Graph of the structure layer"></iframe>
+    </section>
+  </div>
 
   <!-- How the selection connects. The real graph will replace this tree here. -->
   <div class="pane" id="treePane" aria-label="How the selection connects" hidden>
