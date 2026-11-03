@@ -149,15 +149,19 @@ async function openInPortal(n) {
   }
   // Can the selection be linked? Same rule as the portal's Link selection: every item needs a partner it can link to.
   const plural = t => (NAMES[t] || t).toLowerCase() + "s";
+  // The portal's rule for which types link. A type that lists itself (organization: parent and child; project: related projects) links to its own kind too,
+  // which needs a parent-child order, asked for when linking.
+  const adjacent = (a, b) => (ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a);
+  const selfLinkable = t => (ADJACENT[t] || []).includes(t);
   function linkVerdict(items) {
     if (items.length < 2) return { kind: "none", why: items.length ? "Select a second thing to link it to." : "" };
     const types = [...new Set(items.map(v => v.type))];
-    if (types.length === 1) return { kind: "none", why: `Two ${types[0] === "facility" ? "facilities" : plural(types[0])} can't be linked to each other.` };
+    if (types.length === 1 && !selfLinkable(types[0])) return { kind: "none", why: `Two ${types[0] === "facility" ? "facilities" : plural(types[0])} can't be linked to each other.` };
     if (types.length === 2 && types.includes("device") && types.includes("facility")) return { kind: "later", why: "Moving devices into a facility needs a date. Do that in Browse for now." };
-    const pairOk = (a, b) => a !== b && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a));
+    const pairOk = (a, b) => adjacent(a, b);
     const bad = items.filter(v => !items.some(w => w !== v && pairOk(v.type, w.type)));
     if (bad.length) return { kind: "none", why: `${bad[0].label} (${NAMES[bad[0].type].toLowerCase()}) can't be linked to anything else selected${bad.length > 1 ? ` (nor ${bad.length - 1} more)` : ""}. Remove ${bad.length > 1 ? "them" : "it"} to link the rest.`, bad: bad.map(v => v.id) };
-    return { kind: "link" };
+    return { kind: "link", note: types.length === 1 ? (types[0] === "organization" ? "They link as parent and child; you choose which is which when linking." : "They link as related " + plural(types[0]) + ".") : "" };
   }
   // What a selection lights up: the selected nodes, their neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   function computeLit() {
@@ -176,7 +180,7 @@ async function openInPortal(n) {
     // Unlinked nodes the selection could be linked to are shown a little stronger than the rest (device and facility need a date, so they are left out)
     canLink = new Set();
     const types = new Set(selItems().map(i => i.type));
-    const pairOk = (a, b) => a !== b && !(a === "device" && b === "facility" || a === "facility" && b === "device") && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a));
+    const pairOk = (a, b) => !(a === "device" && b === "facility" || a === "facility" && b === "device") && adjacent(a, b);
     g.forEachNode((id, a) => { if (!lit.has(id) && isVisible(id) && [...types].some(t => pairOk(t, filterKind(a)))) canLink.add(id); });
   }
 
@@ -522,10 +526,10 @@ async function openInPortal(n) {
     const nb = g.neighbors(selected).filter(isVisible).map(x => g.getNodeAttributes(x)).sort((a, b) => a.label.localeCompare(b.label));
     const canOpen = n.kind !== "fold";
     html += `<h1>${e(n.label)}</h1><div class="muted">${NAMES[n.kind]}${n.orphan ? " - no links" : ""}${n.count && n.kind === "experiment" ? ` - ${n.count} objects` : ""}</div>
-      <div class="row">${canOpen ? '<button class="primary" id="openPage">Open page</button>' : ""}${!focus ? '<button id="f1">Only around this</button>' : ""}</div>
+      ${embedded ? "" : `<div class="row">${canOpen ? '<button class="primary" id="openPage">Open page</button>' : ""}${!focus ? '<button id="f1">Only around this</button>' : ""}</div>`}
       <div class="muted">${nb.length} linked</div><ul>${nb.slice(0, 40).map(x => `<li><a data-id="${e(x.id)}">${e(x.label)}</a> <span class="muted">${NAMES[x.kind]}</span></li>`).join("")}</ul>${nb.length > 40 ? `<div class="muted">and ${nb.length - 40} more</div>` : ""}`;
     panel.innerHTML = html; bindBanner();
-    if (canOpen) document.getElementById("openPage").onclick = () => openInPortal(n);
+    if (canOpen && !embedded) document.getElementById("openPage").onclick = () => openInPortal(n);
     document.getElementById("f1")?.addEventListener("click", () => setFocus(selected, 1));
     panel.querySelectorAll("a[data-id]").forEach(a => a.onclick = async () => { await select(a.dataset.id); const p = sigma.getNodeDisplayData(a.dataset.id); p && sigma.getCamera().animate({ x:p.x, y:p.y }, { duration:300 }); });
   }
@@ -534,7 +538,7 @@ async function openInPortal(n) {
     const byType = new Map(); items.forEach(i => byType.set(i.type, [...(byType.get(i.type) || []), i]));
     const writable = inst.test;
     if (!embedded) html += `<h1>${items.length} selected</h1><div class="muted">${[...byType].map(([t, l]) => `${l.length} ${l.length === 1 ? NAMES[t].toLowerCase() : plural(t)}`).join(", ")}</div>`;
-    html += v.kind === "link" ? '<div class="verdict ok">These can be linked.</div>'
+    html += v.kind === "link" ? `<div class="verdict ok">These can be linked. ${e(v.note || "")}</div>`
       : v.kind === "later" ? `<div class="verdict later">${e(v.why)}</div>`
       : `<div class="verdict no">Not linkable: ${e(v.why)}</div>`;
     if (!embedded) html += `<div id="ask"></div><div class="row"><button class="primary" id="linkBtn" ${v.kind === "link" && writable ? "" : "disabled"}>Link selection</button><button id="unlinkBtn" ${v.kind !== "none" && writable ? "" : "disabled"}>Unlink selection</button><button id="clearBtn">Clear</button></div>`;
@@ -594,7 +598,7 @@ async function openInPortal(n) {
   function commitLocal(kind, items) {
     const ids = items.map(i => i.id);
     if (!ids.every(id => g.hasNode(id))) { reconcile(); return; }
-    const pairs = [], okType = (x, y) => x !== y && ((ADJACENT[x] || []).includes(y) || (ADJACENT[y] || []).includes(x));
+    const pairs = [], okType = adjacent;
     for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
       const a = items[i].id, b = items[j].id;
       if (kind === "unlink" ? g.hasEdge(a, b) : (okType(items[i].type, items[j].type) && !g.hasEdge(a, b))) pairs.push([a, b]);
