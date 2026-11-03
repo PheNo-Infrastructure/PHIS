@@ -519,12 +519,22 @@ async function openInPortal(n) {
     return ids;
   }
   const fold = fid => folds.get(fid).members.forEach(({ id }) => g.hasNode(id) && g.dropNode(id));
+  function outOfView(ids) { const { width, height } = sigma.getDimensions(); for (const id of ids) { if (!g.hasNode(id)) continue; const v = sigma.graphToViewport({ x:g.getNodeAttribute(id, "x"), y:g.getNodeAttribute(id, "y") }); if (v.x < 10 || v.y < 10 || v.x > width - 10 || v.y > height - 10) return true; } return false; }
+  // Zoom out and re-centre, smoothly, just enough to bring everything visible into view; the nodes themselves stay where they are.
+  function easeFit() {
+    const { width, height } = sigma.getDimensions(); let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    g.forEachNode((id, a) => { if (!isVisible(id)) return; const v = sigma.graphToViewport({ x:a.x, y:a.y }); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); });
+    if (x0 === Infinity) return;
+    const cam = sigma.getCamera(), st = cam.getState(), k = Math.max(1, (x1 - x0 + 160) / width, (y1 - y0 + 80) / height), c = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
+    cam.animate({ x:c.x, y:c.y, ratio:st.ratio * k }, { duration:600 });
+  }
   function apply(keep) {
     const next = wanted(keep), added = new Set();
+    if ([...open].some(f => !next.has(f)) || [...next].some(f => !open.has(f))) freezeBBox(); // opening or folding a group must not rescale the view under the reader's eyes
     for (const fid of [...open]) if (!next.has(fid)) { fold(fid); open.delete(fid); }
     for (const fid of next) if (!open.has(fid)) { open.add(fid); expand(fid).forEach(i => added.add(i)); }
     computeFocus();
-    if (added.size) { settle(added); if (bboxFrozen) fitView(); burst(); } // new nodes may lie outside a frozen box
+    if (added.size) { settle(added); if (outOfView(added)) easeFit(); } // the view only moves when something would land outside it; no shaking of the rest
   }
   compact.onchange = () => { apply(false); relax(150); refresh(); fitView(); stats(); renderPanel(); };
   function setFocus(id, hops) {
@@ -699,11 +709,11 @@ async function openInPortal(n) {
 
   // ---- dragging: the node follows the cursor and is pinned while held; with live physics the rest follows ----
   let drag = null, lastDrag = 0, dragRun = false, box = null; // a drag ends with a click event of its own, which must not select or fold
-  sigma.on("downNode", ({ node, event }) => { freezeBBox(); home.delete(node); drag = { node, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(node, "fixed", true); });
+  sigma.on("downNode", ({ node, event }) => { if (event.original.button !== 0) return; freezeBBox(); home.delete(node); drag = { node, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(node, "fixed", true); }); // left button only: a right-drag moves the view
   // a node is also dragged by its text: a press on a label starts the same drag as a press on the dot
   sigma.on("downStage", ({ event }) => {
     const id = labelAt(event.x, event.y);
-    if (id) { freezeBBox(); drag = { node:id, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(id, "fixed", true); return; }
+    if (id && event.original.button === 0) { freezeBBox(); drag = { node:id, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(id, "fixed", true); return; }
     if (event.original.button === 0) box = { x:event.x, y:event.y, moved:false, add: mods(event) }; // left-drag on empty space draws a selection window
   });
   sigma.getMouseCaptor().on("mousemovebody", (ev) => {
@@ -764,16 +774,18 @@ async function openInPortal(n) {
     });
     items.sort((a, b) => a.rank - b.rank || b.size - a.size);
     const placed = [], clash = R => placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
+      || R.x < 3 || R.x + R.w > box.width - 3 || R.y < 3 || R.y + R.h > box.height - 3 // a name never runs off the edge of the view
       || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
     for (const it of items) {
-      const w = lctx.measureText(it.label).width + 8, slots = slotsFor(it.x, it.y, it.r, w), first = labelSlot.get(it.id) ?? 0;
+      it.text = it.rank === 0 || it.label.length <= 32 ? it.label : it.label.slice(0, 30).trimEnd() + "…"; // long names are shortened, except for what is selected
+      const w = lctx.measureText(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w), first = labelSlot.get(it.id) ?? 0;
       const order = [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
       let pick = -1;
       for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LABEL_H }; if (!clash(R)) { pick = si; break; } }
       if (pick < 0 && it.rank === 0) pick = 0; // a selected node always keeps its name
       if (pick < 0) { labelSlot.delete(it.id); continue; }
       labelSlot.set(it.id, pick);
-      placed.push({ id:it.id, x:slots[pick][0], y:slots[pick][1], w, h:LABEL_H, rank:it.rank, text:it.label });
+      placed.push({ id:it.id, x:slots[pick][0], y:slots[pick][1], w, h:LABEL_H, rank:it.rank, text:it.text });
     }
     labelRects = placed;
     const ink = dark ? "#e6ebe0" : "#264030", paper = dark ? "22,27,20" : "255,255,255";

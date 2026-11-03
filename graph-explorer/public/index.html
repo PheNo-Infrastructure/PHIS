@@ -174,7 +174,8 @@ body[data-view="browse"] #pagePane { display: none; }
 @media (min-width: 761px) {
   body[data-view="browse"] #explorerPane { grid-column: 1; grid-row: 1; }
   body[data-view="browse"] #detailPane { grid-column: 2; grid-row: 1; }
-  body[data-view="browse"] #detailPane .detail-body { max-height: min(70vh, 720px); overflow: auto; }
+  body[data-view="browse"] #explorerPane, body[data-view="browse"] #detailPane { height: min(62vh, 620px); display: flex; flex-direction: column; } /* a fixed height: what is opened scrolls inside, so the graph below never moves */
+  body[data-view="browse"] #detailPane .detail-body, body[data-view="browse"] #explorerPane .rowlist { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; }
   body[data-view="browse"] #graphPane { grid-column: 1 / 3; grid-row: 2; }
   body[data-view="browse"] #selectionPane { grid-column: 3; grid-row: 1 / span 2; position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
   body[data-view="browse"] #selectionPane .sel-list { flex: 0 1 auto; min-height: 0; }
