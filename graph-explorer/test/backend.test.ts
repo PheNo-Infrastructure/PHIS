@@ -2297,6 +2297,7 @@ function peopleStub() {
     if (path === "/core/experiments") return list(people.experiments.map(({ uri, name }) => ({ uri, name })));
     if ((m = path.match(/^\/core\/experiments\/(.+)$/))) return one(people.experiments, m[1]);
     if (path === "/core/projects") return list(people.projects);
+    if (path === "/core/devices") return list([{ uri: "dev:1", name: "Camera", person_in_charge: P_ANNA }, { uri: "dev:2", name: "Unowned camera", person_in_charge: null }]);
     if (path === "/core/germplasm") return list(people.germplasm);
     if (path === "/core/organisations" || path === "/core/sites") return list([]);
     throw new Error(`unexpected fetch: ${url}`);
@@ -2315,6 +2316,7 @@ test("person page: read-only; facts (email, affiliation, ORCID); its account, th
     assert.deepEqual(groupItems(d, "Scientific supervisor of"), [["experiment", "PBar1x4"]]);
     assert.deepEqual(groupItems(d, "Technical supervisor of"), [["experiment", "Other"]]);
     assert.deepEqual(groupItems(d, "Coordinator of"), [["project", "TraitFinder"]]);
+    assert.deepEqual(groupItems(d, "In charge of"), [["device", "Camera"]], "the devices that name this person as their person in charge");
     assert.equal(groupItems(d, "Scientific contact of"), undefined, "empty roles are left out");
   });
 });
@@ -3691,7 +3693,9 @@ test("graph: people, groups and factors are nodes, linked through device, experi
       if (url.includes("/security/persons")) return page([{ uri: "p:1", first_name: "Ada", last_name: "Lovelace", account: "acc:1" }, { uri: "p:2", first_name: "Solo", last_name: "Person" }]);
       if (url.includes("/security/groups")) return page([{ uri: "g:1", name: "Researchers", user_profiles: [{ user_uri: "acc:1" }, { user_uri: "acc:unknown" }] }]);
       if (url.includes("/core/experiments/factors")) return page([{ uri: "f:1", name: "Temperature" }]);
-      if (url.includes("/core/experiments/e%3A1")) return jsonResponse(200, { result: { uri: "e:1", name: "Exp", scientific_supervisors: ["p:1"], technical_supervisors: [], groups: ["g:1"], factors: ["f:1"] } });
+      if (url.includes("/core/species")) return page([{ uri: "s:1", name: "barley" }, { uri: "s:unused", name: "banana" }]);
+      if (url.includes("/core/germplasm")) return page([{ uri: "gm:1", name: "Golden", species: "s:1" }, { uri: "gm:2", name: "Plumage", species: "s:1" }]);
+      if (url.includes("/core/experiments/e%3A1")) return jsonResponse(200, { result: { uri: "e:1", name: "Exp", scientific_supervisors: ["p:1"], technical_supervisors: [], groups: ["g:1"], factors: ["f:1"], species: ["s:1"] } });
       if (url.includes("/core/experiments?")) return page([{ uri: "e:1", name: "Exp" }]);
       if (url.includes("/core/devices?page_size=500")) return page([{ uri: "d:1", name: "Camera", person_in_charge: "p:1" }, { uri: "d:2", name: "No owner", person_in_charge: null }]);
       return page([]);
@@ -3699,9 +3703,10 @@ test("graph: people, groups and factors are nodes, linked through device, experi
     await realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); // empty cache
     const body = await (await realFetch(`${base}/api/graph`)).json();
     const types = Object.fromEntries(body.nodes.map((n: any) => [n.id, n.type]));
-    assert.deepEqual(types, { "e:1": "experiment", "d:1": "device", "d:2": "device", "p:1": "person", "p:2": "person", "g:1": "group", "f:1": "factor" });
+    assert.deepEqual(types, { "e:1": "experiment", "d:1": "device", "d:2": "device", "p:1": "person", "p:2": "person", "g:1": "group", "f:1": "factor", "s:1": "species" });
+    assert.equal(body.nodes.find((n: any) => n.id === "s:1").count, 2, "a species says how many germplasm it has; one nobody uses is not a node");
     assert.equal(body.nodes.find((n: any) => n.id === "p:1").label, "Ada Lovelace");
     const links = body.edges.map((e: any) => [e.source, e.target].sort().join(" ")).sort();
-    assert.deepEqual(links, ["d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "g:1 p:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
+    assert.deepEqual(links, ["d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "g:1 p:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
   });
 });

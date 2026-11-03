@@ -45,7 +45,7 @@
 <script>
 // Nodes and the painted regions around them are the brand greens (Forest, Leaf dark, Leaf light, between Leaf light and Straw, Straw dark), told apart by lightness and,
 // on the discs, by the icon inside.
-const COLORS = { fold:"#a8c79b", organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a" };
+const COLORS = { fold:"#a8c79b", organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a" };
 // Minimal line icons (24 x 24), drawn over the discs in the style of the PheNo icon set.
 const ICON_PATHS = {
   organization: "M5 21V5l7-2 7 2v16M3 21h18M9 9h2M13 9h2M9 13h2M13 13h2M10 21v-4h4v4",
@@ -58,9 +58,10 @@ const ICON_PATHS = {
   person: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4.4 3.6-8 8-8s8 3.6 8 8",
   group: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 11a2.5 2.5 0 1 0 0-5M17 14.2c2.4.4 4 2.4 4 5.8",
   factor: "M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4",
+  species: "M5 19c0-8 5-14 14-14 0 9-6 14-14 14zM5 19c3-5 6-8 10-10",
 };
-const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor" };
-const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor"]; // a folded group follows its facilities
+const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", species:"Species" };
+const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species"]; // a folded group follows its facilities
 const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -88,6 +89,7 @@ async function openInPortal(n) {
   const g = new Graph({ type:"undirected" });
   const settingsFor = gr => ({ ...FA2.inferSettings(gr), gravity:1, scalingRatio:6, slowDown:4, barnesHutOptimize: gr.order > 500 });
   const kindOf = id => g.getNodeAttribute(id, "kind");
+  const hasPage = k => k !== "fold" && k !== "species"; // a folded group and a species have no resource page to open
   const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
   const styleOf = (id) => {
     const a = g.getNodeAttributes(id), deg = g.degree(id);
@@ -188,7 +190,10 @@ async function openInPortal(n) {
     if (!L.length) { lit = null; tintIds = new Set(); return; }
     lit = new Set(L); litSel = new Set(L);
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
-    tintIds = new Set([...lit].filter(id => L.includes(id) || !(memberFold.has(id) && open.has(memberFold.get(id))))); // the members of an opened group are named, not painted
+    // The members of an opened group are named, not painted (an organization or site would otherwise paint every facility of it), unless something that is not the group's parent
+    // (a person, an experiment) is linked to them directly: then they are what that selection is about.
+    const parentKind = id => ["organization", "site"].includes(kindOf(id));
+    tintIds = new Set([...lit].filter(id => L.includes(id) || !(memberFold.has(id) && open.has(memberFold.get(id))) || L.some(x => g.hasEdge(x, id) && !parentKind(x))));
     for (const f of [...lit]) if (open.has(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && lit.add(id));
     for (const f of L) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
     const v = verdictNow();
@@ -536,9 +541,11 @@ async function openInPortal(n) {
   function apply(keep) {
     const next = wanted(keep), added = new Set();
     if ([...open].some(f => !next.has(f)) || [...next].some(f => !open.has(f))) freezeBBox(); // opening or folding a group must not rescale the view under the reader's eyes
-    for (const fid of [...open]) if (!next.has(fid)) { fold(fid); open.delete(fid); }
+    let folded = false;
+    for (const fid of [...open]) if (!next.has(fid)) { fold(fid); open.delete(fid); folded = true; }
     for (const fid of next) if (!open.has(fid)) { open.add(fid); expand(fid).forEach(i => added.add(i)); }
     computeFocus();
+    if (folded && !added.size) burst(); // ForceAtlas runs a little after a group folds, so what is left closes up
     if (added.size) { settle(added); if (outOfView(added)) easeFit(); burst(); } // the view only moves when something would land outside it; no shaking of the rest
   }
   compact.onchange = () => { apply(false); relax(150); refresh(); fitView(); stats(); renderPanel(); };
@@ -556,8 +563,8 @@ async function openInPortal(n) {
     if (!selected || !g.hasNode(selected)) { panel.innerHTML = html + HINT; bindBanner(); return; }
     const n = g.getNodeAttributes(selected);
     const nb = g.neighbors(selected).filter(isVisible).map(x => g.getNodeAttributes(x)).sort((a, b) => a.label.localeCompare(b.label));
-    const canOpen = n.kind !== "fold";
-    html += `<h1>${e(n.label)}</h1><div class="muted">${NAMES[n.kind]}${n.orphan ? " - no links" : ""}${n.count && n.kind === "experiment" ? ` - ${n.count} objects` : ""}</div>
+    const canOpen = hasPage(n.kind);
+    html += `<h1>${e(n.label)}</h1><div class="muted">${NAMES[n.kind]}${n.orphan ? " - no links" : ""}${n.count && n.kind === "experiment" ? ` - ${n.count} objects` : ""}${n.kind === "species" ? ` - ${n.count} germplasm` : ""}</div>
       ${embedded ? "" : `<div class="row">${canOpen ? '<button class="primary" id="openPage">Open page</button>' : ""}${!focus ? '<button id="f1">Only around this</button>' : ""}</div>`}
       <div class="muted">${nb.length} linked</div><ul>${nb.slice(0, 40).map(x => `<li><a data-id="${e(x.id)}">${e(x.label)}</a> <span class="muted">${NAMES[x.kind]}</span></li>`).join("")}</ul>${nb.length > 40 ? `<div class="muted">and ${nb.length - 40} more</div>` : ""}`;
     panel.innerHTML = html; bindBanner();
@@ -697,7 +704,7 @@ async function openInPortal(n) {
   let fromPortal = false, told = "";
   function tellPortal() {
     if (!embedded || fromPortal) return;
-    const items = selItems(), sig = items.map(i => i.id).join("\n");
+    const items = selItems().filter(i => hasPage(i.type)), sig = items.map(i => i.id).join("\n");
     if (sig !== told) { told = sig; parent.postMessage({ kind: "graph-selection", items }, location.origin); }
   }
   if (embedded) {
@@ -843,12 +850,12 @@ async function openInPortal(n) {
     if (!embedded || mods(event)) return select(id, id && mods(event));
     if (!id) { cur = null; return setSelection([], "replace"); } // a click on empty space clears the selection and the highlight
     setCurrent(id);
-    if (id && kindOf(id) !== "fold") openInPortal(g.getNodeAttributes(id));
+    if (id && hasPage(kindOf(id))) openInPortal(g.getNodeAttributes(id));
   }
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) pick(node, event); });
-  sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (a.kind !== "fold") openInPortal(a); });
+  sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
   sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const id = labelAt(event.x, event.y); pick(id, event); } });
-  sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (a.kind !== "fold") openInPortal(a); });
+  sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) ? "pointer" : ""; });
 
   // right-drag moves the view

@@ -1165,6 +1165,12 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       } },
       { label: "Scientific supervisor of", type: "experiment", url: () => "", load: async (id) => listedIn(await experimentDetails(), "scientific_supervisors", id) },
       { label: "Technical supervisor of", type: "experiment", url: () => "", load: async (id) => listedIn(await experimentDetails(), "technical_supervisors", id) },
+      // A device names one person in charge (a single field, not a list), so it is read from the devices.
+      { label: "In charge of", type: "device", url: () => "", load: async (id) => {
+        const key = await compactUri(id), out: { id: string; label: string }[] = [];
+        for (const d of (await authedGet("/core/devices?page_size=500")).result) if (d.person_in_charge && (await compactUri(String(d.person_in_charge))) === key) out.push({ id: String(d.uri), label: String(d.name ?? d.uri) });
+        return out;
+      } },
       ...([["Coordinator of", "coordinators"], ["Scientific contact of", "scientific_contacts"], ["Administrative contact of", "administrative_contacts"]] as const).map(([label, field]) => ({
         label, type: "project", url: () => "", load: async (id: string) => listedIn((await authedGet("/core/projects?page_size=500")).result, field, id),
       })),

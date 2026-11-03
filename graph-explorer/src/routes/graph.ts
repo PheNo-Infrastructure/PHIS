@@ -8,11 +8,12 @@ const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean
   { type: "facility", url: "/core/facilities?page_size=500", fields: ["organizations", "sites"] },
   { type: "site", url: "/core/sites?page_size=500", fields: ["organizations", "facilities"] },
   { type: "project", url: "/core/projects?page_size=500", fields: ["related_projects", "coordinators", "scientific_contacts", "administrative_contacts"] },
-  { type: "experiment", url: "/core/experiments?page_size=500", fields: ["facilities", "organisations", "projects", "scientific_supervisors", "technical_supervisors", "groups", "factors"] },
+  { type: "experiment", url: "/core/experiments?page_size=500", fields: ["facilities", "organisations", "projects", "scientific_supervisors", "technical_supervisors", "groups", "factors", "species"] },
   { type: "device", url: "/core/devices?page_size=500", fields: ["person_in_charge"] },
   { type: "person", url: "/security/persons?page_size=500", fields: [], optional: true, label: (it) => [it.first_name, it.last_name].filter(Boolean).join(" ") },
   { type: "group", url: "/security/groups?page_size=500", fields: [], optional: true },
   { type: "factor", url: "/core/experiments/factors?page_size=500", fields: [], optional: true },
+  { type: "species", url: "/core/species", fields: [], optional: true }, // only the ones an experiment or some germplasm uses become nodes
 ];
 
 const refUri = (r: unknown) => (typeof r === "string" ? r : (r as { uri?: string } | null)?.uri);
@@ -48,8 +49,13 @@ async function build(): Promise<string> {
   const expAt = SOURCES.findIndex((s) => s.type === "experiment");
   const full = await mapLimit(pages[expAt].result, (x) => authedGetOne(`/core/experiments/${encodeURIComponent(x.uri)}`).then((r) => r.result).catch(() => ({})));
   pages[expAt].result = pages[expAt].result.map((x, i) => ({ ...x, ...full[i] }) as RawItem);
+  // Species: the germplasm are too many to be nodes, so a species node says how many it has; the experiments that use it (their own `species`) link to it.
+  const germplasm = (await authedGet("/core/germplasm?page_size=500").catch(() => ({ result: [] }))).result as RawItem[];
+  const germplasmOf = new Map<string, number>();
+  for (const gm of germplasm) { const s = refUri(gm.species); if (s) germplasmOf.set(s, (germplasmOf.get(s) ?? 0) + 1); }
+  const usedSpecies = new Set([...germplasmOf.keys(), ...pages[expAt].result.flatMap((x) => (Array.isArray(x.species) ? x.species : []).map(refUri))]);
   const nodes = new Map<string, { id: string; type: string; label: string; count?: number }>();
-  pages.forEach((p, i) => p.result.forEach((it: RawItem) => nodes.set(it.uri, { id: it.uri, type: SOURCES[i].type, label: String(SOURCES[i].label?.(it) || it.name || it.uri) })));
+  pages.forEach((p, i) => p.result.forEach((it: RawItem) => SOURCES[i].type === "species" && !usedSpecies.has(it.uri) ? null : nodes.set(it.uri, { id: it.uri, type: SOURCES[i].type, label: String(SOURCES[i].label?.(it) || it.name || it.uri), ...(SOURCES[i].type === "species" ? { count: germplasmOf.get(it.uri) ?? 0 } : {}) })));
   const seen = new Set<string>();
   const edges: { source: string; target: string }[] = [];
   pages.forEach((p, i) => p.result.forEach((it: RawItem) => {

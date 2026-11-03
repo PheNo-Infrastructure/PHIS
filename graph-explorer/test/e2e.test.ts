@@ -4493,7 +4493,13 @@ async function openGraph(page: import("playwright").Page, base: string, stub: an
   await page.locator("#graphPane").scrollIntoViewIfNeeded();
   for (let i = 0; i < 100; i++) {
     const f = page.frames().find((x) => x.url().includes("/graph"));
-    if (f && await f.evaluate(() => (window as any).__graph?.g.order > 0).catch(() => false)) return f;
+    if (f && await f.evaluate(() => (window as any).__graph?.g.order > 0).catch(() => false)) {
+      // wait until the nodes have stopped moving (the first layout settles), so a click aims at where a node is
+      const where = () => f.evaluate(() => { const g = (window as any).__graph; return JSON.stringify(g.g.nodes().map((n: string) => { const v = g.sigma.graphToViewport(g.g.getNodeAttributes(n)); return [Math.round(v.x), Math.round(v.y)]; })); });
+      let last = "", calm = 0;
+      for (let k = 0; k < 60 && calm < 3; k++) { const now = await where(); calm = now === last ? calm + 1 : 0; last = now; await page.waitForTimeout(100); }
+      return f;
+    }
     await page.waitForTimeout(100);
   }
   throw new Error("the graph never loaded");
