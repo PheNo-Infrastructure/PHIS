@@ -16,7 +16,7 @@ import { handleMeasurements } from "./routes/measurements.ts";
 import { handleExperimentOverview } from "./routes/experiment-overview.ts";
 import { handleExperimentDistribution } from "./routes/experiment-distribution.ts";
 import { handleProfileRights } from "./routes/profile-rights.ts";
-import { handleGraph } from "./routes/graph.ts";
+import { handleGraph, dropGraphCache } from "./routes/graph.ts";
 
 export { _resetAuthCacheForTests } from "./opensilex.ts";
 export const WRITE_HEADER = "x-graph-explorer"; // node lowercases header names
@@ -80,6 +80,9 @@ export async function handleRequest(req: import("node:http").IncomingMessage, re
     res.end(JSON.stringify({ host, test: /test/i.test(host) || process.env.PHIS_INSTANCE === "test" }));
     return;
   }
+
+  // Any change may alter the graph: its cached picture is dropped before and after the change.
+  if (pathname.startsWith("/api/") && req.method !== "GET" && req.method !== "HEAD") { dropGraphCache(); res.on("finish", dropGraphCache); }
 
   try {
     for (const handler of routeHandlers) {

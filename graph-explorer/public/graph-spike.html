@@ -63,7 +63,7 @@ async function openInPortal(n) {
   document.getElementById("sel").innerHTML = HINT;
   const params = new URLSearchParams(location.search);
   const { ADJACENT } = await import("./adjacency.js"); // the portal's own rules for which types link
-  const data = await (await fetch(params.get("fresh") ? "api/graph?fresh=1" : "api/graph")).json();
+  const data = await (await fetch("api/graph")).json();
   const inst = await (await fetch("api/instance")).json().catch(() => ({ test: false }));
   const { Graph } = graphology, FA2 = graphologyLibrary.layoutForceAtlas2;
   const g = new Graph({ type:"undirected" });
@@ -541,7 +541,7 @@ async function openInPortal(n) {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, body: JSON.stringify(body) });
     return { ok: r.ok, body: await r.json().catch(() => ({})) };
   }
-  const reloadFresh = () => { location.href = location.pathname + "?fresh=1"; };
+  const reloadFresh = () => location.reload();
   function note(msg) { const b = document.createElement("div"); b.className = "banner"; b.textContent = msg; document.getElementById("sel").prepend(b); }
 
   // A confirmation inside the panel: browser dialogs are blocked in some embedded browsers, and then the buttons would do nothing at all.
@@ -597,7 +597,7 @@ async function openInPortal(n) {
     reconcile();
   }
   async function reconcile() { // what PHIS says now, compared with the picture; differences are applied quietly
-    const fresh = await (await fetch(`api/graph?fresh=1&t=${Date.now()}`, { cache: "no-store" })).json();
+    const fresh = await (await fetch("api/graph", { cache: "no-store" })).json();
     const now = new Set(fresh.edges.map(ed => edgeKey(ed.source, ed.target)));
     const added = [...now].filter(k => !known.has(k)).map(k => k.split(" ")), gone = [...known].filter(k => !now.has(k)).map(k => k.split(" "));
     if ([...added, ...gone].some(([a, b]) => !g.hasNode(a) || !g.hasNode(b))) { setTimeout(reloadFresh, 300); return; }

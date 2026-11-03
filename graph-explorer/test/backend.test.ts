@@ -3642,3 +3642,21 @@ test("GET /api/experiment-distribution: a bin group's shares for every plant, on
     assert.equal((await realFetch(`${base}/api/experiment-distribution?experiment=exp-1`)).status, 400);
   });
 });
+
+test("graph: reads share one rebuild and one cache, ?fresh does not bypass it, and any change drops it", async () => {
+  await withServer(async (base) => {
+    let reads = 0;
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/organisations")) reads++;
+      return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+    }) as typeof fetch;
+    await Promise.all([realFetch(`${base}/api/graph`), realFetch(`${base}/api/graph`)]);
+    assert.equal(reads, 1, "two simultaneous reads, one rebuild");
+    await realFetch(`${base}/api/graph?fresh=1`);
+    assert.equal(reads, 1, "?fresh=1 is ignored");
+    await realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    await realFetch(`${base}/api/graph`);
+    assert.equal(reads, 2, "a change drops the cached picture");
+  });
+});
