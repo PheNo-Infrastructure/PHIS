@@ -1202,7 +1202,7 @@ test("e2e: an experiment reads Rename - Unlink - Delete; Unlink removes objects 
     await page.locator("#rowlist .row .row-nav").first().click();
     await idle(page);
     const labels = await page.locator(".node-title-row .btn").allTextContents();
-    assert.deepEqual(labels.map((t) => t.trim()), ["Rename", "Unlink…", "Delete…"]);
+    assert.deepEqual(labels.map((t) => t.trim()), ["Show in graph", "Rename", "Unlink…", "Delete…"]);
     await page.locator("#unlinkModeBtn").click();
     await idle(page);
     await page.locator(".chip[data-openid='so-1'] .chip-unlink").click();

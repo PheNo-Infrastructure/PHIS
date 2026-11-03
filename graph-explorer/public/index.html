@@ -3347,6 +3347,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         ${isCategoryMembers
           ? `<div class="node-title">${escapeHtml(label)}</div>`
           : `<button class="node-title self-chip${selection.has(focusNode.id) ? " selected" : ""}" id="selfChip" title="Click to select this ${typeName(type)} (ctrl/cmd-click adds it to the selection)">${escapeHtml(label)}</button>`}
+        ${!isCategoryMembers && GRAPH_TYPES.has(type) ? `<button class="btn ghost small" id="showInGraphBtn" title="Scroll down to the graph, where this is highlighted with what it is linked to">Show in graph</button>` : ""}
         ${canRename ? `<button class="btn ghost small" id="renameNodeBtn">Rename</button>` : ""}
         ${canUnlink ? `<button class="btn ghost small" id="unlinkModeBtn">Unlink…</button>` : ""}
         ${canDelete ? `<button class="btn ${deleteRedirects ? "warn" : "ghost"} small" id="deleteNodeBtn">${deleteLabel}</button>` : ""}
@@ -3467,6 +3468,7 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   }
 
   document.getElementById("renameNodeBtn")?.addEventListener("click", () => renameNode(focusNode));
+  document.getElementById("showInGraphBtn")?.addEventListener("click", () => document.getElementById("graphPane").scrollIntoView({ behavior: "smooth", block: "start" })); // the graph already shows what is open
   els.detailBody.querySelectorAll("[data-rename-in]").forEach(btn => btn.addEventListener("click", () => {
     const box = (node?.relations ?? []).flatMap(rel => rel.items).find(it => it.id === btn.dataset.renameIn && typeof it.name === "string");
     if (box) renameNode(focusNode, box);
