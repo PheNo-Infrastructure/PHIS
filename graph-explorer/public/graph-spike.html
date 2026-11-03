@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PHIS graph (spike)</title>
+<script>if (new URLSearchParams(location.search).has("embed")) document.documentElement.classList.add("embed");</script>
 <style>
   :root { --bg:#fbfcf8; --ink:#1d2a1a; --muted:#66705f; --line:#dfe6d3; --card:#fff; --accent:#2f6b3a; }
   * { box-sizing: border-box; }
@@ -31,7 +32,8 @@
   .verdict.later { background:rgba(208,138,46,.14); border:1px solid #d08a2e; }
   button[disabled] { opacity:.45; cursor:not-allowed; }
   .row { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#161b14; --ink:#e6ebe0; --muted:#93a08a; --line:#2c3528; --card:#222a1f; --accent:#4f9a5c; } li a { color:#8fd19b; } }
+  @media (prefers-color-scheme: dark) { :root:not(.embed) { --bg:#161b14; --ink:#e6ebe0; --muted:#93a08a; --line:#2c3528; --card:#222a1f; --accent:#4f9a5c; } }
+  @media (prefers-color-scheme: dark) { :root:not(.embed) li a { color:#8fd19b; } }
 </style>
 </head>
 <body>
@@ -46,6 +48,7 @@ const NAMES = { fold:"Folded group", organization:"Organization", facility:"Faci
 const FILTERS = ["organization", "site", "project", "experiment", "facility", "device"]; // a folded group follows its facilities
 const ORPHAN = "#d33";
 const HINT = '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
+const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
 // Same packing the portal's share link uses, so "Open page" lands on the node's page.
@@ -56,7 +59,9 @@ async function pack(obj) {
 async function openInPortal(n) {
   const item = { id:n.id, type:n.kind, label:n.label };
   const st = { view:"browse", path:[item], sel:[], anchor:null, tab:{}, plants:{}, vf:{}, grid:{ stats:false, sharedY:false, overlay:false, norm:false, hidden:[] }, day:null, ui:null };
-  location.href = `./#browse&s=${await pack(st)}`;
+  const url = new URL(`./#browse&s=${await pack(st)}`, location.href);
+  if (embedded) { parent.postMessage({ kind: "open", item }, location.origin); return; } // the portal opens it and keeps the selection
+  location.href = url;
 }
 
 (async () => {
@@ -175,10 +180,11 @@ async function openInPortal(n) {
 
   const edgeKey = (a, b) => a < b ? a + " " + b : b + " " + a;
   const fx = { pulses: [], sparks: [], flash: new Set() }; // short-lived effects for a link being made or undone
-  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = !embedded && matchMedia("(prefers-color-scheme: dark)").matches; // inside the portal (one light theme) the graph is light too
   const sigma = new Sigma(g, document.getElementById("graph"), {
     labelColor: { color: dark ? "#e6ebe0" : "#1d2a1a" },
     // Sigma draws a hovered node with a white label box, unreadable in the dark theme
+    allowInvalidContainer: true, // the portal's graph pane is hidden (zero width) on other views
     renderLabels: false,
     hoverRenderer: (ctx, d) => { ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 2, 0, Math.PI * 2); ctx.fill(); },
     labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c9d3bd",
@@ -529,13 +535,12 @@ async function openInPortal(n) {
     html += v.kind === "link" ? '<div class="verdict ok">These can be linked.</div>'
       : v.kind === "later" ? `<div class="verdict later">${e(v.why)}</div>`
       : `<div class="verdict no">Not linkable: ${e(v.why)}</div>`;
-    html += `<div id="ask"></div><div class="row"><button class="primary" id="linkBtn" ${v.kind === "link" && writable ? "" : "disabled"}>Link selection</button><button id="unlinkBtn" ${v.kind !== "none" && writable ? "" : "disabled"}>Unlink selection</button><button id="clearBtn">Clear</button></div>`;
-    if (!writable) html += '<div class="muted">Changing PHIS is switched off here: this server is not the test instance.</div>';
+    html += embedded ? '<div class="muted">Link or unlink from the Selection pane.</div><div class="row"><button id="clearBtn">Clear</button></div>' : `<div id="ask"></div><div class="row"><button class="primary" id="linkBtn" ${v.kind === "link" && writable ? "" : "disabled"}>Link selection</button><button id="unlinkBtn" ${v.kind !== "none" && writable ? "" : "disabled"}>Unlink selection</button><button id="clearBtn">Clear</button></div>`;
+    if (!writable && !embedded) html += '<div class="muted">Changing PHIS is switched off here: this server is not the test instance.</div>';
     html += `<ul>${items.slice(0, 40).map(i => `<li${v.bad?.includes(i.id) ? ' style="color:#d33"' : ""}>${e(i.label)} <span class="muted">${NAMES[i.type]}</span></li>`).join("")}</ul>${items.length > 40 ? `<div class="muted">and ${items.length - 40} more</div>` : ""}`;
     panel.innerHTML = html; bindBanner();
     document.getElementById("clearBtn").onclick = () => setSelection([], "replace");
-    document.getElementById("linkBtn").onclick = () => writeLinks(items);
-    document.getElementById("unlinkBtn").onclick = () => writeUnlinks(items);
+    if (!embedded) { document.getElementById("linkBtn").onclick = () => writeLinks(items); document.getElementById("unlinkBtn").onclick = () => writeUnlinks(items); }
   }
   async function post(url, body) {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, body: JSON.stringify(body) });
@@ -596,12 +601,12 @@ async function openInPortal(n) {
     applyDiff(kind === "link" ? pairs : [], kind === "unlink" ? pairs : [], true);
     reconcile();
   }
-  async function reconcile() { // what PHIS says now, compared with the picture; differences are applied quietly
+  async function reconcile(animate = false) { // what PHIS says now, compared with the picture; differences are applied quietly
     const fresh = await (await fetch("api/graph", { cache: "no-store" })).json();
     const now = new Set(fresh.edges.map(ed => edgeKey(ed.source, ed.target)));
     const added = [...now].filter(k => !known.has(k)).map(k => k.split(" ")), gone = [...known].filter(k => !now.has(k)).map(k => k.split(" "));
     if ([...added, ...gone].some(([a, b]) => !g.hasNode(a) || !g.hasNode(b))) { setTimeout(reloadFresh, 300); return; }
-    if (added.length || gone.length) applyDiff(added, gone, false);
+    if (added.length || gone.length) applyDiff(added, gone, animate);
   }
   // Motion: linked nodes are pulled together fast, touch, and settle with a small bounce, with a ring where they meet and the new link flashing; unlinked nodes
   // are thrown apart, overshoot a little and settle, with a ring and sparks where the link was.
@@ -649,7 +654,22 @@ async function openInPortal(n) {
     apply(mode !== "replace");
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     selected = sel.size ? [...sel].at(-1) : null;
-    refresh(); stats(); renderPanel();
+    refresh(); stats(); renderPanel(); tellPortal();
+  }
+  // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
+  let fromPortal = false, told = "";
+  function tellPortal() {
+    if (!embedded || fromPortal) return;
+    const items = selItems(), sig = items.map(i => i.id).join("\n");
+    if (sig !== told) { told = sig; parent.postMessage({ kind: "graph-selection", items }, location.origin); }
+  }
+  if (embedded) {
+    addEventListener("message", ev => {
+      const m = ev.data;
+      if (ev.origin !== location.origin || ev.source !== parent || !m) return;
+      if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; setSelection(m.ids, "replace"); fromPortal = false; }
+      else if (m.kind === "changed") reconcile(true);
+    });
   }
   async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
 
@@ -782,6 +802,7 @@ async function openInPortal(n) {
   window.addEventListener("mouseup", () => { pan = null; });
 
   renderChips(); stats(); refresh(); // refresh draws the first labels
+  if (embedded) parent.postMessage({ kind: "ready" }, location.origin);
   // ?focus=<uri>&hops=1|2 opens the graph around one resource (how a resource page will link here)
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }

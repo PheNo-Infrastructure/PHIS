@@ -152,6 +152,9 @@ body[data-view="overview"] #detailPane, body[data-view="setup"] #detailPane, bod
 body[data-view="overview"] .crumbs, body[data-view="setup"] .crumbs, body[data-view="import"] .crumbs,
 body[data-view="overview"] #selectionPane, body[data-view="setup"] #selectionPane, body[data-view="import"] #selectionPane,
 body[data-view="browse"] #pagePane { display: none; }
+#graphPane { margin-top: 16px; }
+#graphPane iframe { display: block; width: 100%; height: 640px; border: 0; }
+body:not([data-view="browse"]) #graphPane { display: none; }
 
 /* ---------- instrument import: reuses the ranking dialog's overlay/modal ---------- */
 .masthead-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -1089,6 +1092,12 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
     </section>
   </div>
 
+  <!-- The graph of the structure layer: a quick scroll down from the panes. It loads when it comes into view. -->
+  <section class="pane" id="graphPane" aria-label="Graph">
+    <div class="pane-head"><h2>Graph</h2><span class="pane-count">click a node for its links; double-click opens its page</span></div>
+    <iframe src="graph-spike?embed=1" loading="lazy" title="Graph of the structure layer"></iframe>
+  </section>
+
   <!-- How the selection connects. The real graph will replace this tree here. -->
   <div class="pane" id="treePane" aria-label="How the selection connects" hidden>
     <div class="pane-head">
@@ -1119,7 +1128,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (url, init = {}) => (init.method ?? "GET") === "GET" ? nativeFetch(url, init)
-    : nativeFetch(url, { ...init, headers: { ...init.headers, "X-Graph-Explorer": "1" } });
+    : nativeFetch(url, { ...init, headers: { ...init.headers, "X-Graph-Explorer": "1" } }).finally(() => tellGraph({ kind: "changed" }));
 }
 /* ---------------- mock graph data ---------------- */
 // `name` = PHIS's own word for the type, so what users learn here carries over to PHIS; the plain
@@ -4887,11 +4896,37 @@ function render() {
   renderActionbar();
 }
 
+/* ---------------- the graph pane shares the selection ----------------
+   The graph (an iframe on this origin) shows and edits the same selection: what is selected here is tinted there, and what is picked there lands in the
+   Selection pane, where the action bar works on it. Things the graph does not draw (plants, factors, ...) are left alone by what it sends. */
+var graphSig; // var: refreshLeftPane can run before this point is reached
+const GRAPH_TYPES = new Set(["organization", "facility", "site", "project", "experiment", "device"]);
+const graphWin = () => document.querySelector("#graphPane iframe")?.contentWindow;
+function tellGraph(msg) { try { graphWin()?.postMessage(msg, location.origin); } catch {} }
+function syncGraph() {
+  const ids = [...selection.values()].filter(x => GRAPH_TYPES.has(x.type)).map(x => x.id), sig = ids.join("\n");
+  if (sig === graphSig) return;
+  graphSig = sig; tellGraph({ kind: "selection", ids });
+}
+window.addEventListener("message", ev => {
+  const m = ev.data;
+  if (ev.origin !== location.origin || ev.source !== graphWin() || !m) return;
+  if (m.kind === "ready") { graphSig = undefined; syncGraph(); }
+  else if (m.kind === "open") openRelatedNode(m.item);
+  else if (m.kind === "graph-selection") {
+    const next = new Map([...selection].filter(([, x]) => !GRAPH_TYPES.has(x.type)));
+    for (const it of m.items) next.set(it.id, selection.get(it.id) ?? it);
+    graphSig = m.items.map(x => x.id).join("\n"); // the graph already shows this: no echo
+    selection = next; anchorId = null; hxAnchor = null; hxAfterPick();
+  }
+});
+
 /* ---------------- tree mode: a forest built from `selection` ---------------- */
 
 // Everything that shows the selection: the list (browse), the selection pane (what's gathered)
 // and the tree along the bottom (how it connects) — all always visible, no switching.
 function refreshLeftPane() {
+  syncGraph();
   renderRows();
   renderSelectionList();
   renderTree();
