@@ -111,10 +111,10 @@ async function openInPortal(n) {
   const hiddenKinds = new Set();
   let focus = null, focusSet = null, selected = null, lit = null;
   const sel = new Set();           // selected node ids; a folded group stands for all its members
-  let litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
+  let canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
   const bg = dark => dark ? [22, 27, 20] : [251, 252, 248];
-  const fade = (hex, isDark) => { if (hex.length === 4) hex = "#" + [...hex.slice(1)].map(ch => ch + ch).join(""); const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), b = bg(isDark); return "#" + c.map((v, i) => Math.round(v * .4 + b[i] * .6).toString(16).padStart(2, "0")).join(""); };
+  const fade = (hex, isDark, keep = .4) => { if (hex.length === 4) hex = "#" + [...hex.slice(1)].map(ch => ch + ch).join(""); const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), b = bg(isDark); return "#" + c.map((v, i) => Math.round(v * keep + b[i] * (1 - keep)).toString(16).padStart(2, "0")).join(""); };
   // In a focus view an opened group's hub steps aside when the focused node links straight to the facilities it uses.
   const hubHidden = f => focus && open.has(f) && f !== focus.id && folds.get(f).members.some(m => g.hasEdge(focus.id, m.id));
   function computeFocus() {
@@ -156,7 +156,7 @@ async function openInPortal(n) {
   // What a selection lights up: the selected nodes, their neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   function computeLit() {
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
-    litSel = new Set(); misfit = new Set();
+    litSel = new Set(); misfit = new Set(); canLink = new Set();
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; });
     if (!sel.size) { lit = null; tintIds = new Set(); return; }
     lit = new Set(sel); litSel = new Set(sel);
@@ -166,6 +166,11 @@ async function openInPortal(n) {
     for (const f of sel) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
     const v = verdictNow();
     (v.bad || []).forEach(id => misfit.add(id));
+    // Unlinked nodes the selection could be linked to are shown a little stronger than the rest (device and facility need a date, so they are left out)
+    canLink = new Set();
+    const types = new Set(selItems().map(i => i.type));
+    const pairOk = (a, b) => a !== b && !(a === "device" && b === "facility" || a === "facility" && b === "device") && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a));
+    g.forEachNode((id, a) => { if (!lit.has(id) && isVisible(id) && [...types].some(t => pairOk(t, filterKind(a)))) canLink.add(id); });
   }
 
   const edgeKey = (a, b) => a < b ? a + " " + b : b + " " + a;
@@ -182,6 +187,7 @@ async function openInPortal(n) {
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
       if (litSel.has(id)) return { ...a, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
       if (lit.has(id)) return { ...a, zIndex:1, forceLabel: lit.size < 60 };
+      if (canLink.has(id)) return { ...a, zIndex: 1, forceLabel: true };
       return { ...a, color: fade(a.color, dark), forceLabel: visCount < 80 }; // unrelated nodes keep their names while the graph is small, so they can be added
     },
     edgeReducer: (ed, a) => {
@@ -727,8 +733,12 @@ async function openInPortal(n) {
     }
     labelRects = placed;
     const ink = dark ? "#e6ebe0" : "#1d2a1a", paper = dark ? "22,27,20" : "251,252,248";
+    const edge = dark ? "#9be7a8" : "#2f9a4a"; // what the selection could be linked to is outlined, node and name
+    lctx.strokeStyle = edge; lctx.lineWidth = 2;
+    for (const D of discs) if (canLink.has(D.id)) { lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 3, 0, Math.PI * 2); lctx.stroke(); }
     for (const R of [...placed].reverse()) {
-      lctx.globalAlpha = lit && R.rank === 2 ? .6 : 1;
+      lctx.globalAlpha = lit && R.rank === 2 && !canLink.has(R.id) ? .6 : 1;
+      if (canLink.has(R.id)) { lctx.lineWidth = 1.5; lctx.beginPath(); lctx.roundRect(R.x, R.y, R.w, R.h, 4); lctx.stroke(); }
       if (R.rank === 0) { lctx.fillStyle = dark ? "#222a1f" : "#ffffff"; lctx.shadowColor = "rgba(0,0,0,.25)"; lctx.shadowBlur = 4; lctx.fillRect(R.x, R.y, R.w, R.h); lctx.shadowBlur = 0; }
       else { lctx.lineWidth = 3; lctx.strokeStyle = `rgba(${paper},.8)`; lctx.lineJoin = "round"; lctx.strokeText(R.text, R.x + 4, R.y + R.h / 2); }
       lctx.fillStyle = ink; lctx.fillText(R.text, R.x + 4, R.y + R.h / 2);
