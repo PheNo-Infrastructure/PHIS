@@ -4474,3 +4474,110 @@ test("e2e: a variable picked with nothing to compare offers 'Chart across all ob
     assert.equal(await page.locator("#chartGrid .g-opts").isVisible(), true, "three scans: the toggles stay");
   });
 });
+
+// ---------- the graph pane in Browse: it shows the structure layer and shares the selection with the Selection pane ----------
+const GRAPH_STUB = {
+  nodes: [
+    { id: "t:org-a", type: "organization", label: "Org A" },
+    { id: "t:org-b", type: "organization", label: "Org B" },
+    { id: "t:exp-1", type: "experiment", label: "Experiment 1", count: 5 },
+    { id: "t:fac-1", type: "facility", label: "Facility 1" },
+    { id: "t:site-1", type: "site", label: "Site 1" },
+  ],
+  edges: [{ source: "t:exp-1", target: "t:org-a" }, { source: "t:fac-1", target: "t:org-a" }],
+};
+async function openGraph(page: import("playwright").Page, base: string, stub: any = GRAPH_STUB) {
+  await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(typeof stub === "function" ? stub() : stub) }));
+  await page.goto(base + "/#browse");
+  await idle(page);
+  await page.locator("#graphPane").scrollIntoViewIfNeeded();
+  for (let i = 0; i < 100; i++) {
+    const f = page.frames().find((x) => x.url().includes("/graph"));
+    if (f && await f.evaluate(() => (window as any).__graph?.g.order > 0).catch(() => false)) return f;
+    await page.waitForTimeout(100);
+  }
+  throw new Error("the graph never loaded");
+}
+const nodeXY = (frame: import("playwright").Frame, id: string) => frame.evaluate((i) => { const g = (window as any).__graph; return g.sigma.graphToViewport(g.g.getNodeAttributes(i)); }, id);
+const graphSel = (frame: import("playwright").Frame) => frame.evaluate(() => [...(window as any).__graph.sel]);
+async function ctrlClick(page: import("playwright").Page, x: number, y: number) {
+  await page.keyboard.down("Control"); await page.mouse.click(x, y); await page.keyboard.up("Control");
+}
+
+test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const box = (await page.locator("#graphPane iframe").boundingBox())!, v = await nodeXY(frame, "t:org-a");
+    await ctrlClick(page, box.x + v.x, box.y + v.y);
+    await page.locator(".sel-label", { hasText: "Org A" }).waitFor();
+    assert.deepEqual(await graphSel(frame), ["t:org-a"]);
+    await page.locator(".sel-remove").first().click();
+    await frame.waitForFunction(() => (window as any).__graph.sel.size === 0);
+  });
+});
+
+test("e2e: graph: a plain click opens the resource and leaves the selection alone; a click on empty space clears the selection", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    await page.evaluate(() => { (window as any).__opened = []; (window as any).openRelatedNode = (item: any) => (window as any).__opened.push(item.id); });
+    const box = (await page.locator("#graphPane iframe").boundingBox())!;
+    let v = await nodeXY(frame, "t:org-a");
+    await ctrlClick(page, box.x + v.x, box.y + v.y);
+    await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
+    v = await nodeXY(frame, "t:exp-1");
+    await page.mouse.click(box.x + v.x, box.y + v.y);
+    await page.waitForFunction(() => (window as any).__opened.length === 1);
+    assert.deepEqual(await page.evaluate(() => (window as any).__opened), ["t:exp-1"], "the experiment was opened");
+    assert.deepEqual(await graphSel(frame), ["t:org-a"], "opening does not change the selection");
+    await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20); // empty space
+    await frame.waitForFunction(() => (window as any).__graph.sel.size === 0);
+    await page.waitForFunction(() => selection.size === 0);
+  });
+});
+
+test("e2e: graph: what is selected in Browse is shown selected in the graph; things the graph does not draw are left alone", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    await page.evaluate(() => {
+      selection.set("t:org-b", { id: "t:org-b", type: "organization", label: "Org B" });
+      selection.set("plant-1", { id: "plant-1", type: "scientific_object", label: "Plant 1" });
+      refreshLeftPane(); renderActionbar();
+    });
+    await frame.waitForFunction(() => [...(window as any).__graph.sel].join() === "t:org-b");
+    // picking in the graph replaces only the graph's kinds: the plant stays selected
+    const box = (await page.locator("#graphPane iframe").boundingBox())!, v = await nodeXY(frame, "t:site-1");
+    await ctrlClick(page, box.x + v.x, box.y + v.y);
+    await page.waitForFunction(() => selection.has("t:site-1"));
+    assert.deepEqual(await page.evaluate(() => [...selection.keys()].sort()), ["plant-1", "t:org-b", "t:site-1"]);
+  });
+});
+
+test("e2e: graph: two organizations can be linked (parent and child), two experiments cannot; the reason is shown in the Selection pane", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await openGraph(page, base, { nodes: [...GRAPH_STUB.nodes, { id: "t:exp-2", type: "experiment", label: "Experiment 2", count: 0 }], edges: GRAPH_STUB.edges });
+    await page.evaluate(() => { selection.set("t:org-a", { id: "t:org-a", type: "organization", label: "Org A" }); selection.set("t:org-b", { id: "t:org-b", type: "organization", label: "Org B" }); refreshLeftPane(); });
+    await page.locator("#graphInfo .verdict.ok").waitFor();
+    assert.match((await page.locator("#graphInfo .verdict").textContent()) ?? "", /parent and child/);
+    await page.evaluate(() => { selection.clear(); selection.set("t:exp-1", { id: "t:exp-1", type: "experiment", label: "Experiment 1" }); selection.set("t:exp-2", { id: "t:exp-2", type: "experiment", label: "Experiment 2" }); refreshLeftPane(); });
+    await page.locator("#graphInfo .verdict.no").waitFor();
+    assert.match((await page.locator("#graphInfo .verdict").textContent()) ?? "", /be linked/);
+  });
+});
+
+test("e2e: graph: after the portal unlinks something, the graph drops that link", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let unlinked = false;
+    const frame = await openGraph(page, base, () => ({ nodes: GRAPH_STUB.nodes, edges: unlinked ? GRAPH_STUB.edges.slice(1) : GRAPH_STUB.edges }));
+    const hasEdge = () => frame.evaluate(() => (window as any).__graph.g.hasEdge("t:exp-1", "t:org-a") || (window as any).__graph.g.hasEdge("t:org-a", "t:exp-1"));
+    assert.equal(await hasEdge(), true);
+    await page.route("**/api/unlink", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      if (b.confirm) unlinked = true;
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b.confirm ? { removed: ["x"], touched: ["t:exp-1", "t:org-a"] } : { links: ["Experiment 1 is in Org A"] }) });
+    });
+    await page.evaluate(() => { selection.set("t:exp-1", { id: "t:exp-1", type: "experiment", label: "Experiment 1" }); selection.set("t:org-a", { id: "t:org-a", type: "organization", label: "Org A" }); refreshLeftPane(); renderActionbar(); });
+    await page.locator("#unlinkSelectionBtn").click();
+    await page.locator("dialog.create-dialog").getByRole("button", { name: "Remove link" }).click();
+    await frame.waitForFunction(() => !(window as any).__graph.g.hasEdge("t:exp-1", "t:org-a") && !(window as any).__graph.g.hasEdge("t:org-a", "t:exp-1"));
+  });
+});

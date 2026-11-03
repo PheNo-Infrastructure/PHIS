@@ -35,9 +35,21 @@ export const handleStatic: RouteHandler = async (req, res) => {
     return true;
   }
 
-  if (req.url?.split("?")[0] === "/graph-spike" && req.method === "GET") { // SPIKE (throwaway)
+  const PUBLIC = path.dirname(MOCKUP_PATH);
+  if (req.url?.split("?")[0] === "/graph" && req.method === "GET") { // the graph view: its own page, also shown inside Browse (?embed=1)
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(await readFile(path.resolve(path.dirname(MOCKUP_PATH), "graph-spike.html"), "utf8"));
+    res.end(await readFile(path.join(PUBLIC, "graph.html"), "utf8"));
+    return true;
+  }
+
+  // The scripts the graph page needs, kept in public/vendor (see its README). Only plain file names of .js files are served.
+  const vendor = /^\/vendor\/([a-z0-9.-]+\.js)$/.exec(req.url?.split("?")[0] ?? "");
+  if (vendor && req.method === "GET") {
+    try {
+      const js = await readFile(path.join(PUBLIC, "vendor", vendor[1]), "utf8");
+      res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+      res.end(js);
+    } catch { res.writeHead(404); res.end(); }
     return true;
   }
 
