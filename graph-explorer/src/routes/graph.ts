@@ -1,15 +1,18 @@
 import { authedGet, authedGetOne, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 
-// SPIKE (throwaway): the structure layer as nodes + edges, built from the link fields the list
-// endpoints already return. One request per type, no per-node fetches.
-const SOURCES: { type: string; url: string; fields: string[] }[] = [
+// The structure layer as nodes + edges, built from the link fields the list endpoints already return (plants and data values are not nodes: there are too many).
+// People and groups come from the security endpoints; where an instance lacks one (optional), the graph is simply built without it.
+const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean; label?: (it: RawItem) => string }[] = [
   { type: "organization", url: "/core/organisations", fields: ["parents", "facilities", "sites"] },
   { type: "facility", url: "/core/facilities?page_size=500", fields: ["organizations", "sites"] },
   { type: "site", url: "/core/sites?page_size=500", fields: ["organizations", "facilities"] },
-  { type: "project", url: "/core/projects?page_size=500", fields: ["related_projects"] },
-  { type: "experiment", url: "/core/experiments?page_size=500", fields: ["facilities", "organisations", "projects"] },
-  { type: "device", url: "/core/devices?page_size=500", fields: [] },
+  { type: "project", url: "/core/projects?page_size=500", fields: ["related_projects", "coordinators", "scientific_contacts", "administrative_contacts"] },
+  { type: "experiment", url: "/core/experiments?page_size=500", fields: ["facilities", "organisations", "projects", "scientific_supervisors", "technical_supervisors", "groups", "factors"] },
+  { type: "device", url: "/core/devices?page_size=500", fields: ["person_in_charge"] },
+  { type: "person", url: "/security/persons?page_size=500", fields: [], optional: true, label: (it) => [it.first_name, it.last_name].filter(Boolean).join(" ") },
+  { type: "group", url: "/security/groups?page_size=500", fields: [], optional: true },
+  { type: "factor", url: "/core/experiments/factors?page_size=500", fields: [], optional: true },
 ];
 
 const refUri = (r: unknown) => (typeof r === "string" ? r : (r as { uri?: string } | null)?.uri);
@@ -40,13 +43,13 @@ async function mapLimit<T, R>(items: T[], fn: (x: T) => Promise<R>): Promise<R[]
 let inflight: { gen: number; p: Promise<string> } | null = null; // a rebuild that began before a change is not joined by a read that came after it
 
 async function build(): Promise<string> {
-  const pages = await Promise.all(SOURCES.map((s) => authedGet(s.url)));
+  const pages = await Promise.all(SOURCES.map((s) => authedGet(s.url).catch((e) => { if (s.optional) return { result: [], metadata: {} } as unknown as Awaited<ReturnType<typeof authedGet>>; throw e; })));
   // PHIS leaves the organizations and projects of an experiment out of its list, so each experiment is read in full (a few small requests, kept by the cache below).
   const expAt = SOURCES.findIndex((s) => s.type === "experiment");
   const full = await mapLimit(pages[expAt].result, (x) => authedGetOne(`/core/experiments/${encodeURIComponent(x.uri)}`).then((r) => r.result).catch(() => ({})));
   pages[expAt].result = pages[expAt].result.map((x, i) => ({ ...x, ...full[i] }) as RawItem);
   const nodes = new Map<string, { id: string; type: string; label: string; count?: number }>();
-  pages.forEach((p, i) => p.result.forEach((it: RawItem) => nodes.set(it.uri, { id: it.uri, type: SOURCES[i].type, label: String(it.name ?? it.uri) })));
+  pages.forEach((p, i) => p.result.forEach((it: RawItem) => nodes.set(it.uri, { id: it.uri, type: SOURCES[i].type, label: String(SOURCES[i].label?.(it) || it.name || it.uri) })));
   const seen = new Set<string>();
   const edges: { source: string; target: string }[] = [];
   pages.forEach((p, i) => p.result.forEach((it: RawItem) => {
@@ -60,6 +63,15 @@ async function build(): Promise<string> {
       }
     }
   }));
+  // A group lists accounts, a person has (at most) one: that is how a group links to people.
+  const at = (type: string) => pages[SOURCES.findIndex((s) => s.type === type)].result;
+  const personOfAccount = new Map<string, string>();
+  for (const p of at("person")) { const a = refUri(p.account); if (a) personOfAccount.set(a, p.uri); }
+  for (const gr of at("group")) for (const up of (gr.user_profiles as { user_uri?: string }[] | undefined) ?? []) {
+    const person = up.user_uri ? personOfAccount.get(up.user_uri) : undefined;
+    const key = person ? [gr.uri, person].sort().join(" ") : "";
+    if (person && !seen.has(key)) { seen.add(key); edges.push({ source: gr.uri, target: person }); }
+  }
   // A device's facility is not on the device in the lists; PHIS answers it per facility (a device sits where its last move put it).
   const facilities = pages[SOURCES.findIndex((s) => s.type === "facility")].result;
   if (!deviceLinks || Date.now() - deviceLinks.at > DEVICE_MS) {
