@@ -11,6 +11,7 @@
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.45 "Public Sans", system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid; grid-template-columns:1fr 300px; height:100vh; }
   #graph { position:relative; min-width:0; }
+  :root.embed body { grid-template-columns:1fr; } :root.embed #side { display:none; } /* in the portal this panel lives in its Selection pane */
   #side { background:var(--surface); border-left:1px solid var(--line); padding:14px; overflow:auto; }
   h1 { font-size:15px; margin:0 0 4px; }
   .muted { color:var(--muted); font-size:12px; }
@@ -45,7 +46,7 @@
 const COLORS = { fold:"#8fb8b3", organization:"#46739b", facility:"#279b8f", site:"#9e7fbd", project:"#ba801c", experiment:"#c07299", device:"#8c8c7d" }; // the PheNo palette (organization = the portal's organization blue)
 const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device" };
 const FILTERS = ["organization", "site", "project", "experiment", "facility", "device"]; // a folded group follows its facilities
-const HINT = document.documentElement.classList.contains("embed") ? '<p class="muted">Click a resource to open it; Ctrl+click adds or removes it from the selection, and dragging a box on empty space selects everything inside it. What is selected is shared with the Selection pane, where it can be linked or unlinked. Right-drag moves the view. A group opens when you open something linked to it. Drag a node and the graph follows; ForceAtlas keeps the layout running when on.</p>' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
+const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
@@ -532,16 +533,15 @@ async function openInPortal(n) {
     const panel = document.getElementById("sel"), items = selItems(), v = verdictNow();
     const byType = new Map(); items.forEach(i => byType.set(i.type, [...(byType.get(i.type) || []), i]));
     const writable = inst.test;
-    html += `<h1>${items.length} selected</h1><div class="muted">${[...byType].map(([t, l]) => `${l.length} ${l.length === 1 ? NAMES[t].toLowerCase() : plural(t)}`).join(", ")}</div>`;
+    if (!embedded) html += `<h1>${items.length} selected</h1><div class="muted">${[...byType].map(([t, l]) => `${l.length} ${l.length === 1 ? NAMES[t].toLowerCase() : plural(t)}`).join(", ")}</div>`;
     html += v.kind === "link" ? '<div class="verdict ok">These can be linked.</div>'
       : v.kind === "later" ? `<div class="verdict later">${e(v.why)}</div>`
       : `<div class="verdict no">Not linkable: ${e(v.why)}</div>`;
-    html += embedded ? '<div class="muted">Link or unlink from the Selection pane.</div><div class="row"><button id="clearBtn">Clear</button></div>' : `<div id="ask"></div><div class="row"><button class="primary" id="linkBtn" ${v.kind === "link" && writable ? "" : "disabled"}>Link selection</button><button id="unlinkBtn" ${v.kind !== "none" && writable ? "" : "disabled"}>Unlink selection</button><button id="clearBtn">Clear</button></div>`;
+    if (!embedded) html += `<div id="ask"></div><div class="row"><button class="primary" id="linkBtn" ${v.kind === "link" && writable ? "" : "disabled"}>Link selection</button><button id="unlinkBtn" ${v.kind !== "none" && writable ? "" : "disabled"}>Unlink selection</button><button id="clearBtn">Clear</button></div>`;
     if (!writable && !embedded) html += '<div class="muted">Changing PHIS is switched off here: this server is not the test instance.</div>';
-    html += `<ul>${items.slice(0, 40).map(i => `<li${v.bad?.includes(i.id) ? ' style="color:#d33"' : ""}>${e(i.label)} <span class="muted">${NAMES[i.type]}</span></li>`).join("")}</ul>${items.length > 40 ? `<div class="muted">and ${items.length - 40} more</div>` : ""}`;
+    if (!embedded) html += `<ul>${items.slice(0, 40).map(i => `<li${v.bad?.includes(i.id) ? ' style="color:#d33"' : ""}>${e(i.label)} <span class="muted">${NAMES[i.type]}</span></li>`).join("")}</ul>${items.length > 40 ? `<div class="muted">and ${items.length - 40} more</div>` : ""}`;
     panel.innerHTML = html; bindBanner();
-    document.getElementById("clearBtn").onclick = () => setSelection([], "replace");
-    if (!embedded) { document.getElementById("linkBtn").onclick = () => writeLinks(items); document.getElementById("unlinkBtn").onclick = () => writeUnlinks(items); }
+    if (!embedded) { document.getElementById("clearBtn").onclick = () => setSelection([], "replace"); document.getElementById("linkBtn").onclick = () => writeLinks(items); document.getElementById("unlinkBtn").onclick = () => writeUnlinks(items); }
   }
   async function post(url, body) {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, body: JSON.stringify(body) });
@@ -670,6 +670,7 @@ async function openInPortal(n) {
       if (ev.origin !== location.origin || ev.source !== parent || !m) return;
       if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; }
       else if (m.kind === "changed") reconcile(true);
+      else if (m.kind === "click") { try { document.querySelector(m.selector)?.click(); } catch {} } // a click on the mirrored panel
     });
   }
   function setCurrent(id) { cur = id && g.hasNode(id) ? id : null; selected = sel.size ? [...sel].at(-1) : cur; apply(false); refresh(); stats(); renderPanel(); }
@@ -810,7 +811,14 @@ async function openInPortal(n) {
   window.addEventListener("mouseup", () => { pan = null; });
 
   renderChips(); stats(); refresh(); // refresh draws the first labels
-  if (embedded) parent.postMessage({ kind: "ready" }, location.origin);
+  if (embedded) {
+    parent.postMessage({ kind: "ready" }, location.origin);
+    // The side panel is not shown here: the portal mirrors its content into the Selection pane and sends back the clicks.
+    const side = document.getElementById("side"); let t;
+    const send = () => parent.postMessage({ kind: "panel", html: side.innerHTML.replace(/<h1>.*?<\/h1>/, "").replace(/ id="/g, ' data-gid="') }, location.origin);
+    new MutationObserver(() => { clearTimeout(t); t = setTimeout(send, 60); }).observe(side, { childList: true, subtree: true, characterData: true });
+    send();
+  }
   // ?focus=<uri>&hops=1|2 opens the graph around one resource (how a resource page will link here)
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
