@@ -3,14 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PHIS graph (spike)</title>
+<title>Graph</title>
 <script>if (new URLSearchParams(location.search).has("embed")) document.documentElement.classList.add("embed");</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&display=swap">
 <style>
-  :root { --bg:#fbfcf8; --ink:#1d2a1a; --muted:#66705f; --line:#dfe6d3; --card:#fff; --accent:#2f6b3a; }
+  :root { --bg:#fff; --ink:#264030; --muted:#5d6b5b; --line:#dfe6d3; --card:#fff; --surface:#F2F5DE; --accent:#3d8526; }
   * { box-sizing: border-box; }
-  body { margin:0; font:14px/1.4 system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid; grid-template-columns:1fr 300px; height:100vh; }
+  body { margin:0; font:14px/1.45 "Public Sans", system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid; grid-template-columns:1fr 300px; height:100vh; }
   #graph { position:relative; min-width:0; }
-  #side { border-left:1px solid var(--line); padding:14px; overflow:auto; }
+  #side { background:var(--surface); border-left:1px solid var(--line); padding:14px; overflow:auto; }
   h1 { font-size:15px; margin:0 0 4px; }
   .muted { color:var(--muted); font-size:12px; }
   #legend { margin:10px 0; display:flex; flex-wrap:wrap; gap:4px; }
@@ -25,29 +26,27 @@
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
   #halo { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; filter:blur(5px); }
-  #marquee { position:absolute; display:none; border:1px solid var(--accent); background:rgba(79,154,92,.18); pointer-events:none; z-index:3; }
+  #marquee { position:absolute; display:none; border:1px solid var(--accent); background:rgba(61,133,38,.16); pointer-events:none; z-index:3; }
   .verdict { border-radius:6px; padding:6px 10px; margin:8px 0; font-size:13px; }
-  .verdict.ok { background:rgba(79,154,92,.16); border:1px solid var(--accent); }
+  .verdict.ok { background:rgba(61,133,38,.14); border:1px solid var(--accent); }
   .verdict.no { background:rgba(211,51,51,.12); border:1px solid #d33; }
   .verdict.later { background:rgba(208,138,46,.14); border:1px solid #d08a2e; }
   button[disabled] { opacity:.45; cursor:not-allowed; }
   .row { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
-  @media (prefers-color-scheme: dark) { :root:not(.embed) { --bg:#161b14; --ink:#e6ebe0; --muted:#93a08a; --line:#2c3528; --card:#222a1f; --accent:#4f9a5c; } }
-  @media (prefers-color-scheme: dark) { :root:not(.embed) li a { color:#8fd19b; } }
 </style>
 </head>
 <body>
 <div id="graph"><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
-<aside id="side"><h1>PHIS graph <span class="muted">(spike)</span></h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
+<aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/graphology-library@0.8.0/dist/graphology-library.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
 <script>
-const COLORS = { fold:"#8fa8b8", organization:"#2f6b3a", facility:"#3a7fb0", site:"#8a6bb0", project:"#d08a2e", experiment:"#c4506a", device:"#6e7b86" };
+const COLORS = { fold:"#8fb8b3", organization:"#46739b", facility:"#279b8f", site:"#9e7fbd", project:"#ba801c", experiment:"#c07299", device:"#8c8c7d" }; // the PheNo palette (organization = the portal's organization blue)
 const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device" };
 const FILTERS = ["organization", "site", "project", "experiment", "facility", "device"]; // a folded group follows its facilities
 const ORPHAN = "#d33";
-const HINT = '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
+const HINT = document.documentElement.classList.contains("embed") ? '<p class="muted">Click a resource to open it; Ctrl+click adds or removes it from the selection, and dragging a box on empty space selects everything inside it. What is selected is shared with the Selection pane, where it can be linked or unlinked. Right-drag moves the view. A group opens when you open something linked to it. Drag a node and the graph follows; ForceAtlas keeps the layout running when on.</p>' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
@@ -115,10 +114,11 @@ async function openInPortal(n) {
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const hiddenKinds = new Set();
   let focus = null, focusSet = null, selected = null, lit = null;
+  let cur = null; // inside the portal: the resource open in Browse; lit and unfolded like a selection, but not part of it (nothing is linked to it by being open)
   const sel = new Set();           // selected node ids; a folded group stands for all its members
   let canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
-  const bg = dark => dark ? [22, 27, 20] : [251, 252, 248];
+  const bg = dark => dark ? [22, 27, 20] : [255, 255, 255];
   const fade = (hex, isDark, keep = .4) => { if (hex.length === 4) hex = "#" + [...hex.slice(1)].map(ch => ch + ch).join(""); const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), b = bg(isDark); return "#" + c.map((v, i) => Math.round(v * keep + b[i] * (1 - keep)).toString(16).padStart(2, "0")).join(""); };
   // In a focus view an opened group's hub steps aside when the focused node links straight to the facilities it uses.
   const hubHidden = f => focus && open.has(f) && f !== focus.id && folds.get(f).members.some(m => g.hasEdge(focus.id, m.id));
@@ -138,6 +138,7 @@ async function openInPortal(n) {
   const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
   // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   // The selection as PHIS things: a folded group is every facility and device inside it.
+  const lens = () => cur && g.hasNode(cur) && !sel.has(cur) ? [...sel, cur] : [...sel];
   function selItems() {
     const out = [];
     for (const id of sel) {
@@ -163,12 +164,13 @@ async function openInPortal(n) {
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     litSel = new Set(); misfit = new Set(); canLink = new Set();
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; });
-    if (!sel.size) { lit = null; tintIds = new Set(); return; }
-    lit = new Set(sel); litSel = new Set(sel);
-    for (const id of sel) g.forEachNeighbor(id, n => lit.add(n));
+    const L = lens();
+    if (!L.length) { lit = null; tintIds = new Set(); return; }
+    lit = new Set(L); litSel = new Set(L);
+    for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
     tintIds = new Set(lit);
     for (const f of [...lit]) if (open.has(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && lit.add(id));
-    for (const f of sel) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
+    for (const f of L) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
     const v = verdictNow();
     (v.bad || []).forEach(id => misfit.add(id));
     // Unlinked nodes the selection could be linked to are shown a little stronger than the rest (device and facility need a date, so they are left out)
@@ -180,14 +182,14 @@ async function openInPortal(n) {
 
   const edgeKey = (a, b) => a < b ? a + " " + b : b + " " + a;
   const fx = { pulses: [], sparks: [], flash: new Set() }; // short-lived effects for a link being made or undone
-  const dark = !embedded && matchMedia("(prefers-color-scheme: dark)").matches; // inside the portal (one light theme) the graph is light too
+  const dark = false; // PheNo has one light theme
   const sigma = new Sigma(g, document.getElementById("graph"), {
-    labelColor: { color: dark ? "#e6ebe0" : "#1d2a1a" },
+    labelColor: { color: dark ? "#e6ebe0" : "#264030" },
     // Sigma draws a hovered node with a white label box, unreadable in the dark theme
     allowInvalidContainer: true, // the portal's graph pane is hidden (zero width) on other views
     renderLabels: false,
     hoverRenderer: (ctx, d) => { ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 2, 0, Math.PI * 2); ctx.fill(); },
-    labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c9d3bd",
+    labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
     nodeReducer: (id, a) => {
       if (!isVisible(id)) return { ...a, hidden:true };
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
@@ -199,7 +201,7 @@ async function openInPortal(n) {
     edgeReducer: (ed, a) => {
       const [s, t] = g.extremities(ed);
       if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t)))) return { ...a, hidden:true };
-      return fx.flash.has(edgeKey(s, t)) ? { ...a, color: dark ? "#9be7a8" : "#2f9a4a", size: 3.5, zIndex: 3 } : a;
+      return fx.flash.has(edgeKey(s, t)) ? { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 } : a;
     },
   });
   function refresh() { computeLit(); sigma.refresh(); }
@@ -345,7 +347,7 @@ async function openInPortal(n) {
   // when the selection is cleared (a node you drag yourself stays where you put it) ----
   const home = new Map(); let restoring = false;
   function pushStep() {
-    if (!lit || !sel.size) return 0;
+    if (!lit || !lens().length) return 0;
     const o = sigma.graphToViewport({ x:0, y:0 }), px = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) || 1;
     const R = BLOB * 1.1 / sigma.getCamera().getState().ratio / px; // how far the tint reaches from an involved node, in graph units
     const pts = [];
@@ -473,7 +475,7 @@ async function openInPortal(n) {
   const wanted = (keep) => {
     if (!compact.checked) return new Set(folds.keys());
     const next = new Set(keep ? open : []);
-    for (const sid of [...sel, focus?.id]) {
+    for (const sid of [...lens(), focus?.id]) {
       if (!sid || !g.hasNode(sid)) continue;
       if (folds.has(sid)) next.add(sid);
       if (memberFold.has(sid)) next.add(memberFold.get(sid));
@@ -616,7 +618,7 @@ async function openInPortal(n) {
     for (const [a, b] of linked) { moves.push({ a, b, A: at(a), B: at(b), snap: true, fired: false }); fx.flash.add(edgeKey(a, b)); }
     for (const [a, b] of unlinked) moves.push({ a, b, A: at(a), B: at(b), snap: false, fired: false });
     const nodes = new Set(moves.flatMap(m => [m.a, m.b])); nodes.forEach(id => g.setNodeAttribute(id, "fixed", true));
-    const colour = snap => snap ? (dark ? "#9be7a8" : "#2f9a4a") : "#ee6055";
+    const colour = snap => snap ? (dark ? "#9be7a8" : "#3d8526") : "#ee6055";
     const cubic = t => t * t * t, out = t => 1 - Math.pow(1 - t, 3);
     const curve = (snap, t) => snap
       ? (t < .34 ? cubic(t / .34) : 1 + .16 * Math.sin((t - .34) / .66 * Math.PI * 3) * (1 - (t - .34) / .66)) // fast pull in, then a damped bounce
@@ -650,10 +652,10 @@ async function openInPortal(n) {
       if (!g.hasNode(id)) continue;
       if (mode === "toggle") sel.has(id) ? sel.delete(id) : sel.add(id); else sel.add(id);
     }
-    selected = sel.size ? [...sel].at(-1) : null;
+    selected = sel.size ? [...sel].at(-1) : cur;
     apply(mode !== "replace");
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
-    selected = sel.size ? [...sel].at(-1) : null;
+    selected = sel.size ? [...sel].at(-1) : cur;
     refresh(); stats(); renderPanel(); tellPortal();
   }
   // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
@@ -667,10 +669,11 @@ async function openInPortal(n) {
     addEventListener("message", ev => {
       const m = ev.data;
       if (ev.origin !== location.origin || ev.source !== parent || !m) return;
-      if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; setSelection(m.ids, "replace"); fromPortal = false; }
+      if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; }
       else if (m.kind === "changed") reconcile(true);
     });
   }
+  function setCurrent(id) { cur = id && g.hasNode(id) ? id : null; selected = sel.size ? [...sel].at(-1) : cur; apply(false); refresh(); stats(); renderPanel(); }
   async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
 
   // ---- dragging: the node follows the cursor and is pinned while held; with live physics the rest follows ----
@@ -721,7 +724,7 @@ async function openInPortal(n) {
   Object.assign(labelLayer.style, { position:"absolute", left:"0", top:"0", width:"100%", height:"100%", pointerEvents:"none", zIndex:"1" });
   sigma.getContainer().appendChild(labelLayer);
   let labelRects = []; const labelSlot = new Map();
-  const LABEL_H = 18, LABEL_FONT = "13px Arial";
+  const LABEL_H = 18, LABEL_FONT = '13px "Public Sans", Arial';
   const slotsFor = (x, y, r, w) => { const gap = r + 3, h = LABEL_H; return [
     [x + gap, y - h / 2], [x - gap - w, y - h / 2], [x + r * .5, y - r - h], [x + r * .5, y + r], [x - r * .5 - w, y - r - h], [x - r * .5 - w, y + r],
     [x - w / 2, y - r - h - 1], [x - w / 2, y + r + 1], [x + gap + 12, y - h * 1.4], [x + gap + 12, y + h * .4], [x - gap - 12 - w, y - h * 1.4], [x - gap - 12 - w, y + h * .4],
@@ -752,8 +755,8 @@ async function openInPortal(n) {
       placed.push({ id:it.id, x:slots[pick][0], y:slots[pick][1], w, h:LABEL_H, rank:it.rank, text:it.label });
     }
     labelRects = placed;
-    const ink = dark ? "#e6ebe0" : "#1d2a1a", paper = dark ? "22,27,20" : "251,252,248";
-    const edge = dark ? "#9be7a8" : "#2f9a4a"; // what the selection could be linked to is outlined, node and name
+    const ink = dark ? "#e6ebe0" : "#264030", paper = dark ? "22,27,20" : "255,255,255";
+    const edge = dark ? "#9be7a8" : "#3d8526"; // what the selection could be linked to is outlined, node and name
     lctx.strokeStyle = edge; lctx.lineWidth = 2;
     for (const D of discs) if (canLink.has(D.id)) { lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 3, 0, Math.PI * 2); lctx.stroke(); }
     for (const R of [...placed].reverse()) {
@@ -783,9 +786,15 @@ async function openInPortal(n) {
   sigma.on("afterRender", drawLabels);
   function labelAt(x, y) { const R = labelRects.find(R => x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h); return R ? R.id : null; }
   const mods = ev => ev.original.ctrlKey || ev.original.metaKey;
-  sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) select(node, mods(event)); });
+  // In the portal a click works as in Browse: a plain click opens the resource, Ctrl+click adds it to the selection.
+  function pick(id, event) {
+    if (!embedded || mods(event)) return select(id, id && mods(event));
+    setCurrent(id);
+    if (id && kindOf(id) !== "fold") openInPortal(g.getNodeAttributes(id));
+  }
+  sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) pick(node, event); });
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (a.kind !== "fold") openInPortal(a); });
-  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const id = labelAt(event.x, event.y); select(id, id && mods(event)); } });
+  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const id = labelAt(event.x, event.y); pick(id, event); } });
   sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (a.kind !== "fold") openInPortal(a); });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) ? "pointer" : ""; });
 

@@ -1094,7 +1094,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 
   <!-- The graph of the structure layer: a quick scroll down from the panes. It loads when it comes into view. -->
   <section class="pane" id="graphPane" aria-label="Graph">
-    <div class="pane-head"><h2>Graph</h2><span class="pane-count">click a node for its links; double-click opens its page</span></div>
+    <div class="pane-head"><h2>Graph</h2><span class="pane-count">click opens, ctrl+click selects, drag a box to select</span></div>
     <iframe src="graph-spike?embed=1" loading="lazy" title="Graph of the structure layer"></iframe>
   </section>
 
@@ -4904,9 +4904,9 @@ const GRAPH_TYPES = new Set(["organization", "facility", "site", "project", "exp
 const graphWin = () => document.querySelector("#graphPane iframe")?.contentWindow;
 function tellGraph(msg) { try { graphWin()?.postMessage(msg, location.origin); } catch {} }
 function syncGraph() {
-  const ids = [...selection.values()].filter(x => GRAPH_TYPES.has(x.type)).map(x => x.id), sig = ids.join("\n");
+  const ids = [...selection.values()].filter(x => GRAPH_TYPES.has(x.type)).map(x => x.id), open = shownNode(), current = open && GRAPH_TYPES.has(open.type) ? open.id : null, sig = ids.join("\n") + "|" + current;
   if (sig === graphSig) return;
-  graphSig = sig; tellGraph({ kind: "selection", ids });
+  graphSig = sig; tellGraph({ kind: "selection", ids, current });
 }
 window.addEventListener("message", ev => {
   const m = ev.data;
@@ -4916,7 +4916,7 @@ window.addEventListener("message", ev => {
   else if (m.kind === "graph-selection") {
     const next = new Map([...selection].filter(([, x]) => !GRAPH_TYPES.has(x.type)));
     for (const it of m.items) next.set(it.id, selection.get(it.id) ?? it);
-    graphSig = m.items.map(x => x.id).join("\n"); // the graph already shows this: no echo
+    graphSig = m.items.map(x => x.id).join("\n") + "|" + (graphSig ?? "").split("|")[1]; // the graph already shows this: no echo
     selection = next; anchorId = null; hxAnchor = null; hxAfterPick();
   }
 });
