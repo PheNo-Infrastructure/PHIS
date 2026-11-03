@@ -1409,9 +1409,6 @@ test("e2e: Link selection with 3 objects: flexible anchor — 'make anchor' swap
 test("e2e: Unlink selection names every link in a confirm before removing; cancelling writes nothing", async () => {
   await withServerAndBrowser(async (base, page) => {
     const posts: any[] = [];
-    const dialogs: string[] = [];
-    let accept = false;
-    page.on("dialog", (d) => { dialogs.push(d.message()); accept ? d.accept() : d.dismiss(); });
     await page.route("**/api/unlink", (r) => {
       const b = JSON.parse(r.request().postData() || "{}");
       posts.push(b);
@@ -1426,12 +1423,15 @@ test("e2e: Unlink selection names every link in a confirm before removing; cance
       refreshLeftPane(); renderActionbar();
     });
     await page.locator("#unlinkSelectionBtn").click();
+    const dlg = page.locator("dialog.create-dialog");
+    await dlg.waitFor();
+    assert.match((await dlg.textContent()) ?? "", /Remove this link\?\s*Plant B is part of Row 2 in Wheat 2026/);
+    await dlg.getByRole("button", { name: "Cancel" }).click();
     await idle(page);
-    assert.match(dialogs[0], /Remove this link\?\s+• Plant B is part of Row 2 in Wheat 2026/);
     assert.equal(posts.filter((p) => p.confirm).length, 0, "cancelled: nothing removed");
 
-    accept = true;
     await page.locator("#unlinkSelectionBtn").click();
+    await dlg.getByRole("button", { name: "Remove link" }).click();
     await idle(page);
     assert.equal(posts.filter((p) => p.confirm).length, 1);
     assert.match((await page.locator("#toast").textContent()) ?? "", /Removed: Plant B is part of Row 2 in Wheat 2026/);

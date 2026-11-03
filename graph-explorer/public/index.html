@@ -1033,6 +1033,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
   width: min(400px, calc(100vw - 32px));
   font-family: inherit;
 }
+.confirm-list { margin: 0; padding-left: 18px; max-height: 40vh; overflow: auto; font-size: 13px; line-height: 1.5; }
 .create-dialog::backdrop { background: rgba(0,0,0,0.35); }
 .create-dialog form { display: flex; flex-direction: column; gap: 10px; }
 .create-dialog label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); }
@@ -2357,6 +2358,26 @@ function deleteCardCounts(p) {
 
 // A destructive button stays disabled until its word is typed: the deliberate step that a click on a button is not.
 const wordTyped = (input, word) => input.value.trim().toLowerCase() === word;
+
+// A confirmation in the portal's own dialog (instead of the browser's), naming what will change. Resolves true on the main button.
+function confirmDialog(title, lines, goLabel) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "create-dialog";
+    dlg.innerHTML = `<form method="dialog">
+      <div class="ranking-header">${escapeHtml(title)}</div>
+      <ul class="confirm-list">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join("")}</ul>
+      <div class="ranking-footer">
+        <button class="btn ghost" value="cancel" autofocus>Cancel</button>
+        <button class="btn primary" value="ok">${escapeHtml(goLabel)}</button>
+      </div>
+    </form>`;
+    dlg.addEventListener("click", (e) => e.stopPropagation());
+    dlg.addEventListener("close", () => { const ok = dlg.returnValue === "ok"; dlg.remove(); resolve(ok); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  });
+}
 
 async function deleteExperimentEverything(item, p) {
   try {
@@ -4265,7 +4286,7 @@ async function unlinkSelection(items) {
     const body = await res.json();
     if (!res.ok) { showToast(`Failed to unlink: ${body.error || res.status}`); return; }
     if (!body.links.length) { showToast("These aren't linked to each other — nothing to remove."); return; }
-    if (!confirm(`Remove ${body.links.length === 1 ? "this link" : `these ${body.links.length} links`}?\n\n${body.links.map(l => `• ${l}`).join("\n")}`)) return;
+    if (!await confirmDialog(`Remove ${body.links.length === 1 ? "this link" : `these ${body.links.length} links`}?`, body.links, body.links.length === 1 ? "Remove link" : "Remove links")) return;
     const done = await post(true);
     const result = await done.json();
     items.forEach(it => invalidateNodeDetail(it.id));
