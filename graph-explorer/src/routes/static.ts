@@ -35,6 +35,12 @@ export const handleStatic: RouteHandler = async (req, res) => {
     return true;
   }
 
+  if (req.url?.split("?")[0] === "/graph-spike" && req.method === "GET") { // SPIKE (throwaway)
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(await readFile(path.resolve(path.dirname(MOCKUP_PATH), "graph-spike.html"), "utf8"));
+    return true;
+  }
+
   if (req.url === "/adjacency.js" && req.method === "GET") {
     const js = await readFile(ADJACENCY_PATH, "utf8");
     res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });

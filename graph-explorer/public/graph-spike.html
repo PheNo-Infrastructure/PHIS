@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHIS graph (spike)</title>
+<style>
+  :root { --bg:#fbfcf8; --ink:#1d2a1a; --muted:#66705f; --line:#dfe6d3; --card:#fff; --accent:#2f6b3a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid; grid-template-columns:1fr 300px; height:100vh; }
+  #graph { position:relative; min-width:0; }
+  #side { border-left:1px solid var(--line); padding:14px; overflow:auto; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  .muted { color:var(--muted); font-size:12px; }
+  #legend { margin:10px 0; display:flex; flex-wrap:wrap; gap:4px; }
+  .chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; font-size:12px; border-radius:99px; }
+  .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
+  .chip.static { cursor:default; border-color:transparent; background:none; }
+  button, .chk { font:inherit; padding:5px 10px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:6px; cursor:pointer; }
+  .chk { display:inline-flex; gap:6px; align-items:center; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
+  #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
+  .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
+  #halo { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; filter:blur(5px); }
+  #marquee { position:absolute; display:none; border:1px solid var(--accent); background:rgba(79,154,92,.18); pointer-events:none; z-index:3; }
+  .verdict { border-radius:6px; padding:6px 10px; margin:8px 0; font-size:13px; }
+  .verdict.ok { background:rgba(79,154,92,.16); border:1px solid var(--accent); }
+  .verdict.no { background:rgba(211,51,51,.12); border:1px solid #d33; }
+  .verdict.later { background:rgba(208,138,46,.14); border:1px solid #d08a2e; }
+  button[disabled] { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161b14; --ink:#e6ebe0; --muted:#93a08a; --line:#2c3528; --card:#222a1f; --accent:#4f9a5c; } li a { color:#8fd19b; } }
+</style>
+</head>
+<body>
+<div id="graph"><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
+<aside id="side"><h1>PHIS graph <span class="muted">(spike)</span></h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-library@0.8.0/dist/graphology-library.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
+<script>
+const COLORS = { fold:"#8fa8b8", organization:"#2f6b3a", facility:"#3a7fb0", site:"#8a6bb0", project:"#d08a2e", experiment:"#c4506a", device:"#6e7b86" };
+const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device" };
+const FILTERS = ["organization", "site", "project", "experiment", "facility", "device"]; // a folded group follows its facilities
+const ORPHAN = "#d33";
+const HINT = '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
+const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+// Same packing the portal's share link uses, so "Open page" lands on the node's page.
+async function pack(obj) {
+  const bytes = new Uint8Array(await new Response(new Blob([JSON.stringify(obj)]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
+  return btoa(Array.from(bytes, b => String.fromCharCode(b)).join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function openInPortal(n) {
+  const item = { id:n.id, type:n.kind, label:n.label };
+  const st = { view:"browse", path:[item], sel:[], anchor:null, tab:{}, plants:{}, vf:{}, grid:{ stats:false, sharedY:false, overlay:false, norm:false, hidden:[] }, day:null, ui:null };
+  location.href = `./#browse&s=${await pack(st)}`;
+}
+
+(async () => {
+  document.getElementById("sel").innerHTML = HINT;
+  const params = new URLSearchParams(location.search);
+  const { ADJACENT } = await import("./adjacency.js"); // the portal's own rules for which types link
+  const data = await (await fetch(params.get("fresh") ? "api/graph?fresh=1" : "api/graph")).json();
+  const inst = await (await fetch("api/instance")).json().catch(() => ({ test: false }));
+  const { Graph } = graphology, FA2 = graphologyLibrary.layoutForceAtlas2;
+  const g = new Graph({ type:"undirected" });
+  const settingsFor = gr => ({ ...FA2.inferSettings(gr), gravity:1, scalingRatio:6, slowDown:4, barnesHutOptimize: gr.order > 500 });
+  const kindOf = id => g.getNodeAttribute(id, "kind");
+  const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
+  const styleOf = (id) => {
+    const a = g.getNodeAttributes(id), deg = g.degree(id);
+    const orphan = deg === 0;
+    return { orphan, color: orphan ? ORPHAN : COLORS[a.kind], size: a.kind === "fold" ? 7 + Math.sqrt(a.count) * 2 : 4 + Math.sqrt(deg) * 3 };
+  };
+  data.nodes.forEach(({ type, ...n }) => g.addNode(n.id, { ...n, kind:type, x:Math.random(), y:Math.random() }));
+  data.edges.forEach(ed => g.hasEdge(ed.source, ed.target) || g.addEdge(ed.source, ed.target));
+
+  // ---- priority: facilities (with their devices) fold into one count node per set of parents. An experiment or project that
+  // uses a facility links to the group instead; opening the group shows which facility. ----
+  const MIN_GROUP = 3;
+  const folds = new Map(), memberFold = new Map(), open = new Set(), byParents = new Map();
+  g.forEachNode((id, a) => {
+    if (a.kind !== "facility") return;
+    const parents = g.neighbors(id).filter(x => ["organization", "site"].includes(kindOf(x))).sort();
+    if (!parents.length) return;
+    const key = parents.join("|");
+    if (!byParents.has(key)) byParents.set(key, []);
+    byParents.get(key).push(id);
+  });
+  for (const [key, facs] of byParents) {
+    if (facs.length < MIN_GROUP) continue;
+    const fid = `fold:${key}`, inGroup = new Set(facs);
+    // a device goes with its facility only when every facility it sits in is in this same group
+    const devices = [...new Set(facs.flatMap(f => g.neighbors(f).filter(x => kindOf(x) === "device")))].filter(d => g.neighbors(d).every(f => inGroup.has(f)));
+    const members = [...facs, ...devices], inside = new Set(members);
+    const links = members.flatMap(m => g.neighbors(m).filter(x => inside.has(x)).map(x => [m, x])).filter(([a, b]) => a < b);
+    const outside = members.flatMap(m => g.neighbors(m).filter(x => !inside.has(x) && ["experiment", "project"].includes(kindOf(x))).map(x => [x, m]));
+    folds.set(fid, { members: members.map(id => ({ id, attrs: g.getNodeAttributes(id) })), links, outside, facs });
+    members.forEach(id => { memberFold.set(id, fid); g.dropNode(id); });
+    g.addNode(fid, { id: fid, kind:"fold", label: `${facs.length} facilities${devices.length ? `, ${devices.length} devices` : ""}`, count: members.length, x:Math.random(), y:Math.random() });
+    key.split("|").forEach(p => g.addEdge(fid, p));
+    new Set(outside.map(([x]) => x)).forEach(x => g.addEdge(fid, x));
+  }
+  g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id)));
+  FA2.assign(g, { iterations:200, settings: settingsFor(g) });
+
+  // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
+  const hiddenKinds = new Set();
+  let focus = null, focusSet = null, selected = null, lit = null;
+  const sel = new Set();           // selected node ids; a folded group stands for all its members
+  let litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
+  // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
+  const bg = dark => dark ? [22, 27, 20] : [251, 252, 248];
+  const fade = (hex, isDark) => { if (hex.length === 4) hex = "#" + [...hex.slice(1)].map(ch => ch + ch).join(""); const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), b = bg(isDark); return "#" + c.map((v, i) => Math.round(v * .4 + b[i] * .6).toString(16).padStart(2, "0")).join(""); };
+  // In a focus view an opened group's hub steps aside when the focused node links straight to the facilities it uses.
+  const hubHidden = f => focus && open.has(f) && f !== focus.id && folds.get(f).members.some(m => g.hasEdge(focus.id, m.id));
+  function computeFocus() {
+    if (focus && !g.hasNode(focus.id)) focus = null;
+    if (!focus) { focusSet = null; return; }
+    focusSet = new Set([focus.id]);
+    let frontier = [focus.id];
+    for (let h = 0; h < focus.hops; h++) { // the walk stops at the members of an opened group
+      const next = [];
+      for (const id of frontier) if (!memberFold.has(id)) g.forEachNeighbor(id, nb => { if (!focusSet.has(nb)) { focusSet.add(nb); next.push(nb); } });
+      frontier = next;
+    }
+    for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
+  }
+  const isVisible = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
+  const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
+  // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
+  // The selection as PHIS things: a folded group is every facility and device inside it.
+  function selItems() {
+    const out = [];
+    for (const id of sel) {
+      if (folds.has(id)) folds.get(id).members.forEach(({ id: mid, attrs }) => out.push({ id: mid, type: attrs.kind, label: attrs.label }));
+      else if (g.hasNode(id)) out.push({ id, type: kindOf(id), label: g.getNodeAttribute(id, "label") });
+    }
+    return out;
+  }
+  // Can the selection be linked? Same rule as the portal's Link selection: every item needs a partner it can link to.
+  const plural = t => (NAMES[t] || t).toLowerCase() + "s";
+  function linkVerdict(items) {
+    if (items.length < 2) return { kind: "none", why: items.length ? "Select a second thing to link it to." : "" };
+    const types = [...new Set(items.map(v => v.type))];
+    if (types.length === 1) return { kind: "none", why: `Two ${types[0] === "facility" ? "facilities" : plural(types[0])} can't be linked to each other.` };
+    if (types.length === 2 && types.includes("device") && types.includes("facility")) return { kind: "later", why: "Moving devices into a facility needs a date. Do that in Browse for now." };
+    const pairOk = (a, b) => a !== b && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a));
+    const bad = items.filter(v => !items.some(w => w !== v && pairOk(v.type, w.type)));
+    if (bad.length) return { kind: "none", why: `${bad[0].label} (${NAMES[bad[0].type].toLowerCase()}) can't be linked to anything else selected${bad.length > 1 ? ` (nor ${bad.length - 1} more)` : ""}. Remove ${bad.length > 1 ? "them" : "it"} to link the rest.`, bad: bad.map(v => v.id) };
+    return { kind: "link" };
+  }
+  // What a selection lights up: the selected nodes, their neighbours, and the members of any opened group among them (they hang off the group, not off the node).
+  function computeLit() {
+    for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
+    litSel = new Set(); misfit = new Set();
+    visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; });
+    if (!sel.size) { lit = null; tintIds = new Set(); return; }
+    lit = new Set(sel); litSel = new Set(sel);
+    for (const id of sel) g.forEachNeighbor(id, n => lit.add(n));
+    tintIds = new Set(lit);
+    for (const f of [...lit]) if (open.has(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && lit.add(id));
+    for (const f of sel) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
+    const v = verdictNow();
+    (v.bad || []).forEach(id => misfit.add(id));
+  }
+
+  const edgeKey = (a, b) => a < b ? a + " " + b : b + " " + a;
+  const fx = { pulses: [], sparks: [], flash: new Set() }; // short-lived effects for a link being made or undone
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const sigma = new Sigma(g, document.getElementById("graph"), {
+    labelColor: { color: dark ? "#e6ebe0" : "#1d2a1a" },
+    // Sigma draws a hovered node with a white label box, unreadable in the dark theme
+    renderLabels: false,
+    hoverRenderer: (ctx, d) => { ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 2, 0, Math.PI * 2); ctx.fill(); },
+    labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c9d3bd",
+    nodeReducer: (id, a) => {
+      if (!isVisible(id)) return { ...a, hidden:true };
+      if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
+      if (litSel.has(id)) return { ...a, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
+      if (lit.has(id)) return { ...a, zIndex:1, forceLabel: lit.size < 60 };
+      return { ...a, color: fade(a.color, dark), forceLabel: visCount < 80 }; // unrelated nodes keep their names while the graph is small, so they can be added
+    },
+    edgeReducer: (ed, a) => {
+      const [s, t] = g.extremities(ed);
+      if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t)))) return { ...a, hidden:true };
+      return fx.flash.has(edgeKey(s, t)) ? { ...a, color: dark ? "#9be7a8" : "#2f9a4a", size: 3.5, zIndex: 3 } : a;
+    },
+  });
+  function refresh() { computeLit(); sigma.refresh(); }
+
+  // The area the selection occupies is tinted as ONE region of one strength: a soft blob around every involved node is added up into a field
+  // (at low resolution) and a smooth threshold turns the field into a shape, so nearby nodes merge, overlaps do not get stronger and the border has no hard edge.
+  // Where a node blocks a link, the colour blends smoothly from green to red.
+  const halo = document.getElementById("halo"), hctx = halo.getContext("2d");
+  const field = document.createElement("canvas"), fctx = field.getContext("2d", { willReadFrequently:true }), shape = document.createElement("canvas"), sctx = shape.getContext("2d");
+  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  const BLOB = 105;
+  let cache = null, phase = 0, flowing = false, dims = null;
+  // Inertia: the tint is built from lagged node positions (graph coordinates, so panning and zooming are not delayed). Each one follows its node like a heavy
+  // spring with a little overshoot, so a dragged node pulls its area along and the area settles afterwards.
+  const lag = new Map(); let lagT = 0;
+  const SPRING = .1, DAMP = .8;
+  function stepLag() {
+    const now = performance.now(), dt = Math.min(3, lagT ? (now - lagT) / 16.7 : 1); lagT = now;
+    for (const id of [...lag.keys()]) if (!lit || !lit.has(id) || !g.hasNode(id)) lag.delete(id);
+    if (!lit) return false;
+    const o = sigma.graphToViewport({ x:0, y:0 }), px = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) || 1; // screen pixels per graph unit
+    let moving = false;
+    for (const id of lit) {
+      if (!g.hasNode(id)) continue;
+      const a = g.getNodeAttributes(id), L = lag.get(id);
+      if (!L) { lag.set(id, { x:a.x, y:a.y, vx:0, vy:0 }); continue; }
+      L.vx = (L.vx + (a.x - L.x) * SPRING * dt) * Math.pow(DAMP, dt); L.vy = (L.vy + (a.y - L.y) * SPRING * dt) * Math.pow(DAMP, dt);
+      L.x += L.vx * dt; L.y += L.vy * dt;
+      if (Math.abs(a.x - L.x) * px > .3 || Math.abs(a.y - L.y) * px > .3 || Math.abs(L.vx) * px > .05 || Math.abs(L.vy) * px > .05) moving = true;
+      else { L.x = a.x; L.y = a.y; L.vx = L.vy = 0; }
+    }
+    return moving;
+  } // how far a node's tint reaches, in pixels at the default zoom
+  const RES = 4; // the field is a quarter of the screen size; scaling it up is what rounds the border
+  // points: [{ x, y, r }] in screen pixels (r at the default zoom); the field is their soft blobs added up, as 0..1 per field pixel
+  function fieldOf(points, scale, ratio, peaked) {
+    fctx.clearRect(0, 0, field.width, field.height);
+    for (const pt of points) {
+      const r = pt.r * scale / ratio / RES, x = pt.x / RES, y = pt.y / RES;
+      const gr = fctx.createRadialGradient(x, y, 0, x, y, r);
+      for (const [at, a] of peaked ? (pt.core ? [[0, 1], [.44, 1], [.74, .3], [1, 0]] : [[0, 1], [.2, .6], [.5, .22], [1, 0]]) : [[0, 1], [.45, .75], [1, 0]]) gr.addColorStop(at, `rgba(0,0,0,${a})`); // peaked: a colour is strongest at its node and fades gradually
+      fctx.fillStyle = gr; fctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    const d = fctx.getImageData(0, 0, field.width, field.height).data, out = new Float32Array(d.length / 4);
+    for (let i = 0; i < out.length; i++) out[i] = d[i * 4 + 3] / 255;
+    return out;
+  }
+  function drawHalo() {
+    const box = halo.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
+    if (halo.width !== Math.round(w * k) || halo.height !== Math.round(h * k)) { halo.width = Math.round(w * k); halo.height = Math.round(h * k); }
+    const fw = Math.ceil(w / RES), fh = Math.ceil(h / RES);
+    if (field.width !== fw || field.height !== fh) { field.width = shape.width = fw; field.height = shape.height = fh; }
+    hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
+    if (!lit) { cache = null; startRestore(); return; }
+    dims = { fw, fh, w, h, k };
+    stepLag(); rebuild(); paintHalo(); startFlow();
+  }
+  function rebuild() {
+    const { fw, fh, w, h, k } = dims;
+    const ratio = sigma.getCamera().getState().ratio;
+    // One field per resource type (a node that blocks a link counts as its own "type", red). The region is where the fields add up; its colour at each
+    // pixel is the average of the types around it, weighted by how strongly each one reaches it, so two types meet in a smooth gradient.
+    // Every link between two involved nodes is tinted too, in the colours of its two ends, so the areas are never cut off from each other.
+    const keyOf = id => misfit.has(id) ? "blocked" : filterKind(g.getNodeAttributes(id));
+    const at = id => { const L = lag.get(id) ?? g.getNodeAttributes(id), v = sigma.graphToViewport({ x:L.x, y:L.y }); return { x: v.x, y: v.y }; };
+    const groups = new Map(), put = (key, pt) => { if (!groups.has(key)) groups.set(key, []); groups.get(key).push(pt); };
+    for (const id of tintIds) if (isVisible(id)) put(keyOf(id), { ...at(id), r: BLOB, core: true }); // core: the node's own flat circle of colour
+    let edgeCount = 0;
+    g.forEachEdge((ed, a, s2, t2) => {
+      if (edgeCount > 600 || !tintIds.has(s2) || !tintIds.has(t2) || !isVisible(s2) || !isVisible(t2)) return;
+      edgeCount++;
+      const A = at(s2), B = at(t2), len = Math.hypot(B.x - A.x, B.y - A.y), step = BLOB * .45 / ratio, n2 = Math.max(1, Math.ceil(len / step));
+      for (let k = 1; k < n2; k++) { const f = k / n2; put(keyOf(f < .5 ? s2 : t2), { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, r: BLOB * .8 }); }
+    });
+    if (!groups.size) return;
+    const rgbOf = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); return dark ? c.map(v => Math.round(v * .7 + 255 * .3)) : c; }; // lighter on the dark background, so the tint reads
+    const layers = [...groups].map(([key, pts]) => ({ f: fieldOf(pts, 1, ratio), w: fieldOf(pts, 1.4, ratio, true), hsl: tintOf(key) }));
+    const o = sigma.viewportToGraph({ x:0, y:0 }), ex = sigma.viewportToGraph({ x:1, y:0 }), ey = sigma.viewportToGraph({ x:0, y:1 });
+    if (patternPx === 0) patternPx = Math.hypot(sigma.graphToViewport({ x:1, y:0 }).x - sigma.graphToViewport({ x:0, y:0 }).x, 0) || 1; // pixels per graph unit when the pattern was first drawn: the streaks keep their size relative to the graph from then on
+    cache = { o, ex, ey, layers, fw, fh, w, h, k, strength: (dark ? .55 : .5) * 255 };
+  }
+
+  // ---- painting the region: colours meet by hue (along the colour wheel, so purple to green passes through blue, not grey), and the whole thing is
+  // pushed around by slow waves so edges and colour boundaries swirl and drift like wet paint ----
+  const toHsl = ([r, g2, b]) => {
+    r /= 255; g2 /= 255; b /= 255; const mx = Math.max(r, g2, b), mn = Math.min(r, g2, b), l = (mx + mn) / 2, dl = mx - mn;
+    if (!dl) return [0, 0, l];
+    const sat = dl / (1 - Math.abs(2 * l - 1)), hue = mx === r ? ((g2 - b) / dl + 6) % 6 : mx === g2 ? (b - r) / dl + 2 : (r - g2) / dl + 4;
+    return [hue * 60, sat, l];
+  };
+  const fromHsl = (h, sat, l, out, at) => {
+    const c = (1 - Math.abs(2 * l - 1)) * sat, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, k6 = Math.floor(h / 60) % 6;
+    const [r, g2, b] = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][k6];
+    out[at] = (r + m) * 255; out[at + 1] = (g2 + m) * 255; out[at + 2] = (b + m) * 255;
+  };
+  const tintOf = key => [key === "blocked" ? 2 : toHsl(rgbOfHex(COLORS[key]))[0], .56, dark ? .6 : .5];
+  const rgbOfHex = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const SHARP = 2; // a colour's weight is raised to this power (the flat core stays at 1, so inside it a node's own colour is pure) // a colour's weight is raised to this power: near a node its own colour wins clearly and the others only fade in between
+  let MARBLE = 1.1, spill = 0, countSpill = false; const MFREQ = .3; let SEAM = .3, SEAMEXP = 3; // SEAM: how nearly equal two colours must be before they swirl (higher = a narrower band) // how strongly the colours stripe where they meet, and how fine the streaks are (radians per field pixel)
+  const wts = new Float32Array(16); let patternPx = 0;
+  const FLOW = 2; // waves this small move the paint by a few pixels, so a node still sits in its own colour // how far the waves push the paint, in field pixels
+  function paintHalo() {
+    if (!cache) return;
+    const { layers, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
+    for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+      const sx = x + FLOW * (Math.sin(y * .07 + ph) + .6 * Math.sin(x * .045 - ph * 1.3 + 1.7)), sy = y + FLOW * (Math.sin(x * .06 - ph * .8 + .9) + .6 * Math.sin(y * .05 + ph * 1.1));
+      const i = Math.min(fh - 1, Math.max(0, Math.round(sy))) * fw + Math.min(fw - 1, Math.max(0, Math.round(sx)));
+      // Where colours overlap they marble, like inks swirled together: each colour's weight is stretched into curved streaks (a different direction per colour,
+      // bent by a slow flowing warp), so the two take turns in thin ribbons and light and dark bands follow them. Where only one colour reaches, nothing changes.
+      let miss = 1, W = 0, hue = 0, sat = 0, lig = 0, top = 0, sec = 0, tot = 0, topI = -1, secI = -1;
+      const gx = o.x + (ex.x - o.x) * x * RES + (ey.x - o.x) * y * RES, gy = o.y + (ex.y - o.y) * x * RES + (ey.y - o.y) * y * RES; // this pixel in graph coordinates
+      const mx = gx * patternPx / RES, my = gy * patternPx / RES; // ...as the pattern sees it
+      // a flowing warp made of several slow waves: it bends the streaks into curves of uneven width, never straight stripes
+      const warp = Math.sin(my * .06 + ph * 1.4 + Math.sin(mx * .035 + ph)) + .8 * Math.sin(mx * .05 - ph + Math.sin(my * .04 - ph * .7) * 1.3) + .5 * Math.sin((mx + my) * .03 + ph * .6);
+      for (let li = 0; li < layers.length; li++) { miss *= 1 - layers[li].f[i]; const v = Math.pow(layers[li].w[i], SHARP); const q = v > 0.0005 ? v : 0; wts[li] = q; tot += q; if (q > top) { sec = top; secI = topI; top = q; topI = li; } else if (q > sec) { sec = q; secI = li; } }
+      if (miss >= 1 || tot <= 0) continue;
+      // the marbling is only where two colours really share the pixel: its strength rises with how big the smaller colour's share is, and is zero inside a colour's own area
+      // only along the seam between the two strongest colours: their weights are raised to a high power first, so 'about equal' is a thin line even where several colours overlap broadly
+      const amp = secI < 0 ? 0 : smooth(SEAM, .97, Math.pow(sec / top, SEAMEXP));
+      if (amp > 0) {
+        // The streaks nudge the BALANCE between the two colours, in the log of their ratio: the weaker one is scaled by exp(shift). The shift is bounded by amp, which
+        // is zero until the two are nearly equal, so a colour can only overtake the other close to the seam and never deep inside the other's own area.
+        const u = MFREQ * (mx * Math.cos(secI * 1.9) + my * Math.sin(secI * 1.9)) + 4.2 * warp + secI * 2.3;
+        wts[secI] *= Math.exp(amp * MARBLE * (.7 * Math.sin(u) + .45 * Math.sin(1.9 * u + 2 * warp + 1)));
+        if (countSpill) { let best = -1, bv = 0; for (let li = 0; li < layers.length; li++) if (wts[li] > bv) { bv = wts[li]; best = li; } if (best !== topI && sec / top < .75) spill++; }
+      }
+      for (let li = 0; li < layers.length; li++) {
+        const v = wts[li]; if (v <= 0) continue; const l = layers[li];
+        if (W === 0) { [hue, sat, lig] = l.hsl; W = v; continue; }
+        const t = v / (W + v), dh = ((l.hsl[0] - hue + 540) % 360) - 180;
+        hue = (hue + dh * t + 360) % 360; sat += (l.hsl[1] - sat) * t; lig += (l.hsl[2] - lig) * t; W += v;
+      }
+      lig += .09 * amp * Math.sin(MFREQ * 1.7 * (mx * .6 + my * .8) + 4 * warp); // light and dark ribbons, only where colours meet
+      fromHsl(hue, sat, lig, d, (y * fw + x) * 4);
+      d[(y * fw + x) * 4 + 3] = smooth(.1, .45, 1 - miss) * strength * (.9 + .1 * Math.sin(sx * .05 + sy * .04 + ph * .7)); // a faint wash variation, like brushed paint
+    }
+    sctx.putImageData(img, 0, 0);
+    hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
+    hctx.imageSmoothingEnabled = true; hctx.imageSmoothingQuality = "high";
+    hctx.drawImage(shape, 0, 0, w, h);
+  }
+  // ---- keeping the picture clear: nodes that are not part of the selection are eased out of the tinted area while it is there, and glide back to where they were
+  // when the selection is cleared (a node you drag yourself stays where you put it) ----
+  const home = new Map(); let restoring = false;
+  function pushStep() {
+    if (!lit || !sel.size) return 0;
+    const o = sigma.graphToViewport({ x:0, y:0 }), px = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) || 1;
+    const R = BLOB * 1.1 / sigma.getCamera().getState().ratio / px; // how far the tint reaches from an involved node, in graph units
+    const pts = [];
+    for (const id of tintIds) if (g.hasNode(id) && isVisible(id)) { const a = g.getNodeAttributes(id); pts.push([a.x, a.y]); }
+    let seen = 0;
+    g.forEachEdge((ed, a, s2, t2) => { // the tint also follows the links between involved nodes
+      if (seen > 400 || !tintIds.has(s2) || !tintIds.has(t2) || !isVisible(s2) || !isVisible(t2)) return; seen++;
+      const A = g.getNodeAttributes(s2), B = g.getNodeAttributes(t2), n = Math.max(1, Math.ceil(Math.hypot(B.x - A.x, B.y - A.y) / (R * .6)));
+      for (let k = 1; k < n; k++) pts.push([A.x + (B.x - A.x) * k / n, A.y + (B.y - A.y) * k / n]);
+    });
+    let worst = 0;
+    g.forEachNode((id, a) => {
+      if (lit.has(id) || a.fixed || !isVisible(id)) return;
+      let bd = Infinity, bx = 0, by = 0;
+      for (const [x, y] of pts) { const d = Math.hypot(a.x - x, a.y - y); if (d < bd) { bd = d; bx = x; by = y; } }
+      if (bd >= R) return;
+      if (!home.has(id)) home.set(id, { x:a.x, y:a.y });
+      const dx = bd > 1e-6 ? (a.x - bx) / bd : 1, dy = bd > 1e-6 ? (a.y - by) / bd : 0, move = (R - bd) * .25;
+      g.mergeNodeAttributes(id, { x:a.x + dx * move, y:a.y + dy * move }); worst = Math.max(worst, move * px);
+    });
+    return worst;
+  }
+  function startRestore() {
+    if (restoring || !home.size) return;
+    restoring = true;
+    const loop = () => {
+      if (lit) { restoring = false; return; } // selected again: they are pushed from where they are, and still remember home
+      for (const [id, h] of [...home]) {
+        if (!g.hasNode(id) || g.getNodeAttribute(id, "fixed")) { home.delete(id); continue; }
+        const a = g.getNodeAttributes(id), dx = h.x - a.x, dy = h.y - a.y;
+        if (Math.hypot(dx, dy) < 1e-3) { g.mergeNodeAttributes(id, { x:h.x, y:h.y }); home.delete(id); } else g.mergeNodeAttributes(id, { x:a.x + dx * .14, y:a.y + dy * .14 });
+      }
+      if (!home.size) { restoring = false; return; }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+  function startFlow() { // a slow drift while something is selected; it stops with the selection
+    if (flowing) return;
+    flowing = true; let last = 0;
+    const loop = t => {
+      if (!cache || !lit) { flowing = false; return; }
+      pushStep();
+      const moving = stepLag(); if (moving) rebuild(); // the areas are still catching up with their nodes
+      if (moving || t - last > 40) { if (t - last > 40) phase += .02; paintHalo(); last = t; }
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+  sigma.on("afterRender", drawHalo);
+
+  // Layout runs on a copy of what is visible, so hidden nodes neither push nor pull.
+  function relax(iterations, pinned) {
+    const sub = new Graph({ type:"undirected" });
+    g.forEachNode((id, a) => { if (isVisible(id)) sub.addNode(id, { x:a.x, y:a.y, fixed: !!a.fixed || !!pinned?.(id) }); });
+    if (sub.order < 2) return;
+    g.forEachEdge((ed, a, s, t) => { if (sub.hasNode(s) && sub.hasNode(t)) sub.addEdge(s, t); });
+    FA2.assign(sub, { iterations, settings: settingsFor(sub) });
+    sub.forEachNode((id, a) => g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
+  }
+
+  // Sigma maps the screen onto the bounding box of ALL nodes. Dragging a node outward grows that box, which squeezes everything else and shifts the node away from the
+  // cursor (a feedback loop). So a drag freezes the box as it was; Fit, Reset and the type chips set a new one.
+  let bboxFrozen = false;
+  function freezeBBox() { if (!bboxFrozen) { sigma.setCustomBBox(sigma.getBBox()); bboxFrozen = true; } }
+  // Fit the camera to what is visible, not to the whole graph (Sigma frames hidden nodes too unless told the box).
+  function fitView() {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    g.forEachNode((id, a) => { if (isVisible(id)) { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); } });
+    if (x0 === Infinity) return;
+    sigma.setCustomBBox({ x:[x0, Math.max(x1, x0 + 1)], y:[y0, Math.max(y1, y0 + 1)] }); bboxFrozen = false;
+    refresh();
+    sigma.getCamera().setState({ x:0.5, y:0.5, ratio:1, angle:0 });
+  }
+
+  // ---- live physics: two steps per frame on the page (a worker would overwrite a pinned, dragged node); it switches itself off if a frame gets too slow ----
+  let liveOn = false, raf = 0, cost = 0;
+  const live = document.getElementById("live");
+  const stopLive = () => { liveOn = false; cancelAnimationFrame(raf); };
+  const startLive = () => {
+    stopLive(); liveOn = true; cost = 0;
+    const tick = () => {
+      if (!liveOn) return;
+      const t = performance.now(); relax(2);
+      cost = cost * .9 + (performance.now() - t) * .1;
+      if (cost > 30) { live.checked = false; stopLive(); document.getElementById("stats").textContent += " ForceAtlas switched off: too many nodes for it."; return; }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  };
+  live.onchange = () => live.checked ? startLive() : stopLive();
+  // a short ForceAtlas run: used when a group opens, so its members spread out instead of crowding the hub, whether or not ForceAtlas is switched on
+  let burstTimer = 0;
+  function burst() {
+    if (!liveOn) startLive();
+    clearTimeout(burstTimer);
+    burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); }, 1100);
+  }
+  function settle(newIds) { // new nodes find their place while everything on screen stays put
+    const wasLive = liveOn; stopLive(); relax(150, id => !newIds.has(id)); if (wasLive) startLive();
+  }
+  document.getElementById("reset").onclick = () => {
+    const wasLive = liveOn; stopLive();
+    g.forEachNode((id) => isVisible(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
+    relax(300); fitView(); if (wasLive) startLive();
+  };
+  document.getElementById("fit").onclick = () => fitView();
+
+  // ---- type chips ----
+  function renderChips() {
+    const legend = document.getElementById("legend");
+    legend.innerHTML = FILTERS.map(t => `<button class="chip" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}</button>`).join("")
+      + `<span class="chip static"><i style="background:${COLORS.fold}"></i>Folded group</span><span class="chip static"><i style="background:${ORPHAN}"></i>No links</span>`;
+    legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = () => { hiddenKinds.has(b.dataset.t) ? hiddenKinds.delete(b.dataset.t) : hiddenKinds.add(b.dataset.t); refreshView(); });
+  }
+  function stats() {
+    let shown = 0, orphans = 0; g.forEachNode((id, a) => { if (isVisible(id)) { shown++; a.orphan && orphans++; } });
+    document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link (red).`;
+  }
+  function refreshView() { computeFocus(); refresh(); fitView(); stats(); renderChips(); renderPanel(); }
+
+  // ---- opening and folding: a group stays open while the selection (or the focus) is the group, one of its members, or a node linked to it ----
+  // Compact (default): groups open only around the selection. Not compact: every group stays open.
+  const compact = document.getElementById("compact");
+  const wanted = (keep) => {
+    if (!compact.checked) return new Set(folds.keys());
+    const next = new Set(keep ? open : []);
+    for (const sid of [...sel, focus?.id]) {
+      if (!sid || !g.hasNode(sid)) continue;
+      if (folds.has(sid)) next.add(sid);
+      if (memberFold.has(sid)) next.add(memberFold.get(sid));
+      g.forEachNeighbor(sid, nb => folds.has(nb) && next.add(nb));
+    }
+    return next;
+  };
+  function expand(fid) {
+    const at = g.getNodeAttributes(fid), ids = new Set();
+    const { members, links, outside, facs } = folds.get(fid);
+    for (const { id, attrs } of members) {
+      if (g.hasNode(id)) continue;
+      g.addNode(id, { ...attrs, x:at.x + (Math.random() - .5) * 8, y:at.y + (Math.random() - .5) * 8 });
+      ids.add(id);
+    }
+    facs.forEach(f => g.addEdge(fid, f)); // facilities hang off the group node, their devices off them
+    links.forEach(([a, b]) => g.hasEdge(a, b) || g.addEdge(a, b));
+    outside.forEach(([x, m]) => g.hasNode(x) && !g.hasEdge(x, m) && g.addEdge(x, m)); // which facility an experiment uses
+    ids.forEach(id => g.mergeNodeAttributes(id, styleOf(id)));
+    return ids;
+  }
+  const fold = fid => folds.get(fid).members.forEach(({ id }) => g.hasNode(id) && g.dropNode(id));
+  function apply(keep) {
+    const next = wanted(keep), added = new Set();
+    for (const fid of [...open]) if (!next.has(fid)) { fold(fid); open.delete(fid); }
+    for (const fid of next) if (!open.has(fid)) { open.add(fid); expand(fid).forEach(i => added.add(i)); }
+    computeFocus();
+    if (added.size) { settle(added); if (bboxFrozen) fitView(); burst(); } // new nodes may lie outside a frozen box
+  }
+  compact.onchange = () => { apply(false); relax(150); refresh(); fitView(); stats(); renderPanel(); };
+  function setFocus(id, hops) {
+    focus = id ? { id, hops } : null;
+    apply(false); computeFocus(); relax(250); refresh(); fitView(); stats(); renderPanel();
+  }
+
+  // ---- side panel ----
+  function renderPanel() {
+    const panel = document.getElementById("sel");
+    let html = "";
+    if (focus) html += `<div class="banner"><b>Around ${e(g.getNodeAttribute(focus.id, "label"))}</b><div class="muted">${focus.hops} link${focus.hops > 1 ? "s" : ""} out</div><div class="row"><button id="wider">${focus.hops > 1 ? "Closer" : "Wider"}</button><button id="everything">Show everything</button></div></div>`;
+    if (sel.size > 1) { renderMulti(html); return; }
+    if (!selected || !g.hasNode(selected)) { panel.innerHTML = html + HINT; bindBanner(); return; }
+    const n = g.getNodeAttributes(selected);
+    const nb = g.neighbors(selected).filter(isVisible).map(x => g.getNodeAttributes(x)).sort((a, b) => a.label.localeCompare(b.label));
+    const canOpen = n.kind !== "fold";
+    html += `<h1>${e(n.label)}</h1><div class="muted">${NAMES[n.kind]}${n.orphan ? " - no links" : ""}${n.count && n.kind === "experiment" ? ` - ${n.count} objects` : ""}</div>
+      <div class="row">${canOpen ? '<button class="primary" id="openPage">Open page</button>' : ""}${!focus ? '<button id="f1">Only around this</button>' : ""}</div>
+      <div class="muted">${nb.length} linked</div><ul>${nb.slice(0, 40).map(x => `<li><a data-id="${e(x.id)}">${e(x.label)}</a> <span class="muted">${NAMES[x.kind]}</span></li>`).join("")}</ul>${nb.length > 40 ? `<div class="muted">and ${nb.length - 40} more</div>` : ""}`;
+    panel.innerHTML = html; bindBanner();
+    if (canOpen) document.getElementById("openPage").onclick = () => openInPortal(n);
+    document.getElementById("f1")?.addEventListener("click", () => setFocus(selected, 1));
+    panel.querySelectorAll("a[data-id]").forEach(a => a.onclick = async () => { await select(a.dataset.id); const p = sigma.getNodeDisplayData(a.dataset.id); p && sigma.getCamera().animate({ x:p.x, y:p.y }, { duration:300 }); });
+  }
+  function renderMulti(html) {
+    const panel = document.getElementById("sel"), items = selItems(), v = verdictNow();
+    const byType = new Map(); items.forEach(i => byType.set(i.type, [...(byType.get(i.type) || []), i]));
+    const writable = inst.test;
+    html += `<h1>${items.length} selected</h1><div class="muted">${[...byType].map(([t, l]) => `${l.length} ${l.length === 1 ? NAMES[t].toLowerCase() : plural(t)}`).join(", ")}</div>`;
+    html += v.kind === "link" ? '<div class="verdict ok">These can be linked.</div>'
+      : v.kind === "later" ? `<div class="verdict later">${e(v.why)}</div>`
+      : `<div class="verdict no">Not linkable: ${e(v.why)}</div>`;
+    html += `<div id="ask"></div><div class="row"><button class="primary" id="linkBtn" ${v.kind === "link" && writable ? "" : "disabled"}>Link selection</button><button id="unlinkBtn" ${v.kind !== "none" && writable ? "" : "disabled"}>Unlink selection</button><button id="clearBtn">Clear</button></div>`;
+    if (!writable) html += '<div class="muted">Changing PHIS is switched off here: this server is not the test instance.</div>';
+    html += `<ul>${items.slice(0, 40).map(i => `<li${v.bad?.includes(i.id) ? ' style="color:#d33"' : ""}>${e(i.label)} <span class="muted">${NAMES[i.type]}</span></li>`).join("")}</ul>${items.length > 40 ? `<div class="muted">and ${items.length - 40} more</div>` : ""}`;
+    panel.innerHTML = html; bindBanner();
+    document.getElementById("clearBtn").onclick = () => setSelection([], "replace");
+    document.getElementById("linkBtn").onclick = () => writeLinks(items);
+    document.getElementById("unlinkBtn").onclick = () => writeUnlinks(items);
+  }
+  async function post(url, body) {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, body: JSON.stringify(body) });
+    return { ok: r.ok, body: await r.json().catch(() => ({})) };
+  }
+  const reloadFresh = () => { location.href = location.pathname + "?fresh=1"; };
+  function note(msg) { const b = document.createElement("div"); b.className = "banner"; b.textContent = msg; document.getElementById("sel").prepend(b); }
+
+  // A confirmation inside the panel: browser dialogs are blocked in some embedded browsers, and then the buttons would do nothing at all.
+  function ask(title, lines, goLabel, word, onGo) {
+    const slot = document.getElementById("ask"); if (!slot) return;
+    slot.innerHTML = `<div class="banner"><b>${e(title)}</b><ul>${lines.slice(0, 12).map(l => `<li>${e(l)}</li>`).join("")}</ul>${lines.length > 12 ? `<div class="muted">and ${lines.length - 12} more</div>` : ""}
+      <div class="row">${word ? `<input id="askWord" autocomplete="off" placeholder="type ${e(word)} to confirm" style="font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);width:150px">` : ""}<button class="primary" id="askGo" ${word ? "disabled" : ""}>${e(goLabel)}</button><button id="askNo">Cancel</button></div></div>`;
+    const go = document.getElementById("askGo"), input = document.getElementById("askWord");
+    if (input) { input.focus(); input.oninput = () => { go.disabled = input.value.trim().toLowerCase() !== word; }; input.onkeydown = ev => { if (ev.key === "Enter" && !go.disabled) go.click(); }; }
+    document.getElementById("askNo").onclick = () => { slot.innerHTML = ""; };
+    go.onclick = async () => { go.disabled = true; await onGo(); };
+  }
+  const itemBody = items => ({ items: items.map(({ type, id }) => ({ type, id })) });
+  function writeLinks(items) {
+    ask(`Link these ${items.length} things to each other?`, items.map(i => i.label), "Link", null, async () => {
+      const r = await post("api/link", itemBody(items));
+      if (!r.ok) { document.getElementById("ask").innerHTML = ""; return note(`Could not link: ${r.body.error || "refused"}`); }
+      commitLocal("link", items);
+    });
+  }
+  async function writeUnlinks(items) {
+    const preview = await post("api/unlink", itemBody(items));
+    if (!preview.ok) return note(`Could not check: ${preview.body.error || "refused"}`);
+    const links = preview.body.links || [];
+    if (!links.length) return note("There are no links between these to remove.");
+    ask(`${links.length} link${links.length === 1 ? "" : "s"} will be removed`, links, "Remove links", "unlink", async () => {
+      const r = await post("api/unlink", { ...itemBody(items), confirm: true });
+      if (!r.ok) { document.getElementById("ask").innerHTML = ""; return note(`Stopped: ${r.body.error || "refused"}. Removed so far: ${(r.body.removed || []).length}.`); }
+      commitLocal("unlink", items);
+    });
+  }
+
+  // The picture follows the change at once: PHIS has accepted it, so the links it must now have are drawn (the nodes snap together / pop apart) without waiting,
+  // and PHIS is asked in the background afterwards to confirm. If the change touches something folded away, the picture is rebuilt instead.
+  let known = new Set(data.edges.map(ed => edgeKey(ed.source, ed.target)));
+  function applyDiff(added, gone, animate) {
+    for (const [a, b] of gone) { known.delete(edgeKey(a, b)); if (g.hasEdge(a, b)) g.dropEdge(a, b); }
+    for (const [a, b] of added) { known.add(edgeKey(a, b)); if (!g.hasEdge(a, b)) g.addEdge(a, b); }
+    new Set([...added, ...gone].flat()).forEach(id => g.mergeNodeAttributes(id, styleOf(id)));
+    if (animate) animatePairs(added, gone);
+    stats(); refresh(); renderPanel();
+    if (animate) note(added.length ? `Linked (${added.length} new)` : gone.length ? `Removed ${gone.length} link${gone.length === 1 ? "" : "s"}` : "Nothing changed.");
+  }
+  function commitLocal(kind, items) {
+    const ids = items.map(i => i.id);
+    if (!ids.every(id => g.hasNode(id))) { reconcile(); return; }
+    const pairs = [], okType = (x, y) => x !== y && ((ADJACENT[x] || []).includes(y) || (ADJACENT[y] || []).includes(x));
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      const a = items[i].id, b = items[j].id;
+      if (kind === "unlink" ? g.hasEdge(a, b) : (okType(items[i].type, items[j].type) && !g.hasEdge(a, b))) pairs.push([a, b]);
+    }
+    applyDiff(kind === "link" ? pairs : [], kind === "unlink" ? pairs : [], true);
+    reconcile();
+  }
+  async function reconcile() { // what PHIS says now, compared with the picture; differences are applied quietly
+    const fresh = await (await fetch(`api/graph?fresh=1&t=${Date.now()}`, { cache: "no-store" })).json();
+    const now = new Set(fresh.edges.map(ed => edgeKey(ed.source, ed.target)));
+    const added = [...now].filter(k => !known.has(k)).map(k => k.split(" ")), gone = [...known].filter(k => !now.has(k)).map(k => k.split(" "));
+    if ([...added, ...gone].some(([a, b]) => !g.hasNode(a) || !g.hasNode(b))) { setTimeout(reloadFresh, 300); return; }
+    if (added.length || gone.length) applyDiff(added, gone, false);
+  }
+  // Motion: linked nodes are pulled together fast, touch, and settle with a small bounce, with a ring where they meet and the new link flashing; unlinked nodes
+  // are thrown apart, overshoot a little and settle, with a ring and sparks where the link was.
+  function animatePairs(linked, unlinked) {
+    const T0 = performance.now(), DUR = 750, moves = [];
+    const at = id => { const a = g.getNodeAttributes(id); return { x: a.x, y: a.y }; };
+    for (const [a, b] of linked) { moves.push({ a, b, A: at(a), B: at(b), snap: true, fired: false }); fx.flash.add(edgeKey(a, b)); }
+    for (const [a, b] of unlinked) moves.push({ a, b, A: at(a), B: at(b), snap: false, fired: false });
+    const nodes = new Set(moves.flatMap(m => [m.a, m.b])); nodes.forEach(id => g.setNodeAttribute(id, "fixed", true));
+    const colour = snap => snap ? (dark ? "#9be7a8" : "#2f9a4a") : "#ee6055";
+    const cubic = t => t * t * t, out = t => 1 - Math.pow(1 - t, 3);
+    const curve = (snap, t) => snap
+      ? (t < .34 ? cubic(t / .34) : 1 + .16 * Math.sin((t - .34) / .66 * Math.PI * 3) * (1 - (t - .34) / .66)) // fast pull in, then a damped bounce
+      : (t < .26 ? out(t / .26) * 1.3 : 1.3 - .3 * out((t - .26) / .74) + .05 * Math.sin((t - .26) / .74 * Math.PI * 2) * (1 - (t - .26) / .74)); // thrown out, settles back a little
+    const loop = now => {
+      const t = Math.min(1, (now - T0) / DUR);
+      for (const m of moves) {
+        const dx = m.B.x - m.A.x, dy = m.B.y - m.A.y, len = Math.hypot(dx, dy) || 1e-6, ux = dx / len, uy = dy / len, mid = { x: (m.A.x + m.B.x) / 2, y: (m.A.y + m.B.y) / 2 };
+        const shift = len * (m.snap ? .36 : .3) * curve(m.snap, t) * (m.snap ? 1 : -1);
+        if (g.hasNode(m.a)) g.mergeNodeAttributes(m.a, { x: m.A.x + ux * shift, y: m.A.y + uy * shift });
+        if (g.hasNode(m.b)) g.mergeNodeAttributes(m.b, { x: m.B.x - ux * shift, y: m.B.y - uy * shift });
+        if (!m.fired && (!m.snap || t >= .34)) { // the moment of contact, or of the break
+          m.fired = true; fx.pulses.push({ at: mid, t0: performance.now(), color: colour(m.snap) });
+          if (!m.snap) for (let k = 0; k < 9; k++) fx.sparks.push({ at: mid, t0: performance.now(), angle: k / 9 * Math.PI * 2 + Math.random() * .5, speed: 24 + Math.random() * 30, color: colour(false) });
+        }
+      }
+      drawLabels();
+      if (t < 1 || fx.pulses.length || fx.sparks.length) requestAnimationFrame(loop);
+      else { nodes.forEach(id => g.hasNode(id) && g.removeNodeAttribute(id, "fixed")); setTimeout(() => { fx.flash.clear(); sigma.refresh(); }, 250); }
+    };
+    requestAnimationFrame(loop);
+  }
+  function bindBanner() {
+    document.getElementById("wider")?.addEventListener("click", () => setFocus(focus.id, focus.hops > 1 ? 1 : 2));
+    document.getElementById("everything")?.addEventListener("click", () => setFocus(null));
+  }
+  // mode: "replace" (plain click, window), "toggle" (Ctrl+click), "add" (Ctrl+window)
+  function setSelection(ids, mode) {
+    if (mode === "replace") sel.clear();
+    for (const id of ids) {
+      if (!g.hasNode(id)) continue;
+      if (mode === "toggle") sel.has(id) ? sel.delete(id) : sel.add(id); else sel.add(id);
+    }
+    selected = sel.size ? [...sel].at(-1) : null;
+    apply(mode !== "replace");
+    for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
+    selected = sel.size ? [...sel].at(-1) : null;
+    refresh(); stats(); renderPanel();
+  }
+  async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
+
+  // ---- dragging: the node follows the cursor and is pinned while held; with live physics the rest follows ----
+  let drag = null, lastDrag = 0, dragRun = false, box = null; // a drag ends with a click event of its own, which must not select or fold
+  sigma.on("downNode", ({ node, event }) => { freezeBBox(); home.delete(node); drag = { node, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(node, "fixed", true); });
+  // a node is also dragged by its text: a press on a label starts the same drag as a press on the dot
+  sigma.on("downStage", ({ event }) => {
+    const id = labelAt(event.x, event.y);
+    if (id) { freezeBBox(); drag = { node:id, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(id, "fixed", true); return; }
+    if (event.original.button === 0) box = { x:event.x, y:event.y, moved:false, add: mods(event) }; // left-drag on empty space draws a selection window
+  });
+  sigma.getMouseCaptor().on("mousemovebody", (ev) => {
+    if (!drag) return;
+    if (Math.hypot(ev.x - drag.x, ev.y - drag.y) > 4) drag.moved = true;
+    if (drag.moved && !liveOn) { dragRun = true; startLive(); } // the graph follows the node even with ForceAtlas off, for as long as the node is held
+    if (!drag.moved) return;
+    const pos = sigma.viewportToGraph(ev);
+    g.mergeNodeAttributes(drag.node, { x:pos.x, y:pos.y });
+    ev.preventSigmaDefault(); ev.original.preventDefault(); ev.original.stopPropagation();
+  });
+  const release = () => { if (!drag) return; if (dragRun) { dragRun = false; if (!live.checked) stopLive(); } if (drag.moved) lastDrag = Date.now(); if (g.hasNode(drag.node)) g.removeNodeAttribute(drag.node, "fixed"); setTimeout(() => (drag = null), 0); };
+  const marquee = document.getElementById("marquee");
+  sigma.getMouseCaptor().on("mousemovebody", (ev) => {
+    if (!box) return;
+    if (Math.hypot(ev.x - box.x, ev.y - box.y) > 5) box.moved = true;
+    if (!box.moved) return;
+    Object.assign(marquee.style, { display:"block", left:Math.min(box.x, ev.x) + "px", top:Math.min(box.y, ev.y) + "px", width:Math.abs(ev.x - box.x) + "px", height:Math.abs(ev.y - box.y) + "px" });
+    box.x1 = ev.x; box.y1 = ev.y;
+    ev.preventSigmaDefault(); ev.original.preventDefault(); ev.original.stopPropagation(); // the view stays put while the window is drawn
+  });
+  const endBox = () => {
+    if (!box) return;
+    const b = box; box = null; marquee.style.display = "none";
+    if (!b.moved || b.x1 === undefined) return;
+    lastDrag = Date.now();
+    const x0 = Math.min(b.x, b.x1), x1 = Math.max(b.x, b.x1), y0 = Math.min(b.y, b.y1), y1 = Math.max(b.y, b.y1), ids = [];
+    g.forEachNode((id, a) => { if (!isVisible(id)) return; const v = sigma.graphToViewport({ x:a.x, y:a.y }); if (v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1) ids.push(id); });
+    setSelection(ids, b.add ? "add" : "replace");
+  };
+  sigma.getMouseCaptor().on("mouseup", endBox);
+  sigma.getMouseCaptor().on("mouseup", release);
+  sigma.getMouseCaptor().on("mouseleave", release);
+
+  // ---- labels: drawn on a layer of their own so that they never overlap. Each label tries a fixed set of places around its node (right, left, above, below,
+  // the diagonals, then a little further out), most important first (selected, then connected, then the larger nodes), keeping the place it had if it is still free so
+  // labels do not jump about while a node is dragged. A label that finds no free place is left out until there is room. The text is part of its node: it can be clicked and dragged. ----
+  const labelLayer = document.createElement("canvas"), lctx = labelLayer.getContext("2d");
+  Object.assign(labelLayer.style, { position:"absolute", left:"0", top:"0", width:"100%", height:"100%", pointerEvents:"none", zIndex:"1" });
+  sigma.getContainer().appendChild(labelLayer);
+  let labelRects = []; const labelSlot = new Map();
+  const LABEL_H = 18, LABEL_FONT = "13px Arial";
+  const slotsFor = (x, y, r, w) => { const gap = r + 3, h = LABEL_H; return [
+    [x + gap, y - h / 2], [x - gap - w, y - h / 2], [x + r * .5, y - r - h], [x + r * .5, y + r], [x - r * .5 - w, y - r - h], [x - r * .5 - w, y + r],
+    [x - w / 2, y - r - h - 1], [x - w / 2, y + r + 1], [x + gap + 12, y - h * 1.4], [x + gap + 12, y + h * .4], [x - gap - 12 - w, y - h * 1.4], [x - gap - 12 - w, y + h * .4],
+    [x + gap + 30, y - h / 2], [x - gap - 30 - w, y - h / 2], [x - w / 2, y - r - h * 2.2], [x - w / 2, y + r + h * 1.2]
+  ]; };
+  function drawLabels() {
+    const box = labelLayer.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1;
+    if (labelLayer.width !== Math.round(box.width * k) || labelLayer.height !== Math.round(box.height * k)) { labelLayer.width = Math.round(box.width * k); labelLayer.height = Math.round(box.height * k); }
+    lctx.setTransform(k, 0, 0, k, 0, 0); lctx.clearRect(0, 0, box.width, box.height); lctx.font = LABEL_FONT; lctx.textBaseline = "middle";
+    const items = [], discs = [];
+    g.forEachNode((id, a) => {
+      const d = sigma.getNodeDisplayData(id); if (!d || d.hidden) return;
+      const v = sigma.graphToViewport({ x:a.x, y:a.y }), r = sigma.scaleSize(d.size);
+      discs.push({ id, x:v.x, y:v.y, r });
+      if (d.label && (d.forceLabel || r >= 6)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
+    });
+    items.sort((a, b) => a.rank - b.rank || b.size - a.size);
+    const placed = [], clash = R => placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
+      || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
+    for (const it of items) {
+      const w = lctx.measureText(it.label).width + 8, slots = slotsFor(it.x, it.y, it.r, w), first = labelSlot.get(it.id) ?? 0;
+      const order = [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
+      let pick = -1;
+      for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LABEL_H }; if (!clash(R)) { pick = si; break; } }
+      if (pick < 0 && it.rank === 0) pick = 0; // a selected node always keeps its name
+      if (pick < 0) { labelSlot.delete(it.id); continue; }
+      labelSlot.set(it.id, pick);
+      placed.push({ id:it.id, x:slots[pick][0], y:slots[pick][1], w, h:LABEL_H, rank:it.rank, text:it.label });
+    }
+    labelRects = placed;
+    const ink = dark ? "#e6ebe0" : "#1d2a1a", paper = dark ? "22,27,20" : "251,252,248";
+    for (const R of [...placed].reverse()) {
+      lctx.globalAlpha = lit && R.rank === 2 ? .6 : 1;
+      if (R.rank === 0) { lctx.fillStyle = dark ? "#222a1f" : "#ffffff"; lctx.shadowColor = "rgba(0,0,0,.25)"; lctx.shadowBlur = 4; lctx.fillRect(R.x, R.y, R.w, R.h); lctx.shadowBlur = 0; }
+      else { lctx.lineWidth = 3; lctx.strokeStyle = `rgba(${paper},.8)`; lctx.lineJoin = "round"; lctx.strokeText(R.text, R.x + 4, R.y + R.h / 2); }
+      lctx.fillStyle = ink; lctx.fillText(R.text, R.x + 4, R.y + R.h / 2);
+    }
+    lctx.globalAlpha = 1;
+    drawFx();
+  }
+  function drawFx() {
+    const now = performance.now(), ease = t => 1 - Math.pow(1 - t, 3);
+    fx.pulses = fx.pulses.filter(q => now - q.t0 < 520); fx.sparks = fx.sparks.filter(q => now - q.t0 < 520);
+    for (const q of fx.pulses) { // an expanding ring
+      const age = (now - q.t0) / 520, v = sigma.graphToViewport(q.at);
+      lctx.globalAlpha = (1 - age) * .85; lctx.strokeStyle = q.color; lctx.lineWidth = 1 + 4 * (1 - age);
+      lctx.beginPath(); lctx.arc(v.x, v.y, 6 + 52 * ease(age), 0, Math.PI * 2); lctx.stroke();
+    }
+    for (const q of fx.sparks) { // little sparks flying out
+      const age = (now - q.t0) / 520, v = sigma.graphToViewport(q.at), d = 6 + q.speed * ease(age);
+      lctx.globalAlpha = (1 - age) * .9; lctx.fillStyle = q.color; lctx.beginPath(); lctx.arc(v.x + Math.cos(q.angle) * d, v.y + Math.sin(q.angle) * d, 3 * (1 - age) + .5, 0, Math.PI * 2); lctx.fill();
+    }
+    lctx.globalAlpha = 1;
+  }
+  sigma.on("afterRender", drawLabels);
+  function labelAt(x, y) { const R = labelRects.find(R => x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h); return R ? R.id : null; }
+  const mods = ev => ev.original.ctrlKey || ev.original.metaKey;
+  sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) select(node, mods(event)); });
+  sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (a.kind !== "fold") openInPortal(a); });
+  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const id = labelAt(event.x, event.y); select(id, id && mods(event)); } });
+  sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (a.kind !== "fold") openInPortal(a); });
+  sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) ? "pointer" : ""; });
+
+  // right-drag moves the view
+  const surface = sigma.getContainer(); let pan = null;
+  surface.addEventListener("contextmenu", ev => ev.preventDefault());
+  surface.addEventListener("mousedown", ev => { if (ev.button !== 2) return; const r = surface.getBoundingClientRect(); pan = { x: ev.clientX - r.left, y: ev.clientY - r.top }; ev.preventDefault(); });
+  window.addEventListener("mousemove", ev => {
+    if (!pan) return;
+    const r = surface.getBoundingClientRect(), cur = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    const a = sigma.viewportToFramedGraph(pan), b = sigma.viewportToFramedGraph(cur), cam = sigma.getCamera();
+    cam.setState({ x: cam.getState().x + a.x - b.x, y: cam.getState().y + a.y - b.y }); pan = cur;
+  });
+  window.addEventListener("mouseup", () => { pan = null; });
+
+  renderChips(); stats(); refresh(); // refresh draws the first labels
+  // ?focus=<uri>&hops=1|2 opens the graph around one resource (how a resource page will link here)
+  const want = params.get("focus");
+  if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
+  if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
+  window.__spike = { spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+})();
+</script>
+</body>
+</html>
