@@ -3660,3 +3660,25 @@ test("graph: reads share one rebuild and one cache, ?fresh does not bypass it, a
     assert.equal(reads, 2, "a change drops the cached picture");
   });
 });
+
+test("graph: a read that comes after a change does not join a rebuild that began before it", async () => {
+  await withServer(async (base) => {
+    let reads = 0, release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/organisations") && ++reads === 1) await gate; // the first rebuild is slow
+      return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+    }) as typeof fetch;
+    const change = () => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    await change(); // starts from an empty cache, whatever an earlier test left
+    const first = realFetch(`${base}/api/graph`);
+    await new Promise((r) => setTimeout(r, 50));
+    await change();
+    const second = realFetch(`${base}/api/graph`);
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    await Promise.all([first, second]);
+    assert.equal(reads, 2, "the read after the change started its own rebuild");
+  });
+});

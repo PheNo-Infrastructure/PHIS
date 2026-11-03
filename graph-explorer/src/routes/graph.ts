@@ -37,7 +37,7 @@ async function mapLimit<T, R>(items: T[], fn: (x: T) => Promise<R>): Promise<R[]
 }
 
 // Concurrent readers share one rebuild.
-let inflight: Promise<string> | null = null;
+let inflight: { gen: number; p: Promise<string> } | null = null; // a rebuild that began before a change is not joined by a read that came after it
 
 async function build(): Promise<string> {
   const pages = await Promise.all(SOURCES.map((s) => authedGet(s.url)));
@@ -80,8 +80,12 @@ export const handleGraph: RouteHandler = async (req, res, { pathname }) => {
   if (cached && Date.now() - cached.at < CACHE_MS) body = cached.body;
   else {
     const started = generation;
-    inflight ??= build().finally(() => { inflight = null; });
-    body = await inflight;
+    if (!inflight || inflight.gen !== generation) {
+      const p = build();
+      inflight = { gen: started, p };
+      p.finally(() => { if (inflight?.p === p) inflight = null; }).catch(() => {});
+    }
+    body = await inflight.p;
     if (started === generation) cached = { at: Date.now(), body };
   }
   res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
