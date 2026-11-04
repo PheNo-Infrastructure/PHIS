@@ -550,7 +550,7 @@ async function openInPortal(n) {
   function burst() {
     if (!liveOn) startLive();
     clearTimeout(burstTimer);
-    burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); if (outOfView(g.nodes().filter(inLayout))) easeFit(); }, 2200); // long enough for a big group to find its shape; the view then eases out only if something has drifted off it
+    burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); if (!clusters.length && outOfView(g.nodes().filter(isVisible))) easeFit(); }, 2200); // long enough for a big group to find its shape; the view then eases out only if something has drifted off it
   }
   function settle(newIds) { // new nodes find their place while everything on screen stays put
     const wasLive = liveOn; stopLive(); relax(400, id => !newIds.has(id)); if (wasLive) startLive();
@@ -609,7 +609,7 @@ async function openInPortal(n) {
   // Zoom out and re-centre, smoothly, just enough to bring everything visible into view; the nodes themselves stay where they are.
   function easeFit() {
     const { width, height } = sigma.getDimensions(); let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    g.forEachNode((id, a) => { if (!inLayout(id)) return; const v = sigma.graphToViewport({ x:a.x, y:a.y }); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); });
+    g.forEachNode((id, a) => { if (!isVisible(id)) return; const v = sigma.graphToViewport({ x:a.x, y:a.y }); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); });
     if (x0 === Infinity) return;
     const cam = sigma.getCamera(), st = cam.getState(), k = Math.max(1, (x1 - x0 + 160) / width, (y1 - y0 + 80) / height), c = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
     cam.animate({ x:c.x, y:c.y, ratio:st.ratio * k }, { duration:600 });
@@ -622,7 +622,7 @@ async function openInPortal(n) {
     for (const fid of next) if (!open.has(fid)) { open.add(fid); expand(fid).forEach(i => added.add(i)); }
     computeFocus();
     if (folded && !added.size) burst(); // ForceAtlas runs a little after a group folds, so what is left closes up
-    if (added.size) { settle(added); if (outOfView(added)) easeFit(); burst(); } // the view only moves when something would land outside it; no shaking of the rest
+    if (added.size) { settle(added); if (!clusters.length && outOfView(added)) easeFit(); burst(); } // with painted clusters the camera is the reader's: things off screen are expected // the view only moves when something would land outside it; no shaking of the rest
   }
   compact.onchange = () => { apply(false); relax(150); refresh(); fitView(); stats(); renderPanel(); };
   function setFocus(id, hops) {
