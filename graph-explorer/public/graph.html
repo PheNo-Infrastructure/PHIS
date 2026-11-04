@@ -137,9 +137,11 @@ async function openInPortal(n) {
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
   const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
-  // A cluster shows its nodes once they are far enough apart on screen to read (average gap between neighbours, in px), and is painted again when they crowd below the lower one.
+  // A cluster shows its nodes once it nearly fills the view and they have room (average gap between neighbours in px), and is painted again when it shrinks below the lower share.
   // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.
-  const GAP_SHOW = 44, GAP_HIDE = 34;
+  // (rewritten: a cluster must nearly fill the view, and its nodes must also have room)
+  const SHOW_FRAC = .4, HIDE_FRAC = .3; // a cluster's radius as a share of the shorter side of the view
+  const MIN_GAP = 30; // and its neighbours at least this far apart on screen, so a crowded cluster needs more zoom than a sparse one
   const MIN_CLUSTERED = 500, MIN_CLUSTER = 8; // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
   const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
     clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
@@ -913,7 +915,8 @@ async function openInPortal(n) {
     for (const D of list) {
       const kind = kindOf(D.id), faded = lit && !lit.has(D.id) && !canLink.has(D.id), k = D.r * 1.15 / 24;
       lctx.globalAlpha = faded ? .4 : 1;
-      lctx.lineWidth = 1; lctx.strokeStyle = "#264030"; lctx.beginPath(); lctx.arc(D.x, D.y, D.r, 0, Math.PI * 2); lctx.stroke();
+      lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 1, 0, Math.PI * 2); lctx.lineWidth = 3; lctx.strokeStyle = "rgba(255,255,255,.85)"; lctx.stroke();
+      lctx.lineWidth = 1.3; lctx.strokeStyle = "#264030"; lctx.beginPath(); lctx.arc(D.x, D.y, D.r, 0, Math.PI * 2); lctx.stroke();
       lctx.save(); lctx.translate(D.x - 12 * k, D.y - 12 * k); lctx.scale(k, k);
       lctx.lineWidth = 2.2; lctx.lineCap = "round"; lctx.lineJoin = "round"; lctx.strokeStyle = ON_DARK.has(kind) ? "#e3eba1" : "#264030"; lctx.stroke(ICONS[kind]);
       lctx.restore();
@@ -944,7 +947,8 @@ async function openInPortal(n) {
   function zoomToCluster(key) { // a deliberate zoom onto a painted cluster, far enough in that its nodes can be read
     const G = lastGeo.get(key); if (!G) return;
     const cam = sigma.getCamera(), st = cam.getState(), to = sigma.viewportToFramedGraph({ x:G.cx, y:G.cy });
-    cam.animate({ x:to.x, y:to.y, ratio: Math.max(.005, Math.min(st.ratio, st.ratio * gapOf(G) / (GAP_SHOW * 1.3))) }, { duration: 500 });
+    const box = terr.getBoundingClientRect(), more = Math.max(SHOW_FRAC * 1.25 * Math.min(box.width, box.height) / G.spread, MIN_GAP * 1.3 / gapOf(G)); // zoom in until it fills the view and its nodes have room
+    cam.animate({ x:to.x, y:to.y, ratio: Math.max(.003, Math.min(st.ratio, st.ratio / more)) }, { duration: 600 });
   }
   const gapOf = G => G.spread * Math.sqrt(Math.PI / (G.c.members.length * .9)); // the average distance between neighbours in the cluster, on screen
   function drawTerritories() {
@@ -964,8 +968,8 @@ async function openInPortal(n) {
     lastGeo = geo;
     let flipped = false; // zoom decides what is painted and what is drawn as nodes, per cluster, with a margin so it does not flicker at the border
     for (const G of geo.values()) {
-      const gap = gapOf(G);
-      if (G.off && gap >= GAP_SHOW) { collapsed.delete(G.c.key); flipped = true; } else if (!G.off && gap < GAP_HIDE) { collapsed.add(G.c.key); flipped = true; }
+      const gap = gapOf(G), frac = G.spread / Math.min(w, h);
+      if (G.off && frac >= SHOW_FRAC && gap >= MIN_GAP) { collapsed.delete(G.c.key); flipped = true; } else if (!G.off && (frac < HIDE_FRAC || gap < MIN_GAP * .75)) { collapsed.add(G.c.key); flipped = true; }
     }
     if (flipped) requestAnimationFrame(() => { refresh(); stats(); });
     // Links between clusters run from node to node (the nodes are hidden but still where they are), on a layer above the paint and below the nodes.
@@ -973,7 +977,7 @@ async function openInPortal(n) {
     const lw = links.parentElement.getBoundingClientRect();
     if (links.width !== Math.round(lw.width * k) || links.height !== Math.round(lw.height * k)) { links.width = Math.round(lw.width * k); links.height = Math.round(lw.height * k); }
     lctx2.setTransform(k, 0, 0, k, 0, 0); lctx2.clearRect(0, 0, w, h);
-    lctx2.strokeStyle = "#5f7a52"; lctx2.lineWidth = 1; lctx2.globalAlpha = lit ? .1 : .55; lctx2.beginPath();
+    lctx2.strokeStyle = "#5f7a52"; lctx2.lineWidth = 1; lctx2.globalAlpha = lit ? .1 : .2 + .22 * (1 - smooth(.15, .8, sigma.getCamera().getState().ratio)); // fainter the further out the view lctx2.beginPath();
     g.forEachEdge((e, a, s2, t2) => {
       const ks = clusterOf.get(s2), kt = clusterOf.get(t2);
       if (ks !== undefined && ks === kt) return;
@@ -997,7 +1001,7 @@ async function openInPortal(n) {
         terrHits.push({ key: c.key, pts, pr: BLOB * CLOSED_R * 1.2 / ratio });
         continue;
       }
-      const fade = (1 - smooth(GAP_SHOW, GAP_SHOW * 1.8, gapOf({ c, spread }))) * (lit ? .4 : 1); if (fade <= .02) continue; // the name goes as the nodes become readable
+      const fade = (1 - smooth(SHOW_FRAC, SHOW_FRAC * 1.5, spread / Math.min(w, h))) * (lit ? .4 : 1); if (fade <= .02) continue; // the name goes as the nodes become readable
       const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9; // a shown cluster: its name above the area, to drag it by
       tctx.globalAlpha = fade * .85; tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`;
       tctx.strokeText(c.name, cx, ty); tctx.fillText(c.name, cx, ty);
