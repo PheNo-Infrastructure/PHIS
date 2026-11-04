@@ -107,6 +107,7 @@ async function openInPortal(n) {
   const MIN_GROUP = 3;
   const folds = new Map(), memberFold = new Map(), open = new Set(), byParents = new Map();
   const areaGroups = [], groupOf = new Map();
+  let units = []; // the ordered layout's units (see buildUnits)
   g.forEachNode((id, a) => {
     if (a.kind !== "facility") return;
     const parents = g.neighbors(id).filter(x => ["organization", "site"].includes(kindOf(x))).sort();
@@ -534,6 +535,7 @@ async function openInPortal(n) {
 
   // Layout runs on a copy of what is visible, so hidden nodes neither push nor pull.
   function relax(iterations, pinned) {
+    if (units.length) return relaxUnits(iterations, pinned);
     const sub = new Graph({ type:"undirected" });
     g.forEachNode((id, a) => { if (inLayout(id)) sub.addNode(id, { x:a.x, y:a.y, fixed: !!a.fixed || !!pinned?.(id) }); });
     if (sub.order < 2) return;
@@ -541,6 +543,68 @@ async function openInPortal(n) {
     tieGroups(sub);
     FA2.assign(sub, { iterations, settings: settingsFor(sub) });
     sub.forEachNode((id, a) => g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
+  }
+
+  // ---- ordered layout: the members of a cluster or group sit on a grid (by type, then name). A cluster is one unit (its groups are blocks of it), a group outside a cluster is a unit, and so is every
+  // loose node. ForceAtlas moves the units whole (sized to their grid, so they cannot overlap), not the nodes inside them. ----
+  const TYPE_ORDER = ["organization", "site", "facility", "device", "project", "experiment", "person", "group", "factor", "species"];
+  function buildUnits() {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, n = 0;
+    g.forEachNode((id, a) => { if (!inLayout(id)) return; n++; x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
+    if (n < 2) { units = []; return; }
+    const cell = Math.sqrt(Math.max(1e-12, (x1 - x0) * (y1 - y0)) / n) * .8; // about the spacing the force layout gave
+    const typeIx = id => { const i = TYPE_ORDER.indexOf(kindOf(id)); return i < 0 ? TYPE_ORDER.length : i; };
+    const label = id => String(g.getNodeAttribute(id, "label"));
+    const grid = ids => { const sorted = ids.filter(id => g.hasNode(id)).sort((a, b) => typeIx(a) - typeIx(b) || label(a).localeCompare(label(b))), cols = Math.max(1, Math.ceil(Math.sqrt(sorted.length))); return { w: cols, h: Math.max(1, Math.ceil(sorted.length / cols)), cells: sorted.map((id, i) => ({ id, x: i % cols, y: Math.floor(i / cols) })) }; };
+    const pack = blocks => { // shelf packing with a one-cell gap between blocks
+      const area = blocks.reduce((t, b) => t + (b.w + 1) * (b.h + 1), 0), W = Math.max(...blocks.map(b => b.w + 1), Math.ceil(Math.sqrt(area * 1.2)));
+      blocks.sort((a, b) => b.h - a.h);
+      let x = 0, y = 0, rowH = 0, maxX = 0;
+      for (const b of blocks) { if (x > 0 && x + b.w + 1 > W) { x = 0; y += rowH; rowH = 0; } b.x = x; b.y = y; x += b.w + 1; rowH = Math.max(rowH, b.h + 1); maxX = Math.max(maxX, x); }
+      return { w: maxX - 1, h: y + rowH - 1 };
+    };
+    const unitOf = blocks => {
+      const box = pack(blocks), members = [];
+      for (const b of blocks) for (const c of b.cells) members.push({ id: c.id, dx: (b.x + c.x - (box.w - 1) / 2) * cell, dy: (b.y + c.y - (box.h - 1) / 2) * cell });
+      return { members, r: Math.hypot(box.w, box.h) * cell / 2 + cell };
+    };
+    const placed = new Set(), out = [];
+    for (const c of clusters) {
+      const ids = c.members.filter(id => g.hasNode(id)), inGroups = new Set(), blocks = [];
+      for (const gp of areaGroups) if (clusterOf.get(gp.members[0]) === c.key) { blocks.push(grid(gp.members)); gp.members.forEach(id => inGroups.add(id)); }
+      const rest = ids.filter(id => !inGroups.has(id)); if (rest.length) blocks.push(grid(rest));
+      if (blocks.length) out.push(unitOf(blocks)); ids.forEach(id => placed.add(id));
+    }
+    for (const gp of areaGroups) if (!placed.has(gp.members[0])) { out.push(unitOf([grid(gp.members)])); gp.members.forEach(id => placed.add(id)); }
+    g.forEachNode(id => { if (!placed.has(id)) out.push({ members: [{ id, dx: 0, dy: 0 }], r: cell }); });
+    // each unit starts where its members' centre is now, and the members snap onto the grid
+    for (const u of out) {
+      let sx = 0, sy = 0; for (const m of u.members) { const a = g.getNodeAttributes(m.id); sx += a.x; sy += a.y; }
+      const cx = sx / u.members.length, cy = sy / u.members.length;
+      for (const m of u.members) g.mergeNodeAttributes(m.id, { x: cx + m.dx, y: cy + m.dy });
+    }
+    units = out;
+  }
+  function relaxUnits(iterations, pinned) {
+    const sup = new Graph({ type:"undirected" }), uOf = new Map(), start = new Map();
+    units.forEach((u, i) => {
+      let sx = 0, sy = 0, k = 0, fixed = true;
+      for (const m of u.members) { if (!g.hasNode(m.id)) continue; const a = g.getNodeAttributes(m.id); sx += a.x - m.dx; sy += a.y - m.dy; k++; uOf.set(m.id, String(i)); if (!(a.fixed || pinned?.(m.id))) fixed = false; }
+      if (!k) return;
+      start.set(String(i), [sx / k, sy / k]);
+      sup.addNode(String(i), { x: sx / k, y: sy / k, size: u.r, fixed }); // fixed only when every member is (a whole cluster dragged by its name)
+    });
+    if (sup.order < 2) return;
+    g.forEachEdge((e, a, s2, t2) => {
+      const us = uOf.get(s2), ut = uOf.get(t2); if (us === undefined || ut === undefined || us === ut) return;
+      if (sup.hasEdge(us, ut)) sup.updateEdgeAttribute(sup.edge(us, ut), "weight", w => w + 1); else sup.addEdge(us, ut, { weight: 1 });
+    });
+    sup.forEachEdge((e, a) => sup.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
+    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: .05, scalingRatio: 10, slowDown: 4, adjustSizes: true, barnesHutOptimize: sup.order > 500 } });
+    sup.forEachNode((key, a) => {
+      const [x0, y0] = start.get(key), dx = a.x - x0, dy = a.y - y0;
+      for (const m of units[+key].members) if (g.hasNode(m.id) && !g.getNodeAttribute(m.id, "fixed")) { const q = g.getNodeAttributes(m.id); g.mergeNodeAttributes(m.id, { x: q.x + dx, y: q.y + dy }); }
+    });
   }
 
   // Sigma maps the screen onto the bounding box of ALL nodes. Dragging a node outward grows that box, which squeezes everything else and shifts the node away from the
@@ -586,7 +650,8 @@ async function openInPortal(n) {
   document.getElementById("reset").onclick = () => {
     const wasLive = liveOn; stopLive();
     g.forEachNode((id) => inLayout(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
-    relax(300); fitView(); if (wasLive) startLive();
+    if (units.length) { buildUnits(); relaxUnits(300); } else relax(300);
+    fitView(); if (wasLive) startLive();
   };
   document.getElementById("fit").onclick = () => fitView();
 
@@ -1066,6 +1131,7 @@ async function openInPortal(n) {
   });
   window.addEventListener("mouseup", () => { pan = null; });
 
+  findClusters(); if (clusters.length || areaGroups.length) { buildUnits(); relaxUnits(250); fitView(); } // the ordered layout, once the clusters are known
   renderChips(); stats(); refresh(); // refresh draws the first labels
   if (embedded) {
     parent.postMessage({ kind: "ready" }, location.origin);
@@ -1079,7 +1145,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { units: () => units.length, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
