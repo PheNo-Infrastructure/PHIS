@@ -26,6 +26,9 @@
   ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
+  #crumbs { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:3; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-size:13px; display:flex; gap:8px; align-items:center; }
+  #crumbs[hidden] { display:none; }
+  #crumbs button { border:0; background:none; padding:0; color:var(--accent); cursor:pointer; font:inherit; }
   #terr { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:1; }
   #links { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
   #halo { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; filter:blur(7px); }
@@ -39,7 +42,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -116,12 +119,12 @@ async function openInPortal(n) {
   const hiddenKinds = new Set();
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
-  const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
+  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
   // A cluster shows its nodes once it nearly fills the view and they have room (average gap between neighbours in px), and is painted again when it shrinks below the lower share.
   // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.
   // (rewritten: a cluster must nearly fill the view, and its nodes must also have room)
-  const SHOW_FRAC = .4, HIDE_FRAC = .3; // a cluster's radius as a share of the shorter side of the view
+  const SHOW_FRAC = .28, HIDE_FRAC = .2; // a cluster's radius as a share of the shorter side of the view
   const MIN_GAP = 30; // and its neighbours at least this far apart on screen, so a crowded cluster needs more zoom than a sparse one
   const MIN_CLUSTERED = 500, MIN_CLUSTER = 8; // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
   const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
@@ -163,6 +166,12 @@ async function openInPortal(n) {
       return { key: top, members, size, name: name.length > 28 ? name.slice(0, 27) + "..." : name, parts };
     });
     clusters.forEach(c => c.members.forEach(id => clusterOf.set(id, c.key)));
+    const byKey = new Map(clusters.map(c => [c.key, c]));
+    g.forEachNode(id => { // a node left out (its group was too small) joins the cluster most of its neighbours are in
+      if (clusterOf.has(id)) return;
+      const votes = new Map(); g.forEachNeighbor(id, n => { const k = clusterOf.get(n); if (k) votes.set(k, (votes.get(k) || 0) + 1); });
+      const best = [...votes].sort((a, b) => b[1] - a[1])[0]; if (best) { clusterOf.set(id, best[0]); byKey.get(best[0]).members.push(id); }
+    });
     if (!clustersSeen) { clustersSeen = true; clusters.forEach(c => collapsed.add(c.key)); } // only the first time: a cluster that appears later does not hide what you are looking at
     stats();
   }
@@ -189,8 +198,9 @@ async function openInPortal(n) {
   }
   const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
+  let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
-  const isVisible = id => (!hiddenByArea(id) || !!lit?.has(id)) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
+  const isVisible = id => catView ? catView.set.has(id) && inLayout(id) : (!hiddenByArea(id) || !!lit?.has(id)) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
   const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
   // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   // The selection as PHIS things: a folded group is every facility and device inside it.
@@ -257,6 +267,7 @@ async function openInPortal(n) {
     labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
     nodeReducer: (id, a) => {
       if (!isVisible(id)) return { ...a, hidden:true };
+      if (catView && !lit) return { ...a, forceLabel:true }; // every name in a category view is shown
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
       if (litSel.has(id)) return { ...a, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
       if (lit.has(id)) return { ...a, zIndex:1, forceLabel: lit.size < 60 };
@@ -320,6 +331,7 @@ async function openInPortal(n) {
     const fw = Math.ceil(w / RES), fh = Math.ceil(h / RES);
     if (field.width !== fw || field.height !== fh) { field.width = shape.width = fw; field.height = shape.height = fh; }
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
+    if (catView) { cache = null; return; }
     if (!lit) startRestore();
     if (!lit && !clusters.length) { cache = null; return; } // nothing to paint: no selection and no clusters
     dims = { fw, fh, w, h, k };
@@ -509,14 +521,63 @@ async function openInPortal(n) {
   sigma.on("afterRender", drawHalo);
 
   // Layout runs on a copy of what is visible, so hidden nodes neither push nor pull.
+  // ---- two-level layout: every cluster is laid out on its own (its nodes, with a hub per type so a category gathers), then the clusters are placed as discs by how strongly they link
+  // and pushed apart until the frame that fits each one is clear of the others. No node sits between clusters, so nothing gathers in a knot in the middle. ----
+  const DENSITY = .6; // nodes per unit area inside a cluster
+  function layoutTwoLevel() {
+    if (!clusters.length) return false;
+    const parts = [];
+    for (const c of clusters) {
+      const ids = c.members.filter(id => g.hasNode(id) && inLayout(id)); if (ids.length < 2) continue;
+      const H = new Graph({ type:"undirected" }), inC = new Set(ids);
+      ids.forEach(id => H.addNode(id, { x: Math.random(), y: Math.random() }));
+      g.forEachEdge((e, a, s2, t2) => { if (inC.has(s2) && inC.has(t2)) H.addEdge(s2, t2); });
+      const by = new Map(); for (const id of ids) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
+      for (const [k, list] of by) if (list.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; H.addNode(hub, { x: Math.random(), y: Math.random() }); for (const id of list) H.addEdge(hub, id, { weight: TYPE_PULL }); }
+      FA2.assign(H, { iterations: 250, settings: { ...FA2.inferSettings(H), gravity: .3, scalingRatio: 20, slowDown: 4, barnesHutOptimize: H.order > 500 } });
+      let cx = 0, cy = 0; ids.forEach(id => { const a = H.getNodeAttributes(id); cx += a.x; cy += a.y; }); cx /= ids.length; cy /= ids.length;
+      const ds = ids.map(id => { const a = H.getNodeAttributes(id); return Math.hypot(a.x - cx, a.y - cy); }).sort((a, b) => a - b);
+      const R = Math.sqrt(ids.length / (Math.PI * DENSITY)), f = R / Math.max(1e-9, ds[Math.floor(ds.length * .9)]);
+      parts.push({ c, ids, R: R * 1.12, rel: ids.map(id => { const a = H.getNodeAttributes(id); return [(a.x - cx) * f, (a.y - cy) * f]; }), x: 0, y: 0, fixed: ids.every(id => g.getNodeAttribute(id, "fixed")) });
+    }
+    if (parts.length < 2) return false;
+    const idx = new Map(parts.map((p, i) => [p.c.key, String(i)])), S = new Graph({ type:"undirected" });
+    parts.forEach((p, i) => S.addNode(String(i), { x: Math.random() * 10, y: Math.random() * 10, size: p.R }));
+    g.forEachEdge((e, a, s2, t2) => { const u = idx.get(clusterOf.get(s2)), v = idx.get(clusterOf.get(t2)); if (u === undefined || v === undefined || u === v) return; if (S.hasEdge(u, v)) S.updateEdgeAttribute(S.edge(u, v), "weight", w => w + 1); else S.addEdge(u, v, { weight: 1 }); });
+    S.forEachEdge((e, a) => S.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
+    FA2.assign(S, { iterations: 200, settings: { ...FA2.inferSettings(S), gravity: 1, scalingRatio: 6, slowDown: 4 } });
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; S.forEachNode((k, a) => { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
+    const area = parts.reduce((t, p) => t + Math.PI * p.R * p.R, 0) * 2, sc = Math.sqrt(area / Math.max(1e-9, (x1 - x0) * (y1 - y0))) || 1; // start about as spread out as the discs need
+    parts.forEach((p, i) => { const a = S.getNodeAttributes(String(i)); p.x = a.x * sc; p.y = a.y * sc; });
+    for (let it = 0; it < 600; it++) { // push discs apart until a frame the size of the cluster, around each, holds no other
+      let moved = false;
+      for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+        const A = parts[i], B = parts[j]; let vx = B.x - A.x, vy = B.y - A.y, d = Math.hypot(vx, vy); const need = (A.R + B.R) * FRAME_GAP;
+        if (d >= need) continue; if (d < 1e-9) { vx = Math.random() - .5; vy = Math.random() - .5; d = Math.hypot(vx, vy); }
+        const push = (need - d) / 2 * .6; A.x -= vx / d * push; A.y -= vy / d * push; B.x += vx / d * push; B.y += vy / d * push; moved = true;
+      }
+      if (!moved) break;
+    }
+    for (const p of parts) p.ids.forEach((id, i) => g.mergeNodeAttributes(id, { x: p.x + p.rel[i][0], y: p.y + p.rel[i][1] }));
+    g.forEachNode(id => { // anything outside the clusters goes next to what it is linked to
+      if (clusterOf.has(id) || !inLayout(id)) return; let sx = 0, sy = 0, n = 0; g.forEachNeighbor(id, nb => { const a = g.getNodeAttributes(nb); sx += a.x; sy += a.y; n++; });
+      if (n) g.mergeNodeAttributes(id, { x: sx / n + Math.random(), y: sy / n + Math.random() });
+      else { const ang = Math.random() * Math.PI * 2, reach = Math.max(...parts.map(p => Math.hypot(p.x, p.y) + p.R)) * 1.05; g.mergeNodeAttributes(id, { x: Math.cos(ang) * reach, y: Math.sin(ang) * reach }); } // no links at all: just outside the clusters
+    });
+    return true;
+  }
   function relax(iterations, pinned) {
+    if (catView) return; // a category view places its nodes by rule
     const sub = new Graph({ type:"undirected" });
     g.forEachNode((id, a) => { if (inLayout(id)) sub.addNode(id, { x:a.x, y:a.y, fixed: !!a.fixed || !!pinned?.(id) }); });
     if (sub.order < 2) return;
     // a link between two clusters pulls much more weakly than one inside a cluster, so clusters can stand apart instead of being drawn into one knot
     g.forEachEdge((ed, a, s, t) => { if (sub.hasNode(s) && sub.hasNode(t)) { const cs = clusterOf.get(s), ct = clusterOf.get(t); sub.addEdge(s, t, { weight: cs !== undefined && cs !== ct ? CROSS_PULL : 1 }); } });
+    // the nodes of one type in a cluster are tied to a hub of their own (layout only, never drawn), so each category gathers in one place
+    for (const c of clusters) { const by = new Map(); for (const id of c.members) if (sub.hasNode(id)) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
+      for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: TYPE_PULL }); } }
     FA2.assign(sub, { iterations, settings: settingsFor(sub) });
-    sub.forEachNode((id, a) => g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
+    sub.forEachNode((id, a) => g.hasNode(id) && g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
     spreadClusters(3); collide(2);
   }
 
@@ -544,7 +605,7 @@ async function openInPortal(n) {
     prog.render = t => draw(K ? { ...t, ratio: Math.pow(sigma.cameraSizeRatio, 2) } : t);
   }
   // Clusters are discs (their centre and the reach of 90% of their nodes) and keep a gap between them: where two overlap, all the nodes of both move apart together.
-  const CLUSTER_GAP = 1.12, CROSS_PULL = .12;
+  const CLUSTER_GAP = 1.12, CROSS_PULL = .12, FRAME_GAP = 1.3, TYPE_PULL = .5, MIN_CAT = 3; // FRAME_GAP: room around a cluster for the frame that fits it; TYPE_PULL: how strongly nodes of one type draw together inside a cluster
   function spreadClusters(iterations) {
     if (clusters.length < 2) return;
     const live = clusters.map(c => ({ c, ids: c.members.filter(id => g.hasNode(id) && inLayout(id)) })).filter(u => u.ids.length > 2);
@@ -558,7 +619,7 @@ async function openInPortal(n) {
         u.pinned = u.ids.every(id => g.getNodeAttribute(id, "fixed"));
       }
       for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
-        const A = live[i], B = live[j]; let vx = B.x - A.x, vy = B.y - A.y, d = Math.hypot(vx, vy); const need = A.r + B.r;
+        const A = live[i], B = live[j]; let vx = B.x - A.x, vy = B.y - A.y, d = Math.hypot(vx, vy); const need = (A.r + B.r) * FRAME_GAP;
         if (d >= need) continue;
         if (d < 1e-9) { vx = 1; vy = 0; d = 1; }
         const push = (need - d) / 2, wa = A.pinned ? 0 : B.pinned ? 2 : 1, wb = B.pinned ? 0 : A.pinned ? 2 : 1;
@@ -632,7 +693,7 @@ async function openInPortal(n) {
   document.getElementById("reset").onclick = () => {
     const wasLive = liveOn; stopLive();
     g.forEachNode((id) => inLayout(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
-    relax(300); spreadClusters(300); collide(60); fitView(); if (wasLive) startLive();
+    if (!layoutTwoLevel()) relax(300); collide(60); fitView(); if (wasLive) startLive();
   };
   document.getElementById("fit").onclick = () => fitView();
 
@@ -999,22 +1060,67 @@ async function openInPortal(n) {
   // Links between collapsed clusters are drawn here as one line per pair. ----
   const terr = document.getElementById("terr"), tctx = terr.getContext("2d"), links = document.getElementById("links"), lctx2 = links.getContext("2d");
   sigma.getContainer().appendChild(terr); // above the nodes, so the names read; it takes no clicks
-  let terrHits = [], terrLabels = []; // terrLabels: where each cluster's name is, to drag the cluster by it
+  let terrHits = [], terrLabels = [], catHits = []; // terrLabels: where each cluster's name is, to drag the cluster by it
   const clusterHit = (x, y) => terrHits.find(H => H.pts ? H.pts.some(q => Math.hypot(x - q.x, y - q.y) <= H.pr) : x >= H.x0 && x <= H.x1 && y >= H.y0 && y <= H.y1);
   let lastGeo = new Map();
-  function zoomToCluster(key) { // a deliberate zoom onto a painted cluster, far enough in that its nodes can be read
+  function zoomToCluster(key) { // a deliberate zoom onto a painted cluster: all of it fits the screen
     const G = lastGeo.get(key); if (!G) return;
-    const cam = sigma.getCamera(), st = cam.getState(), to = sigma.viewportToFramedGraph({ x:G.cx, y:G.cy });
-    const box = terr.getBoundingClientRect(), more = Math.max(SHOW_FRAC * 1.25 * Math.min(box.width, box.height) / G.spread, MIN_GAP * 1.3 / gapOf(G)); // zoom in until it fills the view and its nodes have room
-    cam.animate({ x:to.x, y:to.y, ratio: Math.max(.003, Math.min(st.ratio, st.ratio / more)) }, { duration: 600 });
+    const cam = sigma.getCamera(), st = cam.getState(), box = terr.getBoundingClientRect();
+    const pct = (arr, f) => arr.slice().sort((a, b) => a - b)[Math.min(arr.length - 1, Math.max(0, Math.round(f * (arr.length - 1))))]; // the body of the cluster: a few strays (hubs linked to many clusters) do not stretch the frame
+    const xs = G.pts.map(q => q.x), ys = G.pts.map(q => q.y), x0 = pct(xs, .04), x1 = pct(xs, .96), y0 = pct(ys, .04), y1 = pct(ys, .96);
+    const f = Math.max((x1 - x0) * 1.14 / (box.width * .94), (y1 - y0) * 1.14 / (box.height * .88)), to = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
+    cam.animate({ x:to.x, y:to.y, ratio: Math.max(.003, st.ratio * f) }, { duration: 600 });
+  }
+  // ---- a category view: the nodes of one type in one cluster, in a grid that fills the screen with every name readable. Everything else is hidden for the time being; clicking empty space puts it all back. ----
+  const crumbs = document.getElementById("crumbs");
+  const tween = (moves, ms, done) => { const t0 = performance.now(), from = moves.map(m => { const a = g.getNodeAttributes(m.id); return [a.x, a.y]; });
+    const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); moves.forEach((m, i) => g.hasNode(m.id) && g.mergeNodeAttributes(m.id, { x: from[i][0] + (m.x - from[i][0]) * e, y: from[i][1] + (m.y - from[i][1]) * e })); sigma.refresh(); if (k < 1) requestAnimationFrame(step); else done?.(); };
+    requestAnimationFrame(step); };
+  function enterCat(key, kind) {
+    const c = clusters.find(c => c.key === key); if (!c || catView || !pxu1) return;
+    const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kindOf(id) === kind).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
+    if (!ids.length) return;
+    freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
+    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 90, n = ids.length;
+    const sizes = ids.map(id => g.getNodeAttribute(id, "size")), avg = sizes.reduce((t, v) => t + v, 0) / n, maxS = Math.max(...sizes);
+    tctx.font = LABEL_FONT; const labelW = Math.min(190, Math.max(...ids.map(id => tctx.measureText(String(g.getNodeAttribute(id, "label")).slice(0, 32)).width)) + 10);
+    let R0 = 46, cols = 1, rows = n, cellW = 0, cellH = 0;
+    for (; R0 >= 9; R0--) { // the largest nodes that still let the whole grid fit; below that it is allowed to run over the screen
+      const maxR = R0 * maxS / avg; cellW = 2 * maxR + labelW + 40; cellH = 2 * maxR + 22;
+      cols = Math.max(1, Math.min(n, Math.floor(uw / cellW))); rows = Math.ceil(n / cols); if (rows * cellH <= uh) break;
+    }
+    R0 = Math.max(9, R0); const sc = R0 / (avg * K); // pixels per graph unit
+    const gw = cols * cellW / sc, gh = rows * cellH / sc;
+    let sx = 0, sy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; } const cx = sx / n, cy = sy / n;
+    const left = cx - gw / 2, top = cy - gh / 2, saved = new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
+    const maxRpx = R0 * maxS / avg, moves = ids.map((id, i) => ({ id, x: left + (i % cols) * cellW / sc + (maxRpx + 7) / sc, y: top + (Math.floor(i / cols) + .5) * cellH / sc })); // the node on the left of its cell, its name to the right
+    catView = { key, kind, set: new Set(ids), saved, name: c.name, n };
+    // the camera: the grid centred, or its top left corner when it is taller than the screen
+    const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh / 2) / sc : top + gh / 2 };
+    const vp = sigma.graphToViewport(centre), fr = sigma.viewportToFramedGraph(vp);
+    sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc }, { duration: 500 });
+    tween(moves, 500); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
+  }
+  function exitCat(toCluster) {
+    if (!catView) return;
+    const { saved, key } = catView; catView = null; crumbs.hidden = true; labelSlot.clear();
+    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); });
+    refresh(); stats();
+  }
+  function showCrumbs() {
+    crumbs.hidden = !catView; if (!catView) return;
+    const html = `<button data-c="all">Overview</button> &rsaquo; <button data-c="cluster">${e(catView.name)}</button> &rsaquo; <b>${e(PLURAL[catView.kind] || (NAMES[catView.kind] || catView.kind).toLowerCase() + "s")}, ${catView.n}</b>`;
+    if (crumbs.dataset.h !== html) { crumbs.dataset.h = html; crumbs.innerHTML = html; crumbs.querySelectorAll("button").forEach(b => b.onclick = () => { exitCat(b.dataset.c === "cluster"); if (b.dataset.c === "all") setTimeout(fitView, 480); }); }
   }
   const gapOf = G => G.spread * Math.sqrt(Math.PI / (G.c.members.length * .9)); // the average distance between neighbours in the cluster, on screen
   function drawTerritories() {
     const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
     if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
     tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, w, h);
-    if (!clusters.length || !compactBox.checked) { lctx2.clearRect(0, 0, links.width, links.height); }
-    terrHits = []; terrLabels = [];
+    if (!clusters.length || !compactBox.checked || catView) { lctx2.clearRect(0, 0, links.width, links.height); }
+    terrHits = []; terrLabels = []; catHits = [];
+    if (catView) { showCrumbs(); return; }
+    crumbs.hidden = true;
     if (!w || !h || !clusters.length || !compactBox.checked) return;
     const geo = new Map();
     clusters.forEach((c, i) => {
@@ -1073,6 +1179,18 @@ async function openInPortal(n) {
         terrHits.push({ key: c.key, pts, pr: BLOB * CLOSED_R * 1.2 / ratio });
         continue;
       }
+      if (!lit) { // an open cluster: one pill per category (a resource type), where its nodes are; press one to see them on their own
+        const by = new Map(); for (const id of c.members) if (isVisible(id)) { const k = kindOf(id), v = sigma.graphToViewport(g.getNodeAttributes(id)), e = by.get(k) ?? by.set(k, { n: 0, x: 0, y: 0 }).get(k); e.n++; e.x += v.x; e.y += v.y; }
+        for (const [k, e] of by) {
+          if (e.n < MIN_CAT) continue;
+          const text = `${PLURAL[k] || (NAMES[k] || k).toLowerCase() + "s"}, ${e.n}`, px = e.x / e.n, py = e.y / e.n;
+          if (px < 0 || py < 0 || px > w || py > h) continue;
+          tctx.globalAlpha = .92; tctx.font = `600 12px "Public Sans", system-ui, sans-serif`; const tw = tctx.measureText(text).width + 16;
+          tctx.fillStyle = "rgba(255,255,255,.92)"; tctx.strokeStyle = "#264030"; tctx.lineWidth = 1; tctx.beginPath(); tctx.roundRect(px - tw / 2, py - 11, tw, 22, 11); tctx.fill(); tctx.stroke();
+          tctx.fillStyle = "#264030"; tctx.fillText(text, px, py + 1); catHits.push({ key: c.key, kind: k, x0: px - tw / 2, x1: px + tw / 2, y0: py - 11, y1: py + 11 });
+        }
+        tctx.fillStyle = "#264030"; tctx.strokeStyle = "rgba(255,255,255,.85)";
+      }
       const fade = (1 - smooth(SHOW_FRAC, SHOW_FRAC * 1.5, spread / Math.min(w, h))) * (lit ? .4 : 1); if (fade <= .02) continue; // the name goes as the nodes become readable
       const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9; // a shown cluster: its name above the area, to drag it by
       tctx.globalAlpha = fade * .85; tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`;
@@ -1094,9 +1212,9 @@ async function openInPortal(n) {
   }
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) pick(node, event); });
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
-  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const H = clusterHit(event.x, event.y); if (H) return zoomToCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
+  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return enterCat(P.key, P.kind); const H = clusterHit(event.x, event.y); if (H) return zoomToCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
     sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
-  sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) ? "pointer" : ""; });
+  sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) || catHits.some(P => ev.x >= P.x0 && ev.x <= P.x1 && ev.y >= P.y0 && ev.y <= P.y1) ? "pointer" : ""; });
 
   // right-drag moves the view
   const surface = sigma.getContainer(); let pan = null;
@@ -1110,7 +1228,7 @@ async function openInPortal(n) {
   });
   window.addEventListener("mouseup", () => { pan = null; });
 
-  findClusters(); if (clusters.length) relax(250); spreadClusters(300); setK(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+  findClusters(); const twoLevel = layoutTwoLevel(); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   renderChips(); stats(); refresh(); // refresh draws the first labels
   if (embedded) {
     parent.postMessage({ kind: "ready" }, location.origin);
@@ -1124,7 +1242,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { K: () => K, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
