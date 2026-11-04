@@ -87,7 +87,7 @@ async function openInPortal(n) {
   const inst = await (await fetch("api/instance")).json().catch(() => ({ test: false }));
   const { Graph } = graphology, FA2 = graphologyLibrary.layoutForceAtlas2;
   const g = new Graph({ type:"undirected" });
-  const settingsFor = gr => ({ ...FA2.inferSettings(gr), gravity:1, scalingRatio:6, slowDown:4, barnesHutOptimize: gr.order > 500 });
+  const settingsFor = gr => ({ ...FA2.inferSettings(gr), gravity:0.1, scalingRatio:80, slowDown:4, barnesHutOptimize: gr.order > 500 });
   const kindOf = id => g.getNodeAttribute(id, "kind");
   const hasPage = k => k !== "fold" && k !== "species"; // a folded group and a species have no resource page to open
   const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
