@@ -88,7 +88,8 @@ async function openInPortal(n) {
   const inst = await (await fetch("api/instance")).json().catch(() => ({ test: false }));
   const { Graph } = graphology, FA2 = graphologyLibrary.layoutForceAtlas2;
   const g = new Graph({ type:"undirected" });
-  const settingsFor = gr => ({ ...FA2.inferSettings(gr), gravity:0.1, scalingRatio:80, slowDown:4, barnesHutOptimize: gr.order > 500 });
+  // Small graphs keep a compact layout (gravity 1, repulsion 6); as a graph grows it spreads (gravity .1, repulsion 80) so its clusters separate instead of forming a hairball.
+  const settingsFor = gr => { const t = Math.min(1, Math.max(0, (gr.order - 60) / 240)); return { ...FA2.inferSettings(gr), gravity: 1 - .9 * t, scalingRatio: 6 + 74 * t, slowDown:4, barnesHutOptimize: gr.order > 500 }; };
   const kindOf = id => g.getNodeAttribute(id, "kind");
   const hasPage = k => k !== "fold" && k !== "species"; // a folded group and a species have no resource page to open
   const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
