@@ -1095,17 +1095,21 @@ async function openInPortal(n) {
     let sx = 0, sy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; } const cx = sx / n, cy = sy / n;
     const left = cx - gw / 2, top = cy - gh / 2, saved = new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
     const maxRpx = R0 * maxS / avg, moves = ids.map((id, i) => ({ id, x: left + (i % cols) * cellW / sc + (maxRpx + 7) / sc, y: top + (Math.floor(i / cols) + .5) * cellH / sc })); // the node on the left of its cell, its name to the right
-    // Everything else keeps the order it has and is pushed outward from the grid, past the edge of the screen: a node's distance from the centre (in screen-sized units) t becomes 1.1 + t / 2 when it was inside.
+    // Everything else keeps its order and moves as whole blocks (the rest of this cluster, every other cluster, each loose node), clear of the screen and of each other, so nothing lands on a neighbour.
     const mem = new Set(ids), nbs = new Set(); for (const id of ids) g.forEachNeighbor(id, nb => { if (!mem.has(nb) && inLayout(nb)) nbs.add(nb); });
-    const hx = Math.max(gw / 2, box.width / 2 / sc), hy = Math.max(gh / 2, box.height / 2 / sc);
-    g.forEachNode((id, a) => {
-      if (!inLayout(id) || mem.has(id)) return; saved.set(id, { x: a.x, y: a.y });
-      const dx = a.x - cx, dy = a.y - cy, t = Math.max(Math.abs(dx) / hx, Math.abs(dy) / hy);
-      if (t >= 1.1) return;
-      const t2 = 1.1 + t / 2, d = Math.hypot(dx, dy);
-      if (d < 1e-9) { moves.push({ id, x: cx + hx * t2, y: cy }); return; }
-      const k = t2 / Math.max(t, 1e-9); moves.push({ id, x: cx + dx * k, y: cy + dy * k });
-    });
+    const hx = Math.max(gw / 2, box.width / 2 / sc), hy = Math.max(gh / 2, box.height / 2 / sc), RS = Math.hypot(hx, hy);
+    const byU = new Map(); g.forEachNode((id, a) => { if (!inLayout(id) || mem.has(id)) return; saved.set(id, { x: a.x, y: a.y }); const k = clusterOf.get(id) ?? "~" + id; (byU.get(k) ?? byU.set(k, []).get(k)).push(id); });
+    const U = [...byU].map(([k, list]) => { let ux = 0, uy = 0; for (const id of list) { const a = g.getNodeAttributes(id); ux += a.x; uy += a.y; } ux /= list.length; uy /= list.length;
+      const ds = list.map(id => { const a = g.getNodeAttributes(id); return Math.hypot(a.x - ux, a.y - uy); }).sort((p, q) => p - q);
+      return { k, list, ox: ux, oy: uy, x: ux, y: uy, r: (list.length > 1 ? ds[Math.floor(ds.length * .9)] * 1.15 : 0) + Math.max(...list.map(id => g.getNodeAttribute(id, "size"))) * K * 1.2, own: k === key }; });
+    let gx = 0, gy = 0; for (const u of U) { gx += u.ox; gy += u.oy; } gx /= Math.max(1, U.length); gy /= Math.max(1, U.length);
+    let s0 = 1; for (const u of U) if (!u.own) { const d = Math.hypot(u.ox - cx, u.oy - cy); s0 = Math.max(s0, (RS * 1.05 + u.r) / Math.max(d, 1e-9)); } // everything else spreads out from the grid until it is past the screen
+    for (const u of U) { if (u.own) { let dx = cx - gx, dy = cy - gy; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d; u.x = cx + dx * (RS * 1.1 + u.r); u.y = cy + dy * (RS * 1.1 + u.r); } else { u.x = cx + (u.ox - cx) * s0; u.y = cy + (u.oy - cy) * s0; } }
+    for (let it = 0; it < 300; it++) { let moved = false; // blocks that overlap are pushed apart, and none comes back onto the screen
+      for (let i = 0; i < U.length; i++) for (let j = i + 1; j < U.length; j++) { const A = U[i], B = U[j]; let vx = B.x - A.x, vy = B.y - A.y, d = Math.hypot(vx, vy); const need = (A.r + B.r) * 1.05; if (d >= need) continue; if (d < 1e-9) { vx = 1; vy = 0; d = 1; } const f = (need - d) / 2; A.x -= vx / d * f; A.y -= vy / d * f; B.x += vx / d * f; B.y += vy / d * f; moved = true; }
+      for (const u of U) { const dx = u.x - cx, dy = u.y - cy, d = Math.hypot(dx, dy), want = RS * 1.05 + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = cx + (d < 1e-9 ? want : dx * k); u.y = cy + (d < 1e-9 ? 0 : dy * k); moved = true; } }
+      if (!moved) break; }
+    for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id); moves.push({ id, x: u.x + (a.x - u.ox), y: u.y + (a.y - u.oy) }); }
     catView = { key, kind, set: mem, nb: nbs, saved, name: c.name, n };
     // the camera: the grid centred, or its top left corner when it is taller than the screen
     const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
