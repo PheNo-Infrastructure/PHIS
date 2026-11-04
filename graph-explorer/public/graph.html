@@ -200,7 +200,7 @@ async function openInPortal(n) {
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
   let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
-  const isVisible = id => catView ? catView.set.has(id) && inLayout(id) : (!hiddenByArea(id) || !!lit?.has(id)) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
+  const isVisible = id => catView ? inLayout(id) : (!hiddenByArea(id) || !!lit?.has(id)) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
   const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
   // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   // The selection as PHIS things: a folded group is every facility and device inside it.
@@ -267,7 +267,7 @@ async function openInPortal(n) {
     labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
     nodeReducer: (id, a) => {
       if (!isVisible(id)) return { ...a, hidden:true };
-      if (catView && !lit) return { ...a, forceLabel:true }; // every name in a category view is shown
+      if (catView && !lit) return catView.set.has(id) || catView.nb.has(id) ? { ...a, forceLabel:true } : { ...a, color: fade(a.color, dark, .35) }; // the category and what it links to are named; the rest of the graph is dimmed
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
       if (litSel.has(id)) return { ...a, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
       if (lit.has(id)) return { ...a, zIndex:1, forceLabel: lit.size < 60 };
@@ -276,7 +276,7 @@ async function openInPortal(n) {
     },
     edgeReducer: (ed, a) => {
       const [s, t] = g.extremities(ed);
-      if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t)))) return { ...a, hidden:true };
+      if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t))) return { ...a, hidden:true };
       return fx.flash.has(edgeKey(s, t)) ? { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 } : a;
     },
   });
@@ -1081,7 +1081,7 @@ async function openInPortal(n) {
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kindOf(id) === kind).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
-    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 90, n = ids.length;
+    const box = terr.getBoundingClientRect(), uw = box.width * .62, uh = box.height * .62, n = ids.length; // the grid takes the middle; the resources it links to sit around it, in view
     const sizes = ids.map(id => g.getNodeAttribute(id, "size")), avg = sizes.reduce((t, v) => t + v, 0) / n, maxS = Math.max(...sizes);
     tctx.font = LABEL_FONT; const labelW = Math.min(190, Math.max(...ids.map(id => tctx.measureText(String(g.getNodeAttribute(id, "label")).slice(0, 32)).width)) + 10);
     let R0 = 46, cols = 1, rows = n, cellW = 0, cellH = 0;
@@ -1094,9 +1094,27 @@ async function openInPortal(n) {
     let sx = 0, sy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; } const cx = sx / n, cy = sy / n;
     const left = cx - gw / 2, top = cy - gh / 2, saved = new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
     const maxRpx = R0 * maxS / avg, moves = ids.map((id, i) => ({ id, x: left + (i % cols) * cellW / sc + (maxRpx + 7) / sc, y: top + (Math.floor(i / cols) + .5) * cellH / sc })); // the node on the left of its cell, its name to the right
-    catView = { key, kind, set: new Set(ids), saved, name: c.name, n };
+    // what the category is linked to: placed on rings around the grid, so every link can be followed
+    const mem = new Set(ids), nbs = new Set(); for (const id of ids) g.forEachNeighbor(id, nb => { if (!mem.has(nb) && inLayout(nb)) nbs.add(nb); });
+    const nbList = [...nbs].sort((a, b) => kindOf(a).localeCompare(kindOf(b)) || String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
+    const nbMaxR = nbList.length ? Math.max(...nbList.map(id => g.getNodeAttribute(id, "size") * K * sc)) : 0, pitch = (2 * nbMaxR + 30) / sc, gap0 = (cellH * .7) / sc;
+    let ring = 0, used = 0, half = [gw / 2, gh / 2];
+    const rectPoint = (w2, h2, d) => { const Lx = 2 * w2, Ly = 2 * h2, L = 2 * (Lx + Ly); d = ((d % L) + L) % L; // a point d along the perimeter of a rectangle of half sizes (w2, h2) around the grid
+      if (d < Lx) return [cx - w2 + d, cy - h2]; d -= Lx; if (d < Ly) return [cx + w2, cy - h2 + d]; d -= Ly; if (d < Lx) return [cx + w2 - d, cy + h2]; d -= Lx; return [cx - w2, cy + h2 - d]; };
+    while (used < nbList.length) {
+      ring++; const w2 = gw / 2 + gap0 + (ring - 1) * pitch, h2 = gh / 2 + gap0 + (ring - 1) * pitch, L = 4 * (w2 + h2), cap = Math.max(1, Math.floor(L / (pitch * 1.05)));
+      for (let i = 0; i < cap && used < nbList.length; i++, used++) { const [x, y] = rectPoint(w2, h2, (i + .5) * L / cap); moves.push({ id: nbList[used], x, y }); saved.set(nbList[used], { x: g.getNodeAttribute(nbList[used], "x"), y: g.getNodeAttribute(nbList[used], "y") }); }
+      half = [w2 + pitch / 2, h2 + pitch / 2];
+    }
+    g.forEachNode((id, a) => { // the rest of the graph is moved outward, past the rings
+      if (mem.has(id) || nbs.has(id) || !inLayout(id)) return;
+      const dx = a.x - cx, dy = a.y - cy, t = Math.max(Math.abs(dx) / half[0], Math.abs(dy) / half[1]);
+      if (t >= 1.05) return; saved.set(id, { x: a.x, y: a.y });
+      const k = t < 1e-9 ? 1.1 / 1e-9 : 1.1 / t; moves.push({ id, x: t < 1e-9 ? cx + half[0] * 1.1 : cx + dx * k, y: t < 1e-9 ? cy : cy + dy * k });
+    });
+    catView = { key, kind, set: mem, nb: nbs, saved, name: c.name, n };
     // the camera: the grid centred, or its top left corner when it is taller than the screen
-    const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh / 2) / sc : top + gh / 2 };
+    const over = gh * sc > uh * 1.6, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
     const vp = sigma.graphToViewport(centre), fr = sigma.viewportToFramedGraph(vp);
     sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc }, { duration: 500 });
     tween(moves, 500); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
@@ -1242,7 +1260,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
