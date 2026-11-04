@@ -531,10 +531,10 @@ async function openInPortal(n) {
       const ids = c.members.filter(id => g.hasNode(id) && inLayout(id)); if (ids.length < 2) continue;
       const H = new Graph({ type:"undirected" }), inC = new Set(ids);
       ids.forEach(id => H.addNode(id, { x: Math.random(), y: Math.random() }));
-      g.forEachEdge((e, a, s2, t2) => { if (inC.has(s2) && inC.has(t2)) H.addEdge(s2, t2); });
+      g.forEachEdge((e, a, s2, t2) => { if (inC.has(s2) && inC.has(t2)) H.addEdge(s2, t2, { weight: IN_PULL }); });
       const by = new Map(); for (const id of ids) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
-      for (const [k, list] of by) if (list.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; H.addNode(hub, { x: Math.random(), y: Math.random() }); for (const id of list) H.addEdge(hub, id, { weight: TYPE_PULL }); }
-      FA2.assign(H, { iterations: 250, settings: { ...FA2.inferSettings(H), gravity: .3, scalingRatio: 20, slowDown: 4, barnesHutOptimize: H.order > 500 } });
+      for (const [k, list] of by) if (list.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; H.addNode(hub, { x: Math.random(), y: Math.random() }); for (const id of list) H.addEdge(hub, id, { weight: TYPE_PULL * 6 }); }
+      FA2.assign(H, { iterations: 300, settings: { ...FA2.inferSettings(H), gravity: .3, scalingRatio: 20, slowDown: 4, barnesHutOptimize: H.order > 500 } });
       let cx = 0, cy = 0; ids.forEach(id => { const a = H.getNodeAttributes(id); cx += a.x; cy += a.y; }); cx /= ids.length; cy /= ids.length;
       const ds = ids.map(id => { const a = H.getNodeAttributes(id); return Math.hypot(a.x - cx, a.y - cy); }).sort((a, b) => a - b);
       const R = Math.sqrt(ids.length / (Math.PI * DENSITY)), f = R / Math.max(1e-9, ds[Math.floor(ds.length * .9)]);
@@ -605,7 +605,7 @@ async function openInPortal(n) {
     prog.render = t => draw(K ? { ...t, ratio: Math.pow(sigma.cameraSizeRatio, 2) } : t);
   }
   // Clusters are discs (their centre and the reach of 90% of their nodes) and keep a gap between them: where two overlap, all the nodes of both move apart together.
-  const CLUSTER_GAP = 1.12, CROSS_PULL = .12, FRAME_GAP = 1.3, TYPE_PULL = .5, MIN_CAT = 3; // FRAME_GAP: room around a cluster for the frame that fits it; TYPE_PULL: how strongly nodes of one type draw together inside a cluster
+  const CLUSTER_GAP = 1.12, CROSS_PULL = .12, FRAME_GAP = 1.3, TYPE_PULL = .5, IN_PULL = .15, MIN_CAT = 3; // FRAME_GAP: room around a cluster for the frame that fits it; TYPE_PULL: how strongly nodes of one type draw together inside a cluster
   function spreadClusters(iterations) {
     if (clusters.length < 2) return;
     const live = clusters.map(c => ({ c, ids: c.members.filter(id => g.hasNode(id) && inLayout(id)) })).filter(u => u.ids.length > 2);
@@ -1242,7 +1242,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
