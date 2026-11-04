@@ -26,6 +26,7 @@
   ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
+  #terr { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:1; }
   #halo { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; filter:blur(5px); }
   #marquee { position:absolute; display:none; border:1px solid var(--accent); background:rgba(61,133,38,.16); pointer-events:none; z-index:3; }
   .verdict { border-radius:6px; padding:6px 10px; margin:8px 0; font-size:13px; }
@@ -37,7 +38,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -782,7 +783,7 @@ async function openInPortal(n) {
       const d = sigma.getNodeDisplayData(id); if (!d || d.hidden) return;
       const v = sigma.graphToViewport({ x:a.x, y:a.y }), r = sigma.scaleSize(d.size);
       discs.push({ id, x:v.x, y:v.y, r });
-      if (d.label && (d.forceLabel || r >= 6)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
+      if (d.label && (d.forceLabel || r >= 6) && !(terrOn && !lit)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
     });
     items.sort((a, b) => a.rank - b.rank || b.size - a.size);
     const placed = [], clash = R => placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
@@ -842,6 +843,60 @@ async function openInPortal(n) {
     }
     lctx.globalAlpha = 1;
   }
+  // ---- territories: Louvain finds the clusters; each is a soft disc behind the nodes, named after its biggest organisation, with what it holds, so the overview reads without zooming in.
+  // The name fades as the cluster grows to fill the view (by then the nodes are readable themselves). ----
+  const terr = document.getElementById("terr"), tctx = terr.getContext("2d");
+  sigma.getContainer().appendChild(terr); // above the nodes, so the names read; it takes no clicks
+  let terrOn = false; // while the cluster names are up (a big graph, nobody selected) the individual node names stay off, they only add noise
+  const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
+  const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
+  let clusters = [], clusterKey = "";
+  function findClusters() {
+    const key = g.order + ":" + g.size;
+    if (key === clusterKey) return;
+    clusterKey = key;
+    const comm = graphologyLibrary.communitiesLouvain(g), by = new Map();
+    g.forEachNode(id => { const c = comm[id]; if (!by.has(c)) by.set(c, []); by.get(c).push(id); });
+    clusters = [...by.values()].filter(m => m.length >= 8).map(members => {
+      const n = {}; let top = null;
+      for (const id of members) {
+        const a = g.getNodeAttributes(id); n[a.kind] = (n[a.kind] || 0) + (a.kind === "fold" ? a.count : 1);
+        if (a.kind === "organization" && (!top || g.degree(id) > g.degree(top))) top = id;
+      }
+      top ??= members.reduce((b, id) => g.degree(id) > g.degree(b) ? id : b);
+      const parts = Object.entries(n).filter(([k]) => PLURAL[k]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${v} ${PLURAL[k]}`);
+      const name = String(g.getNodeAttribute(top, "label"));
+      return { members, name: name.length > 28 ? name.slice(0, 27) + "..." : name, counts: parts.join(", ") };
+    });
+  }
+  function drawTerritories() {
+    const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
+    if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
+    tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, w, h);
+    terrOn = false;
+    if (!w || !h || visCount < 150) return; // ponytail: small graphs are readable without cluster names; 150 is a guess, tune on real data
+    findClusters();
+    clusters.forEach((c, i) => {
+      const pts = c.members.filter(isVisible).map(id => { const a = g.getNodeAttributes(id); return sigma.graphToViewport({ x:a.x, y:a.y }); });
+      if (pts.length < 5) return;
+      const cx = pts.reduce((t, q) => t + q.x, 0) / pts.length, cy = pts.reduce((t, q) => t + q.y, 0) / pts.length;
+      const ds = pts.map(q => Math.hypot(q.x - cx, q.y - cy)).sort((a, b) => a - b), r = ds[Math.floor(ds.length * .9)] * 1.15 + 20;
+      if (r < 30 || cx + r < 0 || cy + r < 0 || cx - r > w || cy - r > h) return;
+      const fade = (1 - smooth(.45, .9, r / Math.min(w, h))) * (lit ? .4 : 1);
+      if (fade > .5 && !lit) terrOn = true;
+      const gr = tctx.createRadialGradient(cx, cy, 0, cx, cy, r); gr.addColorStop(0, TERR[i % TERR.length] + "55"); gr.addColorStop(.7, TERR[i % TERR.length] + "33"); gr.addColorStop(1, TERR[i % TERR.length] + "00");
+      tctx.globalAlpha = Math.min(1, fade * 1.6); tctx.fillStyle = gr; tctx.beginPath(); tctx.arc(cx, cy, r, 0, Math.PI * 2); tctx.fill();
+      const fs = Math.max(13, Math.min(34, r * .2));
+      tctx.globalAlpha = fade * .8; tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
+      tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`; tctx.lineWidth = 4; tctx.strokeStyle = "rgba(255,255,255,.8)"; tctx.fillStyle = "#264030";
+      tctx.strokeText(c.name, cx, cy - fs * .3); tctx.fillText(c.name, cx, cy - fs * .3);
+      if (r < 110) return; // too small for a second line
+      tctx.font = `400 ${Math.max(11, fs * .5)}px "Public Sans", system-ui, sans-serif`; tctx.lineWidth = 3;
+      tctx.strokeText(c.counts, cx, cy + fs * .6); tctx.fillText(c.counts, cx, cy + fs * .6);
+    });
+    tctx.globalAlpha = 1;
+  }
+  sigma.on("afterRender", drawTerritories); // before the node names, which depend on whether the cluster names are up
   sigma.on("afterRender", drawLabels);
   function labelAt(x, y) { const R = labelRects.find(R => x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h); return R ? R.id : null; }
   const mods = ev => ev.original.ctrlKey || ev.original.metaKey;
