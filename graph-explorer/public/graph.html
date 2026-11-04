@@ -423,7 +423,6 @@ async function openInPortal(n) {
   function paintHalo() {
     if (!cache) return;
     const { layers, cov, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
-    const rimAt = (lit ? .1 : .38) + .55 * ((lit ? .45 : .75) - (lit ? .1 : .38)), rimW = ((lit ? .45 : .75) - (lit ? .1 : .38)) * .38; // the outline: where the paint's edge runs
     const edge0 = lit ? .1 : .38, edge1 = lit ? .45 : .75; // clusters alone: the edge sits further in, so the larger circles that smooth it do not swallow the gaps
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
       if (!cov[y * fw + x]) continue;
@@ -456,9 +455,8 @@ async function openInPortal(n) {
         hue = (hue + dh * t + 360) % 360; sat += (l.hsl[1] - sat) * t; lig += (l.hsl[2] - lig) * t; W += v;
       }
       lig += ribbon;
-      const rim = Math.max(0, 1 - Math.abs(1 - miss - rimAt) / rimW), body = smooth(edge0, edge1, 1 - miss);
-      fromHsl(hue, sat, Math.max(0, lig - .3 * rim), d, (y * fw + x) * 4);
-      d[(y * fw + x) * 4 + 3] = Math.min(255, (body + (1 - body) * rim * .9) * strength * (.9 + .1 * Math.sin(sx * .05 + sy * .04 + ph * .7))); // a faint wash variation, like brushed paint
+      fromHsl(hue, sat, lig, d, (y * fw + x) * 4);
+      d[(y * fw + x) * 4 + 3] = smooth(edge0, edge1, 1 - miss) * strength * (.9 + .1 * Math.sin(sx * .05 + sy * .04 + ph * .7)); // a faint wash variation, like brushed paint
     }
     sctx.putImageData(img, 0, 0);
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
@@ -993,6 +991,15 @@ async function openInPortal(n) {
     lctx2.beginPath();
     for (let i = 0; i < segs.length; i += 4) { lctx2.moveTo(segs[i], segs[i + 1]); lctx2.lineTo(segs[i + 2], segs[i + 3]); }
     lctx2.stroke();
+    // where each hidden node sits: a faint ring, so the paint reads as made of nodes
+    lctx2.beginPath();
+    g.forEachNode((id, a) => {
+      if (isVisible(id) || !inLayout(id)) return;
+      const v = sigma.graphToViewport(a), r = Math.max(2, sigma.scaleSize(a.size) * .75);
+      if (v.x < -r || v.y < -r || v.x > w + r || v.y > h + r) return; // culling
+      lctx2.moveTo(v.x + r, v.y); lctx2.arc(v.x, v.y, r, 0, Math.PI * 2);
+    });
+    lctx2.globalAlpha = lit ? .25 : .55; lctx2.strokeStyle = "#264030"; lctx2.lineWidth = 1; lctx2.stroke();
     tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
     const ratio = sigma.getCamera().getState().ratio;
     for (const { c, cx, cy, off, pts, spread } of geo.values()) {
