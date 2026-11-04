@@ -94,16 +94,21 @@ async function openInPortal(n) {
   const kindOf = id => g.getNodeAttribute(id, "kind");
   const hasPage = k => k !== "fold" && k !== "species"; // a folded group and a species have no resource page to open
   const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
+  // Size follows the number of links on a log scale, relative to the most linked node of this graph: the biggest hub is always the largest (22), a node with one link the smallest (about 8),
+  // whatever the data looks like. The log keeps one huge hub from shrinking everything else to the same size.
+  let maxDeg = 1;
+  const setMaxDeg = () => { maxDeg = 1; g.forEachNode(id => { maxDeg = Math.max(maxDeg, g.degree(id)); }); };
   const styleOf = (id) => {
     const a = g.getNodeAttributes(id), deg = g.degree(id);
     const orphan = deg === 0;
-    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : Math.min(12, 7 + Math.sqrt(deg) * 2.5) }; // capped, so a hub of any type does not dwarf the rest
+    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : 4 + 18 * Math.log1p(deg) / Math.log1p(maxDeg) };
   };
   data.nodes.forEach(({ type, ...n }) => g.addNode(n.id, { ...n, kind:type, x:Math.random(), y:Math.random() }));
   data.edges.forEach(ed => g.hasEdge(ed.source, ed.target) || g.addEdge(ed.source, ed.target));
 
   // Nothing is grouped by type: facilities, devices and everything else are ordinary nodes. Structure comes from the clusters below, found from the links.
   const folds = new Map(), memberFold = new Map(), open = new Set(); // ponytail: the old collapsed-node code further down is dead (nothing folds any more); remove it in its own change
+  setMaxDeg();
   g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id)));
   FA2.assign(g, { iterations:200, settings: settingsFor(g) });
 
@@ -702,7 +707,7 @@ async function openInPortal(n) {
   function applyDiff(added, gone, animate) {
     for (const [a, b] of gone) { known.delete(edgeKey(a, b)); if (g.hasEdge(a, b)) g.dropEdge(a, b); }
     for (const [a, b] of added) { known.add(edgeKey(a, b)); if (!g.hasEdge(a, b)) g.addEdge(a, b); }
-    new Set([...added, ...gone].flat()).forEach(id => g.mergeNodeAttributes(id, styleOf(id)));
+    setMaxDeg(); g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id))); // a link changes the scale for everyone
     if (animate) animatePairs(added, gone);
     stats(); refresh(); renderPanel();
     if (animate) note(added.length ? `Linked (${added.length} new)` : gone.length ? `Removed ${gone.length} link${gone.length === 1 ? "" : "s"}` : "Nothing changed.");
