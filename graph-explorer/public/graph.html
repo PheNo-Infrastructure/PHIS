@@ -147,14 +147,7 @@ async function openInPortal(n) {
     const key = g.order + ":" + g.size;
     if (key === clusterKey) return;
     clusterKey = key;
-    if (g.order < MIN_CLUSTERED) { // a small graph: only a type that has grown large is grouped (all of its nodes, one category area)
-      clusters = []; clusterOf.clear();
-      const by = new Map(); g.forEachNode((id, a) => { if (a.kind === "fold") return; (by.get(a.kind) ?? by.set(a.kind, []).get(a.kind)).push(id); });
-      for (const [k, members] of by) if (members.length >= TYPE_MIN && members.length >= TYPE_SHARE * g.order) clusters.push({ key: "cat:" + k, typeKind: k, members, size: members.length, parts: [], name: `${PLURAL[k] || (NAMES[k] || k).toLowerCase() + "s"}, ${members.length}` });
-      clusters.forEach(c => c.members.forEach(id => clusterOf.set(id, c.key)));
-      if (!clustersSeen) { clustersSeen = true; clusters.forEach(c => collapsed.add(c.key)); }
-      stats(); return;
-    }
+    if (g.order < MIN_CLUSTERED) { clusters = []; clusterOf.clear(); return; } // a small graph stays plain
     if (clusters.length) return keepClusters();
     clusterOf.clear();
     let seed = 7; const rng = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296; // the same graph always clusters the same way
