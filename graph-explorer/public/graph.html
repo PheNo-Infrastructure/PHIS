@@ -126,7 +126,7 @@ async function openInPortal(n) {
   // (rewritten: a cluster must nearly fill the view, and its nodes must also have room)
   const SHOW_FRAC = .28, HIDE_FRAC = .2; // a cluster's radius as a share of the shorter side of the view
   const MIN_GAP = 30; // and its neighbours at least this far apart on screen, so a crowded cluster needs more zoom than a sparse one
-  const MIN_CLUSTERED = 40, MIN_CLUSTER = 4; // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
+  const MIN_CLUSTERED = 500, MIN_CLUSTER = 8, TYPE_MIN = 12, TYPE_SHARE = .2; // below MIN_CLUSTERED the graph is plain, except for a type with at least TYPE_MIN nodes and TYPE_SHARE of the graph: it becomes a category area of its own // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
   const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
     clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
   let clusters = [], clusterKey = "", clustersSeen = false;
@@ -147,7 +147,14 @@ async function openInPortal(n) {
     const key = g.order + ":" + g.size;
     if (key === clusterKey) return;
     clusterKey = key;
-    if (g.order < MIN_CLUSTERED) { clusters = []; clusterOf.clear(); return; }
+    if (g.order < MIN_CLUSTERED) { // a small graph: only a type that has grown large is grouped (all of its nodes, one category area)
+      clusters = []; clusterOf.clear();
+      const by = new Map(); g.forEachNode((id, a) => { if (a.kind === "fold") return; (by.get(a.kind) ?? by.set(a.kind, []).get(a.kind)).push(id); });
+      for (const [k, members] of by) if (members.length >= TYPE_MIN && members.length >= TYPE_SHARE * g.order) clusters.push({ key: "cat:" + k, typeKind: k, members, size: members.length, parts: [], name: `${PLURAL[k] || (NAMES[k] || k).toLowerCase() + "s"}, ${members.length}` });
+      clusters.forEach(c => c.members.forEach(id => clusterOf.set(id, c.key)));
+      if (!clustersSeen) { clustersSeen = true; clusters.forEach(c => collapsed.add(c.key)); }
+      stats(); return;
+    }
     if (clusters.length) return keepClusters();
     clusterOf.clear();
     let seed = 7; const rng = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296; // the same graph always clusters the same way
@@ -368,7 +375,7 @@ async function openInPortal(n) {
         const off = collapsed.has(c.key), ck = "cc:" + shade.get(c.key);
         for (const id of c.members) {
           if (!inLayout(id)) continue;
-          if (off) dot(id, ck, CLOSED_R); else if (isVisible(id)) dot(id, filterKind(g.getNodeAttributes(id)), OPEN_R);
+          if (off) dot(id, ck, c.typeKind ? CLOSED_R * 3 : CLOSED_R); else if (isVisible(id)) dot(id, filterKind(g.getNodeAttributes(id)), OPEN_R);
         }
       }
     }
@@ -1127,7 +1134,7 @@ async function openInPortal(n) {
       for (const u of U) { const dx = u.x - cx, dy = u.y - cy, d = Math.hypot(dx, dy), want = u.own ? RS * 1.05 + u.r : beyond + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = cx + (d < 1e-9 ? want : dx * k); u.y = cy + (d < 1e-9 ? 0 : dy * k); moved = true; } }
       if (!moved) break; }
     for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id); moves.push({ id, x: u.x + (a.x - u.ox), y: u.y + (a.y - u.oy) }); }
-    catView = { key, kind, set: mem, nb: nbs, saved, name: c.name, n };
+    catView = { key, kind, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
     // the camera: the grid centred, or its top left corner when it is taller than the screen
     const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
     const vp = sigma.graphToViewport(centre), fr = sigma.viewportToFramedGraph(vp);
@@ -1142,13 +1149,13 @@ async function openInPortal(n) {
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
-    const { saved, key } = catView; catView = null; crumbs.hidden = true; labelSlot.clear();
+    const { saved, key, typeKind, cam } = catView; if (typeKind && toCluster) { toCluster = false; sigma.getCamera().animate({ x: cam.x, y: cam.y, ratio: cam.ratio }, { duration: 500 }); } catView = null; crumbs.hidden = true; labelSlot.clear();
     tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); done?.(); });
     refresh(); stats();
   }
   function showCrumbs() {
     crumbs.hidden = !catView; if (!catView) return;
-    const html = `<button data-c="all">Overview</button> &rsaquo; <button data-c="cluster">${e(catView.name)}</button> &rsaquo; <b>${e(PLURAL[catView.kind] || (NAMES[catView.kind] || catView.kind).toLowerCase() + "s")}, ${catView.n}</b>`;
+    const html = `<button data-c="all">Overview</button> &rsaquo; ${catView.name ? `<button data-c="cluster">${e(catView.name)}</button> &rsaquo; ` : ""}<b>${e(PLURAL[catView.kind] || (NAMES[catView.kind] || catView.kind).toLowerCase() + "s")}, ${catView.n}</b>`;
     if (crumbs.dataset.h !== html) { crumbs.dataset.h = html; crumbs.innerHTML = html; crumbs.querySelectorAll("button").forEach(b => b.onclick = () => { exitCat(b.dataset.c === "cluster"); if (b.dataset.c === "all") setTimeout(fitView, 480); }); }
   }
   const gapOf = G => G.spread * Math.sqrt(Math.PI / (G.c.members.length * .9)); // the average distance between neighbours in the cluster, on screen
@@ -1172,6 +1179,11 @@ async function openInPortal(n) {
     for (const G of geo.values()) {
       const gap = gapOf(G), frac = G.spread / Math.min(w, h);
       G.c.maxSize ??= Math.max(...G.c.members.map(id => g.hasNode(id) ? g.getNodeAttribute(id, "size") : 0)); const np = sigma.scaleSize(G.c.maxSize); // a small cluster opens once its nodes are big enough to read, even if it does not fill the view
+      if (G.c.typeKind) { // a category area in a small graph: it opens when you have zoomed in from the overview (the nodes are already big there)
+        const z = sigma.getCamera().getState().ratio;
+        if (G.off && z < .45) { collapsed.delete(G.c.key); flipped = true; } else if (!G.off && z > .6) { collapsed.add(G.c.key); flipped = true; }
+        continue;
+      }
       if (G.off && (frac >= SHOW_FRAC || np >= 34) && gap >= MIN_GAP) { collapsed.delete(G.c.key); flipped = true; } else if (!G.off && ((frac < HIDE_FRAC && np < 26) || gap < MIN_GAP * .75)) { collapsed.add(G.c.key); flipped = true; }
     }
     if (flipped) requestAnimationFrame(() => { refresh(); stats(); });
@@ -1251,7 +1263,7 @@ async function openInPortal(n) {
   }
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) { const P = !catView && catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return enterCat(P.key, P.kind); pick(node, event); } }); // a category pill wins over the node under it
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
-  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return enterCat(P.key, P.kind); const H = clusterHit(event.x, event.y); if (H) return zoomToCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
+  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return enterCat(P.key, P.kind); const H = clusterHit(event.x, event.y); if (H) { const c = clusters.find(c => c.key === H.key); return c?.typeKind ? enterCat(c.key, c.typeKind) : zoomToCluster(H.key); } const id = labelAt(event.x, event.y); pick(id, event); } });
     sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) || catHits.some(P => ev.x >= P.x0 && ev.x <= P.x1 && ev.y >= P.y0 && ev.y <= P.y1) ? "pointer" : ""; });
 
@@ -1267,7 +1279,7 @@ async function openInPortal(n) {
   });
   window.addEventListener("mouseup", () => { pan = null; });
 
-  findClusters(); const twoLevel = layoutTwoLevel(); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+  findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(250); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   renderChips(); stats(); refresh(); // refresh draws the first labels
   if (embedded) {
     parent.postMessage({ kind: "ready" }, location.origin);
