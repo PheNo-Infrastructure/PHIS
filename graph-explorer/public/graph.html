@@ -586,18 +586,6 @@ async function openInPortal(n) {
     sup.forEachNode((k, a) => { const dx = a.x - start[+k][0], dy = a.y - start[+k][1]; for (const id of units[+k]) { const q = g.getNodeAttributes(id); if (!q.fixed) g.mergeNodeAttributes(id, { x: q.x + dx, y: q.y + dy }); } });
     spreadClusters(3); collide(2);
   }
-  // A category area in a small graph: its nodes are packed into a compact disc (a sunflower spiral, one node's room apiece), and every other node is moved out of the disc, keeping its direction.
-  function packTypeClusters() {
-    for (const c of clusters) {
-      if (!c.typeKind) continue;
-      const ids = c.members.filter(id => g.hasNode(id) && inLayout(id)); if (ids.length < 2) continue;
-      let cx = 0, cy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); cx += a.x; cy += a.y; } cx /= ids.length; cy /= ids.length;
-      const avg = ids.reduce((t, id) => t + g.getNodeAttribute(id, "size"), 0) / ids.length, step = 2.3 * avg * K, order = ids.slice().sort((a, b) => { const A = g.getNodeAttributes(a), B = g.getNodeAttributes(b); return Math.hypot(A.x - cx, A.y - cy) - Math.hypot(B.x - cx, B.y - cy); });
-      order.forEach((id, i) => { const r = step * Math.sqrt(i + .5), th = i * 2.399963; g.mergeNodeAttributes(id, { x: cx + r * Math.cos(th), y: cy + r * Math.sin(th) }); });
-      const R = step * Math.sqrt(ids.length) + avg * K * 2, inC = new Set(ids);
-      g.forEachNode((id, a) => { if (inC.has(id) || !inLayout(id)) return; const dx = a.x - cx, dy = a.y - cy, d = Math.hypot(dx, dy); if (d >= R) return; const k = (R + (R - d) * .35 + avg * K) / Math.max(d, 1e-9); g.mergeNodeAttributes(id, d < 1e-9 ? { x: cx + R * 1.2, y: cy } : { x: cx + dx * k, y: cy + dy * k }); });
-    }
-  }
   function relax(iterations, pinned, plain) {
     if (catView) return;
     if (clusters.length && K && !plain) return relaxClusters(iterations, pinned); // a category view places its nodes by rule
@@ -608,7 +596,7 @@ async function openInPortal(n) {
     g.forEachEdge((ed, a, s, t) => { if (sub.hasNode(s) && sub.hasNode(t)) { const cs = clusterOf.get(s), ct = clusterOf.get(t); sub.addEdge(s, t, { weight: cs !== undefined && cs !== ct ? CROSS_PULL : 1 }); } });
     // the nodes of one type in a cluster are tied to a hub of their own (layout only, never drawn), so each category gathers in one place
     for (const c of clusters) { const by = new Map(); for (const id of c.members) if (sub.hasNode(id)) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
-      for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: c.typeKind ? TYPE_PULL * 8 : TYPE_PULL }); } }
+      for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: c.typeKind ? TYPE_PULL * .4 : TYPE_PULL }); } }
     // once the two-level layout has set the scale (small, dense), the live step must not use the global strong repulsion: it would blow the clusters apart
     FA2.assign(sub, { iterations, settings: K ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : settingsFor(sub) });
     sub.forEachNode((id, a) => g.hasNode(id) && g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
@@ -727,7 +715,7 @@ async function openInPortal(n) {
   document.getElementById("reset").onclick = () => {
     const wasLive = liveOn; stopLive();
     g.forEachNode((id) => inLayout(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
-    if (!layoutTwoLevel()) { relax(300, null, true); packTypeClusters(); } collide(60); fitView(); if (wasLive) startLive();
+    if (!layoutTwoLevel()) relax(300, null, true); collide(60); fitView(); if (wasLive) startLive();
   };
   document.getElementById("fit").onclick = () => fitView();
 
@@ -1291,7 +1279,7 @@ async function openInPortal(n) {
   });
   window.addEventListener("mouseup", () => { pan = null; });
 
-  findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (!twoLevel) packTypeClusters(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+  findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   renderChips(); stats(); refresh(); // refresh draws the first labels
   if (embedded) {
     parent.postMessage({ kind: "ready" }, location.origin);
