@@ -134,8 +134,9 @@ async function openInPortal(n) {
   // ---- clusters: Louvain groups the graph. On a big graph each cluster starts collapsed into its painted disc (named after its biggest organisation); a click opens it. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
   const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
+  const CLOSED_R = .2, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
   const MIN_CLUSTERED = 150, MIN_CLUSTER = 8; // ponytail: below 150 nodes a graph is readable as it is; 150 is a guess, tune on real data
-  const collapsed = new Set(), clusterOf = new Map(); // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
+  const collapsed = new Set(), clusterOf = new Map(), clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
   let clusters = [], clusterKey = "", clustersSeen = false;
   function findClusters() {
     const key = g.order + ":" + g.size;
@@ -313,9 +314,10 @@ async function openInPortal(n) {
     const fw = Math.ceil(w / RES), fh = Math.ceil(h / RES);
     if (field.width !== fw || field.height !== fh) { field.width = shape.width = fw; field.height = shape.height = fh; }
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
-    if (!lit) { cache = null; startRestore(); return; }
+    if (!lit) startRestore();
+    if (!lit && !clusters.length) { cache = null; return; }
     dims = { fw, fh, w, h, k };
-    stepLag(); rebuild(); paintHalo(); startFlow();
+    stepLag(); rebuild(); paintHalo(); if (lit) startFlow();
   }
   function rebuild() {
     const { fw, fh, w, h, k } = dims;
@@ -327,6 +329,25 @@ async function openInPortal(n) {
     const at = id => { const L = lag.get(id) ?? g.getNodeAttributes(id), v = sigma.graphToViewport({ x:L.x, y:L.y }); return { x: v.x, y: v.y }; };
     const groups = new Map(), put = (key, pt) => { if (!groups.has(key)) groups.set(key, []); groups.get(key).push(pt); };
     for (const id of tintIds) if (isVisible(id)) put(keyOf(id), { ...at(id), r: BLOB, core: true }); // core: the node's own flat circle of colour
+    // Clusters: a collapsed one is painted from where its (hidden) nodes are, in one colour per cluster; an open one in its nodes' own colours.
+    const near = BLOB / ratio, cent = clusters.map(c => { let x = 0, y = 0; for (const id of c.members) { const a = g.getNodeAttributes(id); x += a.x; y += a.y; } return [x / c.members.length, y / c.members.length]; }), shade = new Map();
+    clusters.forEach((c, i) => { // each cluster takes the colour whose nearest user is farthest away, so neighbours differ
+      let best = 0, far = -1;
+      for (let ci = 0; ci < TERR.length; ci++) {
+        let d = Infinity; for (let j = 0; j < i; j++) if (shade.get(clusters[j].key) === ci) d = Math.min(d, Math.hypot(cent[i][0] - cent[j][0], cent[i][1] - cent[j][1]));
+        if (d > far) { far = d; best = ci; }
+      }
+      shade.set(c.key, best);
+    });
+    for (const c of clusters) {
+      const off = collapsed.has(c.key), ck = "cc:" + shade.get(c.key);
+      for (const id of c.members) {
+        if (!off && !isVisible(id)) continue;
+        const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x:a.x, y:a.y });
+        if (v.x < -near || v.y < -near || v.x > w + near || v.y > h + near) continue;
+        put(off ? ck : filterKind(a), { x:v.x, y:v.y, r: BLOB * (off ? CLOSED_R : OPEN_R), core: true });
+      }
+    }
     let edgeCount = 0;
     g.forEachEdge((ed, a, s2, t2) => {
       if (edgeCount > 600 || !tintIds.has(s2) || !tintIds.has(t2) || !isVisible(s2) || !isVisible(t2)) return;
@@ -334,12 +355,13 @@ async function openInPortal(n) {
       const A = at(s2), B = at(t2), len = Math.hypot(B.x - A.x, B.y - A.y), step = BLOB * .45 / ratio, n2 = Math.max(1, Math.ceil(len / step));
       for (let k = 1; k < n2; k++) { const f = k / n2; put(keyOf(f < .5 ? s2 : t2), { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, r: BLOB * .8 }); }
     });
+    cache = null;
     if (!groups.size) return;
     const rgbOf = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); return dark ? c.map(v => Math.round(v * .7 + 255 * .3)) : c; }; // lighter on the dark background, so the tint reads
     const layers = [...groups].map(([key, pts]) => ({ f: fieldOf(pts, 1, ratio), w: fieldOf(pts, 1.4, ratio, true), hsl: tintOf(key) }));
     const o = sigma.viewportToGraph({ x:0, y:0 }), ex = sigma.viewportToGraph({ x:1, y:0 }), ey = sigma.viewportToGraph({ x:0, y:1 });
     if (patternPx === 0) patternPx = Math.hypot(sigma.graphToViewport({ x:1, y:0 }).x - sigma.graphToViewport({ x:0, y:0 }).x, 0) || 1; // pixels per graph unit when the pattern was first drawn: the streaks keep their size relative to the graph from then on
-    cache = { o, ex, ey, layers, fw, fh, w, h, k, strength: (dark ? .55 : .5) * 255 };
+    cache = { o, ex, ey, layers, fw, fh, w, h, k, strength: (lit ? .5 : .8) * 255 };
   }
 
   // ---- painting the region: colours meet by hue (along the colour wheel, so purple to green passes through blue, not grey), and the whole thing is
@@ -358,13 +380,14 @@ async function openInPortal(n) {
   // The painted region takes each type's disc colour; its lightness is stretched so the wash still reads, and where two types meet they blend and marble.
   const tintOf = key => {
     if (key === "blocked") return [2, .56, .5];
-    const [h, sat, l] = toHsl(rgbOfHex(COLORS[key]));
+    if (key.startsWith("cc:")) { const [h] = toHsl(rgbOfHex(clusterHex.get(key))); return [h, .5, .58]; }
+    const [h, sat, l] = toHsl(rgbOfHex(clusterHex.get(key) ?? COLORS[key]));
     return [h, Math.max(.15, Math.min(.7, sat + .1)), .36 + .48 * Math.max(0, Math.min(1, (l - .2) / .6))];
   };
   const rgbOfHex = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   const SHARP = 2; // a colour's weight is raised to this power (the flat core stays at 1, so inside it a node's own colour is pure) // a colour's weight is raised to this power: near a node its own colour wins clearly and the others only fade in between
   let MARBLE = 1.6, spill = 0, countSpill = false; const MFREQ = .3; let SEAM = .3, SEAMEXP = 3; // SEAM: how nearly equal two colours must be before they swirl (higher = a narrower band) // how strongly the colours stripe where they meet, and how fine the streaks are (radians per field pixel)
-  const wts = new Float32Array(16); let patternPx = 0;
+  const wts = new Float32Array(32); let patternPx = 0;
   const FLOW = 2; // waves this small move the paint by a few pixels, so a node still sits in its own colour // how far the waves push the paint, in field pixels
   function paintHalo() {
     if (!cache) return;
@@ -379,7 +402,7 @@ async function openInPortal(n) {
       const mx = gx * patternPx / RES, my = gy * patternPx / RES; // ...as the pattern sees it
       // a flowing warp made of several slow waves: it bends the streaks into curves of uneven width, never straight stripes
       const warp = Math.sin(my * .06 + ph * 1.4 + Math.sin(mx * .035 + ph)) + .8 * Math.sin(mx * .05 - ph + Math.sin(my * .04 - ph * .7) * 1.3) + .5 * Math.sin((mx + my) * .03 + ph * .6);
-      for (let li = 0; li < layers.length; li++) { miss *= 1 - layers[li].f[i]; const v = Math.pow(layers[li].w[i], SHARP); const q = v > 0.0005 ? v : 0; wts[li] = q; tot += q; if (q > top) { sec = top; secI = topI; top = q; topI = li; } else if (q > sec) { sec = q; secI = li; } }
+      for (let li = 0; li < layers.length; li++) { miss *= 1 - layers[li].f[i]; const wv = layers[li].w[i], v = wv < .0224 ? 0 : Math.pow(wv, SHARP); const q = v > 0.0005 ? v : 0; wts[li] = q; tot += q; if (q > top) { sec = top; secI = topI; top = q; topI = li; } else if (q > sec) { sec = q; secI = li; } }
       if (miss >= 1 || tot <= 0) continue;
       // the marbling is only where two colours really share the pixel: its strength rises with how big the smaller colour's share is, and is zero inside a colour's own area
       // only along the seam between the two strongest colours: their weights are raised to a high power first, so 'about equal' is a thin line even where several colours overlap broadly
@@ -881,7 +904,7 @@ async function openInPortal(n) {
   sigma.getContainer().appendChild(terr); // above the nodes, so the names read; it takes no clicks
   const collapseBtn = document.getElementById("collapseAll");
   let terrHits = [];
-  const clusterHit = (x, y) => terrHits.find(H => H.disc ? Math.hypot(x - H.cx, y - H.cy) <= H.r : x >= H.x0 && x <= H.x1 && y >= H.y0 && y <= H.y1);
+  const clusterHit = (x, y) => terrHits.find(H => H.pts ? H.pts.some(q => Math.hypot(x - q.x, y - q.y) <= H.pr) : x >= H.x0 && x <= H.x1 && y >= H.y0 && y <= H.y1);
   let lastGeo = new Map();
   function toggleCluster(key) {
     const opening = collapsed.has(key), G = lastGeo.get(key);
@@ -904,7 +927,7 @@ async function openInPortal(n) {
       const pts = c.members.map(id => { const a = g.getNodeAttributes(id); return sigma.graphToViewport({ x:a.x, y:a.y }); });
       const cx = pts.reduce((t, q) => t + q.x, 0) / pts.length, cy = pts.reduce((t, q) => t + q.y, 0) / pts.length;
       const ds = pts.map(q => Math.hypot(q.x - cx, q.y - cy)).sort((a, b) => a - b), spread = ds[Math.floor(ds.length * .9)], off = collapsed.has(c.key);
-      geo.set(c.key, { c, i, cx, cy, off, spread, r: off ? Math.min(spread * .85 + 14, 24 + Math.sqrt(c.size) * 3.6) : spread * 1.15 + 20 }); // a collapsed disc grows with what it holds, so crowded ones overlap less
+      geo.set(c.key, { c, i, cx, cy, off, spread, pts, r: off ? Math.min(spread * .85 + 14, 24 + Math.sqrt(c.size) * 3.6) : spread * 1.15 + 20 }); // a collapsed disc grows with what it holds, so crowded ones overlap less
     });
     lastGeo = geo;
     // one line per pair of things that are linked across a collapsed cluster
@@ -920,23 +943,21 @@ async function openInPortal(n) {
     tctx.strokeStyle = "#a9b896"; tctx.globalAlpha = lit ? .25 : .6;
     for (const { A, B, n } of links.values()) { tctx.lineWidth = .8 + Math.min(3, Math.log2(n)); tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.lineTo(B.x, B.y); tctx.stroke(); }
     tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
-    for (const { c, i, cx, cy, off, r } of geo.values()) {
+    const ratio = sigma.getCamera().getState().ratio;
+    for (const { c, cx, cy, off, pts, spread } of geo.values()) {
+      const r = spread * 1.15 + 20;
       if (cx + r < 0 || cy + r < 0 || cx - r > w || cy - r > h) continue;
-      const col = TERR[i % TERR.length];
-      if (off) {
-        tctx.globalAlpha = lit ? .45 : 1; tctx.fillStyle = col + "e6"; tctx.strokeStyle = "rgba(38,64,48,.55)"; tctx.lineWidth = 1.5;
-        tctx.beginPath(); tctx.arc(cx, cy, r, 0, Math.PI * 2); tctx.fill(); tctx.stroke();
-        const fs = Math.max(12, Math.min(24, r * .3)); tctx.fillStyle = "#264030";
-        const lines = [c.name, ...(r >= 52 ? c.parts : [])], top = cy - (lines.length - 1) * fs * .6;
-        lines.forEach((t, li) => { tctx.font = `${li ? 400 : 700} ${li ? fs * .6 : fs}px "Public Sans", system-ui, sans-serif`; tctx.fillText(t, cx, top + li * fs * 1.15); });
-        terrHits.push({ key: c.key, disc: true, cx, cy, r });
+      tctx.lineWidth = 4; tctx.strokeStyle = "rgba(255,255,255,.85)"; tctx.fillStyle = "#264030";
+      if (off) { // the painted area stands for the cluster: name and counts on it, and a click anywhere on it opens it
+        const fs = Math.max(12, Math.min(24, spread * .16 + 8)), lines = [c.name, ...(spread >= 90 ? c.parts : [])], top = cy - (lines.length - 1) * fs * .6;
+        tctx.globalAlpha = lit ? .5 : 1;
+        lines.forEach((t, li) => { tctx.font = `${li ? 400 : 700} ${li ? fs * .6 : fs}px "Public Sans", system-ui, sans-serif`; tctx.strokeText(t, cx, top + li * fs * 1.15); tctx.fillText(t, cx, top + li * fs * 1.15); });
+        terrHits.push({ key: c.key, pts, pr: BLOB * CLOSED_R * 1.2 / ratio });
         continue;
       }
       const fade = (1 - smooth(.45, .9, r / Math.min(w, h))) * (lit ? .4 : 1); if (fade <= .02) continue;
-      const gr = tctx.createRadialGradient(cx, cy, 0, cx, cy, r); gr.addColorStop(0, col + "55"); gr.addColorStop(.7, col + "33"); gr.addColorStop(1, col + "00");
-      tctx.globalAlpha = Math.min(1, fade * 1.6); tctx.fillStyle = gr; tctx.beginPath(); tctx.arc(cx, cy, r, 0, Math.PI * 2); tctx.fill();
-      const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9;
-      tctx.globalAlpha = fade * .85; tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`; tctx.lineWidth = 4; tctx.strokeStyle = "rgba(255,255,255,.85)"; tctx.fillStyle = "#264030";
+      const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9; // an open cluster: its name above the area (click it to collapse)
+      tctx.globalAlpha = fade * .85; tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`;
       tctx.strokeText(c.name, cx, ty); tctx.fillText(c.name, cx, ty);
       if (!lit) { const tw = tctx.measureText(c.name).width / 2 + 6; terrHits.push({ key: c.key, x0: cx - tw, x1: cx + tw, y0: ty - fs * .7, y1: ty + fs * .7 }); }
     }
