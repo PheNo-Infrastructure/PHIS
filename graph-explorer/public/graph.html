@@ -423,6 +423,7 @@ async function openInPortal(n) {
   function paintHalo() {
     if (!cache) return;
     const { layers, cov, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
+    const rimAt = (lit ? .1 : .38) + .55 * ((lit ? .45 : .75) - (lit ? .1 : .38)), rimW = ((lit ? .45 : .75) - (lit ? .1 : .38)) * .38; // the outline: where the paint's edge runs
     const edge0 = lit ? .1 : .38, edge1 = lit ? .45 : .75; // clusters alone: the edge sits further in, so the larger circles that smooth it do not swallow the gaps
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
       if (!cov[y * fw + x]) continue;
@@ -455,8 +456,9 @@ async function openInPortal(n) {
         hue = (hue + dh * t + 360) % 360; sat += (l.hsl[1] - sat) * t; lig += (l.hsl[2] - lig) * t; W += v;
       }
       lig += ribbon;
-      fromHsl(hue, sat, lig, d, (y * fw + x) * 4);
-      d[(y * fw + x) * 4 + 3] = smooth(edge0, edge1, 1 - miss) * strength * (.9 + .1 * Math.sin(sx * .05 + sy * .04 + ph * .7)); // a faint wash variation, like brushed paint
+      const rim = Math.max(0, 1 - Math.abs(1 - miss - rimAt) / rimW), body = smooth(edge0, edge1, 1 - miss);
+      fromHsl(hue, sat, Math.max(0, lig - .3 * rim), d, (y * fw + x) * 4);
+      d[(y * fw + x) * 4 + 3] = Math.min(255, (body + (1 - body) * rim * .9) * strength * (.9 + .1 * Math.sin(sx * .05 + sy * .04 + ph * .7))); // a faint wash variation, like brushed paint
     }
     sctx.putImageData(img, 0, 0);
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
@@ -915,8 +917,7 @@ async function openInPortal(n) {
     for (const D of list) {
       const kind = kindOf(D.id), faded = lit && !lit.has(D.id) && !canLink.has(D.id), k = D.r * 1.15 / 24;
       lctx.globalAlpha = faded ? .4 : 1;
-      lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 1, 0, Math.PI * 2); lctx.lineWidth = 3; lctx.strokeStyle = "rgba(255,255,255,.85)"; lctx.stroke();
-      lctx.lineWidth = 1.3; lctx.strokeStyle = "#264030"; lctx.beginPath(); lctx.arc(D.x, D.y, D.r, 0, Math.PI * 2); lctx.stroke();
+      lctx.lineWidth = 1; lctx.strokeStyle = "#264030"; lctx.beginPath(); lctx.arc(D.x, D.y, D.r, 0, Math.PI * 2); lctx.stroke();
       lctx.save(); lctx.translate(D.x - 12 * k, D.y - 12 * k); lctx.scale(k, k);
       lctx.lineWidth = 2.2; lctx.lineCap = "round"; lctx.lineJoin = "round"; lctx.strokeStyle = ON_DARK.has(kind) ? "#e3eba1" : "#264030"; lctx.stroke(ICONS[kind]);
       lctx.restore();
