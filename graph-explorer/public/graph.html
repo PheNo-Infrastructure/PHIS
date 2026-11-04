@@ -899,6 +899,7 @@ async function openInPortal(n) {
   }
   // mode: "replace" (plain click, window), "toggle" (Ctrl+click), "add" (Ctrl+window)
   function setSelection(ids, mode) {
+    if (catView && (mode !== "replace" || ids.length)) exitCat(false, () => { if (lit) fitLit(); }); // selecting a node of a category shows the normal connected view
     if (mode === "replace") sel.clear();
     for (const id of ids) {
       if (!g.hasNode(id)) continue;
@@ -1081,7 +1082,7 @@ async function openInPortal(n) {
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kindOf(id) === kind).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
-    const box = terr.getBoundingClientRect(), uw = box.width * .62, uh = box.height * .62, n = ids.length; // the grid takes the middle; the resources it links to sit around it, in view
+    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 90, n = ids.length; // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
     const sizes = ids.map(id => g.getNodeAttribute(id, "size")), avg = sizes.reduce((t, v) => t + v, 0) / n, maxS = Math.max(...sizes);
     tctx.font = LABEL_FONT; const labelW = Math.min(190, Math.max(...ids.map(id => tctx.measureText(String(g.getNodeAttribute(id, "label")).slice(0, 32)).width)) + 10);
     let R0 = 46, cols = 1, rows = n, cellW = 0, cellH = 0;
@@ -1098,11 +1099,12 @@ async function openInPortal(n) {
     const mem = new Set(ids), nbs = new Set(); for (const id of ids) g.forEachNeighbor(id, nb => { if (!mem.has(nb) && inLayout(nb)) nbs.add(nb); });
     const nbList = [...nbs].sort((a, b) => kindOf(a).localeCompare(kindOf(b)) || String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     const nbMaxR = nbList.length ? Math.max(...nbList.map(id => g.getNodeAttribute(id, "size") * K * sc)) : 0, pitch = (2 * nbMaxR + 30) / sc, gap0 = (cellH * .7) / sc;
-    let ring = 0, used = 0, half = [gw / 2, gh / 2];
+    let ring = 0, used = 0, half = [Math.max(gw / 2, box.width / 2 / sc), Math.max(gh / 2, box.height / 2 / sc)]; // the first ring starts just outside the screen
     const rectPoint = (w2, h2, d) => { const Lx = 2 * w2, Ly = 2 * h2, L = 2 * (Lx + Ly); d = ((d % L) + L) % L; // a point d along the perimeter of a rectangle of half sizes (w2, h2) around the grid
       if (d < Lx) return [cx - w2 + d, cy - h2]; d -= Lx; if (d < Ly) return [cx + w2, cy - h2 + d]; d -= Ly; if (d < Lx) return [cx + w2 - d, cy + h2]; d -= Lx; return [cx - w2, cy + h2 - d]; };
+    const half0 = half.slice();
     while (used < nbList.length) {
-      ring++; const w2 = gw / 2 + gap0 + (ring - 1) * pitch, h2 = gh / 2 + gap0 + (ring - 1) * pitch, L = 4 * (w2 + h2), cap = Math.max(1, Math.floor(L / (pitch * 1.05)));
+      ring++; const w2 = half0[0] + gap0 + (ring - 1) * pitch, h2 = half0[1] + gap0 + (ring - 1) * pitch, L = 4 * (w2 + h2), cap = Math.max(1, Math.floor(L / (pitch * 1.05)));
       for (let i = 0; i < cap && used < nbList.length; i++, used++) { const [x, y] = rectPoint(w2, h2, (i + .5) * L / cap); moves.push({ id: nbList[used], x, y }); saved.set(nbList[used], { x: g.getNodeAttribute(nbList[used], "x"), y: g.getNodeAttribute(nbList[used], "y") }); }
       half = [w2 + pitch / 2, h2 + pitch / 2];
     }
@@ -1114,15 +1116,21 @@ async function openInPortal(n) {
     });
     catView = { key, kind, set: mem, nb: nbs, saved, name: c.name, n };
     // the camera: the grid centred, or its top left corner when it is taller than the screen
-    const over = gh * sc > uh * 1.6, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
+    const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
     const vp = sigma.graphToViewport(centre), fr = sigma.viewportToFramedGraph(vp);
     sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc }, { duration: 500 });
     tween(moves, 500); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
   }
-  function exitCat(toCluster) {
+  function fitLit() { // the camera onto the selection and what it links to
+    const box = terr.getBoundingClientRect(), pts = [...lit].filter(isVisible).map(id => sigma.graphToViewport(g.getNodeAttributes(id))); if (!pts.length) return;
+    const x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y)), st = sigma.getCamera().getState();
+    const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), to = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
+    sigma.getCamera().animate({ x:to.x, y:to.y, ratio: st.ratio * f }, { duration: 500 });
+  }
+  function exitCat(toCluster, done) {
     if (!catView) return;
     const { saved, key } = catView; catView = null; crumbs.hidden = true; labelSlot.clear();
-    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); });
+    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); done?.(); });
     refresh(); stats();
   }
   function showCrumbs() {
@@ -1228,7 +1236,7 @@ async function openInPortal(n) {
     setCurrent(id);
     if (id && hasPage(kindOf(id))) openInPortal(g.getNodeAttributes(id));
   }
-  sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) pick(node, event); });
+  sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) { const P = !catView && catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return enterCat(P.key, P.kind); pick(node, event); } }); // a category pill wins over the node under it
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
   sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return enterCat(P.key, P.kind); const H = clusterHit(event.x, event.y); if (H) return zoomToCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
     sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
@@ -1260,7 +1268,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
