@@ -513,10 +513,11 @@ async function openInPortal(n) {
     const sub = new Graph({ type:"undirected" });
     g.forEachNode((id, a) => { if (inLayout(id)) sub.addNode(id, { x:a.x, y:a.y, fixed: !!a.fixed || !!pinned?.(id) }); });
     if (sub.order < 2) return;
-    g.forEachEdge((ed, a, s, t) => { if (sub.hasNode(s) && sub.hasNode(t)) sub.addEdge(s, t); });
+    // a link between two clusters pulls much more weakly than one inside a cluster, so clusters can stand apart instead of being drawn into one knot
+    g.forEachEdge((ed, a, s, t) => { if (sub.hasNode(s) && sub.hasNode(t)) { const cs = clusterOf.get(s), ct = clusterOf.get(t); sub.addEdge(s, t, { weight: cs !== undefined && cs !== ct ? CROSS_PULL : 1 }); } });
     FA2.assign(sub, { iterations, settings: settingsFor(sub) });
     sub.forEachNode((id, a) => g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
-    collide(2);
+    spreadClusters(3); collide(2);
   }
 
   // Nodes keep one size in graph units at every zoom (Sigma's own sqrt scaling is replaced by a linear one, so they grow with the paint), so whether two overlap is a question for the layout alone:
@@ -528,14 +529,44 @@ async function openInPortal(n) {
     g.forEachNode((id, a) => { if (!inLayout(id)) return; n++; sz += a.size; x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
     if (n > 1) K = .35 * Math.sqrt(Math.max(1e-12, (x1 - x0) * (y1 - y0)) / n) / (sz / n);
   };
+  // Pixels per graph unit at zoom 1 only changes when the view is refitted or resized, so it is measured after a frame is drawn (never while one is being set up, which was a frame late) and the
+  // zoom is applied on top: the size follows the zoom in the same frame.
+  let pxu1 = 0;
+  const measurePx = () => { const o = sigma.graphToViewport({ x:0, y:0 }), v = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) * sigma.getCamera().getState().ratio; if (v > 0 && isFinite(v) && Math.abs(v - pxu1) > 1e-9 * v) { pxu1 = v; sigma.refresh(); } };
   sigma.updateCachedValues = function () {
-    const o = this.graphToViewport({ x:0, y:0 }), pxu = Math.abs(this.graphToViewport({ x:1, y:0 }).x - o.x);
-    this.cameraSizeRatio = K && pxu > 0 && isFinite(pxu) ? 1 / (K * pxu) : this.camera.getState().ratio;
+    const ratio = this.camera.getState().ratio;
+    this.cameraSizeRatio = K && pxu1 ? ratio / (K * pxu1) : Math.sqrt(ratio);
   };
+  sigma.on("afterRender", measurePx);
   // the node shader has its own copy of the size rule (1/sqrt(zoom)): hand it a zoom that gives the same pixels as scaleSize
   for (const prog of Object.values(sigma.nodePrograms ?? {})) {
     const draw = prog.render.bind(prog);
     prog.render = t => draw(K ? { ...t, ratio: Math.pow(sigma.cameraSizeRatio, 2) } : t);
+  }
+  // Clusters are discs (their centre and the reach of 90% of their nodes) and keep a gap between them: where two overlap, all the nodes of both move apart together.
+  const CLUSTER_GAP = 1.12, CROSS_PULL = .12;
+  function spreadClusters(iterations) {
+    if (clusters.length < 2) return;
+    const live = clusters.map(c => ({ c, ids: c.members.filter(id => g.hasNode(id) && inLayout(id)) })).filter(u => u.ids.length > 2);
+    for (let it = 0; it < iterations; it++) {
+      let moved = false;
+      for (const u of live) {
+        let sx = 0, sy = 0; for (const id of u.ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; }
+        u.x = sx / u.ids.length; u.y = sy / u.ids.length;
+        const ds = u.ids.map(id => { const a = g.getNodeAttributes(id); return Math.hypot(a.x - u.x, a.y - u.y); }).sort((a, b) => a - b);
+        u.r = ds[Math.floor(ds.length * .75)] * 1.35 * CLUSTER_GAP; u.dx = 0; u.dy = 0;
+        u.pinned = u.ids.every(id => g.getNodeAttribute(id, "fixed"));
+      }
+      for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+        const A = live[i], B = live[j]; let vx = B.x - A.x, vy = B.y - A.y, d = Math.hypot(vx, vy); const need = A.r + B.r;
+        if (d >= need) continue;
+        if (d < 1e-9) { vx = 1; vy = 0; d = 1; }
+        const push = (need - d) / 2, wa = A.pinned ? 0 : B.pinned ? 2 : 1, wb = B.pinned ? 0 : A.pinned ? 2 : 1;
+        A.dx -= vx / d * push * wa; A.dy -= vy / d * push * wa; B.dx += vx / d * push * wb; B.dy += vy / d * push * wb; moved = true;
+      }
+      if (!moved) break;
+      for (const u of live) if (u.dx || u.dy) for (const id of u.ids) { const a = g.getNodeAttributes(id); if (!a.fixed) g.mergeNodeAttributes(id, { x: a.x + u.dx * .8, y: a.y + u.dy * .8 }); }
+    }
   }
   function collide(iterations) {
     const ids = g.nodes().filter(inLayout); if (ids.length < 2 || !K) return;
@@ -601,7 +632,7 @@ async function openInPortal(n) {
   document.getElementById("reset").onclick = () => {
     const wasLive = liveOn; stopLive();
     g.forEachNode((id) => inLayout(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
-    relax(300); collide(60); fitView(); if (wasLive) startLive();
+    relax(300); spreadClusters(300); collide(60); fitView(); if (wasLive) startLive();
   };
   document.getElementById("fit").onclick = () => fitView();
 
@@ -1079,7 +1110,7 @@ async function openInPortal(n) {
   });
   window.addEventListener("mouseup", () => { pan = null; });
 
-  setK(); collide(60); fitView(); sigma.updateCachedValues(); // no two nodes overlap; their size in graph units is fixed from here on
+  findClusters(); if (clusters.length) relax(250); spreadClusters(300); setK(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   renderChips(); stats(); refresh(); // refresh draws the first labels
   if (embedded) {
     parent.postMessage({ kind: "ready" }, location.origin);
