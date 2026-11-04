@@ -286,6 +286,8 @@ async function openInPortal(n) {
       return fx.flash.has(edgeKey(s, t)) ? { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 } : a;
     },
   });
+  // A collapsed node is drawn as its painted area: its disc is clear, so the paint (sized by how many it holds), the ring, the icon and the name show.
+  { const base = sigma.getSetting("nodeReducer"); sigma.setSetting("nodeReducer", (id, a) => { const r = base(id, a); return r.kind === "fold" && !r.hidden ? { ...r, color: "rgba(0,0,0,0)" } : r; }); }
   function refresh() { computeLit(); sigma.refresh(); }
 
   // The area the selection occupies is tinted as ONE region of one strength: a soft blob around every involved node is added up into a field
@@ -338,7 +340,7 @@ async function openInPortal(n) {
     if (field.width !== fw || field.height !== fh) { field.width = shape.width = fw; field.height = shape.height = fh; }
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
     if (!lit) startRestore();
-    if (!lit && !clusters.length) { cache = null; return; }
+    if (!lit && !clusters.length && folds.size <= open.size) { cache = null; return; } // nothing to paint: no selection, no clusters, no collapsed node showing
     dims = { fw, fh, w, h, k };
     stepLag(); rebuild(); paintHalo(); if (lit) startFlow();
   }
@@ -358,6 +360,8 @@ async function openInPortal(n) {
     const at = id => { const L = lag.get(id) ?? g.getNodeAttributes(id), v = sigma.graphToViewport({ x:L.x, y:L.y }); return { x: v.x, y: v.y }; };
     const groups = new Map(), put = (key, pt) => { if (!groups.has(key)) groups.set(key, []); groups.get(key).push(pt); };
     for (const id of tintIds) if (isVisible(id)) put(keyOf(id), { ...at(id), r: BLOB, core: true }); // core: the node's own flat circle of colour
+    // A collapsed node that is drawn (not hidden inside a painted cluster, whose paint already covers it) is its own small area, as big as what it holds.
+    g.forEachNode((id, a) => { if (a.kind !== "fold" || !isVisible(id)) return; const v = sigma.graphToViewport({ x:a.x, y:a.y }); put("fold", { x:v.x, y:v.y, r: BLOB * (.24 + .045 * Math.sqrt(a.count || 1)), core: true }); });
     // Clusters: a collapsed one is painted from where its (hidden) nodes are, in one colour per cluster; an open one in its nodes' own colours.
     const near = BLOB / ratio, cent = clusters.map(c => { let x = 0, y = 0; for (const id of c.members) { const a = g.getNodeAttributes(id); x += a.x; y += a.y; } return [x / c.members.length, y / c.members.length]; }), shade = new Map();
     clusters.forEach((c, i) => { // each cluster takes the colour whose nearest user is farthest away, so neighbours differ
@@ -411,6 +415,7 @@ async function openInPortal(n) {
   // The painted region takes each type's disc colour; its lightness is stretched so the wash still reads, and where two types meet they blend and marble.
   const tintOf = key => {
     if (key === "blocked") return [2, .56, .5];
+    if (key === "fold") { const [h] = toHsl(rgbOfHex(COLORS.facility)); return [h, .5, .52]; } // a collapsed node's own area: the facility green, firmer than a cluster's wash
     if (key.startsWith("cc:")) { const [h] = toHsl(rgbOfHex(clusterHex.get(key))); return [h, .5, .58]; }
     const [h, sat, l] = toHsl(rgbOfHex(clusterHex.get(key) ?? COLORS[key]));
     return [h, Math.max(.15, Math.min(.7, sat + .1)), .36 + .48 * Math.max(0, Math.min(1, (l - .2) / .6))];
