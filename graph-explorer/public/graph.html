@@ -38,7 +38,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="collapseAll" hidden>Collapse all</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -131,12 +131,16 @@ async function openInPortal(n) {
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const hiddenKinds = new Set();
-  // ---- clusters: Louvain groups the graph. On a big graph each cluster starts collapsed into its painted disc (named after its biggest organisation); a click opens it. ----
+  // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
   const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
+  // A cluster shows its nodes once they are far enough apart on screen to read (average gap between neighbours, in px), and is painted again when they crowd below the lower one.
+  // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.
+  const GAP_SHOW = 26, GAP_HIDE = 20;
   const MIN_CLUSTERED = 500, MIN_CLUSTER = 8; // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
-  const collapsed = new Set(), clusterOf = new Map(), clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
+  const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
+    clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
   let clusters = [], clusterKey = "", clustersSeen = false;
   // After the first clustering the groups stay as they are, or what is collapsed and open would jump: a node that appears (a group opening) joins the cluster most of its neighbours are in, a gone one leaves.
   function keepClusters() {
@@ -199,7 +203,7 @@ async function openInPortal(n) {
   }
   const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
-  const isVisible = id => !collapsed.has(clusterOf.get(id)) && inLayout(id); // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
+  const isVisible = id => (!collapsed.has(clusterOf.get(id)) || !!lit?.has(id)) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
   const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
   // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   // The selection as PHIS things: a folded group is every facility and device inside it.
@@ -238,8 +242,7 @@ async function openInPortal(n) {
     if (!L.length) { lit = null; tintIds = new Set(); return; }
     lit = new Set(L); litSel = new Set(L);
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
-    let opened = false; for (const id of lit) if (collapsed.delete(clusterOf.get(id))) opened = true; // what is selected and everything it is connected to is shown: their clusters open
-    if (opened) { visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; }); }
+    visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; }); // lit is known now: it decides what is drawn inside a painted cluster
     // The members of an opened group are named, not painted (an organization or site would otherwise paint every facility of it), unless something that is not the group's parent
     // (a person, an experiment) is linked to them directly: then they are what that selection is about.
     const parentKind = id => ["organization", "site"].includes(kindOf(id));
@@ -922,26 +925,21 @@ async function openInPortal(n) {
   // Links between collapsed clusters are drawn here as one line per pair. ----
   const terr = document.getElementById("terr"), tctx = terr.getContext("2d");
   sigma.getContainer().appendChild(terr); // above the nodes, so the names read; it takes no clicks
-  const collapseBtn = document.getElementById("collapseAll");
   let terrHits = [], terrLabels = []; // terrLabels: where each cluster's name is, to drag the cluster by it
   const clusterHit = (x, y) => terrHits.find(H => H.pts ? H.pts.some(q => Math.hypot(x - q.x, y - q.y) <= H.pr) : x >= H.x0 && x <= H.x1 && y >= H.y0 && y <= H.y1);
   let lastGeo = new Map();
-  function toggleCluster(key) {
-    const opening = collapsed.has(key), G = lastGeo.get(key);
-    opening ? collapsed.delete(key) : collapsed.add(key); refresh(); stats();
-    if (opening && G) { // opening a cluster brings the camera onto it
-      const cam = sigma.getCamera(), st = cam.getState(), to = sigma.viewportToFramedGraph({ x:G.cx, y:G.cy }), box = terr.getBoundingClientRect();
-      cam.animate({ x:to.x, y:to.y, ratio: Math.max(.02, Math.min(st.ratio, st.ratio * (G.spread * 3.2) / Math.min(box.width, box.height))) }, { duration: 450 });
-    }
+  function zoomToCluster(key) { // a deliberate zoom onto a painted cluster, far enough in that its nodes can be read
+    const G = lastGeo.get(key); if (!G) return;
+    const cam = sigma.getCamera(), st = cam.getState(), to = sigma.viewportToFramedGraph({ x:G.cx, y:G.cy });
+    cam.animate({ x:to.x, y:to.y, ratio: Math.max(.005, Math.min(st.ratio, st.ratio * gapOf(G) / (GAP_SHOW * 1.3))) }, { duration: 500 });
   }
-  collapseBtn.onclick = () => { if (clusters.some(c => !collapsed.has(c.key))) clusters.forEach(c => collapsed.add(c.key)); else collapsed.clear(); refresh(); stats(); };
+  const gapOf = G => G.spread * Math.sqrt(Math.PI / (G.c.members.length * .9)); // the average distance between neighbours in the cluster, on screen
   function drawTerritories() {
     const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
     if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
     tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, w, h);
-    terrHits = []; terrLabels = []; collapseBtn.hidden = !clusters.length;
+    terrHits = []; terrLabels = [];
     if (!w || !h || !clusters.length) return;
-    const label = clusters.some(c => !collapsed.has(c.key)) ? "Collapse all" : "Expand all"; if (collapseBtn.textContent !== label) collapseBtn.textContent = label;
     const geo = new Map();
     clusters.forEach((c, i) => {
       const pts = c.members.map(id => { const a = g.getNodeAttributes(id); return sigma.graphToViewport({ x:a.x, y:a.y }); });
@@ -950,12 +948,18 @@ async function openInPortal(n) {
       geo.set(c.key, { c, i, cx, cy, off, spread, pts, r: off ? Math.min(spread * .85 + 14, 24 + Math.sqrt(c.size) * 3.6) : spread * 1.15 + 20 }); // a collapsed disc grows with what it holds, so crowded ones overlap less
     });
     lastGeo = geo;
+    let flipped = false; // zoom decides what is painted and what is drawn as nodes, per cluster, with a margin so it does not flicker at the border
+    for (const G of geo.values()) {
+      const gap = gapOf(G);
+      if (G.off && gap >= GAP_SHOW) { collapsed.delete(G.c.key); flipped = true; } else if (!G.off && gap < GAP_HIDE) { collapsed.add(G.c.key); flipped = true; }
+    }
+    if (flipped) requestAnimationFrame(() => { refresh(); stats(); });
     // one line per pair of things that are linked across a collapsed cluster
-    const ptOf = id => { const G = geo.get(clusterOf.get(id)); if (G?.off) return { x:G.cx, y:G.cy, id:"c" + G.c.key }; if (!isVisible(id)) return null; const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x:a.x, y:a.y }); return { x:v.x, y:v.y, id }; };
+    const ptOf = id => { const G = geo.get(clusterOf.get(id)); if (G?.off && !isVisible(id)) return { x:G.cx, y:G.cy, id:"c" + G.c.key }; if (!isVisible(id)) return null; const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x:a.x, y:a.y }); return { x:v.x, y:v.y, id }; };
     const links = new Map();
     g.forEachEdge((e, a, s2, t2) => {
       const ks = clusterOf.get(s2), kt = clusterOf.get(t2);
-      if ((ks !== undefined && ks === kt) || !(collapsed.has(ks) || collapsed.has(kt))) return; // inside a cluster, or both ends drawn by sigma
+      if ((ks !== undefined && ks === kt) || (isVisible(s2) && isVisible(t2))) return; // inside a cluster, or both ends drawn by sigma
       const A = ptOf(s2), B = ptOf(t2); if (!A || !B) return;
       const key = A.id < B.id ? A.id + " " + B.id : B.id + " " + A.id, L = links.get(key);
       L ? L.n++ : links.set(key, { A, B, n:1 });
@@ -968,7 +972,7 @@ async function openInPortal(n) {
       const r = spread * 1.15 + 20;
       if (cx + r < 0 || cy + r < 0 || cx - r > w || cy - r > h) continue;
       tctx.lineWidth = 4; tctx.strokeStyle = "rgba(255,255,255,.85)"; tctx.fillStyle = "#264030";
-      if (off) { // the painted area stands for the cluster: name and counts on it, and a click anywhere on it opens it
+      if (off) { // the painted area stands for the cluster: name and counts on it, and a click anywhere on it zooms onto it
         const fs = Math.max(12, Math.min(24, spread * .16 + 8)), lines = [c.name, ...(spread >= 90 ? c.parts : [])], top = cy - (lines.length - 1) * fs * .6;
         tctx.globalAlpha = lit ? .5 : 1;
         let tw = 0; lines.forEach((t, li) => { tctx.font = `${li ? 400 : 700} ${li ? fs * .6 : fs}px "Public Sans", system-ui, sans-serif`; tw = Math.max(tw, tctx.measureText(t).width); tctx.strokeText(t, cx, top + li * fs * 1.15); tctx.fillText(t, cx, top + li * fs * 1.15); });
@@ -976,12 +980,11 @@ async function openInPortal(n) {
         terrHits.push({ key: c.key, pts, pr: BLOB * CLOSED_R * 1.2 / ratio });
         continue;
       }
-      const fade = (1 - smooth(.45, .9, r / Math.min(w, h))) * (lit ? .4 : 1); if (fade <= .02) continue;
-      const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9; // an open cluster: its name above the area (click it to collapse)
+      const fade = (1 - smooth(GAP_SHOW, GAP_SHOW * 1.8, gapOf({ c, spread }))) * (lit ? .4 : 1); if (fade <= .02) continue; // the name goes as the nodes become readable
+      const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9; // a shown cluster: its name above the area, to drag it by
       tctx.globalAlpha = fade * .85; tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`;
       tctx.strokeText(c.name, cx, ty); tctx.fillText(c.name, cx, ty);
       const tw = tctx.measureText(c.name).width / 2 + 6; terrLabels.push({ members: c.members, x0: cx - tw, x1: cx + tw, y0: ty - fs * .7, y1: ty + fs * .7 });
-      if (!lit) terrHits.push({ key: c.key, x0: cx - tw, x1: cx + tw, y0: ty - fs * .7, y1: ty + fs * .7 });
     }
     tctx.globalAlpha = 1;
   }
@@ -998,10 +1001,9 @@ async function openInPortal(n) {
   }
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) pick(node, event); });
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
-  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const H = clusterHit(event.x, event.y); if (H) return toggleCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
-  sigma.getMouseCaptor().on("mousemovebody", e => { sigma.getContainer().style.cursor = clusterHit(e.x, e.y) ? "pointer" : ""; });
-  sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
-  sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) ? "pointer" : ""; });
+  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const H = clusterHit(event.x, event.y); if (H) return zoomToCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
+    sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
+  sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) ? "pointer" : ""; });
 
   // right-drag moves the view
   const surface = sigma.getContainer(); let pan = null;
