@@ -38,7 +38,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="collapseAll" hidden>Collapse all</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -131,6 +131,35 @@ async function openInPortal(n) {
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const hiddenKinds = new Set();
+  // ---- clusters: Louvain groups the graph. On a big graph each cluster starts collapsed into its painted disc (named after its biggest organisation); a click opens it. ----
+  const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
+  const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
+  const MIN_CLUSTERED = 150, MIN_CLUSTER = 8; // ponytail: below 150 nodes a graph is readable as it is; 150 is a guess, tune on real data
+  const collapsed = new Set(), clusterOf = new Map(); // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
+  let clusters = [], clusterKey = "", clustersSeen = false;
+  function findClusters() {
+    const key = g.order + ":" + g.size;
+    if (key === clusterKey) return;
+    clusterKey = key; clusters = []; clusterOf.clear();
+    if (g.order < MIN_CLUSTERED) return;
+    let seed = 7; const rng = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296; // the same graph always clusters the same way
+    const comm = graphologyLibrary.communitiesLouvain(g, { rng }), by = new Map();
+    g.forEachNode(id => { const c = comm[id]; if (!by.has(c)) by.set(c, []); by.get(c).push(id); });
+    clusters = [...by.values()].filter(m => m.length >= MIN_CLUSTER).map(members => {
+      const n = {}; let top = null;
+      for (const id of members) {
+        const a = g.getNodeAttributes(id); n[a.kind] = (n[a.kind] || 0) + (a.kind === "fold" ? a.count : 1);
+        if (a.kind === "organization" && (!top || g.degree(id) > g.degree(top))) top = id;
+      }
+      top ??= members.reduce((b, id) => g.degree(id) > g.degree(b) ? id : b);
+      const parts = Object.entries(n).filter(([k]) => PLURAL[k]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${v} ${PLURAL[k]}`);
+      const name = String(g.getNodeAttribute(top, "label"));
+      const size = Object.values(n).reduce((t, v) => t + v, 0);
+      return { key: top, members, size, name: name.length > 28 ? name.slice(0, 27) + "..." : name, parts };
+    });
+    clusters.forEach(c => c.members.forEach(id => clusterOf.set(id, c.key)));
+    if (!clustersSeen) { clustersSeen = true; clusters.forEach(c => collapsed.add(c.key)); } // only the first time: a cluster that appears later does not hide what you are looking at
+  }
   let focus = null, focusSet = null, selected = null, lit = null;
   let cur = null; // inside the portal: the resource open in Browse; lit and unfolded like a selection, but not part of it (nothing is linked to it by being open)
   const sel = new Set();           // selected node ids; a folded group stands for all its members
@@ -152,7 +181,7 @@ async function openInPortal(n) {
     }
     for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
   }
-  const isVisible = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
+  const isVisible = id => !collapsed.has(clusterOf.get(id)) && !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
   const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
   // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
@@ -185,11 +214,14 @@ async function openInPortal(n) {
   // What a selection lights up: the selected nodes, their neighbours, and the members of any opened group among them (they hang off the group, not off the node).
   function computeLit() {
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
+    findClusters();
     litSel = new Set(); misfit = new Set(); canLink = new Set();
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; });
     const L = lens();
     if (!L.length) { lit = null; tintIds = new Set(); return; }
     lit = new Set(L); litSel = new Set(L);
+    let opened = false; for (const id of L) if (collapsed.delete(clusterOf.get(id))) opened = true; // what is selected (or open in Browse) is never hidden in a collapsed cluster
+    if (opened) { visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; }); }
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
     // The members of an opened group are named, not painted (an organization or site would otherwise paint every facility of it), unless something that is not the group's parent
     // (a person, an experiment) is linked to them directly: then they are what that selection is about.
@@ -783,7 +815,7 @@ async function openInPortal(n) {
       const d = sigma.getNodeDisplayData(id); if (!d || d.hidden) return;
       const v = sigma.graphToViewport({ x:a.x, y:a.y }), r = sigma.scaleSize(d.size);
       discs.push({ id, x:v.x, y:v.y, r });
-      if (d.label && (d.forceLabel || r >= 6) && !(terrOn && !lit)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
+      if (d.label && (d.forceLabel || r >= 6)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
     });
     items.sort((a, b) => a.rank - b.rank || b.size - a.size);
     const placed = [], clash = R => placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
@@ -843,60 +875,74 @@ async function openInPortal(n) {
     }
     lctx.globalAlpha = 1;
   }
-  // ---- territories: Louvain finds the clusters; each is a soft disc behind the nodes, named after its biggest organisation, with what it holds, so the overview reads without zooming in.
-  // The name fades as the cluster grows to fill the view (by then the nodes are readable themselves). ----
+  // ---- territories: a collapsed cluster is its painted disc (name and counts, click to open); an open one keeps a soft backdrop and its name on top (click it to collapse).
+  // Links between collapsed clusters are drawn here as one line per pair. ----
   const terr = document.getElementById("terr"), tctx = terr.getContext("2d");
   sigma.getContainer().appendChild(terr); // above the nodes, so the names read; it takes no clicks
-  let terrOn = false; // while the cluster names are up (a big graph, nobody selected) the individual node names stay off, they only add noise
-  const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
-  const PLURAL = { experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
-  let clusters = [], clusterKey = "";
-  function findClusters() {
-    const key = g.order + ":" + g.size;
-    if (key === clusterKey) return;
-    clusterKey = key;
-    const comm = graphologyLibrary.communitiesLouvain(g), by = new Map();
-    g.forEachNode(id => { const c = comm[id]; if (!by.has(c)) by.set(c, []); by.get(c).push(id); });
-    clusters = [...by.values()].filter(m => m.length >= 8).map(members => {
-      const n = {}; let top = null;
-      for (const id of members) {
-        const a = g.getNodeAttributes(id); n[a.kind] = (n[a.kind] || 0) + (a.kind === "fold" ? a.count : 1);
-        if (a.kind === "organization" && (!top || g.degree(id) > g.degree(top))) top = id;
-      }
-      top ??= members.reduce((b, id) => g.degree(id) > g.degree(b) ? id : b);
-      const parts = Object.entries(n).filter(([k]) => PLURAL[k]).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${v} ${PLURAL[k]}`);
-      const name = String(g.getNodeAttribute(top, "label"));
-      return { members, name: name.length > 28 ? name.slice(0, 27) + "..." : name, counts: parts.join(", ") };
-    });
+  const collapseBtn = document.getElementById("collapseAll");
+  let terrHits = [];
+  const clusterHit = (x, y) => terrHits.find(H => H.disc ? Math.hypot(x - H.cx, y - H.cy) <= H.r : x >= H.x0 && x <= H.x1 && y >= H.y0 && y <= H.y1);
+  let lastGeo = new Map();
+  function toggleCluster(key) {
+    const opening = collapsed.has(key), G = lastGeo.get(key);
+    opening ? collapsed.delete(key) : collapsed.add(key); refresh(); stats();
+    if (opening && G) { // opening a cluster brings the camera onto it
+      const cam = sigma.getCamera(), st = cam.getState(), to = sigma.viewportToFramedGraph({ x:G.cx, y:G.cy }), box = terr.getBoundingClientRect();
+      cam.animate({ x:to.x, y:to.y, ratio: Math.max(.02, Math.min(st.ratio, st.ratio * (G.spread * 3.2) / Math.min(box.width, box.height))) }, { duration: 450 });
+    }
   }
+  collapseBtn.onclick = () => { if (clusters.some(c => !collapsed.has(c.key))) clusters.forEach(c => collapsed.add(c.key)); else collapsed.clear(); refresh(); stats(); };
   function drawTerritories() {
     const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
     if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
     tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, w, h);
-    terrOn = false;
-    if (!w || !h || visCount < 150) return; // ponytail: small graphs are readable without cluster names; 150 is a guess, tune on real data
-    findClusters();
+    terrHits = []; collapseBtn.hidden = !clusters.length;
+    if (!w || !h || !clusters.length) return;
+    const label = clusters.some(c => !collapsed.has(c.key)) ? "Collapse all" : "Expand all"; if (collapseBtn.textContent !== label) collapseBtn.textContent = label;
+    const geo = new Map();
     clusters.forEach((c, i) => {
-      const pts = c.members.filter(isVisible).map(id => { const a = g.getNodeAttributes(id); return sigma.graphToViewport({ x:a.x, y:a.y }); });
-      if (pts.length < 5) return;
+      const pts = c.members.map(id => { const a = g.getNodeAttributes(id); return sigma.graphToViewport({ x:a.x, y:a.y }); });
       const cx = pts.reduce((t, q) => t + q.x, 0) / pts.length, cy = pts.reduce((t, q) => t + q.y, 0) / pts.length;
-      const ds = pts.map(q => Math.hypot(q.x - cx, q.y - cy)).sort((a, b) => a - b), r = ds[Math.floor(ds.length * .9)] * 1.15 + 20;
-      if (r < 30 || cx + r < 0 || cy + r < 0 || cx - r > w || cy - r > h) return;
-      const fade = (1 - smooth(.45, .9, r / Math.min(w, h))) * (lit ? .4 : 1);
-      if (fade > .5 && !lit) terrOn = true;
-      const gr = tctx.createRadialGradient(cx, cy, 0, cx, cy, r); gr.addColorStop(0, TERR[i % TERR.length] + "55"); gr.addColorStop(.7, TERR[i % TERR.length] + "33"); gr.addColorStop(1, TERR[i % TERR.length] + "00");
-      tctx.globalAlpha = Math.min(1, fade * 1.6); tctx.fillStyle = gr; tctx.beginPath(); tctx.arc(cx, cy, r, 0, Math.PI * 2); tctx.fill();
-      const fs = Math.max(13, Math.min(34, r * .2));
-      tctx.globalAlpha = fade * .8; tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
-      tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`; tctx.lineWidth = 4; tctx.strokeStyle = "rgba(255,255,255,.8)"; tctx.fillStyle = "#264030";
-      tctx.strokeText(c.name, cx, cy - fs * .3); tctx.fillText(c.name, cx, cy - fs * .3);
-      if (r < 110) return; // too small for a second line
-      tctx.font = `400 ${Math.max(11, fs * .5)}px "Public Sans", system-ui, sans-serif`; tctx.lineWidth = 3;
-      tctx.strokeText(c.counts, cx, cy + fs * .6); tctx.fillText(c.counts, cx, cy + fs * .6);
+      const ds = pts.map(q => Math.hypot(q.x - cx, q.y - cy)).sort((a, b) => a - b), spread = ds[Math.floor(ds.length * .9)], off = collapsed.has(c.key);
+      geo.set(c.key, { c, i, cx, cy, off, spread, r: off ? Math.min(spread * .85 + 14, 24 + Math.sqrt(c.size) * 3.6) : spread * 1.15 + 20 }); // a collapsed disc grows with what it holds, so crowded ones overlap less
     });
+    lastGeo = geo;
+    // one line per pair of things that are linked across a collapsed cluster
+    const ptOf = id => { const G = geo.get(clusterOf.get(id)); if (G?.off) return { x:G.cx, y:G.cy, id:"c" + G.c.key }; if (!isVisible(id)) return null; const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x:a.x, y:a.y }); return { x:v.x, y:v.y, id }; };
+    const links = new Map();
+    g.forEachEdge((e, a, s2, t2) => {
+      const ks = clusterOf.get(s2), kt = clusterOf.get(t2);
+      if ((ks !== undefined && ks === kt) || !(collapsed.has(ks) || collapsed.has(kt))) return; // inside a cluster, or both ends drawn by sigma
+      const A = ptOf(s2), B = ptOf(t2); if (!A || !B) return;
+      const key = A.id < B.id ? A.id + " " + B.id : B.id + " " + A.id, L = links.get(key);
+      L ? L.n++ : links.set(key, { A, B, n:1 });
+    });
+    tctx.strokeStyle = "#a9b896"; tctx.globalAlpha = lit ? .25 : .6;
+    for (const { A, B, n } of links.values()) { tctx.lineWidth = .8 + Math.min(3, Math.log2(n)); tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.lineTo(B.x, B.y); tctx.stroke(); }
+    tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
+    for (const { c, i, cx, cy, off, r } of geo.values()) {
+      if (cx + r < 0 || cy + r < 0 || cx - r > w || cy - r > h) continue;
+      const col = TERR[i % TERR.length];
+      if (off) {
+        tctx.globalAlpha = lit ? .45 : 1; tctx.fillStyle = col + "e6"; tctx.strokeStyle = "rgba(38,64,48,.55)"; tctx.lineWidth = 1.5;
+        tctx.beginPath(); tctx.arc(cx, cy, r, 0, Math.PI * 2); tctx.fill(); tctx.stroke();
+        const fs = Math.max(12, Math.min(24, r * .3)); tctx.fillStyle = "#264030";
+        const lines = [c.name, ...(r >= 52 ? c.parts : [])], top = cy - (lines.length - 1) * fs * .6;
+        lines.forEach((t, li) => { tctx.font = `${li ? 400 : 700} ${li ? fs * .6 : fs}px "Public Sans", system-ui, sans-serif`; tctx.fillText(t, cx, top + li * fs * 1.15); });
+        terrHits.push({ key: c.key, disc: true, cx, cy, r });
+        continue;
+      }
+      const fade = (1 - smooth(.45, .9, r / Math.min(w, h))) * (lit ? .4 : 1); if (fade <= .02) continue;
+      const gr = tctx.createRadialGradient(cx, cy, 0, cx, cy, r); gr.addColorStop(0, col + "55"); gr.addColorStop(.7, col + "33"); gr.addColorStop(1, col + "00");
+      tctx.globalAlpha = Math.min(1, fade * 1.6); tctx.fillStyle = gr; tctx.beginPath(); tctx.arc(cx, cy, r, 0, Math.PI * 2); tctx.fill();
+      const fs = Math.max(13, Math.min(26, r * .16)), ty = cy - r + fs * .9;
+      tctx.globalAlpha = fade * .85; tctx.font = `700 ${fs}px "Public Sans", system-ui, sans-serif`; tctx.lineWidth = 4; tctx.strokeStyle = "rgba(255,255,255,.85)"; tctx.fillStyle = "#264030";
+      tctx.strokeText(c.name, cx, ty); tctx.fillText(c.name, cx, ty);
+      if (!lit) { const tw = tctx.measureText(c.name).width / 2 + 6; terrHits.push({ key: c.key, x0: cx - tw, x1: cx + tw, y0: ty - fs * .7, y1: ty + fs * .7 }); }
+    }
     tctx.globalAlpha = 1;
   }
-  sigma.on("afterRender", drawTerritories); // before the node names, which depend on whether the cluster names are up
+  sigma.on("afterRender", drawTerritories);
   sigma.on("afterRender", drawLabels);
   function labelAt(x, y) { const R = labelRects.find(R => x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h); return R ? R.id : null; }
   const mods = ev => ev.original.ctrlKey || ev.original.metaKey;
@@ -909,7 +955,8 @@ async function openInPortal(n) {
   }
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) pick(node, event); });
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
-  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const id = labelAt(event.x, event.y); pick(id, event); } });
+  sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { const H = clusterHit(event.x, event.y); if (H) return toggleCluster(H.key); const id = labelAt(event.x, event.y); pick(id, event); } });
+  sigma.getMouseCaptor().on("mousemovebody", e => { sigma.getContainer().style.cursor = clusterHit(e.x, e.y) ? "pointer" : ""; });
   sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) ? "pointer" : ""; });
 
@@ -938,7 +985,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { clusterHits: () => terrHits, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
