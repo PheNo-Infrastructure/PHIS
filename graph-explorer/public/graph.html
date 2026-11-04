@@ -977,15 +977,20 @@ async function openInPortal(n) {
     const lw = links.parentElement.getBoundingClientRect();
     if (links.width !== Math.round(lw.width * k) || links.height !== Math.round(lw.height * k)) { links.width = Math.round(lw.width * k); links.height = Math.round(lw.height * k); }
     lctx2.setTransform(k, 0, 0, k, 0, 0); lctx2.clearRect(0, 0, w, h);
-    lctx2.strokeStyle = "#5f7a52"; lctx2.lineWidth = 1; lctx2.globalAlpha = lit ? .1 : .2 + .22 * (1 - smooth(.15, .8, sigma.getCamera().getState().ratio)); // fainter the further out the view lctx2.beginPath();
+    const segs = [], M = 40; // a link is drawn when one of its ends is on screen; one that only passes through the view between two off-screen nodes is noise
     g.forEachEdge((e, a, s2, t2) => {
       const ks = clusterOf.get(s2), kt = clusterOf.get(t2);
       if (ks !== undefined && ks === kt) return;
       if (!inLayout(s2) || !inLayout(t2) || (isVisible(s2) && isVisible(t2))) return;
       const va = sigma.graphToViewport(g.getNodeAttributes(s2)), vb = sigma.graphToViewport(g.getNodeAttributes(t2));
-      if ((va.x < 0 && vb.x < 0) || (va.x > w && vb.x > w) || (va.y < 0 && vb.y < 0) || (va.y > h && vb.y > h)) return;
-      lctx2.moveTo(va.x, va.y); lctx2.lineTo(vb.x, vb.y);
+      const ina = va.x > -M && va.x < w + M && va.y > -M && va.y < h + M, inb = vb.x > -M && vb.x < w + M && vb.y > -M && vb.y < h + M;
+      if (ina || inb) segs.push(va.x, va.y, vb.x, vb.y);
     });
+    // fainter the more of them there are (a dense mesh is a wash, not information) and the further out the view
+    const base = lit ? .1 : .25 + .25 * (1 - smooth(.15, .8, sigma.getCamera().getState().ratio));
+    lctx2.strokeStyle = "#5f7a52"; lctx2.lineWidth = 1; lctx2.globalAlpha = Math.max(.04, base * Math.min(1, 250 / Math.max(1, segs.length / 4)));
+    lctx2.beginPath();
+    for (let i = 0; i < segs.length; i += 4) { lctx2.moveTo(segs[i], segs[i + 1]); lctx2.lineTo(segs[i + 2], segs[i + 3]); }
     lctx2.stroke();
     tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
     const ratio = sigma.getCamera().getState().ratio;
