@@ -32,13 +32,14 @@ org.forEach((o, k) => {
 });
 
 const root = join(import.meta.dirname, "..", "public");
+const adjacency = join(root, "..", "src", "adjacency.js"); // the portal serves this one at the top level too
 const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
 createServer(async (req, res) => {
   const path = new URL(req.url ?? "/", "http://x").pathname;
   if (path === "/api/graph") { res.writeHead(200, { "Content-Type": "application/json" }); return void res.end(JSON.stringify({ nodes, edges })); }
   if (path === "/api/instance") { res.writeHead(200, { "Content-Type": "application/json" }); return void res.end('{"test":false}'); }
-  const file = normalize(join(root, path === "/graph" ? "graph.html" : path));
-  if (!file.startsWith(root)) { res.writeHead(403); return void res.end(); }
+  const file = path === "/adjacency.js" ? adjacency : normalize(join(root, path === "/graph" ? "graph.html" : path));
+  if (!file.startsWith(root) && file !== adjacency) { res.writeHead(403); return void res.end(); }
   try { const body = await readFile(file); res.writeHead(200, { "Content-Type": types[extname(file)] ?? "application/octet-stream" }); res.end(body); }
   catch { res.writeHead(404); res.end(); }
 }).listen(4001, () => console.log(`${nodes.length} nodes, ${edges.length} edges: http://localhost:4001/graph`));
