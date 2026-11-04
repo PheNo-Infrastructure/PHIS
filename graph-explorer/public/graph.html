@@ -992,11 +992,10 @@ async function openInPortal(n) {
     for (let i = 0; i < segs.length; i += 4) { lctx2.moveTo(segs[i], segs[i + 1]); lctx2.lineTo(segs[i + 2], segs[i + 3]); }
     lctx2.stroke();
     // where each hidden node sits: a faint ring, so the paint reads as made of nodes
-    const ringRatio = sigma.getCamera().getState().ratio;
     lctx2.beginPath();
     g.forEachNode((id, a) => {
       if (isVisible(id) || !inLayout(id)) return;
-      const v = sigma.graphToViewport(a), r = Math.max(2, BLOB * CLOSED_R * .3 * (a.size / 10) / ringRatio); // grows with the zoom like the paint around it
+      const v = sigma.graphToViewport(a), r = Math.max(2, sigma.scaleSize(a.size)); // exactly the size the node has once its cluster opens
       if (v.x < -r || v.y < -r || v.x > w + r || v.y > h + r) return; // culling
       lctx2.moveTo(v.x + r, v.y); lctx2.arc(v.x, v.y, r, 0, Math.PI * 2);
     });
