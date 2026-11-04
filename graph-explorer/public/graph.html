@@ -27,6 +27,7 @@
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
   #terr { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:1; }
+  #links { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
   #halo { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; filter:blur(7px); }
   #marquee { position:absolute; display:none; border:1px solid var(--accent); background:rgba(61,133,38,.16); pointer-events:none; z-index:3; }
   .verdict { border-radius:6px; padding:6px 10px; margin:8px 0; font-size:13px; }
@@ -38,7 +39,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -339,6 +340,12 @@ async function openInPortal(n) {
     dims = { fw, fh, w, h, k };
     stepLag(); rebuild(); paintHalo(); if (lit) startFlow();
   }
+  function widen(src, fw, fh, r) { // spread a 0/1 mask by r pixels each way
+    const out = new Uint8Array(src.length), tmp = new Uint8Array(src.length);
+    for (let y = 0; y < fh; y++) { let c = 0; const row = y * fw; for (let x = -r; x < fw; x++) { if (x + r < fw) c += src[row + x + r]; if (x - r - 1 >= 0) c -= src[row + x - r - 1]; if (x >= 0) tmp[row + x] = c > 0 ? 1 : 0; } }
+    for (let x = 0; x < fw; x++) { let c = 0; for (let y = -r; y < fh; y++) { if (y + r < fh) c += tmp[(y + r) * fw + x]; if (y - r - 1 >= 0) c -= tmp[(y - r - 1) * fw + x]; if (y >= 0) out[y * fw + x] = c > 0 ? 1 : 0; } }
+    return out;
+  }
   function rebuild() {
     const { fw, fh, w, h, k } = dims;
     const ratio = sigma.getCamera().getState().ratio;
@@ -381,7 +388,9 @@ async function openInPortal(n) {
     const layers = [...groups].map(([key, pts]) => ({ f: fieldOf(pts, 1, ratio), w: fieldOf(pts, 1.4, ratio, true), hsl: tintOf(key) }));
     const o = sigma.viewportToGraph({ x:0, y:0 }), ex = sigma.viewportToGraph({ x:1, y:0 }), ey = sigma.viewportToGraph({ x:0, y:1 });
     if (patternPx === 0) patternPx = Math.hypot(sigma.graphToViewport({ x:1, y:0 }).x - sigma.graphToViewport({ x:0, y:0 }).x, 0) || 1; // pixels per graph unit when the pattern was first drawn: the streaks keep their size relative to the graph from then on
-    cache = { o, ex, ey, layers, fw, fh, w, h, k, strength: (lit ? .5 : .8) * 255 };
+    const cov = new Uint8Array(fw * fh); // culling: where any layer reaches, widened by the few pixels the waves can push the paint
+    for (const l of layers) for (let i = 0; i < cov.length; i++) if (l.f[i] > 0 || l.w[i] > 0) cov[i] = 1;
+    cache = { cov: widen(cov, fw, fh, 4), o, ex, ey, layers, fw, fh, w, h, k, strength: (lit ? .5 : .8) * 255 };
   }
 
   // ---- painting the region: colours meet by hue (along the colour wheel, so purple to green passes through blue, not grey), and the whole thing is
@@ -411,28 +420,30 @@ async function openInPortal(n) {
   const FLOW = 2; // waves this small move the paint by a few pixels, so a node still sits in its own colour // how far the waves push the paint, in field pixels
   function paintHalo() {
     if (!cache) return;
-    const { layers, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
+    const { layers, cov, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
     const edge0 = lit ? .1 : .38, edge1 = lit ? .45 : .75; // clusters alone: the edge sits further in, so the larger circles that smooth it do not swallow the gaps
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+      if (!cov[y * fw + x]) continue;
       const sx = x + FLOW * (Math.sin(y * .07 + ph) + .6 * Math.sin(x * .045 - ph * 1.3 + 1.7)), sy = y + FLOW * (Math.sin(x * .06 - ph * .8 + .9) + .6 * Math.sin(y * .05 + ph * 1.1));
       const i = Math.min(fh - 1, Math.max(0, Math.round(sy))) * fw + Math.min(fw - 1, Math.max(0, Math.round(sx)));
       // Where colours overlap they marble, like inks swirled together: each colour's weight is stretched into curved streaks (a different direction per colour,
       // bent by a slow flowing warp), so the two take turns in thin ribbons and light and dark bands follow them. Where only one colour reaches, nothing changes.
-      let miss = 1, W = 0, hue = 0, sat = 0, lig = 0, top = 0, sec = 0, tot = 0, topI = -1, secI = -1;
-      const gx = o.x + (ex.x - o.x) * x * RES + (ey.x - o.x) * y * RES, gy = o.y + (ex.y - o.y) * x * RES + (ey.y - o.y) * y * RES; // this pixel in graph coordinates
-      const mx = gx * patternPx / RES, my = gy * patternPx / RES; // ...as the pattern sees it
-      // a flowing warp made of several slow waves: it bends the streaks into curves of uneven width, never straight stripes
-      const warp = Math.sin(my * .06 + ph * 1.4 + Math.sin(mx * .035 + ph)) + .8 * Math.sin(mx * .05 - ph + Math.sin(my * .04 - ph * .7) * 1.3) + .5 * Math.sin((mx + my) * .03 + ph * .6);
+      let ribbon = 0, miss = 1, W = 0, hue = 0, sat = 0, lig = 0, top = 0, sec = 0, tot = 0, topI = -1, secI = -1;
       for (let li = 0; li < layers.length; li++) { miss *= 1 - layers[li].f[i]; const wv = layers[li].w[i], v = wv < .0224 ? 0 : Math.pow(wv, SHARP); const q = v > 0.0005 ? v : 0; wts[li] = q; tot += q; if (q > top) { sec = top; secI = topI; top = q; topI = li; } else if (q > sec) { sec = q; secI = li; } }
       if (miss >= 1 || tot <= 0) continue;
       // the marbling is only where two colours really share the pixel: its strength rises with how big the smaller colour's share is, and is zero inside a colour's own area
       // only along the seam between the two strongest colours: their weights are raised to a high power first, so 'about equal' is a thin line even where several colours overlap broadly
       const amp = secI < 0 ? 0 : smooth(SEAM, .97, Math.pow(sec / top, SEAMEXP));
-      if (amp > 0) {
+      if (amp > 0) { // the pattern maths only where two colours meet: the rest of the area is a flat wash
+        const gx = o.x + (ex.x - o.x) * x * RES + (ey.x - o.x) * y * RES, gy = o.y + (ex.y - o.y) * x * RES + (ey.y - o.y) * y * RES; // this pixel in graph coordinates
+        const mx = gx * patternPx / RES, my = gy * patternPx / RES; // ...as the pattern sees it
+        // a flowing warp made of several slow waves: it bends the streaks into curves of uneven width, never straight stripes
+        const warp = Math.sin(my * .06 + ph * 1.4 + Math.sin(mx * .035 + ph)) + .8 * Math.sin(mx * .05 - ph + Math.sin(my * .04 - ph * .7) * 1.3) + .5 * Math.sin((mx + my) * .03 + ph * .6);
         // The streaks nudge the BALANCE between the two colours, in the log of their ratio: the weaker one is scaled by exp(shift). The shift is bounded by amp, which
         // is zero until the two are nearly equal, so a colour can only overtake the other close to the seam and never deep inside the other's own area.
         const u = MFREQ * (mx * Math.cos(secI * 1.9) + my * Math.sin(secI * 1.9)) + 4.2 * warp + secI * 2.3;
         wts[secI] *= Math.exp(amp * MARBLE * (.7 * Math.sin(u) + .45 * Math.sin(1.9 * u + 2 * warp + 1)));
+        ribbon = .14 * amp * Math.sin(MFREQ * 1.7 * (mx * .6 + my * .8) + 4 * warp); // light and dark ribbons, only where colours meet
         if (countSpill) { let best = -1, bv = 0; for (let li = 0; li < layers.length; li++) if (wts[li] > bv) { bv = wts[li]; best = li; } if (best !== topI && sec / top < .75) spill++; }
       }
       for (let li = 0; li < layers.length; li++) {
@@ -441,7 +452,7 @@ async function openInPortal(n) {
         const t = v / (W + v), dh = ((l.hsl[0] - hue + 540) % 360) - 180;
         hue = (hue + dh * t + 360) % 360; sat += (l.hsl[1] - sat) * t; lig += (l.hsl[2] - lig) * t; W += v;
       }
-      lig += .14 * amp * Math.sin(MFREQ * 1.7 * (mx * .6 + my * .8) + 4 * warp); // light and dark ribbons, only where colours meet
+      lig += ribbon;
       fromHsl(hue, sat, lig, d, (y * fw + x) * 4);
       d[(y * fw + x) * 4 + 3] = smooth(edge0, edge1, 1 - miss) * strength * (.9 + .1 * Math.sin(sx * .05 + sy * .04 + ph * .7)); // a faint wash variation, like brushed paint
     }
@@ -861,6 +872,7 @@ async function openInPortal(n) {
     g.forEachNode((id, a) => {
       const d = sigma.getNodeDisplayData(id); if (!d || d.hidden) return;
       const v = sigma.graphToViewport({ x:a.x, y:a.y }), r = sigma.scaleSize(d.size);
+      if (v.x < -240 || v.y < -40 || v.x > box.width + 240 || v.y > box.height + 40) return; // culling: off screen (a name reaches about 240 px sideways)
       discs.push({ id, x:v.x, y:v.y, r });
       if (d.label && (d.forceLabel || r >= 6)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
     });
@@ -924,7 +936,7 @@ async function openInPortal(n) {
   }
   // ---- territories: a collapsed cluster is its painted disc (name and counts, click to open); an open one keeps a soft backdrop and its name on top (click it to collapse).
   // Links between collapsed clusters are drawn here as one line per pair. ----
-  const terr = document.getElementById("terr"), tctx = terr.getContext("2d");
+  const terr = document.getElementById("terr"), tctx = terr.getContext("2d"), links = document.getElementById("links"), lctx2 = links.getContext("2d");
   sigma.getContainer().appendChild(terr); // above the nodes, so the names read; it takes no clicks
   let terrHits = [], terrLabels = []; // terrLabels: where each cluster's name is, to drag the cluster by it
   const clusterHit = (x, y) => terrHits.find(H => H.pts ? H.pts.some(q => Math.hypot(x - q.x, y - q.y) <= H.pr) : x >= H.x0 && x <= H.x1 && y >= H.y0 && y <= H.y1);
@@ -939,6 +951,7 @@ async function openInPortal(n) {
     const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
     if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
     tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, w, h);
+    if (!clusters.length) { lctx2.clearRect(0, 0, links.width, links.height); }
     terrHits = []; terrLabels = [];
     if (!w || !h || !clusters.length) return;
     const geo = new Map();
@@ -955,18 +968,21 @@ async function openInPortal(n) {
       if (G.off && gap >= GAP_SHOW) { collapsed.delete(G.c.key); flipped = true; } else if (!G.off && gap < GAP_HIDE) { collapsed.add(G.c.key); flipped = true; }
     }
     if (flipped) requestAnimationFrame(() => { refresh(); stats(); });
-    // one line per pair of things that are linked across a collapsed cluster
-    const ptOf = id => { const G = geo.get(clusterOf.get(id)); if (G?.off && !isVisible(id)) return { x:G.cx, y:G.cy, id:"c" + G.c.key }; if (!isVisible(id)) return null; const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x:a.x, y:a.y }); return { x:v.x, y:v.y, id }; };
-    const links = new Map();
+    // Links between clusters run from node to node (the nodes are hidden but still where they are), on a layer above the paint and below the nodes.
+    // Links inside a painted cluster wait for the zoom that shows its nodes; a link with both ends drawn is sigma's; one with both ends off screen is skipped.
+    const lw = links.parentElement.getBoundingClientRect();
+    if (links.width !== Math.round(lw.width * k) || links.height !== Math.round(lw.height * k)) { links.width = Math.round(lw.width * k); links.height = Math.round(lw.height * k); }
+    lctx2.setTransform(k, 0, 0, k, 0, 0); lctx2.clearRect(0, 0, w, h);
+    lctx2.strokeStyle = "#5f7a52"; lctx2.lineWidth = 1; lctx2.globalAlpha = lit ? .1 : .55; lctx2.beginPath();
     g.forEachEdge((e, a, s2, t2) => {
       const ks = clusterOf.get(s2), kt = clusterOf.get(t2);
-      if ((ks !== undefined && ks === kt) || (isVisible(s2) && isVisible(t2))) return; // inside a cluster, or both ends drawn by sigma
-      const A = ptOf(s2), B = ptOf(t2); if (!A || !B) return;
-      const key = A.id < B.id ? A.id + " " + B.id : B.id + " " + A.id, L = links.get(key);
-      L ? L.n++ : links.set(key, { A, B, n:1 });
+      if (ks !== undefined && ks === kt) return;
+      if (!inLayout(s2) || !inLayout(t2) || (isVisible(s2) && isVisible(t2))) return;
+      const va = sigma.graphToViewport(g.getNodeAttributes(s2)), vb = sigma.graphToViewport(g.getNodeAttributes(t2));
+      if ((va.x < 0 && vb.x < 0) || (va.x > w && vb.x > w) || (va.y < 0 && vb.y < 0) || (va.y > h && vb.y > h)) return;
+      lctx2.moveTo(va.x, va.y); lctx2.lineTo(vb.x, vb.y);
     });
-    tctx.strokeStyle = "#a9b896"; tctx.globalAlpha = lit ? .25 : .6;
-    for (const { A, B, n } of links.values()) { tctx.lineWidth = .8 + Math.min(3, Math.log2(n)); tctx.beginPath(); tctx.moveTo(A.x, A.y); tctx.lineTo(B.x, B.y); tctx.stroke(); }
+    lctx2.stroke();
     tctx.textAlign = "center"; tctx.textBaseline = "middle"; tctx.lineJoin = "round";
     const ratio = sigma.getCamera().getState().ratio;
     for (const { c, cx, cy, off, pts, spread } of geo.values()) {
