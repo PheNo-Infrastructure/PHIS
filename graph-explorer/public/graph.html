@@ -97,7 +97,8 @@ async function openInPortal(n) {
   const styleOf = (id) => {
     const a = g.getNodeAttributes(id), deg = g.degree(id);
     const orphan = deg === 0;
-    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : 7 + Math.sqrt(deg) * 2.5 };
+    const FIXED = { facility: 7, device: 6 }; // many links, but they sit in grids: small and even
+    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : FIXED[a.kind] ?? Math.min(12, 7 + Math.sqrt(deg) * 2.5) };
   };
   data.nodes.forEach(({ type, ...n }) => g.addNode(n.id, { ...n, kind:type, x:Math.random(), y:Math.random() }));
   data.edges.forEach(ed => g.hasEdge(ed.source, ed.target) || g.addEdge(ed.source, ed.target));
@@ -107,7 +108,7 @@ async function openInPortal(n) {
   const MIN_GROUP = 3;
   const folds = new Map(), memberFold = new Map(), open = new Set(), byParents = new Map();
   const areaGroups = [], groupOf = new Map();
-  let units = []; // the ordered layout's units (see buildUnits)
+  let units = [], gridCell = 0; // the ordered layout's units (see buildUnits) and the size of one grid cell, in graph units
   g.forEachNode((id, a) => {
     if (a.kind !== "facility") return;
     const parents = g.neighbors(id).filter(x => ["organization", "site"].includes(kindOf(x))).sort();
@@ -566,7 +567,7 @@ async function openInPortal(n) {
     const unitOf = blocks => {
       const box = pack(blocks), members = [];
       for (const b of blocks) for (const c of b.cells) members.push({ id: c.id, dx: (b.x + c.x - (box.w - 1) / 2) * cell, dy: (b.y + c.y - (box.h - 1) / 2) * cell });
-      return { members, r: Math.hypot(box.w, box.h) * cell / 2 + cell };
+      return { members, r: Math.hypot(box.w, box.h) * cell / 2 + cell, hw: (box.w + 1) * cell / 2, hh: (box.h + 1) * cell / 2 };
     };
     const placed = new Set(), out = [];
     for (const c of clusters) {
@@ -576,7 +577,8 @@ async function openInPortal(n) {
       if (blocks.length) out.push(unitOf(blocks)); ids.forEach(id => placed.add(id));
     }
     for (const gp of areaGroups) if (!placed.has(gp.members[0])) { out.push(unitOf([grid(gp.members)])); gp.members.forEach(id => placed.add(id)); }
-    g.forEachNode(id => { if (!placed.has(id)) out.push({ members: [{ id, dx: 0, dy: 0 }], r: cell }); });
+    g.forEachNode(id => { if (!placed.has(id)) out.push({ members: [{ id, dx: 0, dy: 0 }], r: cell, hw: cell / 2, hh: cell / 2 }); });
+    gridCell = cell;
     // each unit starts where its members' centre is now, and the members snap onto the grid
     for (const u of out) {
       let sx = 0, sy = 0; for (const m of u.members) { const a = g.getNodeAttributes(m.id); sx += a.x; sy += a.y; }
@@ -584,6 +586,28 @@ async function openInPortal(n) {
       for (const m of u.members) g.mergeNodeAttributes(m.id, { x: cx + m.dx, y: cy + m.dy });
     }
     units = out;
+  }
+  // Units are boxes: where two overlap they are pushed apart along the way out that is shortest (a fixed one stays), until none do.
+  function separate(sup) {
+    const ids = sup.nodes();
+    for (let pass = 0; pass < 80; pass++) {
+      let moved = false; const order = ids.slice().sort((a, b) => sup.getNodeAttribute(a, "x") - units[+a].hw - (sup.getNodeAttribute(b, "x") - units[+b].hw));
+      for (let i = 0; i < order.length; i++) {
+        const A = order[i], ua = units[+A], ax = sup.getNodeAttribute(A, "x");
+        for (let j = i + 1; j < order.length; j++) {
+          const B = order[j], ub = units[+B], bx = sup.getNodeAttribute(B, "x");
+          if (bx - ub.hw > ax + ua.hw) break; // sorted by left edge: nothing further right can touch
+          const ay = sup.getNodeAttribute(A, "y"), by = sup.getNodeAttribute(B, "y"), dx = bx - ax, dy = by - ay;
+          const ox = ua.hw + ub.hw - Math.abs(dx), oy = ua.hh + ub.hh - Math.abs(dy);
+          if (ox <= 0 || oy <= 0) continue;
+          moved = true;
+          const fa = sup.getNodeAttribute(A, "fixed"), fb = sup.getNodeAttribute(B, "fixed"), wa = fa ? 0 : fb ? 1 : .5, wb = fb ? 0 : fa ? 1 : .5;
+          if (ox < oy) { const s = (dx < 0 ? -1 : 1) * ox; sup.setNodeAttribute(A, "x", ax - s * wa); sup.setNodeAttribute(B, "x", bx + s * wb); }
+          else { const s = (dy < 0 ? -1 : 1) * oy; sup.setNodeAttribute(A, "y", ay - s * wa); sup.setNodeAttribute(B, "y", by + s * wb); }
+        }
+      }
+      if (!moved) break;
+    }
   }
   function relaxUnits(iterations, pinned) {
     const sup = new Graph({ type:"undirected" }), uOf = new Map(), start = new Map();
@@ -601,6 +625,7 @@ async function openInPortal(n) {
     });
     sup.forEachEdge((e, a) => sup.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
     FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: .05, scalingRatio: 10, slowDown: 4, adjustSizes: true, barnesHutOptimize: sup.order > 500 } });
+    separate(sup);
     sup.forEachNode((key, a) => {
       const [x0, y0] = start.get(key), dx = a.x - x0, dy = a.y - y0;
       for (const m of units[+key].members) if (g.hasNode(m.id) && !g.getNodeAttribute(m.id, "fixed")) { const q = g.getNodeAttributes(m.id); g.mergeNodeAttributes(m.id, { x: q.x + dx, y: q.y + dy }); }
@@ -1071,10 +1096,12 @@ async function openInPortal(n) {
     for (let i = 0; i < segs.length; i += 4) { lctx2.moveTo(segs[i], segs[i + 1]); lctx2.lineTo(segs[i + 2], segs[i + 3]); }
     lctx2.stroke();
     // where each hidden node sits: a faint ring, so the paint reads as made of nodes
+    const cellPx = gridCell ? gridCell * (Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - sigma.graphToViewport({ x:0, y:0 }).x) || 1) : Infinity;
     lctx2.beginPath();
     g.forEachNode((id, a) => {
       if (isVisible(id) || !inLayout(id)) return;
-      const v = sigma.graphToViewport(a), r = Math.max(2, sigma.scaleSize(a.size)); // exactly the size the node has once its cluster opens
+      const v = sigma.graphToViewport(a), r = Math.max(1.5, Math.min(sigma.scaleSize(a.size), cellPx * .42)); // the size the node has once its cluster opens, but never more than its cell
+
       if (v.x < -r || v.y < -r || v.x > w + r || v.y > h + r) return; // culling
       lctx2.moveTo(v.x + r, v.y); lctx2.arc(v.x, v.y, r, 0, Math.PI * 2);
     });
