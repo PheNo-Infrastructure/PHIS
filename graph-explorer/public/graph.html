@@ -137,7 +137,7 @@ async function openInPortal(n) {
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
   // A cluster shows its nodes once they are far enough apart on screen to read (average gap between neighbours, in px), and is painted again when they crowd below the lower one.
   // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.
-  const GAP_SHOW = 26, GAP_HIDE = 20;
+  const GAP_SHOW = 44, GAP_HIDE = 34;
   const MIN_CLUSTERED = 500, MIN_CLUSTER = 8; // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
   const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
     clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
