@@ -331,7 +331,6 @@ async function openInPortal(n) {
     const fw = Math.ceil(w / RES), fh = Math.ceil(h / RES);
     if (field.width !== fw || field.height !== fh) { field.width = shape.width = fw; field.height = shape.height = fh; }
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
-    if (catView) { cache = null; return; }
     if (!lit) startRestore();
     if (!lit && !clusters.length) { cache = null; return; } // nothing to paint: no selection and no clusters
     dims = { fw, fh, w, h, k };
@@ -576,7 +575,8 @@ async function openInPortal(n) {
     // the nodes of one type in a cluster are tied to a hub of their own (layout only, never drawn), so each category gathers in one place
     for (const c of clusters) { const by = new Map(); for (const id of c.members) if (sub.hasNode(id)) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
       for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: TYPE_PULL }); } }
-    FA2.assign(sub, { iterations, settings: settingsFor(sub) });
+    // once the two-level layout has set the scale (small, dense), the live step must not use the global strong repulsion: it would blow the clusters apart
+    FA2.assign(sub, { iterations, settings: K ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : settingsFor(sub) });
     sub.forEachNode((id, a) => g.hasNode(id) && g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
     spreadClusters(3); collide(2);
   }
@@ -1095,31 +1095,23 @@ async function openInPortal(n) {
     let sx = 0, sy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; } const cx = sx / n, cy = sy / n;
     const left = cx - gw / 2, top = cy - gh / 2, saved = new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
     const maxRpx = R0 * maxS / avg, moves = ids.map((id, i) => ({ id, x: left + (i % cols) * cellW / sc + (maxRpx + 7) / sc, y: top + (Math.floor(i / cols) + .5) * cellH / sc })); // the node on the left of its cell, its name to the right
-    // what the category is linked to: placed on rings around the grid, so every link can be followed
+    // Everything else keeps the order it has and is pushed outward from the grid, past the edge of the screen: a node's distance from the centre (in screen-sized units) t becomes 1.1 + t / 2 when it was inside.
     const mem = new Set(ids), nbs = new Set(); for (const id of ids) g.forEachNeighbor(id, nb => { if (!mem.has(nb) && inLayout(nb)) nbs.add(nb); });
-    const nbList = [...nbs].sort((a, b) => kindOf(a).localeCompare(kindOf(b)) || String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
-    const nbMaxR = nbList.length ? Math.max(...nbList.map(id => g.getNodeAttribute(id, "size") * K * sc)) : 0, pitch = (2 * nbMaxR + 30) / sc, gap0 = (cellH * .7) / sc;
-    let ring = 0, used = 0, half = [Math.max(gw / 2, box.width / 2 / sc), Math.max(gh / 2, box.height / 2 / sc)]; // the first ring starts just outside the screen
-    const rectPoint = (w2, h2, d) => { const Lx = 2 * w2, Ly = 2 * h2, L = 2 * (Lx + Ly); d = ((d % L) + L) % L; // a point d along the perimeter of a rectangle of half sizes (w2, h2) around the grid
-      if (d < Lx) return [cx - w2 + d, cy - h2]; d -= Lx; if (d < Ly) return [cx + w2, cy - h2 + d]; d -= Ly; if (d < Lx) return [cx + w2 - d, cy + h2]; d -= Lx; return [cx - w2, cy + h2 - d]; };
-    const half0 = half.slice();
-    while (used < nbList.length) {
-      ring++; const w2 = half0[0] + gap0 + (ring - 1) * pitch, h2 = half0[1] + gap0 + (ring - 1) * pitch, L = 4 * (w2 + h2), cap = Math.max(1, Math.floor(L / (pitch * 1.05)));
-      for (let i = 0; i < cap && used < nbList.length; i++, used++) { const [x, y] = rectPoint(w2, h2, (i + .5) * L / cap); moves.push({ id: nbList[used], x, y }); saved.set(nbList[used], { x: g.getNodeAttribute(nbList[used], "x"), y: g.getNodeAttribute(nbList[used], "y") }); }
-      half = [w2 + pitch / 2, h2 + pitch / 2];
-    }
-    g.forEachNode((id, a) => { // the rest of the graph is moved outward, past the rings
-      if (mem.has(id) || nbs.has(id) || !inLayout(id)) return;
-      const dx = a.x - cx, dy = a.y - cy, t = Math.max(Math.abs(dx) / half[0], Math.abs(dy) / half[1]);
-      if (t >= 1.05) return; saved.set(id, { x: a.x, y: a.y });
-      const k = t < 1e-9 ? 1.1 / 1e-9 : 1.1 / t; moves.push({ id, x: t < 1e-9 ? cx + half[0] * 1.1 : cx + dx * k, y: t < 1e-9 ? cy : cy + dy * k });
+    const hx = Math.max(gw / 2, box.width / 2 / sc), hy = Math.max(gh / 2, box.height / 2 / sc);
+    g.forEachNode((id, a) => {
+      if (!inLayout(id) || mem.has(id)) return; saved.set(id, { x: a.x, y: a.y });
+      const dx = a.x - cx, dy = a.y - cy, t = Math.max(Math.abs(dx) / hx, Math.abs(dy) / hy);
+      if (t >= 1.1) return;
+      const t2 = 1.1 + t / 2, d = Math.hypot(dx, dy);
+      if (d < 1e-9) { moves.push({ id, x: cx + hx * t2, y: cy }); return; }
+      const k = t2 / Math.max(t, 1e-9); moves.push({ id, x: cx + dx * k, y: cy + dy * k });
     });
     catView = { key, kind, set: mem, nb: nbs, saved, name: c.name, n };
     // the camera: the grid centred, or its top left corner when it is taller than the screen
     const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
     const vp = sigma.graphToViewport(centre), fr = sigma.viewportToFramedGraph(vp);
     sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc }, { duration: 500 });
-    tween(moves, 500); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
+    tween(moves, 500, () => { ids.forEach(id => g.setNodeAttribute(id, "fixed", true)); collide(40); ids.forEach(id => g.removeNodeAttribute(id, "fixed")); sigma.refresh(); }); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
   }
   function fitLit() { // the camera onto the selection and what it links to
     const box = terr.getBoundingClientRect(), pts = [...lit].filter(isVisible).map(id => sigma.graphToViewport(g.getNodeAttributes(id))); if (!pts.length) return;
@@ -1143,10 +1135,9 @@ async function openInPortal(n) {
     const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
     if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
     tctx.setTransform(k, 0, 0, k, 0, 0); tctx.clearRect(0, 0, w, h);
-    if (!clusters.length || !compactBox.checked || catView) { lctx2.clearRect(0, 0, links.width, links.height); }
+    if (!clusters.length || !compactBox.checked) { lctx2.clearRect(0, 0, links.width, links.height); }
     terrHits = []; terrLabels = []; catHits = [];
-    if (catView) { showCrumbs(); return; }
-    crumbs.hidden = true;
+    if (catView) showCrumbs(); else crumbs.hidden = true;
     if (!w || !h || !clusters.length || !compactBox.checked) return;
     const geo = new Map();
     clusters.forEach((c, i) => {
@@ -1205,7 +1196,7 @@ async function openInPortal(n) {
         terrHits.push({ key: c.key, pts, pr: BLOB * CLOSED_R * 1.2 / ratio });
         continue;
       }
-      if (!lit) { // an open cluster: one pill per category (a resource type), where its nodes are; press one to see them on their own
+      if (!lit && !catView) { // an open cluster: one pill per category (a resource type), where its nodes are; press one to see them on their own
         const by = new Map(); for (const id of c.members) if (isVisible(id)) { const k = kindOf(id), v = sigma.graphToViewport(g.getNodeAttributes(id)), e = by.get(k) ?? by.set(k, { n: 0, x: 0, y: 0 }).get(k); e.n++; e.x += v.x; e.y += v.y; }
         for (const [k, e] of by) {
           if (e.n < MIN_CAT) continue;
