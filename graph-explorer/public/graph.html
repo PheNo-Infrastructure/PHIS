@@ -44,7 +44,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="marquee"></div><div id="bar"><label class="chk"><input type="checkbox" id="compact" checked> Compact</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -128,7 +128,8 @@ async function openInPortal(n) {
   // (rewritten: a cluster must nearly fill the view, and its nodes must also have room)
   const SHOW_FRAC = .28, HIDE_FRAC = .2; // a cluster's radius as a share of the shorter side of the view
   const MIN_GAP = 30; // and its neighbours at least this far apart on screen, so a crowded cluster needs more zoom than a sparse one
-  const MIN_CLUSTERED = 500, MIN_CLUSTER = 8, TYPE_MIN = 12, TYPE_SHARE = .2; // below MIN_CLUSTERED the graph is plain, except for a type with at least TYPE_MIN nodes and TYPE_SHARE of the graph: it becomes a category area of its own // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
+  const MIN_NODES = 150, MAX_PLAIN = 1500, MAX_CONDUCTANCE = .2, MIN_STABLE = .8, MIN_GROUPS = 3; // when the graph is clustered by default (guesses: tune on real data); MIN_CLUSTER and the rest below
+  const MIN_CLUSTER = 8, TYPE_MIN = 12, TYPE_SHARE = .2; // a graph that is not clustered is plain, except for a type with at least TYPE_MIN nodes and TYPE_SHARE of the graph: it becomes a category area of its own // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
   const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
     clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
   let clusters = [], clusterKey = "", clustersSeen = false;
@@ -146,11 +147,32 @@ async function openInPortal(n) {
       if (best) { clusterOf.set(id, best[0]); byKey.get(best[0]).members.push(id); }
     });
   }
+  // Clustered or plain by default: enough nodes to need it, and groups that are real. A group is real when most of its links stay inside it (conductance), and when different runs of the community detection
+  // find the same groups (stability); modularity alone is not used, because a sparse random graph scores high on it too. A very large graph is clustered whatever its structure.
+  let clusterMode = null, modeStats = null; // null until decided; the Clusters switch sets it
+  const louvainRun = seed => { let x = seed; const rng = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296; return graphologyLibrary.communitiesLouvain(g, { rng }); }; // the same graph always clusters the same way
+  const agreement = (A, B) => { const tab = new Map(), ra = new Map(), rb = new Map(), c2 = n => n * (n - 1) / 2; let n = 0;
+    g.forEachNode(id => { n++; const k = A[id] + "|" + B[id]; tab.set(k, (tab.get(k) || 0) + 1); ra.set(A[id], (ra.get(A[id]) || 0) + 1); rb.set(B[id], (rb.get(B[id]) || 0) + 1); });
+    let sum = 0, sa = 0, sb = 0; for (const v of tab.values()) sum += c2(v); for (const v of ra.values()) sa += c2(v); for (const v of rb.values()) sb += c2(v);
+    const exp = sa * sb / c2(n), max = (sa + sb) / 2; return max === exp ? 1 : (sum - exp) / (max - exp); }; // adjusted Rand index: 1 = the same grouping
+  function decideClusters() {
+    modeStats = { nodes: g.order };
+    if (g.order < MIN_NODES) return false;
+    if (g.order >= MAX_PLAIN) return true;
+    const A = louvainRun(7), size = {}, vol = {}, cut = {}; let m = 0;
+    g.forEachNode(id => { size[A[id]] = (size[A[id]] || 0) + 1; vol[A[id]] = (vol[A[id]] || 0) + g.degree(id); });
+    g.forEachEdge((e, a, s2, t2) => { m++; if (A[s2] !== A[t2]) { cut[A[s2]] = (cut[A[s2]] || 0) + 1; cut[A[t2]] = (cut[A[t2]] || 0) + 1; } });
+    const groups = Object.keys(size).filter(c => size[c] >= MIN_CLUSTER), conductance = groups.length ? groups.reduce((t, c) => t + (cut[c] || 0) / Math.min(vol[c], 2 * m - vol[c]), 0) / groups.length : 1;
+    const B = louvainRun(101), C = louvainRun(202), stability = (agreement(A, B) + agreement(A, C) + agreement(B, C)) / 3;
+    modeStats = { nodes: g.order, groups: groups.length, conductance: +conductance.toFixed(2), stability: +stability.toFixed(2) };
+    return groups.length >= MIN_GROUPS && conductance <= MAX_CONDUCTANCE && stability >= MIN_STABLE;
+  }
   function findClusters() {
+    if (clusterMode === null) { clusterMode = decideClusters(); compactBox.checked = clusterMode; }
     const key = g.order + ":" + g.size;
     if (key === clusterKey) return;
     clusterKey = key;
-    if (g.order < MIN_CLUSTERED) { clusters = []; clusterOf.clear(); return; } // a small graph stays plain
+    if (!clusterMode) { clusters = []; clusterOf.clear(); return; } // a plain graph
     if (clusters.length) return keepClusters();
     clusterOf.clear();
     let seed = 7; const rng = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296; // the same graph always clusters the same way
@@ -237,7 +259,6 @@ async function openInPortal(n) {
   function computeLit() {
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     findClusters();
-    compactBox.parentElement.style.display = clusters.length ? "" : "none"; // Compact switches the painted cluster areas: a graph without clusters has nothing for it to do
     litSel = new Set(); misfit = new Set(); canLink = new Set();
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; });
     const L = lens();
@@ -800,7 +821,6 @@ async function openInPortal(n) {
     if (folded && !added.size) burst(); // ForceAtlas runs a little after a group folds, so what is left closes up
     if (added.size) { settle(added); if (!clusters.length && outOfView(added)) easeFit(); burst(); } // with painted clusters the camera is the reader's: things off screen are expected // the view only moves when something would land outside it; no shaking of the rest
   }
-  compact.onchange = () => { apply(false); relax(150); refresh(); fitView(); stats(); renderPanel(); };
   function setFocus(id, hops) {
     focus = id ? { id, hops } : null;
     apply(false); computeFocus(); relax(250); refresh(); fitView(); stats(); renderPanel();
@@ -1387,7 +1407,22 @@ async function openInPortal(n) {
   });
   window.addEventListener("mouseup", () => { pan = null; });
 
-  findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+  function relayout() { // the first layout of the current mode: clusters laid out and placed, or the plain graph as it is
+    findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+  }
+  relayout();
+  compactBox.checked = clusters.length > 0;
+  // The Clusters switch: lay the graph out again in the other mode. A grid and a selection are left first.
+  compactBox.onchange = () => {
+    const want = compactBox.checked;
+    if (gathering) gathering.stop = true; snapHome(); zoomedToSelection = false;
+    if (catView) { for (const [id, v] of catView.sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); catView = null; crumbs.hidden = true; labelSlot.clear(); }
+    if (sel.size) setSelection([], "replace");
+    clusterMode = want; clusterKey = ""; collapsed.clear();
+    if (!want) { g.forEachNode(id => g.mergeNodeAttributes(id, { x: Math.random(), y: Math.random() })); FA2.assign(g, { iterations: 200, settings: settingsFor(g) }); }
+    relayout(); compactBox.checked = clusters.length > 0; // asked for clusters and there are none to make: the box says so
+    refresh(); stats(); renderChips(); renderPanel();
+  };
   renderChips(); stats(); refresh(); // refresh draws the first labels
   if (embedded) {
     parent.postMessage({ kind: "ready" }, location.origin);
@@ -1401,7 +1436,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>

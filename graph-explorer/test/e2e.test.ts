@@ -4617,6 +4617,27 @@ test("e2e: graph: hiding a type takes its nodes out of the selection, here and i
   });
 });
 
+test("e2e: graph: a big graph with clear groups is clustered by default, a random one of the same size is plain, and the Clusters switch overrides either", async () => {
+  const lcg = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const nodes: any[] = [], clear: any[] = [], random: any[] = [];
+  for (let i = 0; i < 205; i++) nodes.push({ id: "n" + i, type: i % 41 === 0 ? "organization" : "device", label: "N " + i });
+  for (let i = 0; i < 205; i++) if (i % 41) clear.push({ source: "n" + i, target: "n" + Math.floor(i / 41) * 41 }); // five stars
+  for (let k = 0; k < 4; k++) clear.push({ source: "n" + (k * 41 + 1), target: "n" + ((k + 1) * 41 + 2) }); // a few links between them
+  const r = lcg(3); while (random.length < 205) { const a = Math.floor(r() * 205), b = Math.floor(r() * 205); if (a !== b) random.push({ source: "n" + a, target: "n" + b }); }
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base, { nodes, edges: clear });
+    assert.equal((await frame.evaluate(() => (window as any).__graph.mode())).clustered, true, "five clear groups: clustered");
+    assert.equal(await frame.evaluate(() => (document.getElementById("compact") as HTMLInputElement).checked), true);
+    await frame.evaluate(() => (document.getElementById("compact") as HTMLElement).click());
+    await frame.waitForFunction(() => !(window as any).__graph.mode().clustered);
+    assert.equal(await frame.evaluate(() => (document.getElementById("compact") as HTMLInputElement).checked), false, "switched to plain");
+  });
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base, { nodes, edges: random });
+    assert.equal((await frame.evaluate(() => (window as any).__graph.mode())).clustered, false, "random links: plain");
+  });
+});
+
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
