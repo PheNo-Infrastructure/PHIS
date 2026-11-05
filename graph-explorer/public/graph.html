@@ -280,7 +280,8 @@ async function openInPortal(n) {
       const [s, t] = g.extremities(ed);
       if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t))) return { ...a, hidden:true };
       if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
-      return catView && !lit ? { ...a, color: dark ? "#2b3328" : "#e1e8d4", size: .6 } : a; // in a category grid the links of a whole type run together: thin and pale, so the names carry the view
+      if (catView && !lit) return catView.set.has(s) && catView.set.has(t) ? { ...a, color: dark ? "#3a4536" : "#c4d0b2", size: .9, zIndex: 1 } : { ...a, color: dark ? "#232a20" : "#eef2e6", size: .4 }; // in a grid, links between its own nodes are the ones that matter; those running out to the rest of the graph are barely there
+      return a;
     },
   });
   function refresh() { computeLit(); sigma.refresh(); }
