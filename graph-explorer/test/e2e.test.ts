@@ -4555,6 +4555,37 @@ test("e2e: graph: All opens every type as sections of one grid, and picking a no
   });
 });
 
+test("e2e: graph: back from the connected view the whole graph is fitted again, and Fit in a grid fits the grid", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const camera = () => frame.evaluate(() => { const c = (window as any).__graph.sigma.getCamera().getState(); return { x: c.x, y: c.y, ratio: c.ratio }; });
+    await page.locator('#graphInfo [data-t="organization"]').click({ modifiers: ["Control"] });
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
+    await page.waitForTimeout(900);
+    const grid = await camera();
+    await frame.evaluate(() => (document.getElementById("fit") as HTMLElement).click());
+    await page.waitForTimeout(700);
+    assert.ok(Math.abs((await camera()).ratio - grid.ratio) < grid.ratio * .05, "Fit in a grid keeps the grid fitted");
+    await frame.evaluate(() => (window as any).__graph.select("t:org-a", false)); // leaves the grid, zooms to the selection
+    await frame.waitForFunction(() => (window as any).__graph.cat() === null);
+    await page.waitForTimeout(900);
+    await frame.evaluate(() => (window as any).__graph.setSelection([], "replace"));
+    await frame.waitForFunction(() => { const c = (window as any).__graph.sigma.getCamera().getState(); return Math.abs(c.ratio - 1) < .01 && Math.abs(c.x - .5) < .01 && Math.abs(c.y - .5) < .01; });
+  });
+});
+
+test("e2e: graph: opening a grid from the legend clears the selection in the portal too", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    await frame.evaluate(() => (window as any).__graph.select("t:site-1", false));
+    await page.locator(".sel-label", { hasText: "Site 1" }).waitFor();
+    await page.locator('#graphInfo [data-t="organization"]').click({ modifiers: ["Control"] });
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
+    await page.locator(".sel-label", { hasText: "Site 1" }).waitFor({ state: "detached" });
+    assert.equal(await page.locator("#selectionPane .sel-item").count(), 0);
+  });
+});
+
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);

@@ -421,6 +421,7 @@ async function openInPortal(n) {
   const wts = new Float32Array(32); let patternPx = 0;
   const FLOW = 2; // waves this small move the paint by a few pixels, so a node still sits in its own colour // how far the waves push the paint, in field pixels
   function paintHalo() {
+    if (catView) { hctx.clearRect(0, 0, halo.width, halo.height); return; } // no painted selection area over a grid
     if (!cache) return;
     const { layers, cov, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
     const edge0 = lit ? .1 : .38, edge1 = lit ? .45 : .75; // clusters alone: the edge sits further in, so the larger circles that smooth it do not swallow the gaps
@@ -676,12 +677,13 @@ async function openInPortal(n) {
   function freezeBBox() { if (!bboxFrozen) { sigma.setCustomBBox(sigma.getBBox()); bboxFrozen = true; } }
   // Fit the camera to what is visible, not to the whole graph (Sigma frames hidden nodes too unless told the box).
   function fitView() {
+    if (catView) return catView.fitCam && sigma.getCamera().animate(catView.fitCam, { duration: 400 }); // in a grid, Fit shows the grid
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     g.forEachNode((id, a) => { if (inLayout(id)) { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); } });
     if (x0 === Infinity) return;
     sigma.setCustomBBox({ x:[x0, Math.max(x1, x0 + 1)], y:[y0, Math.max(y1, y0 + 1)] }); bboxFrozen = false;
     refresh();
-    sigma.getCamera().setState({ x:0.5, y:0.5, ratio:1, angle:0 });
+    const home = { x:0.5, y:0.5, ratio:1, angle:0 }; sigma.getCamera().setState(home); sigma.getCamera().animate(home, { duration: 1 }); // setState alone would let a zoom animation still running land afterwards; a new animate replaces it
   }
 
   // ---- live physics: two steps per frame on the page (a worker would overwrite a pinned, dragged node); it switches itself off if a frame gets too slow ----
@@ -720,8 +722,10 @@ async function openInPortal(n) {
   // ---- type chips ----
   // The legend: a plain click hides or shows a type; Ctrl+click adds it to (or removes it from) the grid; Shift+click selects the range from the last Ctrl-clicked type; "All" selects every shown type.
   let kindCount = {}, kindAnchor = null;
+  const leaveSelection = () => { if (sel.size) setSelection([], "replace"); }; // a grid and a selection do not live together: opening a grid from the legend clears the selection, here and in the portal
   function legendClick(t, ev) {
     const cur = catView?.kinds ?? [], shown = FILTERS.filter(k => !hiddenKinds.has(k) && kindCount[k]);
+    if (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey) leaveSelection();
     if (t === "*") return setKinds(cur.length === shown.length ? [] : shown);
     if (ev.ctrlKey || ev.metaKey) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
@@ -944,6 +948,7 @@ async function openInPortal(n) {
     selected = sel.size ? [...sel].at(-1) : cur;
     if (catView && !fromPortal && (mode !== "replace" || ids.length)) exitCat(false, () => { if (lit) fitLit(); }); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     refresh(); stats(); renderPanel(); tellPortal();
+    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; fitView(); } // back from the connected view: the whole graph again
   }
   // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
   let fromPortal = false, told = "";
@@ -958,7 +963,7 @@ async function openInPortal(n) {
       if (ev.origin !== location.origin || ev.source !== parent || !m) return;
       if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; }
       else if (m.kind === "changed") reconcile(true);
-      else if (m.kind === "kinds") { const cur = catView?.kinds ?? [], pick = m.kinds.filter(k => !hiddenKinds.has(k) && kindCount[k]); kindAnchor = pick[0] ?? kindAnchor; setKinds(m.add ? [...cur, ...pick] : pick); } // a box dragged over the portal's copy of the legend
+      else if (m.kind === "kinds") { leaveSelection(); const cur = catView?.kinds ?? [], pick = m.kinds.filter(k => !hiddenKinds.has(k) && kindCount[k]); kindAnchor = pick[0] ?? kindAnchor; setKinds(m.add ? [...cur, ...pick] : pick); } // a box dragged over the portal's copy of the legend
       else if (m.kind === "category") showCategory(m.type);
       else if (m.kind === "click") { try { document.querySelector(m.selector)?.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: !!m.ctrl, shiftKey: !!m.shift })); } catch {} } // a click on the mirrored panel
     });
@@ -1182,10 +1187,12 @@ async function openInPortal(n) {
     if (keep) for (const [id, p] of keep) saved.set(id, p); // the way back is to the layout before the first grid, not to the previous grid
     // the camera: the whole grid centred, zoomed out as far as it takes to see all of it
     const zoomOut = Math.max(1, lay.H / uh, lay.W / uw), vp = sigma.graphToViewport({ x: cx, y: cy + 40 * zoomOut / sc }), fr = sigma.viewportToFramedGraph(vp); // 40 px lower on screen: the breadcrumb is above
-    sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc * zoomOut }, { duration: 500 });
-    tween(moves, 500, () => { ids.forEach(id => g.setNodeAttribute(id, "fixed", true)); collide(40); ids.forEach(id => g.removeNodeAttribute(id, "fixed")); sigma.refresh(); }); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
+    catView.fitCam = { x: fr.x, y: fr.y, ratio: pxu1 / sc * zoomOut }; sigma.getCamera().animate(catView.fitCam, { duration: 500 });
+    tween(moves, 500, () => { ids.forEach(id => g.setNodeAttribute(id, "fixed", true)); collide(40); ids.forEach(id => g.removeNodeAttribute(id, "fixed")); sigma.refresh(); }); refresh(); stats(); showCrumbs();
   }
+  let zoomedToSelection = false;
   function fitLit() { // the camera onto the selection and what it links to
+    zoomedToSelection = true;
     const box = terr.getBoundingClientRect(), pts = [...lit].filter(isVisible).map(id => sigma.graphToViewport(g.getNodeAttributes(id))); if (!pts.length) return;
     const x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y)), st = sigma.getCamera().getState();
     const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), to = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
