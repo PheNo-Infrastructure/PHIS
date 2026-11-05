@@ -265,7 +265,7 @@ async function openInPortal(n) {
     if (!L.length) { lit = null; tintIds = new Set(); return; }
     lit = new Set(L); litSel = new Set(L);
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
-    litSize = new Map(); { const d = new Map([...lit].map(id => { let n = 0; g.forEachNeighbor(id, nb => { if (lit.has(nb)) n++; }); return [id, n]; })), mx = Math.max(1, ...d.values()); for (const [id, n] of d) litSize.set(id, 9 + 7 * Math.log1p(n) / Math.log1p(mx)); } // while something is selected, sizes follow the links inside the selection's view, in a narrow range: a hub is not several times its neighbours
+    litSize = new Map([...lit].map(id => [id, litSel.has(id) ? 15 : 11])); // in the connected view the selected nodes are one size and larger, what they link to is one size: which is which is clear at a glance
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; }); // lit is known now: it decides what is drawn inside a painted cluster
     // The members of an opened group are named, not painted (an organization or site would otherwise paint every facility of it), unless something that is not the group's parent
     // (a person, an experiment) is linked to them directly: then they are what that selection is about.
@@ -447,7 +447,7 @@ async function openInPortal(n) {
   const wts = new Float32Array(32); let patternPx = 0;
   const FLOW = 2; // waves this small move the paint by a few pixels, so a node still sits in its own colour // how far the waves push the paint, in field pixels
   function paintHalo() {
-    if (catView) { hctx.clearRect(0, 0, halo.width, halo.height); return; } // no painted selection area over a grid
+    if (catView || (lit && arr)) { hctx.clearRect(0, 0, halo.width, halo.height); return; } // no painted selection area over a grid or an arrangement
     if (!cache) return;
     const { layers, cov, fw, fh, w, h, k, strength, o, ex, ey } = cache, img = sctx.createImageData(fw, fh), d = img.data, ph = phase;
     const edge0 = lit ? .1 : .38, edge1 = lit ? .45 : .75; // clusters alone: the edge sits further in, so the larger circles that smooth it do not swallow the gaps
@@ -985,7 +985,7 @@ async function openInPortal(n) {
     if (leaving) exitCat(false, () => plain() ? gather() : lit && fitLit()); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     refresh(); stats(); renderPanel(); tellPortal();
     if (!leaving && sel.size && !catView) { if (plain()) gather(); else if (lit) gatherBig(); }
-    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
+    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
   // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
   let fromPortal = false, told = "";
@@ -1087,11 +1087,11 @@ async function openInPortal(n) {
       discs.push({ id, x:v.x, y:v.y, r });
       if (d.label && (d.forceLabel || r >= 6)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
     });
-    const grid = !!catView; // in a grid every name stands to the right of its node, or is left out: reading order decides who is named when space is short
+    const gv = catView ?? (lit ? arr : null), grid = !!gv; // in a grid every name stands to the right of its node, or is left out: reading order decides who is named when space is short
     items.sort((a, b) => a.rank - b.rank || (grid ? a.y - b.y || a.x - b.x : b.size - a.size));
-    const cellPx = grid ? Math.abs(sigma.graphToViewport({ x: catView.cellG, y: 0 }).x - sigma.graphToViewport({ x: 0, y: 0 }).x) : 0; // one grid cell, in pixels now
-    const rowPx = grid ? Math.abs(sigma.graphToViewport({ x: 0, y: catView.rowG }).y - sigma.graphToViewport({ x: 0, y: 0 }).y) : 0, LH = grid ? Math.min(LABEL_H, Math.max(13, rowPx - 1)) : LABEL_H; // in a grid a name only reserves the height its row has
-    const heads = grid ? catView.heads.map(h => { const v = sigma.graphToViewport(h); return { x: v.x - 4, y: v.y - 4, w: 190, h: 26 }; }) : [];
+    const cellPx = grid ? Math.abs(sigma.graphToViewport({ x: gv.cellG, y: 0 }).x - sigma.graphToViewport({ x: 0, y: 0 }).x) : 0; // one grid cell, in pixels now
+    const rowPx = grid ? Math.abs(sigma.graphToViewport({ x: 0, y: gv.rowG }).y - sigma.graphToViewport({ x: 0, y: 0 }).y) : 0, LH = grid ? Math.min(LABEL_H, Math.max(13, rowPx - 1)) : LABEL_H; // in a grid a name only reserves the height its row has
+    const heads = grid ? gv.heads.map(h => { const v = sigma.graphToViewport(h); return { x: v.x - 4, y: v.y - 4, w: 190, h: 26 }; }) : [];
     const placed = [], clash = R => heads.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y) || placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
       || R.x < 3 || R.x + R.w > box.width - 3 || R.y < 3 || R.y + R.h > box.height - 3 // a name never runs off the edge of the view
       || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
@@ -1247,6 +1247,20 @@ async function openInPortal(n) {
   }
   // A big graph keeps its clusters, but what is selected and what it links to is pulled together into one compact group for as long as it is selected (it may be spread over many clusters), then the camera goes to it.
   // Their first places are kept in `pulled`; clearing the selection hands them to the restore glide, a new selection sends the ones no longer involved back first.
+  // The connected view arranges what is involved like the category grid: one painted section per type, names to the right of the nodes, the selected nodes first in each section and larger.
+  let arr = null; // { pos, heads, cellG, rowG } while the involved nodes are arranged
+  function layoutLit(L, cx, cy) {
+    tctx.font = LABEL_FONT;
+    const kinds = FILTERS.filter(k => L.some(id => kindOf(id) === k)), label = id => String(g.getNodeAttribute(id, "label"));
+    const R = 13, HEAD = 26, GAP = 22, nameW = Math.min(150, Math.max(...L.map(id => tctx.measureText(label(id).slice(0, 28)).width)) + 8), cw = 2 * R + nameW + 14, ch = 2 * R + 12;
+    const secs = kinds.map(k => ({ kind: k, ids: L.filter(id => kindOf(id) === k).sort((a, b) => (litSel.has(b) - litSel.has(a)) || label(a).localeCompare(label(b))) }));
+    const area = secs.reduce((t, sc) => t + sc.ids.length * cw * ch + cw * HEAD, 0), W0 = Math.max(cw, Math.sqrt(area * 1.6));
+    let x = 0, y = 0, rowH = 0, W = 0; const blocks = secs.map(sc => { const m = sc.ids.length, cols = Math.max(1, Math.min(m, Math.floor(W0 / cw), Math.ceil(Math.sqrt(m * 1.4)))), w = cols * cw, h = HEAD + Math.ceil(m / cols) * ch;
+      if (x && x + w > W0) { y += rowH + GAP; x = 0; rowH = 0; } const b = { ...sc, cols, x, y, w, h }; x += w + GAP; rowH = Math.max(rowH, h); W = Math.max(W, b.x + w); return b; });
+    const H = y + rowH, u = 11 * K / R, pos = new Map(), gx = px => cx + (px - W / 2) * u, gy = py => cy - (py - H / 2) * u; // virtual pixels to graph units (y points up)
+    for (const b of blocks) b.ids.forEach((id, i) => pos.set(id, [gx(b.x + (i % b.cols) * cw + R + 4), gy(b.y + HEAD + (Math.floor(i / b.cols) + .5) * ch)]));
+    return { pos, cellG: cw * u, rowG: ch * u, heads: blocks.map(b => ({ kind: b.kind, n: b.ids.length, x: gx(b.x), y: gy(b.y), w: b.w * u, h: b.h * u })) };
+  }
   const pulled = new Map();
   function gatherBig() {
     if (!lit || catView || plain()) return;
@@ -1256,15 +1270,11 @@ async function openInPortal(n) {
     const back = []; for (const [id, p] of pulled) if (!inL.has(id) && g.hasNode(id)) { back.push({ id, x: p.x, y: p.y }); pulled.delete(id); } // no longer involved: back to their place
     for (const id of L) { home.delete(id); if (!pulled.has(id)) { const a = g.getNodeAttributes(id); pulled.set(id, { x: a.x, y: a.y }); } }
     let cx = 0, cy = 0, n = 0; for (const id of litSel) if (inL.has(id)) { const p = pulled.get(id); cx += p.x; cy += p.y; n++; } if (!n) { for (const id of L) { const p = pulled.get(id); cx += p.x; cy += p.y; n++; } } cx /= n; cy /= n;
-    const sub = new Graph({ type: "undirected" }); L.forEach(id => sub.addNode(id, { x: Math.random(), y: Math.random() })); g.forEachEdge((e, a, s2, t2) => { if (inL.has(s2) && inL.has(t2) && !sub.hasEdge(s2, t2)) sub.addEdge(s2, t2); });
-    FA2.assign(sub, { iterations: 250, settings: { ...FA2.inferSettings(sub), gravity: 1, scalingRatio: 8, slowDown: 4 } });
-    let mx = 0, my = 0; sub.forEachNode((id, a) => { mx += a.x / L.length; my += a.y / L.length; });
-    const ds = L.map(id => { const a = sub.getNodeAttributes(id); return Math.hypot(a.x - mx, a.y - my); }).sort((p, q) => p - q), r90 = Math.max(1e-9, ds[Math.floor(ds.length * .9)]);
-    const avgR = L.reduce((t, id) => t + g.getNodeAttribute(id, "size"), 0) / L.length * K, R = Math.sqrt(L.length * Math.pow(3.2 * avgR, 2) / Math.PI), f = R / r90; // room for every node to be seen, names beside them
-    const moves = L.map(id => { const a = sub.getNodeAttributes(id); return { id, x: cx + (a.x - mx) * f, y: cy + (a.y - my) * f }; });
+    const lay = layoutLit(L, cx, cy); arr = lay, labelSlot.clear();
+    const moves = L.map(id => ({ id, x: lay.pos.get(id)[0], y: lay.pos.get(id)[1] }));
     const all = [...moves, ...back]; gathering = all; tween(all, 500, () => { if (gathering === all) gathering = null; fitLit(); });
   }
-  const releasePulled = () => { for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
+  const releasePulled = () => { arr = null; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
   const snapHome = () => { for (const [id, h] of home) if (g.hasNode(id)) g.mergeNodeAttributes(id, { x: h.x, y: h.y }); home.clear(); };
   // The connected view: the camera frames only the selection and what it links to (they stay where they are). Everything else moves aside as whole blocks, each group of unselected nodes that link to each other as one,
   // to just beyond the frame, so it keeps its shape and its place among the others and is in sight when you zoom out. Clearing the selection glides everything home.
@@ -1275,6 +1285,9 @@ async function openInPortal(n) {
     const was = new Map([...home.keys()].filter(id => g.hasNode(id)).map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }])); // where the earlier push left them
     snapHome(); // measure from the first places
     const orig = new Map([...was.keys()].map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
+    const origL = new Map(L.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
+    let cx = 0, cy = 0; for (const p of origL.values()) { cx += p.x / L.length; cy += p.y / L.length; }
+    const lay = layoutLit(L, cx, cy); arr = lay; labelSlot.clear(); for (const [id, q] of lay.pos) g.mergeNodeAttributes(id, { x: q[0], y: q[1] }); // measured where they will be
     const box = terr.getBoundingClientRect(), cam = sigma.getCamera(), st = cam.getState();
     const pts = L.map(id => sigma.graphToViewport(g.getNodeAttributes(id))), x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y));
     const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), ratio = Math.max(.3, st.ratio * f); // never closer than about 3x: a lone node is not blown up to fill the screen
@@ -1296,7 +1309,8 @@ async function openInPortal(n) {
     const moves = [];
     for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id), tx = u.x + (a.x - u.ox), ty = u.y + (a.y - u.oy); home.set(id, { x: a.x, y: a.y }); moves.push({ id, x: tx, y: ty }); }
     const first = new Set(moves.map(m => m.id));
-    for (const [id, p] of was) { const o = orig.get(id); g.mergeNodeAttributes(id, p); if (!first.has(id)) moves.push({ id, x: o.x, y: o.y }); } // earlier pushes start the tween from where they are, and what is now connected goes home
+    for (const [id, p] of was) { const o = orig.get(id); g.mergeNodeAttributes(id, p); if (!first.has(id) && !inLit.has(id)) moves.push({ id, x: o.x, y: o.y }); } // earlier pushes start the tween from where they are, and what is no longer involved goes home
+    for (const id of L) { g.mergeNodeAttributes(id, was.get(id) ?? origL.get(id)); home.set(id, origL.get(id)); moves.push({ id, x: lay.pos.get(id)[0], y: lay.pos.get(id)[1] }); } // the involved nodes glide from where they were to the arrangement
     gathering = moves; tween(moves, 500, () => { if (gathering === moves) gathering = null; });
     cam.animate({ ...sigma.viewportToFramedGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), ratio }, { duration: 500 });
   }
@@ -1321,10 +1335,11 @@ async function openInPortal(n) {
     terrHits = []; terrLabels = []; catHits = [];
     if (catView) showCrumbs(); else crumbs.hidden = true;
     { const ck = catView ? catView.kinds.join() : ""; if (ck !== chipsOf) { chipsOf = ck; renderChips(); } } // the pressed counts follow the grid, however it was opened or left
-    if (catView?.heads.length) for (const h of catView.heads) { // each section is painted as an area in its type's colour
+    const gview = catView ?? (lit ? arr : null);
+    if (gview?.heads.length > (catView ? 0 : 0)) for (const h of gview.heads) { // each section is painted as an area in its type's colour
       const a = sigma.graphToViewport(h), b = sigma.graphToViewport({ x: h.x + h.w, y: h.y - h.h }), c = COLORS[h.kind] || "#888888", rgb = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(","), pad = 8;
       tctx.beginPath(); tctx.roundRect(a.x - pad, a.y - pad / 2, b.x - a.x + 2 * pad, b.y - a.y + pad * 1.5, 12); tctx.fillStyle = `rgba(${rgb},.11)`; tctx.fill(); tctx.strokeStyle = `rgba(${rgb},.4)`; tctx.lineWidth = 1; tctx.stroke(); }
-    if (catView?.heads.length) { tctx.font = '600 13px "Public Sans", system-ui, sans-serif'; tctx.fillStyle = "#264030"; for (const h of catView.heads) { const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; tctx.fillText(`${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`, v.x, v.y + 14); } }
+    if (gview?.heads.length) { tctx.textAlign = "left"; tctx.font = '600 13px "Public Sans", system-ui, sans-serif'; tctx.fillStyle = "#264030"; for (const h of gview.heads) { const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; tctx.fillText(`${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`, v.x, v.y + 14); } }
     if (!w || !h || !clusters.length || !compactBox.checked) return;
     const geo = new Map();
     clusters.forEach((c, i) => {
