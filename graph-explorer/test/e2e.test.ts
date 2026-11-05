@@ -4510,6 +4510,19 @@ async function ctrlClick(page: import("playwright").Page, x: number, y: number) 
   await page.keyboard.down("Control"); await page.mouse.click(x, y); await page.keyboard.up("Control");
 }
 
+test("e2e: graph: a type's list in Browse shows that type in the graph's grid, and leaving the list puts the graph back", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const cat = () => frame.evaluate(() => (window as any).__graph.cat());
+    assert.equal(await cat(), null);
+    await page.evaluate(() => (window as any).navigateTo([{ id: "root", type: "category", label: "Graph" }, { id: "cat-org", type: "category", label: "Scientific Organization" }, { id: "cat-organizations", type: "category", label: "Organizations" }]));
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
+    assert.equal((await cat()).n, 2);
+    await page.evaluate(() => (window as any).navigateTo([{ id: "root", type: "category", label: "Graph" }, { id: "cat-org", type: "category", label: "Scientific Organization" }]));
+    await frame.waitForFunction(() => (window as any).__graph.cat() === null);
+  });
+});
+
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);

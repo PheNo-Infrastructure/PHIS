@@ -4952,12 +4952,13 @@ function render() {
    Selection pane, where the action bar works on it. Things the graph does not draw (plants, factors, ...) are left alone by what it sends. */
 var graphSig; // var: refreshLeftPane can run before this point is reached
 const GRAPH_TYPES = new Set(["organization", "facility", "site", "project", "experiment", "device", "person", "group", "factor"]);
-const graphWin = () => document.querySelector("#graphPane iframe")?.contentWindow;
+const BROWSE_KIND = { "cat-organizations": "organization", "cat-projects": "project", "cat-experiments": "experiment", "cat-facilities": "facility", "cat-devices": "device", "cat-sites": "site", "cat-persons": "person", "cat-factors": "factor", "cat-groups": "group" }; // a type's list in Browse = that type in the graph's grid
+const graphWin =() => document.querySelector("#graphPane iframe")?.contentWindow;
 function tellGraph(msg) { try { graphWin()?.postMessage(msg, location.origin); } catch {} }
 function syncGraph() {
-  const ids = [...selection.values()].filter(x => GRAPH_TYPES.has(x.type)).map(x => x.id), open = shownNode(), current = open && GRAPH_TYPES.has(open.type) ? open.id : null, sig = ids.join("\n") + "|" + current;
+  const ids = [...selection.values()].filter(x => GRAPH_TYPES.has(x.type)).map(x => x.id), open = shownNode(), current = open && GRAPH_TYPES.has(open.type) ? open.id : null, last = path.at(-1), type = last?.type === "category" ? BROWSE_KIND[last.id] ?? null : null, sig = ids.join("\n") + "|" + current + "|" + type;
   if (sig === graphSig) return;
-  graphSig = sig; tellGraph({ kind: "selection", ids, current });
+  graphSig = sig; tellGraph({ kind: "selection", ids, current }); tellGraph({ kind: "category", type });
 }
 window.addEventListener("message", ev => {
   const m = ev.data;
@@ -4968,7 +4969,7 @@ window.addEventListener("message", ev => {
   else if (m.kind === "graph-selection") {
     const next = new Map([...selection].filter(([, x]) => !GRAPH_TYPES.has(x.type)));
     for (const it of m.items) next.set(it.id, selection.get(it.id) ?? it);
-    graphSig = m.items.map(x => x.id).join("\n") + "|" + (graphSig ?? "").split("|")[1]; // the graph already shows this: no echo
+    graphSig = m.items.map(x => x.id).join("\n") + "|" + (graphSig ?? "").split("|").slice(1).join("|"); // the graph already shows this: no echo
     selection = next; anchorId = null; hxAnchor = null; hxAfterPick();
   }
 });

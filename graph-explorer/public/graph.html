@@ -939,8 +939,17 @@ async function openInPortal(n) {
       if (ev.origin !== location.origin || ev.source !== parent || !m) return;
       if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; }
       else if (m.kind === "changed") reconcile(true);
+      else if (m.kind === "category") showCategory(m.type);
       else if (m.kind === "click") { try { document.querySelector(m.selector)?.click(); } catch {} } // a click on the mirrored panel
     });
+  }
+  // Browse is on a type's list: show that type in the grid; any other page puts the graph back.
+  function showCategory(kind, tries = 20) {
+    if (!kind) return catView && exitCat(false);
+    if (catView?.kind === kind) return;
+    if (catView) return exitCat(false, () => showCategory(kind));
+    if (!pxu1 && tries) return setTimeout(() => showCategory(kind, tries - 1), 150); // the first frame has not been measured yet
+    enterCat(null, kind);
   }
   function setCurrent(id) { cur = id && g.hasNode(id) ? id : null; selected = sel.size ? [...sel].at(-1) : cur; apply(false); refresh(); stats(); renderPanel(); }
   async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
@@ -1094,7 +1103,7 @@ async function openInPortal(n) {
     const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); moves.forEach((m, i) => g.hasNode(m.id) && g.mergeNodeAttributes(m.id, { x: from[i][0] + (m.x - from[i][0]) * e, y: from[i][1] + (m.y - from[i][1]) * e })); sigma.refresh(); if (k < 1) requestAnimationFrame(step); else done?.(); };
     requestAnimationFrame(step); };
   function enterCat(key, kind) {
-    const c = clusters.find(c => c.key === key); if (!c || catView || !pxu1) return;
+    const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || catView || !pxu1) return; // key null: every node of the type, whatever its cluster (Browse asks for this)
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kindOf(id) === kind).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
