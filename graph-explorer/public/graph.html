@@ -1031,14 +1031,18 @@ async function openInPortal(n) {
       discs.push({ id, x:v.x, y:v.y, r });
       if (d.label && (d.forceLabel || r >= 6)) items.push({ id, label:d.label, x:v.x, y:v.y, r, size:d.size, rank: litSel.has(id) ? 0 : lit && lit.has(id) ? 1 : 2 });
     });
-    items.sort((a, b) => a.rank - b.rank || b.size - a.size);
-    const placed = [], clash = R => placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
+    const grid = !!catView; // in a grid every name stands to the right of its node, or is left out: reading order decides who is named when space is short
+    items.sort((a, b) => a.rank - b.rank || (grid ? a.y - b.y || a.x - b.x : b.size - a.size));
+    const cellPx = grid ? Math.abs(sigma.graphToViewport({ x: catView.cellG, y: 0 }).x - sigma.graphToViewport({ x: 0, y: 0 }).x) : 0; // one grid cell, in pixels now
+    const heads = grid ? catView.heads.map(h => { const v = sigma.graphToViewport(h); return { x: v.x - 4, y: v.y - 4, w: 190, h: 26 }; }) : [];
+    const placed = [], clash = R => heads.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y) || placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
       || R.x < 3 || R.x + R.w > box.width - 3 || R.y < 3 || R.y + R.h > box.height - 3 // a name never runs off the edge of the view
       || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
     for (const it of items) {
       it.text = it.rank === 0 || it.label.length <= 32 ? it.label : it.label.slice(0, 30).trimEnd() + "…"; // long names are shortened, except for what is selected
+      if (grid) { const avail = cellPx - 2 * it.r - 14; if (lctx.measureText(it.text).width > avail) { let t = it.text; while (t.length > 1 && lctx.measureText(t + "…").width > avail) t = t.slice(0, -1); it.text = t.length > 3 ? t.trimEnd() + "…" : ""; } if (!it.text) continue; } // in a grid a name is cut to its cell, so it never runs into the next node
       const w = lctx.measureText(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w), first = labelSlot.get(it.id) ?? 0;
-      const order = [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
+      const order = grid ? [0] : [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
       let pick = -1;
       for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LABEL_H }; if (!clash(R)) { pick = si; break; } }
       if (pick < 0 && it.rank === 0) pick = 0; // a selected node always keeps its name
@@ -1139,7 +1143,7 @@ async function openInPortal(n) {
     const gw = lay.W / sc, gh = lay.H / sc;
     let sx = 0, sy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; } const cx = sx / n, cy = sy / n;
     const left = cx - gw / 2, top = cy + gh / 2, saved =  /* graph y points up: top is the top edge on screen, rows run down from it */  new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
-    const moves = lay.blocks.flatMap(b => b.ids.map((id, i) => ({ id, x: left + (b.x + (i % b.cols) * lay.cw) / sc + (lay.maxR + 7) / sc, y: top - (b.y + b.head + (Math.floor(i / b.cols) + .5) * lay.ch) / sc }))), heads = secs.length > 1 ? lay.blocks.map(b => ({ kind: b.kind, n: b.ids.length, x: left + b.x / sc, y: top - b.y / sc })) : []; // the node on the left of its cell, its name to the right
+    const moves = lay.blocks.flatMap(b => b.ids.map((id, i) => ({ id, x: left + (b.x + (i % b.cols) * lay.cw) / sc + (lay.maxR + 7) / sc, y: top - (b.y + b.head + (Math.floor(i / b.cols) + .5) * lay.ch) / sc }))), heads = secs.length > 1 ? lay.blocks.map(b => ({ kind: b.kind, n: b.ids.length, x: left + b.x / sc, y: top - b.y / sc, w: b.cols * lay.cw / sc, h: (b.head + Math.ceil(b.ids.length / b.cols) * lay.ch) / sc })) : []; // the node on the left of its cell, its name to the right
     // Everything else keeps its order and moves as whole blocks (the rest of this cluster, every other cluster, each loose node), clear of the screen and of each other, so nothing lands on a neighbour.
     const mem = new Set(ids), nbs = new Set(); for (const id of ids) g.forEachNeighbor(id, nb => { if (!mem.has(nb) && inLayout(nb)) nbs.add(nb); });
     const hx = Math.max(gw / 2, box.width / 2 / sc), hy = Math.max(gh / 2, box.height / 2 / sc), RS = Math.hypot(hx, hy);
@@ -1156,7 +1160,7 @@ async function openInPortal(n) {
       for (const u of U) { const dx = u.x - cx, dy = u.y - cy, d = Math.hypot(dx, dy), want = u.own ? RS * 1.05 + u.r : beyond + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = cx + (d < 1e-9 ? want : dx * k); u.y = cy + (d < 1e-9 ? 0 : dy * k); moved = true; } }
       if (!moved) break; }
     for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id); moves.push({ id, x: u.x + (a.x - u.ox), y: u.y + (a.y - u.oy) }); }
-    catView = { key, kind: kinds[0], kinds, heads, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
+    catView = { key, kind: kinds[0], kinds, heads, cellG: lay.cw / sc, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
     if (keep) for (const [id, p] of keep) saved.set(id, p); // the way back is to the layout before the first grid, not to the previous grid
     // the camera: the whole grid centred, zoomed out as far as it takes to see all of it
     const zoomOut = Math.max(1, lay.H / uh, lay.W / uw), vp = sigma.graphToViewport({ x: cx, y: cy + 40 * zoomOut / sc }), fr = sigma.viewportToFramedGraph(vp); // 40 px lower on screen: the breadcrumb is above
@@ -1190,6 +1194,9 @@ async function openInPortal(n) {
     terrHits = []; terrLabels = []; catHits = [];
     if (catView) showCrumbs(); else crumbs.hidden = true;
     { const ck = catView ? catView.kinds.join() : ""; if (ck !== chipsOf) { chipsOf = ck; renderChips(); } } // the pressed counts follow the grid, however it was opened or left
+    if (catView?.heads.length) for (const h of catView.heads) { // each section is painted as an area in its type's colour
+      const a = sigma.graphToViewport(h), b = sigma.graphToViewport({ x: h.x + h.w, y: h.y - h.h }), c = COLORS[h.kind] || "#888888", rgb = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(","), pad = 8;
+      tctx.beginPath(); tctx.roundRect(a.x - pad, a.y - pad / 2, b.x - a.x + 2 * pad, b.y - a.y + pad * 1.5, 12); tctx.fillStyle = `rgba(${rgb},.11)`; tctx.fill(); tctx.strokeStyle = `rgba(${rgb},.4)`; tctx.lineWidth = 1; tctx.stroke(); }
     if (catView?.heads.length) { tctx.font = '600 13px "Public Sans", system-ui, sans-serif'; tctx.fillStyle = "#264030"; for (const h of catView.heads) { const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; tctx.fillText(`${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`, v.x, v.y + 14); } }
     if (!w || !h || !clusters.length || !compactBox.checked) return;
     const geo = new Map();
