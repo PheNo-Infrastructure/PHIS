@@ -161,7 +161,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .graph-info .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .graph-info .chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
 .graph-info .chip.static { cursor: default; border-color: transparent; background: none; }
-.graph-info .chipset { display: inline-flex; } .graph-info .chipset .chip:first-child:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; } .graph-info .chip.open { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 2px 7px; }
+.graph-info .chipset { display: inline-flex; } .graph-info .chipset .chip:first-child:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; } .graph-info .chip.open[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); } .graph-info .chip.open.all { border-radius: 99px; margin-left: 4px; }
+.graph-info .chip.open { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 2px 7px; }
 .graph-info button { font: inherit; padding: 4px 10px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--ink); border-radius: 6px; cursor: pointer; }
 .graph-info button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .graph-info .row { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
@@ -4980,7 +4981,7 @@ document.getElementById("graphInfo").addEventListener("click", ev => {
   const el = ev.target.closest("[data-gid], [data-t], [data-g], a[data-id]");
   if (!el) return;
   const selector = el.dataset.gid ? "#" + el.dataset.gid : el.dataset.t ? '[data-t=' + JSON.stringify(el.dataset.t) + ']' : el.dataset.g ? '[data-g=' + JSON.stringify(el.dataset.g) + ']' : 'a[data-id=' + JSON.stringify(el.dataset.id) + ']';
-  tellGraph({ kind: "click", selector });
+  tellGraph({ kind: "click", selector, ctrl: ev.ctrlKey || ev.metaKey || ev.shiftKey });
 });
 
 /* ---------------- tree mode: a forest built from `selection` ---------------- */
