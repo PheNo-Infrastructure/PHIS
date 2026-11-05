@@ -1114,8 +1114,8 @@ async function openInPortal(n) {
     const ink = dark ? "#e6ebe0" : "#264030", paper = dark ? "22,27,20" : "255,255,255";
     drawBadges(discs);
     const edge = dark ? "#9be7a8" : "#3d8526"; // what the selection could be linked to is outlined, node and name
-    lctx.strokeStyle = edge; lctx.lineWidth = 2;
-    for (const D of discs) if (canLink.has(D.id)) { lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 3, 0, Math.PI * 2); lctx.stroke(); }
+    lctx.strokeStyle = edge; lctx.lineWidth = 1.5;
+    for (const D of discs) if (canLink.has(D.id)) { lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 2, 0, Math.PI * 2); lctx.stroke(); }
     for (const R of [...placed].reverse()) {
       lctx.globalAlpha = lit && R.rank === 2 && !canLink.has(R.id) ? .6 : 1;
       if (canLink.has(R.id)) { lctx.lineWidth = 1.5; lctx.beginPath(); lctx.roundRect(R.x, R.y, R.w, R.h, 4); lctx.stroke(); }
@@ -1264,19 +1264,22 @@ async function openInPortal(n) {
       return { out, cw, ch, W, H: onH, Wall: Math.max(W, offW), Hall: offBottom, R }; };
     let lay = pack(13); for (let R = 13; R >= 6; R--) { lay = pack(R); if (lay.H <= uh && lay.W <= uw) break; }
     const R = lay.R, u = 11 * K / R, extra = Math.max(1, lay.H / uh, lay.W / uw), extraAll = Math.max(extra, lay.Hall / uh, lay.Wall / uw), pos = new Map(), heads = [], titles = [], gx = px => cx + (px - lay.W / 2) * u, gy = py => cy - (py - lay.H / 2) * u; // graph units per layout pixel (y points up)
-    for (const gr of lay.out) { titles.push({ text: gr.title, n: gr.n, x: gx(gr.x0), y: gy(gr.y0) });
+    for (const gr of lay.out) { titles.push({ text: gr.title, n: gr.n, x: gx(gr.x0), y: gy(gr.y0), w: gr.W * u });
       for (const b of gr.blocks) { heads.push({ kind: b.kind, n: b.ids.length, x: gx(b.x), y: gy(b.y), w: b.w * u, h: b.h * u }); b.ids.forEach((id, i) => pos.set(id, [gx(b.x + (i % b.cols) * lay.cw + R * 15 / 11 + 4), gy(b.y + HEAD + (Math.floor(i / b.cols) + .5) * lay.ch)])); } }
     const base = 11 * K * pxu1 / R, focus = { x: cx, y: cy + 28 * u * extra, ratio: base * extra }; // the camera looks 28 px above the middle, so the arrangement sits below the toolbar
     const all = lay.Hall > lay.H ? { x: gx(lay.Wall / 2), y: gy(lay.Hall / 2) + 28 * u * extraAll, ratio: base * extraAll } : null; // one exact fit of every group
     return { pos, heads, titles, cellG: lay.cw * u, rowG: lay.ch * u, cx: focus.x, cy: focus.y, ratio: focus.ratio, focus, all, mode: "focus" };
   }
   // The zoom of an arrangement has two stops: the selection and what it links to, and everything. Zooming out from the first snaps to the second, zooming in from the second snaps back; nothing zooms out past the second.
-  let snapping = false;
-  function snapTo(v) { snapping = true; const fr = sigma.viewportToFramedGraph(sigma.graphToViewport({ x: v.x, y: v.y })); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: v.ratio }, { duration: 350 }, () => { snapping = false; }); } // the camera works in framed coordinates, not graph units
+  let snapUntil = 0, pinning = false;
+  const framed = v => sigma.viewportToFramedGraph(sigma.graphToViewport({ x: v.x, y: v.y })); // the camera works in framed coordinates, not graph units
+  function pinTo(v) { pinning = true; const fr = framed(v); sigma.getCamera().setState({ x: fr.x, y: fr.y, ratio: v.ratio }); pinning = false; }
+  function snapTo(v) { snapUntil = performance.now() + 420; const fr = framed(v); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: v.ratio }, { duration: 350 }); }
+  // Zoomed out, the camera sits exactly on the fit of everything: Sigma's own wheel animation (one per notch) would otherwise drag it off it, so every update there is put back.
   sigma.getCamera().on("updated", st => {
-    if (!arr?.all || !lit || snapping) return; const A = arr;
-    if (A.mode === "focus" && st.ratio > A.focus.ratio * 1.2) { A.mode = "all"; snapTo(A.all); }
-    else if (A.mode === "all" && st.ratio < A.all.ratio * .96) { A.mode = "focus"; snapTo(A.focus); }
+    if (!arr?.all || !lit || pinning || performance.now() < snapUntil) return; const A = arr;
+    if (A.mode === "focus" && st.ratio > A.focus.ratio * 1.2) { A.mode = "all"; snapTo(A.all); setTimeout(() => { if (arr === A && A.mode === "all") pinTo(A.all); }, 440); }
+    else if (A.mode === "all") { if (st.ratio < A.all.ratio * .96) { A.mode = "focus"; snapTo(A.focus); } else pinTo(A.all); }
   });
   const pulled = new Map();
   function gatherBig() {
@@ -1337,11 +1340,11 @@ async function openInPortal(n) {
     { const ck = catView ? catView.kinds.join() : ""; if (ck !== chipsOf) { chipsOf = ck; renderChips(); } } // the pressed counts follow the grid, however it was opened or left
     const gview = catView ?? (lit ? arr : null);
     if (gview?.heads.length > (catView ? 0 : 0)) for (const h of gview.heads) { // each section is painted as an area in its type's colour
-      const a = sigma.graphToViewport(h), b = sigma.graphToViewport({ x: h.x + h.w, y: h.y - h.h }), c = COLORS[h.kind] || "#888888", rgb = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(","), pad = 8;
+      const a = sigma.graphToViewport(h), b = sigma.graphToViewport({ x: h.x + h.w, y: h.y - h.h }), c = COLORS[h.kind] || "#888888", rgb = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(","), pad = Math.max(2, 8 * (gview.ratio ? Math.min(1, gview.ratio / sigma.getCamera().getState().ratio) : 1));
       tctx.beginPath(); tctx.roundRect(a.x - pad, a.y - pad / 2, b.x - a.x + 2 * pad, b.y - a.y + pad * 1.5, 12); tctx.fillStyle = `rgba(${rgb},.11)`; tctx.fill(); tctx.strokeStyle = `rgba(${rgb},.4)`; tctx.lineWidth = 1; tctx.stroke(); }
     const rel = gview?.ratio ? Math.min(1, gview.ratio / sigma.getCamera().getState().ratio) : 1; // zoomed out past the arrangement's own zoom, the titles shrink with the spacing
-    if (gview?.titles) { tctx.textAlign = "left"; tctx.font = `700 ${Math.max(7, 16 * rel)}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const t of gview.titles) { const v = sigma.graphToViewport(t); tctx.fillText(`${t.text}  ${t.n}`, v.x, v.y + 16); } } // the three bands
-    if (gview?.heads.length) { tctx.textAlign = "left"; tctx.font = `600 ${Math.max(6, 13 * rel)}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const h of gview.heads) { const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; tctx.fillText(`${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`, v.x, v.y + 14); } }
+    if (gview?.titles) { tctx.textAlign = "left"; tctx.font = `700 ${Math.max(11, 16 * rel)}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const t of gview.titles) { const v = sigma.graphToViewport(t), wpx = Math.abs(sigma.graphToViewport({ x: t.x + t.w, y: t.y }).x - v.x); let txt = `${t.text}  ${t.n}`; if (tctx.measureText(txt).width > wpx) txt = `${t.text.split(" ")[0]}  ${t.n}`; tctx.fillText(txt, v.x, v.y + 16); } } // the three bands
+    if (gview?.heads.length) { tctx.textAlign = "left"; tctx.font = `600 ${Math.max(6, 13 * rel)}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const h of gview.heads) { if (rel < .45) break; const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; tctx.fillText(`${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`, v.x, v.y + 14); } }
     if (!w || !h || !clusters.length || !compactBox.checked) return;
     const geo = new Map();
     clusters.forEach((c, i) => {
