@@ -1,11 +1,11 @@
 // Serves public/ plus a made-up /api/graph so the graph can be judged at any size in your own browser, without PHIS.
-// Run: node --experimental-strip-types scripts/graph-synth.mts [scale=1]   then open http://localhost:4001/graph
+// Run: node --experimental-strip-types scripts/graph-synth.mts [scale=1] [port=4001]   then open http://localhost:4001/graph
 // scale 1 is about 680 nodes, 3 about 2000. Organisations own their facilities, devices, experiments, people (a few cross links).
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 
-const scale = Number(process.argv[2]) || 1;
+const scale = Number(process.argv[2]) || 1, port = Number(process.argv[3]) || 4001;
 let seed = 42;
 const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
@@ -42,4 +42,4 @@ createServer(async (req, res) => {
   if (!file.startsWith(root) && file !== adjacency) { res.writeHead(403); return void res.end(); }
   try { const body = await readFile(file); res.writeHead(200, { "Content-Type": types[extname(file)] ?? "application/octet-stream" }); res.end(body); }
   catch { res.writeHead(404); res.end(); }
-}).listen(4001, () => console.log(`${nodes.length} nodes, ${edges.length} edges: http://localhost:4001/graph`));
+}).listen(port, () => console.log(`${nodes.length} nodes, ${edges.length} edges: http://localhost:${port}/graph`));
