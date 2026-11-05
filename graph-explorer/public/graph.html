@@ -204,7 +204,7 @@ async function openInPortal(n) {
   let cur = null; // inside the portal: the resource open in Browse; lit and unfolded like a selection, but not part of it (nothing is linked to it by being open)
   const sel = new Set();           // selected node ids; a folded group stands for all its members
   const home = new Map(); let restoring = false; // first places of nodes moved aside by the connected view
-  let canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
+  let litSize = new Map(), canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
   const bg = dark => dark ? [22, 27, 20] : [255, 255, 255];
   const fade = (hex, isDark, keep = .4) => { if (hex.length === 4) hex = "#" + [...hex.slice(1)].map(ch => ch + ch).join(""); const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), b = bg(isDark); return "#" + c.map((v, i) => Math.round(v * keep + b[i] * (1 - keep)).toString(16).padStart(2, "0")).join(""); };
@@ -265,6 +265,7 @@ async function openInPortal(n) {
     if (!L.length) { lit = null; tintIds = new Set(); return; }
     lit = new Set(L); litSel = new Set(L);
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
+    litSize = new Map(); { const d = new Map([...lit].map(id => { let n = 0; g.forEachNeighbor(id, nb => { if (lit.has(nb)) n++; }); return [id, n]; })), mx = Math.max(1, ...d.values()); for (const [id, n] of d) litSize.set(id, 9 + 7 * Math.log1p(n) / Math.log1p(mx)); } // while something is selected, sizes follow the links inside the selection's view, in a narrow range: a hub is not several times its neighbours
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; }); // lit is known now: it decides what is drawn inside a painted cluster
     // The members of an opened group are named, not painted (an organization or site would otherwise paint every facility of it), unless something that is not the group's parent
     // (a person, an experiment) is linked to them directly: then they are what that selection is about.
@@ -295,8 +296,8 @@ async function openInPortal(n) {
       if (!isVisible(id)) return { ...a, hidden:true };
       if (catView && !lit) return catView.set.has(id) || catView.nb.has(id) ? { ...a, forceLabel:true } : { ...a, color: fade(a.color, dark, .35) }; // the category and what it links to are named; the rest of the graph is dimmed
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
-      if (litSel.has(id)) return { ...a, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
-      if (lit.has(id)) return { ...a, zIndex:1, forceLabel: lit.size < 60 };
+      if (litSel.has(id)) return { ...a, size: litSize.get(id) ?? a.size, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
+      if (lit.has(id)) return { ...a, size: litSize.get(id) ?? a.size, zIndex:1, forceLabel: lit.size < 60 };
       if (canLink.has(id)) return { ...a, zIndex: 1, forceLabel: true };
       return { ...a, color: fade(a.color, dark), forceLabel: visCount < 80 }; // unrelated nodes keep their names while the graph is small, so they can be added
     },
