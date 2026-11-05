@@ -608,7 +608,8 @@ async function openInPortal(n) {
   // Pixels per graph unit at zoom 1 only changes when the view is refitted or resized, so it is measured after a frame is drawn (never while one is being set up, which was a frame late) and the
   // zoom is applied on top: the size follows the zoom in the same frame.
   let pxu1 = 0;
-  const measurePx = () => { const o = sigma.graphToViewport({ x:0, y:0 }), v = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) * sigma.getCamera().getState().ratio; if (v > 0 && isFinite(v) && Math.abs(v - pxu1) > 1e-9 * v) { pxu1 = v; sigma.refresh(); } };
+  let measuring = false; // refresh renders at once and a render calls measurePx again: at a fractional browser zoom the value never settled and the stack overflowed (tab hung)
+  const measurePx = () => { if (measuring) return; const o = sigma.graphToViewport({ x:0, y:0 }), v = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) * sigma.getCamera().getState().ratio; if (v > 0 && isFinite(v) && Math.abs(v - pxu1) > 1e-4 * v) { pxu1 = v; measuring = true; try { sigma.refresh(); } finally { measuring = false; } } };
   sigma.updateCachedValues = function () {
     const ratio = this.camera.getState().ratio;
     this.cameraSizeRatio = K && pxu1 ? ratio / (K * pxu1) : Math.sqrt(ratio);
