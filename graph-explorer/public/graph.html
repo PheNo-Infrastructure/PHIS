@@ -280,7 +280,7 @@ async function openInPortal(n) {
       const [s, t] = g.extremities(ed);
       if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t))) return { ...a, hidden:true };
       if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
-      if (catView && !lit) return catView.set.has(s) && catView.set.has(t) ? { ...a, color: dark ? "#3a4536" : "#c4d0b2", size: .9, zIndex: 1 } : { ...a, color: dark ? "#232a20" : "#eef2e6", size: .4 }; // in a grid, links between its own nodes are the ones that matter; those running out to the rest of the graph are barely there
+      if (catView && !lit) return catView.set.has(s) && catView.set.has(t) ? { ...a, color: dark ? "#3a4536" : "#c4d0b2", size: .9, zIndex: 1 } : { ...a, hidden: true }; // in a grid only the links between its own nodes are drawn; a link to the rest of the graph appears when its node is selected
       return a;
     },
   });
@@ -957,7 +957,7 @@ async function openInPortal(n) {
     if (!kinds.length) return catView && exitCat(false);
     if (catView && catView.kinds.join() === kinds.join()) return;
     if (!pxu1 && tries) return setTimeout(() => setKinds(kinds, tries - 1), 150); // the first frame has not been measured yet
-    const keep = catView?.saved; catView = null; enterCat(null, kinds, keep); // replacing one grid by another goes straight there, no trip back to the graph
+    const prev = catView; catView = null; enterCat(null, kinds, prev?.saved, prev?.sizes0); // replacing one grid by another goes straight there, no trip back to the graph
   }
   const showCategory = kind => setKinds(kind ? [kind] : []);
   function setCurrent(id) { cur = id && g.hasNode(id) ? id : null; selected = sel.size ? [...sel].at(-1) : cur; apply(false); refresh(); stats(); renderPanel(); }
@@ -1115,13 +1115,17 @@ async function openInPortal(n) {
   const tween = (moves, ms, done) => { const t0 = performance.now(), from = moves.map(m => { const a = g.getNodeAttributes(m.id); return [a.x, a.y]; });
     const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); moves.forEach((m, i) => g.hasNode(m.id) && g.mergeNodeAttributes(m.id, { x: from[i][0] + (m.x - from[i][0]) * e, y: from[i][1] + (m.y - from[i][1]) * e })); sigma.refresh(); if (k < 1) requestAnimationFrame(step); else done?.(); };
     requestAnimationFrame(step); };
-  function enterCat(key, kind, keep) { // kind: one type or a list of types; keep: the first positions, when a grid is replaced by another
+  function enterCat(key, kind, keep, keepSizes) { // kind: one type or a list of types; keep: the first positions, when a grid is replaced by another
     const kinds = [].concat(kind);
     const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || (catView && !keep) || !pxu1) return; // key null: every node of the types, whatever its cluster (Browse and the legend ask for this)
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kinds.includes(kindOf(id))).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
     const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 130, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and a little below // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
+    // Size inside a grid follows the links between the grid's own nodes (log scale, none below 7); the links to the hidden rest of the graph do not count. The first sizes come back when the grid is left.
+    if (keepSizes) for (const [id, v] of keepSizes) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v);
+    const inGrid = new Set(ids), sizes0 = new Map(ids.map(id => [id, g.getNodeAttribute(id, "size")])), degs = ids.map(id => { let d = 0; g.forEachNeighbor(id, nb => { if (inGrid.has(nb)) d++; }); return d; }), maxD = Math.max(1, ...degs);
+    ids.forEach((id, i) => g.setNodeAttribute(id, "size", 7 + 15 * Math.log1p(degs[i]) / Math.log1p(maxD)));
     const sizes = ids.map(id => g.getNodeAttribute(id, "size")), avg = sizes.reduce((t, v) => t + v, 0) / n, maxS = Math.max(...sizes);
     tctx.font = LABEL_FONT; const labelW = Math.min(190, Math.max(...ids.map(id => tctx.measureText(String(g.getNodeAttribute(id, "label")).slice(0, 32)).width)) + 10);
     // One section per type (in the legend's order), packed in shelves: left to right, a new shelf when the row is full. One node size for all, the largest that lets everything fit.
@@ -1161,7 +1165,7 @@ async function openInPortal(n) {
       for (const u of U) { const dx = u.x - cx, dy = u.y - cy, d = Math.hypot(dx, dy), want = u.own ? RS * 1.05 + u.r : beyond + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = cx + (d < 1e-9 ? want : dx * k); u.y = cy + (d < 1e-9 ? 0 : dy * k); moved = true; } }
       if (!moved) break; }
     for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id); moves.push({ id, x: u.x + (a.x - u.ox), y: u.y + (a.y - u.oy) }); }
-    catView = { key, kind: kinds[0], kinds, heads, cellG: lay.cw / sc, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
+    catView = { key, kind: kinds[0], kinds, heads, cellG: lay.cw / sc, sizes0, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
     if (keep) for (const [id, p] of keep) saved.set(id, p); // the way back is to the layout before the first grid, not to the previous grid
     // the camera: the whole grid centred, zoomed out as far as it takes to see all of it
     const zoomOut = Math.max(1, lay.H / uh, lay.W / uw), vp = sigma.graphToViewport({ x: cx, y: cy + 40 * zoomOut / sc }), fr = sigma.viewportToFramedGraph(vp); // 40 px lower on screen: the breadcrumb is above
@@ -1176,7 +1180,7 @@ async function openInPortal(n) {
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
-    const { saved, key, typeKind } = catView; if (typeKind) toCluster = false; catView = null; crumbs.hidden = true; labelSlot.clear();
+    const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); crumbs.hidden = true; labelSlot.clear();
     tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); else fitView(); done?.(); }); // the way back refits the whole graph
     refresh(); stats();
   }
