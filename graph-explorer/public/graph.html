@@ -180,6 +180,7 @@ async function openInPortal(n) {
   let focus = null, focusSet = null, selected = null, lit = null;
   let cur = null; // inside the portal: the resource open in Browse; lit and unfolded like a selection, but not part of it (nothing is linked to it by being open)
   const sel = new Set();           // selected node ids; a folded group stands for all its members
+  const home = new Map(); let restoring = false; // first places of nodes moved aside by the connected view
   let canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
   const bg = dark => dark ? [22, 27, 20] : [255, 255, 255];
@@ -293,7 +294,7 @@ async function openInPortal(n) {
   const field = document.createElement("canvas"), fctx = field.getContext("2d", { willReadFrequently:true }), shape = document.createElement("canvas"), sctx = shape.getContext("2d");
   const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
   const BLOB = 105;
-  let cache = null, phase = 0, flowing = false, dims = null, litSeen = null, pushBudget = 0;
+  let cache = null, phase = 0, flowing = false, dims = null;
   // Inertia: the tint is built from lagged node positions (graph coordinates, so panning and zooming are not delayed). Each one follows its node like a heavy
   // spring with a little overshoot, so a dragged node pulls its area along and the area settles afterwards.
   const lag = new Map(); let lagT = 0;
@@ -464,33 +465,7 @@ async function openInPortal(n) {
     hctx.imageSmoothingEnabled = true; hctx.imageSmoothingQuality = "high";
     hctx.drawImage(shape, 0, 0, w, h);
   }
-  // ---- keeping the picture clear: nodes that are not part of the selection are eased out of the tinted area while it is there, and glide back to where they were
-  // when the selection is cleared (a node you drag yourself stays where you put it) ----
-  const home = new Map(); let restoring = false;
-  function pushStep() {
-    if (!lit || !lens().length) return 0;
-    const o = sigma.graphToViewport({ x:0, y:0 }), px = Math.abs(sigma.graphToViewport({ x:1, y:0 }).x - o.x) || 1;
-    const R = BLOB * 1.1 / sigma.getCamera().getState().ratio / px; // how far the tint reaches from an involved node, in graph units
-    const pts = [];
-    for (const id of tintIds) if (g.hasNode(id) && isVisible(id)) { const a = g.getNodeAttributes(id); pts.push([a.x, a.y]); }
-    let seen = 0;
-    g.forEachEdge((ed, a, s2, t2) => { // the tint also follows the links between involved nodes
-      if (seen > 400 || !tintIds.has(s2) || !tintIds.has(t2) || !isVisible(s2) || !isVisible(t2)) return; seen++;
-      const A = g.getNodeAttributes(s2), B = g.getNodeAttributes(t2), n = Math.max(1, Math.ceil(Math.hypot(B.x - A.x, B.y - A.y) / (R * .6)));
-      for (let k = 1; k < n; k++) pts.push([A.x + (B.x - A.x) * k / n, A.y + (B.y - A.y) * k / n]);
-    });
-    let worst = 0;
-    g.forEachNode((id, a) => {
-      if (lit.has(id) || a.fixed || !isVisible(id)) return;
-      let bd = Infinity, bx = 0, by = 0;
-      for (const [x, y] of pts) { const d = Math.hypot(a.x - x, a.y - y); if (d < bd) { bd = d; bx = x; by = y; } }
-      if (bd >= R) return;
-      if (!home.has(id)) home.set(id, { x:a.x, y:a.y });
-      const dx = bd > 1e-6 ? (a.x - bx) / bd : 1, dy = bd > 1e-6 ? (a.y - by) / bd : 0, move = (R - bd) * .25;
-      g.mergeNodeAttributes(id, { x:a.x + dx * move, y:a.y + dy * move }); worst = Math.max(worst, move * px);
-    });
-    return worst;
-  }
+  // ---- the connected view moves everything unselected aside (see gather); their first places are kept here and they glide back when the selection is cleared (a node you drag yourself stays where you put it) ----
   function startRestore() {
     if (restoring || !home.size) return;
     restoring = true; let last = 0;
@@ -514,8 +489,6 @@ async function openInPortal(n) {
     flowing = true; let last = 0;
     const loop = t => {
       if (!cache || !lit) { flowing = false; return; }
-      if (litSeen !== lit) { litSeen = lit; pushBudget = 150; } // a selection pushes the others aside for about 2.5 s at most: in a crowded graph they could otherwise never settle
-      if (pushBudget > 0 && pushStep() > .3) pushBudget--;
       const moving = stepLag(); if (moving) rebuild(); // the areas are still catching up with their nodes
       if (moving || t - last > 40) { if (t - last > 40) phase += .02; paintHalo(); last = t; }
       requestAnimationFrame(loop);
@@ -679,11 +652,11 @@ async function openInPortal(n) {
   function fitView() {
     if (catView) return catView.fitCam && sigma.getCamera().animate(catView.fitCam, { duration: 400 }); // in a grid, Fit shows the grid
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    g.forEachNode((id, a) => { if (inLayout(id)) { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); } });
+    g.forEachNode((id, a) => { if (inLayout(id)) { const q = home.get(id) ?? a; x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); } }); // nodes still gliding home count where they are going
     if (x0 === Infinity) return;
     sigma.setCustomBBox({ x:[x0, Math.max(x1, x0 + 1)], y:[y0, Math.max(y1, y0 + 1)] }); bboxFrozen = false;
     refresh();
-    const home = { x:0.5, y:0.5, ratio:1, angle:0 }; sigma.getCamera().setState(home); sigma.getCamera().animate(home, { duration: 1 }); // setState alone would let a zoom animation still running land afterwards; a new animate replaces it
+    const camHome = { x:0.5, y:0.5, ratio:1, angle:0 }; sigma.getCamera().setState(camHome); sigma.getCamera().animate(camHome, { duration: 1 }); // setState alone would let a zoom animation still running land afterwards; a new animate replaces it
   }
 
   // ---- live physics: two steps per frame on the page (a worker would overwrite a pinned, dragged node); it switches itself off if a frame gets too slow ----
@@ -730,6 +703,8 @@ async function openInPortal(n) {
     if (ev.ctrlKey || ev.metaKey) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
     hiddenKinds.has(t) ? hiddenKinds.delete(t) : hiddenKinds.add(t);
+    if (hiddenKinds.has(t) && [...sel].some(id => filterKind(g.getNodeAttributes(id)) === t)) setSelection([...sel].filter(id => filterKind(g.getNodeAttributes(id)) !== t), "replace"); // a hidden type is not selected
+    if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return gather(); } // a selection that is left keeps its connected view
     if (!catView) return refreshView();
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
@@ -946,9 +921,11 @@ async function openInPortal(n) {
     apply(mode !== "replace");
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     selected = sel.size ? [...sel].at(-1) : cur;
-    if (catView && !fromPortal && (mode !== "replace" || ids.length)) exitCat(false, () => { if (lit) fitLit(); }); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
+    const leaving = catView && !fromPortal && (mode !== "replace" || ids.length);
+    if (leaving) exitCat(false, () => gather()); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     refresh(); stats(); renderPanel(); tellPortal();
-    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; fitView(); } // back from the connected view: the whole graph again
+    if (!leaving && sel.size && !catView) gather();
+    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
   // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
   let fromPortal = false, told = "";
@@ -1131,13 +1108,14 @@ async function openInPortal(n) {
   // ---- a category view: the nodes of one type in one cluster, in a grid that fills the screen with every name readable. Everything else is hidden for the time being; clicking empty space puts it all back. ----
   const crumbs = document.getElementById("crumbs");
   const tween = (moves, ms, done) => { const t0 = performance.now(), from = moves.map(m => { const a = g.getNodeAttributes(m.id); return [a.x, a.y]; });
-    const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); moves.forEach((m, i) => g.hasNode(m.id) && g.mergeNodeAttributes(m.id, { x: from[i][0] + (m.x - from[i][0]) * e, y: from[i][1] + (m.y - from[i][1]) * e })); sigma.refresh(); if (k < 1) requestAnimationFrame(step); else done?.(); };
+    const step = t => { if (moves.stop) return; const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); moves.forEach((m, i) => g.hasNode(m.id) && g.mergeNodeAttributes(m.id, { x: from[i][0] + (m.x - from[i][0]) * e, y: from[i][1] + (m.y - from[i][1]) * e })); sigma.refresh(); if (k < 1) requestAnimationFrame(step); else done?.(); };
     requestAnimationFrame(step); };
   function enterCat(key, kind, keep, keepSizes) { // kind: one type or a list of types; keep: the first positions, when a grid is replaced by another
     const kinds = [].concat(kind);
     const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || (catView && !keep) || !pxu1) return; // key null: every node of the types, whatever its cluster (Browse and the legend ask for this)
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kinds.includes(kindOf(id))).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
+    if (gathering) gathering.stop = true; snapHome();
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
     const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 130, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and a little below // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
     // Size inside a grid follows the links between the grid's own nodes (log scale, none below 7); the links to the hidden rest of the graph do not count. The first sizes come back when the grid is left.
@@ -1186,17 +1164,46 @@ async function openInPortal(n) {
     catView = { key, kind: kinds[0], kinds, heads, cellG: lay.cw / sc, sizes0, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
     if (keep) for (const [id, p] of keep) saved.set(id, p); // the way back is to the layout before the first grid, not to the previous grid
     // the camera: the whole grid centred, zoomed out as far as it takes to see all of it
+    sigma.refresh(); // measure against the camera as it is now, not as it was at the last render
     const zoomOut = Math.max(1, lay.H / uh, lay.W / uw), vp = sigma.graphToViewport({ x: cx, y: cy + 40 * zoomOut / sc }), fr = sigma.viewportToFramedGraph(vp); // 40 px lower on screen: the breadcrumb is above
     catView.fitCam = { x: fr.x, y: fr.y, ratio: pxu1 / sc * zoomOut }; sigma.getCamera().animate(catView.fitCam, { duration: 500 });
     tween(moves, 500, () => { ids.forEach(id => g.setNodeAttribute(id, "fixed", true)); collide(40); ids.forEach(id => g.removeNodeAttribute(id, "fixed")); sigma.refresh(); }); refresh(); stats(); showCrumbs();
   }
-  let zoomedToSelection = false;
-  function fitLit() { // the camera onto the selection and what it links to
-    zoomedToSelection = true;
-    const box = terr.getBoundingClientRect(), pts = [...lit].filter(isVisible).map(id => sigma.graphToViewport(g.getNodeAttributes(id))); if (!pts.length) return;
-    const x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y)), st = sigma.getCamera().getState();
-    const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), to = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
-    sigma.getCamera().animate({ x:to.x, y:to.y, ratio: Math.max(.3, st.ratio * f) }, { duration: 500 }); // never closer than about 3x: a lone node is not blown up to fill the screen
+  let zoomedToSelection = false, gathering = null;
+  const snapHome = () => { for (const [id, h] of home) if (g.hasNode(id)) g.mergeNodeAttributes(id, { x: h.x, y: h.y }); home.clear(); };
+  // The connected view: the camera frames only the selection and what it links to (they stay where they are). Everything else moves aside as whole blocks, each group of unselected nodes that link to each other as one,
+  // to just beyond the frame, so it keeps its shape and its place among the others and is in sight when you zoom out. Clearing the selection glides everything home.
+  function gather() {
+    if (!lit || catView) return;
+    const L = [...lit].filter(isVisible); if (!L.length) return;
+    zoomedToSelection = true; if (gathering) gathering.stop = true;
+    const was = new Map([...home.keys()].filter(id => g.hasNode(id)).map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }])); // where the earlier push left them
+    snapHome(); // measure from the first places
+    const orig = new Map([...was.keys()].map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
+    const box = terr.getBoundingClientRect(), cam = sigma.getCamera(), st = cam.getState();
+    const pts = L.map(id => sigma.graphToViewport(g.getNodeAttributes(id))), x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y));
+    const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), ratio = Math.max(.3, st.ratio * f); // never closer than about 3x: a lone node is not blown up to fill the screen
+    const o = sigma.graphToViewport({ x: 0, y: 0 }), ppu = (Math.abs(sigma.graphToViewport({ x: 1, y: 0 }).x - o.x) || 1) * st.ratio / ratio; // pixels per graph unit once the camera is there
+    const c = sigma.viewportToGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), RS = Math.hypot(box.width / 2, box.height / 2) / ppu * 1.05;
+    const inLit = new Set(L), rest = new Set(); g.forEachNode((id, a) => { if (!inLit.has(id) && isVisible(id) && !a.fixed) rest.add(id); });
+    const U = [], seen = new Set();
+    for (const id of rest) { if (seen.has(id)) continue; const list = [id], stack = [id]; seen.add(id); // a block: nodes that link to each other
+      while (stack.length) g.forEachNeighbor(stack.pop(), nb => { if (rest.has(nb) && !seen.has(nb)) { seen.add(nb); list.push(nb); stack.push(nb); } });
+      let ux = 0, uy = 0; for (const m of list) { const a = g.getNodeAttributes(m); ux += a.x; uy += a.y; } ux /= list.length; uy /= list.length;
+      const ds = list.map(m => { const a = g.getNodeAttributes(m); return Math.hypot(a.x - ux, a.y - uy); }).sort((p, q) => p - q);
+      U.push({ list, ox: ux, oy: uy, x: ux, y: uy, r: (list.length > 1 ? ds[Math.floor(ds.length * .9)] * 1.15 : 0) + Math.max(...list.map(m => g.getNodeAttribute(m, "size"))) * K * 1.2 }); }
+    let s0 = 1; for (const u of U) s0 = Math.max(s0, (RS + u.r) / Math.max(Math.hypot(u.ox - c.x, u.oy - c.y), 1e-9)); // every block out beyond the frame, the blocks keeping their places relative to each other
+    for (const u of U) { u.x = c.x + (u.ox - c.x) * s0; u.y = c.y + (u.oy - c.y) * s0; }
+    for (let it = 0; it < 300; it++) { let moved = false;
+      for (let i = 0; i < U.length; i++) for (let j = i + 1; j < U.length; j++) { const A = U[i], B = U[j]; let vx = B.x - A.x, vy = B.y - A.y, d = Math.hypot(vx, vy); const need = (A.r + B.r) * 1.05; if (d >= need) continue; if (d < 1e-9) { vx = 1; vy = 0; d = 1; } const k = (need - d) / 2; A.x -= vx / d * k; A.y -= vy / d * k; B.x += vx / d * k; B.y += vy / d * k; moved = true; }
+      for (const u of U) { const dx = u.x - c.x, dy = u.y - c.y, d = Math.hypot(dx, dy), want = RS + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = c.x + (d < 1e-9 ? want : dx * k); u.y = c.y + (d < 1e-9 ? 0 : dy * k); moved = true; } }
+      if (!moved) break; }
+    const moves = [];
+    for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id), tx = u.x + (a.x - u.ox), ty = u.y + (a.y - u.oy); home.set(id, { x: a.x, y: a.y }); moves.push({ id, x: tx, y: ty }); }
+    const first = new Set(moves.map(m => m.id));
+    for (const [id, p] of was) { const o = orig.get(id); g.mergeNodeAttributes(id, p); if (!first.has(id)) moves.push({ id, x: o.x, y: o.y }); } // earlier pushes start the tween from where they are, and what is now connected goes home
+    gathering = moves; tween(moves, 500, () => { if (gathering === moves) gathering = null; });
+    cam.animate({ ...sigma.viewportToFramedGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), ratio }, { duration: 500 });
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
@@ -1350,7 +1357,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>

@@ -4504,6 +4504,12 @@ async function openGraph(page: import("playwright").Page, base: string, stub: an
   }
   throw new Error("the graph never loaded");
 }
+// Resolves once the graph's camera and nodes have not moved for several frames (a selection frames what it links to with a short animation).
+const settled = (frame: import("playwright").Frame) => frame.evaluate(() => new Promise<void>((resolve) => {
+  const G = (window as any).__graph; let last = "", calm = 0;
+  const tick = () => { const c = G.sigma.getCamera().getState(), now = [c.x, c.y, c.ratio].map((v: number) => v.toFixed(4)).join() + "|" + G.g.nodes().map((n: string) => G.g.getNodeAttribute(n, "x").toFixed(3)).join(); calm = now === last ? calm + 1 : 0; last = now; calm >= 8 ? resolve() : requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}));
 const nodeXY = (frame: import("playwright").Frame, id: string) => frame.evaluate((i) => { const g = (window as any).__graph; return g.sigma.graphToViewport(g.g.getNodeAttributes(i)); }, id);
 const graphSel = (frame: import("playwright").Frame) => frame.evaluate(() => [...(window as any).__graph.sel]);
 async function ctrlClick(page: import("playwright").Page, x: number, y: number) {
@@ -4586,6 +4592,31 @@ test("e2e: graph: opening a grid from the legend clears the selection in the por
   });
 });
 
+test("e2e: graph: the connected view frames only the selection and what it links to, the rest moves aside, and clearing puts every node back", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const places = () => frame.evaluate(() => { const G = (window as any).__graph, o: any = {}; G.g.forEachNode((id: string, a: any) => o[id] = [a.x, a.y]); return o; });
+    const inFrame = () => frame.evaluate(() => { const G = (window as any).__graph, out: string[] = []; G.g.forEachNode((id: string, a: any) => { const v = G.sigma.graphToViewport(a); if (v.x >= 0 && v.x <= innerWidth && v.y >= 0 && v.y <= innerHeight) out.push(id); }); return out.sort(); });
+    const home = await places();
+    await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
+    await frame.waitForFunction(() => { const G = (window as any).__graph, lit = G.lit(); if (!lit) return false; let ok = true; G.g.forEachNode((id: string, a: any) => { const v = G.sigma.graphToViewport(a), inside = v.x >= 0 && v.x <= innerWidth && v.y >= 0 && v.y <= innerHeight; if (inside !== lit.has(id)) ok = false; }); return ok; }, undefined, { timeout: 8000 });
+    assert.deepEqual(await inFrame(), ["t:exp-1", "t:fac-1", "t:org-a"], "only the selected node and what it links to are in frame");
+    await frame.evaluate(() => (window as any).__graph.setSelection([], "replace"));
+    await frame.waitForFunction((h: any) => { const G = (window as any).__graph; let ok = true; G.g.forEachNode((id: string, a: any) => { if (Math.hypot(a.x - h[id][0], a.y - h[id][1]) > 1e-3) ok = false; }); return ok; }, home, { timeout: 8000 });
+  });
+});
+
+test("e2e: graph: hiding a type takes its nodes out of the selection, here and in the portal", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
+    await page.locator(".sel-label", { hasText: "Org A" }).waitFor();
+    await page.locator('#graphInfo [data-t="organization"]').click();
+    await page.locator(".sel-label", { hasText: "Org A" }).waitFor({ state: "detached" });
+    assert.equal(await frame.evaluate(() => (window as any).__graph.sel.size), 0);
+  });
+});
+
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
@@ -4606,11 +4637,13 @@ test("e2e: graph: a plain click opens the resource and leaves the selection alon
     let v = await nodeXY(frame, "t:org-a");
     await ctrlClick(page, box.x + v.x, box.y + v.y);
     await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
+    await settled(frame);
     v = await nodeXY(frame, "t:exp-1");
     await page.mouse.click(box.x + v.x, box.y + v.y);
     await page.waitForFunction(() => (window as any).__opened.length === 1);
     assert.deepEqual(await page.evaluate(() => (window as any).__opened), ["t:exp-1"], "the experiment was opened");
     assert.deepEqual(await graphSel(frame), ["t:org-a"], "opening does not change the selection");
+    await page.waitForTimeout(350); // Sigma reads two clicks less than 300 ms apart as a double click and drops the second as a click
     await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20); // empty space
     await frame.waitForFunction(() => (window as any).__graph.sel.size === 0);
     await page.waitForFunction(() => selection.size === 0);
@@ -4626,9 +4659,8 @@ test("e2e: graph: what is selected in Browse is shown selected in the graph; thi
       refreshLeftPane(); renderActionbar();
     });
     await frame.waitForFunction(() => [...(window as any).__graph.sel].join() === "t:org-b");
-    // picking in the graph replaces only the graph's kinds: the plant stays selected
-    const box = (await page.locator("#graphPane iframe").boundingBox())!, v = await nodeXY(frame, "t:site-1");
-    await ctrlClick(page, box.x + v.x, box.y + v.y);
+    // picking in the graph replaces only the graph's kinds: the plant stays selected (the connected view has moved Site 1 out of frame, so it is added through the graph's own call)
+    await frame.evaluate(() => (window as any).__graph.select("t:site-1", true));
     await page.waitForFunction(() => selection.has("t:site-1"));
     assert.deepEqual(await page.evaluate(() => [...selection.keys()].sort()), ["plant-1", "t:org-b", "t:site-1"]);
   });
