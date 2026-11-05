@@ -161,8 +161,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .graph-info .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .graph-info .chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
 .graph-info .chip.static { cursor: default; border-color: transparent; background: none; }
-.graph-info .chipset { display: inline-flex; } .graph-info .chipset .chip:first-child:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; } .graph-info .chip.open[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); } .graph-info .chip.open.all { border-radius: 99px; margin-left: 4px; }
-.graph-info .chip.open { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 2px 7px; }
+.graph-info .chip .n { opacity: .6; } .graph-info .chip.sel { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); } .graph-info [data-gid="legend"] { user-select: none; }
+.legend-marquee { position: fixed; z-index: 60; pointer-events: none; border: 1px dashed var(--accent); background: rgba(61, 133, 38, .12); }
 .graph-info button { font: inherit; padding: 4px 10px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--ink); border-radius: 6px; cursor: pointer; }
 .graph-info button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .graph-info .row { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
@@ -4980,11 +4980,30 @@ window.addEventListener("message", ev => {
 
 // A click on the mirrored graph panel is sent back; the graph clicks the matching element of its own (hidden) panel.
 document.getElementById("graphInfo").addEventListener("click", ev => {
-  const el = ev.target.closest("[data-gid], [data-t], [data-g], a[data-id]");
+  const el = ev.target.closest("[data-gid], [data-t], a[data-id]");
   if (!el) return;
-  const selector = el.dataset.gid ? "#" + el.dataset.gid : el.dataset.t ? '[data-t=' + JSON.stringify(el.dataset.t) + ']' : el.dataset.g ? '[data-g=' + JSON.stringify(el.dataset.g) + ']' : 'a[data-id=' + JSON.stringify(el.dataset.id) + ']';
-  tellGraph({ kind: "click", selector, ctrl: ev.ctrlKey || ev.metaKey || ev.shiftKey });
+  const selector = el.dataset.gid ? "#" + el.dataset.gid : el.dataset.t ? '[data-t=' + JSON.stringify(el.dataset.t) + ']' : 'a[data-id=' + JSON.stringify(el.dataset.id) + ']';
+  tellGraph({ kind: "click", selector, ctrl: ev.ctrlKey || ev.metaKey, shift: ev.shiftKey });
 });
+
+// Dragging a box over the copy of the legend selects the types it touches (Ctrl keeps the grid's types and adds to them).
+(() => {
+  const box = document.getElementById("graphInfo"); let m = null, quiet = false;
+  box.addEventListener("pointerdown", ev => { if (ev.button === 0 && (ev.target.closest('.chip') || !ev.target.closest('button, a, input, select, textarea'))) m = { x: ev.clientX, y: ev.clientY, add: ev.ctrlKey || ev.metaKey, on: false, el: null }; });
+  addEventListener("pointermove", ev => {
+    if (!m || (!m.on && Math.hypot(ev.clientX - m.x, ev.clientY - m.y) < 6)) return;
+    m.on = true; m.el ??= document.body.appendChild(Object.assign(document.createElement("div"), { className: "legend-marquee" }));
+    Object.assign(m.el.style, { left: Math.min(m.x, ev.clientX) + "px", top: Math.min(m.y, ev.clientY) + "px", width: Math.abs(ev.clientX - m.x) + "px", height: Math.abs(ev.clientY - m.y) + "px" });
+  });
+  addEventListener("pointerup", ev => {
+    if (!m) return; const s = m; m = null; s.el?.remove(); if (!s.on) return;
+    quiet = true; setTimeout(() => quiet = false, 0); // the click that follows a drag is not a click on a type
+    const x0 = Math.min(s.x, ev.clientX), x1 = Math.max(s.x, ev.clientX), y0 = Math.min(s.y, ev.clientY), y1 = Math.max(s.y, ev.clientY);
+    const kinds = [...box.querySelectorAll("[data-t]")].filter(c => c.dataset.t !== "*" && (r => r.right > x0 && r.left < x1 && r.bottom > y0 && r.top < y1)(c.getBoundingClientRect())).map(c => c.dataset.t);
+    if (kinds.length) tellGraph({ kind: "kinds", kinds, add: s.add });
+  });
+  box.addEventListener("click", ev => { if (quiet) ev.stopImmediatePropagation(); }, true);
+})();
 
 /* ---------------- tree mode: a forest built from `selection` ---------------- */
 

@@ -4523,17 +4523,22 @@ test("e2e: graph: a type's list in Browse shows that type in the graph's grid, a
   });
 });
 
-test("e2e: graph: the count beside a type in the legend opens that type as a grid, and pressing it again leaves", async () => {
+test("e2e: graph: Ctrl+click on a type in the legend puts it in a grid, Ctrl+click again takes it out, and a plain click hides it", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
     const cat = () => frame.evaluate(() => (window as any).__graph.cat());
-    const btn = page.locator('#graphInfo [data-g="organization"]');
-    await btn.waitFor();
-    await btn.click();
+    const chip = page.locator('#graphInfo [data-t="organization"]');
+    await chip.waitFor();
+    await chip.click({ modifiers: ["Control"] });
     await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
     assert.equal((await cat()).n, 2);
-    await btn.click();
+    await chip.click({ modifiers: ["Control"] });
     await frame.waitForFunction(() => (window as any).__graph.cat() === null);
+    await chip.click({ modifiers: ["Control"] });
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
+    await chip.click(); // hiding the only type of the grid leaves the grid: no empty area
+    await frame.waitForFunction(() => (window as any).__graph.cat() === null);
+    assert.equal(await frame.evaluate(() => (window as any).__graph.hiddenKinds.has("organization")), true);
   });
 });
 
@@ -4541,13 +4546,13 @@ test("e2e: graph: All opens every type as sections of one grid, and a node picke
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
     const cat = () => frame.evaluate(() => (window as any).__graph.cat());
-    await page.locator('#graphInfo [data-g="*"]').click();
+    await page.locator('#graphInfo [data-t="*"]').click();
     await frame.waitForFunction(() => (window as any).__graph.cat()?.kinds.length === 4);
     assert.equal((await cat()).n, 5);
     await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
     await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
     assert.equal((await cat()).n, 5, "the grid stays open");
-    await page.locator('#graphInfo [data-g="*"]').click();
+    await page.locator('#graphInfo [data-t="*"]').click();
     await frame.waitForFunction(() => (window as any).__graph.cat() === null);
   });
 });
