@@ -653,7 +653,7 @@ async function openInPortal(n) {
   };
   sigma.on("afterRender", measurePx);
   // the node shader has its own copy of the size rule (1/sqrt(zoom)): hand it a zoom that gives the same pixels as scaleSize
-  for (const prog of Object.values(sigma.nodePrograms ?? {})) {
+  for (const prog of [...Object.values(sigma.nodePrograms ?? {}), ...Object.values(sigma.nodeHoverPrograms ?? {})]) { // the hovered node is drawn again by the hover shader: it needs the same correction, or it is the wrong size
     const draw = prog.render.bind(prog);
     prog.render = t => draw(K ? { ...t, ratio: Math.pow(sigma.cameraSizeRatio, 2) } : t);
   }
