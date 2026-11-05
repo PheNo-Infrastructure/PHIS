@@ -11,6 +11,7 @@
   * { box-sizing: border-box; }
   body { margin:0; font:14px/1.45 "Public Sans", system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid; grid-template-columns:1fr 300px; height:100vh; }
   #graph { position:relative; min-width:0; }
+  :root.embed, :root.embed body { overflow:hidden; } /* the frame is the whole view: never scrollbars inside it */
   :root.embed body { grid-template-columns:1fr; } :root.embed #side { display:none; } /* in the portal this panel lives in its Selection pane */
   #side { background:var(--surface); border-left:1px solid var(--line); padding:14px; overflow:auto; }
   h1 { font-size:15px; margin:0 0 4px; }
