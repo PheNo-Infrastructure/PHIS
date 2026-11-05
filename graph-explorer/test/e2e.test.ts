@@ -4542,7 +4542,7 @@ test("e2e: graph: Ctrl+click on a type in the legend puts it in a grid, Ctrl+cli
   });
 });
 
-test("e2e: graph: All opens every type as sections of one grid, and a node picked in the grid is selected while the grid stays", async () => {
+test("e2e: graph: All opens every type as sections of one grid, and picking a node leaves the grid for its connected view", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
     const cat = () => frame.evaluate(() => (window as any).__graph.cat());
@@ -4551,8 +4551,6 @@ test("e2e: graph: All opens every type as sections of one grid, and a node picke
     assert.equal((await cat()).n, 5);
     await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
     await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
-    assert.equal((await cat()).n, 5, "the grid stays open");
-    await page.locator('#graphInfo [data-t="*"]').click();
     await frame.waitForFunction(() => (window as any).__graph.cat() === null);
   });
 });

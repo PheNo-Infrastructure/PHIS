@@ -942,6 +942,7 @@ async function openInPortal(n) {
     apply(mode !== "replace");
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     selected = sel.size ? [...sel].at(-1) : cur;
+    if (catView && !fromPortal && (mode !== "replace" || ids.length)) exitCat(false, () => { if (lit) fitLit(); }); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     refresh(); stats(); renderPanel(); tellPortal();
   }
   // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
