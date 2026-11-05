@@ -236,6 +236,7 @@ async function openInPortal(n) {
   function computeLit() {
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     findClusters();
+    compactBox.parentElement.style.display = clusters.length ? "" : "none"; // Compact switches the painted cluster areas: a graph without clusters has nothing for it to do
     litSel = new Set(); misfit = new Set(); canLink = new Set();
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; });
     const L = lens();
