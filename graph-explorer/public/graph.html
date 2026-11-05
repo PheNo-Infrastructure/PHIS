@@ -398,7 +398,7 @@ async function openInPortal(n) {
         const off = collapsed.has(c.key), ck = "cc:" + shade.get(c.key);
         for (const id of c.members) {
           if (!inLayout(id)) continue;
-          if (off) dot(id, ck, c.typeKind ? CLOSED_R * 3 : CLOSED_R); else if (isVisible(id)) dot(id, filterKind(g.getNodeAttributes(id)), OPEN_R);
+          if (off) dot(id, ck, c.typeKind ? CLOSED_R * 3 : CLOSED_R); else if (isVisible(id)) { const d = sigma.getNodeDisplayData(id), px = d ? sigma.scaleSize(d.size) : 0; dot(id, filterKind(g.getNodeAttributes(id)), px ? Math.min(OPEN_R, Math.max(.07, px * 2.27 * ratio / BLOB)) : OPEN_R); } // a drawn node's flat core is no wider than the node itself (a fixed size looked like a big disc when the nodes are small on screen)
         }
       }
     }
