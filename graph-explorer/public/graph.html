@@ -984,8 +984,8 @@ async function openInPortal(n) {
     const leaving = catView && !fromPortal && (mode !== "replace" || ids.length);
     if (leaving) exitCat(false, () => plain() ? gather() : lit && fitLit()); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     refresh(); stats(); renderPanel(); tellPortal();
-    if (!leaving && sel.size && !catView) { if (plain()) gather(); else if (lit) fitLit(); } // a big graph keeps its layout: the camera goes to the selection and what it links to
-    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
+    if (!leaving && sel.size && !catView) { if (plain()) gather(); else if (lit) gatherBig(); }
+    if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
   // Inside the portal the selection is shared with its Selection pane: ours goes up, theirs comes in. The portal's action bar does the linking.
   let fromPortal = false, told = "";
@@ -1180,7 +1180,7 @@ async function openInPortal(n) {
     const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || (catView && !keep) || !pxu1) return; // key null: every node of the types, whatever its cluster (Browse and the legend ask for this)
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kinds.includes(kindOf(id))).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
-    if (gathering) gathering.stop = true; snapHome();
+    if (gathering) gathering.stop = true; releasePulled(); snapHome();
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
     const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 130, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and a little below // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
     // Size inside a grid follows the links between the grid's own nodes (log scale, none below 7); the links to the hidden rest of the graph do not count. The first sizes come back when the grid is left.
@@ -1245,6 +1245,26 @@ async function openInPortal(n) {
     const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), to = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
     sigma.getCamera().animate({ x:to.x, y:to.y, ratio: Math.max(.3, st.ratio * f) }, { duration: 500 }); // never closer than about 3x: a lone node is not blown up to fill the screen
   }
+  // A big graph keeps its clusters, but what is selected and what it links to is pulled together into one compact group for as long as it is selected (it may be spread over many clusters), then the camera goes to it.
+  // Their first places are kept in `pulled`; clearing the selection hands them to the restore glide, a new selection sends the ones no longer involved back first.
+  const pulled = new Map();
+  function gatherBig() {
+    if (!lit || catView || plain()) return;
+    zoomedToSelection = true; if (gathering) gathering.stop = true;
+    const L = [...lit].filter(id => g.hasNode(id) && !g.getNodeAttribute(id, "fixed")), inL = new Set(L);
+    if (L.length < 2 || L.length > 600) return fitLit();
+    const back = []; for (const [id, p] of pulled) if (!inL.has(id) && g.hasNode(id)) { back.push({ id, x: p.x, y: p.y }); pulled.delete(id); } // no longer involved: back to their place
+    for (const id of L) { home.delete(id); if (!pulled.has(id)) { const a = g.getNodeAttributes(id); pulled.set(id, { x: a.x, y: a.y }); } }
+    let cx = 0, cy = 0, n = 0; for (const id of litSel) if (inL.has(id)) { const p = pulled.get(id); cx += p.x; cy += p.y; n++; } if (!n) { for (const id of L) { const p = pulled.get(id); cx += p.x; cy += p.y; n++; } } cx /= n; cy /= n;
+    const sub = new Graph({ type: "undirected" }); L.forEach(id => sub.addNode(id, { x: Math.random(), y: Math.random() })); g.forEachEdge((e, a, s2, t2) => { if (inL.has(s2) && inL.has(t2) && !sub.hasEdge(s2, t2)) sub.addEdge(s2, t2); });
+    FA2.assign(sub, { iterations: 250, settings: { ...FA2.inferSettings(sub), gravity: 1, scalingRatio: 8, slowDown: 4 } });
+    let mx = 0, my = 0; sub.forEachNode((id, a) => { mx += a.x / L.length; my += a.y / L.length; });
+    const ds = L.map(id => { const a = sub.getNodeAttributes(id); return Math.hypot(a.x - mx, a.y - my); }).sort((p, q) => p - q), r90 = Math.max(1e-9, ds[Math.floor(ds.length * .9)]);
+    const avgR = L.reduce((t, id) => t + g.getNodeAttribute(id, "size"), 0) / L.length * K, R = Math.sqrt(L.length * Math.pow(3.2 * avgR, 2) / Math.PI), f = R / r90; // room for every node to be seen, names beside them
+    const moves = L.map(id => { const a = sub.getNodeAttributes(id); return { id, x: cx + (a.x - mx) * f, y: cy + (a.y - my) * f }; });
+    const all = [...moves, ...back]; gathering = all; tween(all, 500, () => { if (gathering === all) gathering = null; fitLit(); });
+  }
+  const releasePulled = () => { for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
   const snapHome = () => { for (const [id, h] of home) if (g.hasNode(id)) g.mergeNodeAttributes(id, { x: h.x, y: h.y }); home.clear(); };
   // The connected view: the camera frames only the selection and what it links to (they stay where they are). Everything else moves aside as whole blocks, each group of unselected nodes that link to each other as one,
   // to just beyond the frame, so it keeps its shape and its place among the others and is in sight when you zoom out. Clearing the selection glides everything home.
@@ -1426,7 +1446,7 @@ async function openInPortal(n) {
   // The Clusters switch: lay the graph out again in the other mode. A grid and a selection are left first.
   compactBox.onchange = () => {
     const want = compactBox.checked;
-    if (gathering) gathering.stop = true; snapHome(); zoomedToSelection = false;
+    if (gathering) gathering.stop = true; releasePulled(); snapHome(); zoomedToSelection = false;
     if (catView) { for (const [id, v] of catView.sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); catView = null; crumbs.hidden = true; labelSlot.clear(); }
     if (sel.size) setSelection([], "replace");
     clusterMode = want; clusterKey = ""; collapsed.clear();
