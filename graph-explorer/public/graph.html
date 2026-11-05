@@ -381,7 +381,7 @@ async function openInPortal(n) {
     const at = id => { const L = lag.get(id) ?? g.getNodeAttributes(id), v = sigma.graphToViewport({ x:L.x, y:L.y }); return { x: v.x, y: v.y }; };
     const groups = new Map(), put = (key, pt) => { if (!groups.has(key)) groups.set(key, []); groups.get(key).push(pt); };
     // core: the node's own flat circle of colour, as wide as the node is drawn (so a node resized for the selection does not sit in a much larger disc), never wider than the usual blob
-    for (const id of tintIds) if (isVisible(id)) { const d = sigma.getNodeDisplayData(id), px = d ? sigma.scaleSize(d.size) : 12; put(keyOf(id), { ...at(id), r: Math.min(BLOB, Math.max(26, px * 3.2 * ratio)), core: true }); }
+    for (const id of tintIds) if (isVisible(id)) { const d = sigma.getNodeDisplayData(id), px = d ? sigma.scaleSize(d.size) : 12; put(keyOf(id), { ...at(id), r: Math.min(BLOB, Math.max(18, px * 2.27 * ratio)), core: true }); }
     // Clusters: a collapsed one is painted from where its (hidden) nodes are, in one colour per cluster; an open one in its nodes' own colours.
     const near = BLOB / ratio, cent = clusters.map(c => { let x = 0, y = 0; for (const id of c.members) { const a = g.getNodeAttributes(id); x += a.x; y += a.y; } return [x / c.members.length, y / c.members.length]; }), shade = new Map();
     clusters.forEach((c, i) => { // each cluster takes the colour whose nearest user is farthest away, so neighbours differ
