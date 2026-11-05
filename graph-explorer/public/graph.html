@@ -591,7 +591,7 @@ async function openInPortal(n) {
     for (const c of clusters) { const by = new Map(); for (const id of c.members) if (sub.hasNode(id)) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
       for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: c.typeKind ? TYPE_PULL * .4 : TYPE_PULL }); } }
     // once the two-level layout has set the scale (small, dense), the live step must not use the global strong repulsion: it would blow the clusters apart
-    FA2.assign(sub, { iterations, settings: K ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : settingsFor(sub) });
+    FA2.assign(sub, { iterations, settings: K && clusters.length ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : settingsFor(sub) }); // a plain graph was laid out with settingsFor: the live step must not change the physics under it
     sub.forEachNode((id, a) => g.hasNode(id) && g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
     spreadClusters(3); collide(2);
   }
