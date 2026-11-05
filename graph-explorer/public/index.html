@@ -171,7 +171,6 @@ body[data-view="browse"] #pagePane { display: none; }
 .graph-info .verdict.later { border-color: #d08a2e; background: rgba(208,138,46,.14); }
 .graph-info ul { padding-left: 16px; margin: 6px 0; } .graph-info li a { color: var(--accent); cursor: pointer; }
 #graphPane iframe { display: block; width: 100%; height: min(640px, calc(100vh - 80px)); border: 0; }
-#graphPane.grid-open iframe { height: max(640px, calc(100vh - 110px)); }
 /* Browse: the graph sits under the list and detail, and the Selection pane runs down beside both and follows the screen, so linking never needs a scroll back up.
    The detail scrolls inside its pane instead of pushing the graph away. */
 @media (min-width: 761px) {
@@ -4968,7 +4967,6 @@ window.addEventListener("message", ev => {
   if (ev.origin !== location.origin || ev.source !== graphWin() || !m) return;
   if (m.kind === "ready") { graphSig = undefined; syncGraph(); }
   else if (m.kind === "panel") { const box = document.getElementById("graphInfo"); box.innerHTML = m.html; box.hidden = false; }
-  else if (m.kind === "grid") { const pane = document.getElementById("graphPane"); pane.classList.toggle("grid-open", !!m.open); if (m.open) pane.scrollIntoView({ behavior: "smooth", block: "start" }); } // a grid needs room: the pane grows to the screen while one is open
   else if (m.kind === "open") openRelatedNode(m.item);
   else if (m.kind === "graph-selection") {
     const next = new Map([...selection].filter(([, x]) => !GRAPH_TYPES.has(x.type)));
