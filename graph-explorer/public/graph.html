@@ -279,7 +279,8 @@ async function openInPortal(n) {
     edgeReducer: (ed, a) => {
       const [s, t] = g.extremities(ed);
       if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t))) return { ...a, hidden:true };
-      return fx.flash.has(edgeKey(s, t)) ? { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 } : a;
+      if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
+      return catView && !lit ? { ...a, color: dark ? "#2b3328" : "#e1e8d4", size: .6 } : a; // in a category grid the links of a whole type run together: thin and pale, so the names carry the view
     },
   });
   function refresh() { computeLit(); sigma.refresh(); }
