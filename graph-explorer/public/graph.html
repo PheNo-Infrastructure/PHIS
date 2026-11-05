@@ -1189,12 +1189,12 @@ async function openInPortal(n) {
     const box = terr.getBoundingClientRect(), pts = [...lit].filter(isVisible).map(id => sigma.graphToViewport(g.getNodeAttributes(id))); if (!pts.length) return;
     const x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y)), st = sigma.getCamera().getState();
     const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), to = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
-    sigma.getCamera().animate({ x:to.x, y:to.y, ratio: st.ratio * f }, { duration: 500 });
+    sigma.getCamera().animate({ x:to.x, y:to.y, ratio: Math.max(.3, st.ratio * f) }, { duration: 500 }); // never closer than about 3x: a lone node is not blown up to fill the screen
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
     const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); crumbs.hidden = true; labelSlot.clear();
-    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); else fitView(); done?.(); }); // the way back refits the whole graph
+    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); else { fitView(); sigma.refresh(); } done?.(); }); // the render makes Sigma use the refitted camera at once; whatever 'done' measures (fitLit) must see it // the way back refits the whole graph
     refresh(); stats();
   }
   function showCrumbs() {
