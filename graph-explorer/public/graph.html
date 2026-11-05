@@ -290,7 +290,7 @@ async function openInPortal(n) {
     // Sigma draws a hovered node with a white label box, unreadable in the dark theme
     allowInvalidContainer: true, // the portal's graph pane is hidden (zero width) on other views
     renderLabels: false,
-    hoverRenderer: (ctx, d) => { ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 2, 0, Math.PI * 2); ctx.fill(); },
+    hoverRenderer: (ctx, d) => { ctx.strokeStyle = d.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 2, 0, Math.PI * 2); ctx.stroke(); }, // a ring, not a filled disc: if the node is ever drawn smaller than its size says, the highlight stays a thin outline
     labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
     nodeReducer: (id, a) => {
       if (!isVisible(id)) return { ...a, hidden:true };
