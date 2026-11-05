@@ -4537,6 +4537,21 @@ test("e2e: graph: the count beside a type in the legend opens that type as a gri
   });
 });
 
+test("e2e: graph: All opens every type as sections of one grid, and a node picked in the grid is selected while the grid stays", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const cat = () => frame.evaluate(() => (window as any).__graph.cat());
+    await page.locator('#graphInfo [data-g="*"]').click();
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kinds.length === 4);
+    assert.equal((await cat()).n, 5);
+    await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
+    await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
+    assert.equal((await cat()).n, 5, "the grid stays open");
+    await page.locator('#graphInfo [data-g="*"]').click();
+    await frame.waitForFunction(() => (window as any).__graph.cat() === null);
+  });
+});
+
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);

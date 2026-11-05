@@ -21,14 +21,14 @@
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
   .chip.static { cursor:default; border-color:transparent; background:none; }
-  .chipset { display:inline-flex; } .chipset .chip:first-child:not(:last-child) { border-top-right-radius:0; border-bottom-right-radius:0; } .chip.open { border-top-left-radius:0; border-bottom-left-radius:0; margin-left:-1px; padding:2px 7px; } /* the count beside a type: opens that type as a grid */
+  .chipset { display:inline-flex; } .chipset .chip:first-child:not(:last-child) { border-top-right-radius:0; border-bottom-right-radius:0; } .chip.open[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); } .chip.open.all { border-radius:99px; margin-left:4px; } .chip.open { border-top-left-radius:0; border-bottom-left-radius:0; margin-left:-1px; padding:2px 7px; } /* the count beside a type: opens that type as a grid */
   button, .chk { font:inherit; padding:5px 10px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:6px; cursor:pointer; }
   .chk { display:inline-flex; gap:6px; align-items:center; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
-  #crumbs { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:3; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-size:13px; display:flex; gap:8px; align-items:center; }
+  #crumbs { position:absolute; top:54px; left:10px; max-width:calc(100% - 20px); z-index:3; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-size:13px; display:flex; gap:8px; align-items:center; }
   #crumbs[hidden] { display:none; }
   #crumbs button { border:0; background:none; padding:0; color:var(--accent); cursor:pointer; font:inherit; }
   #terr { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:1; }
@@ -720,8 +720,10 @@ async function openInPortal(n) {
   function renderChips() {
     const legend = document.getElementById("legend");
     const count = {}; g.forEachNode(id => { if (inLayout(id)) { const k = filterKind(g.getNodeAttributes(id)); count[k] = (count[k] || 0) + 1; } });
-    legend.innerHTML = FILTERS.map(t => `<span class="chipset"><button class="chip" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}</button>${count[t] > 1 ? `<button class="chip open" data-g="${t}" title="Show the ${count[t]} ${PLURAL[t] || NAMES[t].toLowerCase() + "s"} on their own">${count[t]}</button>` : ""}</span>`).join("");
-    legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = () => showCategory(catView?.kind === b.dataset.g ? null : b.dataset.g)); // the same grid as the big graph's category view; press again to leave
+    legend.innerHTML = FILTERS.map(t => `<span class="chipset"><button class="chip" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}</button>${count[t] > 1 ? `<button class="chip open" data-g="${t}"${catView?.kinds.includes(t) ? ' aria-pressed="true"' : ""} title="Show the ${count[t]} ${PLURAL[t] || NAMES[t].toLowerCase() + "s"} on their own. Ctrl+click adds or removes a type">${count[t]}</button>` : ""}</span>`).join("") + (FILTERS.filter(k => count[k]).length > 1 ? `<span class="chipset"><button class="chip open all" data-g="*" title="Show every type as a grid, one section each">All</button></span>` : "");
+    legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = ev => { // the same grid as the big graph's category view: plain = that type alone (again = leave), Ctrl/Shift = add or remove the type, All = every type
+      const t = b.dataset.g, cur = catView?.kinds ?? [], all = FILTERS.filter(k => count[k]), many = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+      setKinds(t === "*" ? (cur.length === all.length ? [] : all) : many ? (cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]) : cur.length === 1 && cur[0] === t ? [] : [t]); });
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = () => { hiddenKinds.has(b.dataset.t) ? hiddenKinds.delete(b.dataset.t) : hiddenKinds.add(b.dataset.t); refreshView(); });
   }
   function stats() {
@@ -920,7 +922,6 @@ async function openInPortal(n) {
   }
   // mode: "replace" (plain click, window), "toggle" (Ctrl+click), "add" (Ctrl+window)
   function setSelection(ids, mode) {
-    if (catView && (mode !== "replace" || ids.length)) exitCat(false, () => { if (lit) fitLit(); }); // selecting a node of a category shows the normal connected view
     if (mode === "replace") sel.clear();
     for (const id of ids) {
       if (!g.hasNode(id)) continue;
@@ -946,17 +947,18 @@ async function openInPortal(n) {
       if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; }
       else if (m.kind === "changed") reconcile(true);
       else if (m.kind === "category") showCategory(m.type);
-      else if (m.kind === "click") { try { document.querySelector(m.selector)?.click(); } catch {} } // a click on the mirrored panel
+      else if (m.kind === "click") { try { document.querySelector(m.selector)?.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: !!m.ctrl })); } catch {} } // a click on the mirrored panel
     });
   }
   // Browse is on a type's list: show that type in the grid; any other page puts the graph back.
-  function showCategory(kind, tries = 20) {
-    if (!kind) return catView && exitCat(false);
-    if (catView?.kind === kind) return;
-    if (catView) return exitCat(false, () => showCategory(kind));
-    if (!pxu1 && tries) return setTimeout(() => showCategory(kind, tries - 1), 150); // the first frame has not been measured yet
-    enterCat(null, kind);
+  function setKinds(kinds, tries = 20) { // the types shown as grid sections, in the legend's order; none = back to the graph
+    kinds = FILTERS.filter(k => kinds.includes(k));
+    if (!kinds.length) return catView && exitCat(false);
+    if (catView && catView.kinds.join() === kinds.join()) return;
+    if (!pxu1 && tries) return setTimeout(() => setKinds(kinds, tries - 1), 150); // the first frame has not been measured yet
+    const keep = catView?.saved; catView = null; enterCat(null, kinds, keep); // replacing one grid by another goes straight there, no trip back to the graph
   }
+  const showCategory = kind => setKinds(kind ? [kind] : []);
   function setCurrent(id) { cur = id && g.hasNode(id) ? id : null; selected = sel.size ? [...sel].at(-1) : cur; apply(false); refresh(); stats(); renderPanel(); }
   async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
 
@@ -1108,24 +1110,36 @@ async function openInPortal(n) {
   const tween = (moves, ms, done) => { const t0 = performance.now(), from = moves.map(m => { const a = g.getNodeAttributes(m.id); return [a.x, a.y]; });
     const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); moves.forEach((m, i) => g.hasNode(m.id) && g.mergeNodeAttributes(m.id, { x: from[i][0] + (m.x - from[i][0]) * e, y: from[i][1] + (m.y - from[i][1]) * e })); sigma.refresh(); if (k < 1) requestAnimationFrame(step); else done?.(); };
     requestAnimationFrame(step); };
-  function enterCat(key, kind) {
-    const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || catView || !pxu1) return; // key null: every node of the type, whatever its cluster (Browse asks for this)
-    const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kindOf(id) === kind).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
+  function enterCat(key, kind, keep) { // kind: one type or a list of types; keep: the first positions, when a grid is replaced by another
+    const kinds = [].concat(kind);
+    const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || (catView && !keep) || !pxu1) return; // key null: every node of the types, whatever its cluster (Browse and the legend ask for this)
+    const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kinds.includes(kindOf(id))).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
-    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 90, n = ids.length; // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
+    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 130, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and a little below // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
     const sizes = ids.map(id => g.getNodeAttribute(id, "size")), avg = sizes.reduce((t, v) => t + v, 0) / n, maxS = Math.max(...sizes);
     tctx.font = LABEL_FONT; const labelW = Math.min(190, Math.max(...ids.map(id => tctx.measureText(String(g.getNodeAttribute(id, "label")).slice(0, 32)).width)) + 10);
-    let R0 = 46, cols = 1, rows = n, cellW = 0, cellH = 0;
-    for (; R0 >= 9; R0--) { // the largest nodes that still let the whole grid fit; below that it is allowed to run over the screen
-      const maxR = R0 * maxS / avg; cellW = 2 * maxR + labelW + 40; cellH = 2 * maxR + 22;
-      cols = Math.max(1, Math.min(n, Math.floor(uw / cellW))); rows = Math.ceil(n / cols); if (rows * cellH <= uh) break;
-    }
-    R0 = Math.max(9, R0); const sc = R0 / (avg * K); // pixels per graph unit
-    const gw = cols * cellW / sc, gh = rows * cellH / sc;
+    // One section per type (in the legend's order), packed in shelves: left to right, a new shelf when the row is full. One node size for all, the largest that lets everything fit.
+    const secs = kinds.map(k => ({ kind: k, ids: ids.filter(id => kindOf(id) === k) })).filter(sc => sc.ids.length), HEAD = secs.length > 1 ? 24 : 0, GAP = 26;
+    // Order by links: a section's nodes are placed by the mean position of their neighbours in the sections before it (so linked nodes sit across from each other), the rest grouped by their best-connected neighbour, then by name.
+    { const pos = new Map(), hubOf = id => { let best = "", bd = -1; g.forEachNeighbor(id, nb => { const d = g.degree(nb); if (d > bd || (d === bd && nb < best)) { best = nb; bd = d; } }); return best; };
+      for (const sc of secs) { const mean = new Map(sc.ids.map(id => { let t = 0, c = 0; g.forEachNeighbor(id, nb => { if (pos.has(nb)) { t += pos.get(nb); c++; } }); return [id, c ? t / c : null]; })), hub = new Map(sc.ids.map(id => [id, hubOf(id)]));
+        sc.ids.sort((a, b) => { const ma = mean.get(a), mb = mean.get(b); if (ma !== mb) return ma === null ? 1 : mb === null ? -1 : ma - mb; return hub.get(a) < hub.get(b) ? -1 : hub.get(a) > hub.get(b) ? 1 : String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))); });
+        sc.ids.forEach((id, i) => pos.set(id, i / Math.max(1, sc.ids.length - 1))); } }
+    const nameW = secs.length > 1 ? Math.min(labelW, 140) : labelW; // several sections: a tighter name column, so more than one section fits on a shelf
+    const pack = (R, UW = uw, z = 1) => { const maxR = R * maxS / avg, cw = 2 * maxR + nameW + (secs.length > 1 ? 24 : 40), ch = 2 * maxR + 22, fit = Math.max(1, Math.floor(UW / cw)), head = HEAD * z, gap = GAP * z; let x = 0, y = 0, rowH = 0, W = 0;
+      const blocks = secs.map(sc => { const m = sc.ids.length, cols = secs.length > 1 ? Math.min(m, fit, Math.ceil(Math.sqrt(m))) : Math.min(m, fit), w = cols * cw, h = head + Math.ceil(m / cols) * ch;
+        if (x && x + w > UW) { y += rowH + gap; x = 0; rowH = 0; } const b = { ...sc, cols, x, y, head }; x += w + gap; rowH = Math.max(rowH, h); W = Math.max(W, b.x + w); return b; });
+      return { blocks, cw, ch, maxR, W, H: y + rowH, z }; };
+    let R0 = 46, lay = pack(R0);
+    for (; R0 >= 6; R0--) { lay = pack(R0); if (lay.H <= uh) break; } // below 6 the camera zooms out instead (names then appear as you zoom in)
+    R0 = Math.max(6, R0); lay = pack(R0);
+    if (lay.H > uh) for (let z = 1.1; z < 60; z *= 1.08) { lay = pack(R0, uw * z, z); if (lay.H <= uh * z) break; } // still too big: lay it out as wide as the screen's shape allows, then zoom the camera out by the same factor
+    const sc = R0 / (avg * K); // pixels per graph unit
+    const gw = lay.W / sc, gh = lay.H / sc;
     let sx = 0, sy = 0; for (const id of ids) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; } const cx = sx / n, cy = sy / n;
-    const left = cx - gw / 2, top = cy - gh / 2, saved = new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
-    const maxRpx = R0 * maxS / avg, moves = ids.map((id, i) => ({ id, x: left + (i % cols) * cellW / sc + (maxRpx + 7) / sc, y: top + (Math.floor(i / cols) + .5) * cellH / sc })); // the node on the left of its cell, its name to the right
+    const left = cx - gw / 2, top = cy + gh / 2, saved =  /* graph y points up: top is the top edge on screen, rows run down from it */  new Map(ids.map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
+    const moves = lay.blocks.flatMap(b => b.ids.map((id, i) => ({ id, x: left + (b.x + (i % b.cols) * lay.cw) / sc + (lay.maxR + 7) / sc, y: top - (b.y + b.head + (Math.floor(i / b.cols) + .5) * lay.ch) / sc }))), heads = secs.length > 1 ? lay.blocks.map(b => ({ kind: b.kind, n: b.ids.length, x: left + b.x / sc, y: top - b.y / sc })) : []; // the node on the left of its cell, its name to the right
     // Everything else keeps its order and moves as whole blocks (the rest of this cluster, every other cluster, each loose node), clear of the screen and of each other, so nothing lands on a neighbour.
     const mem = new Set(ids), nbs = new Set(); for (const id of ids) g.forEachNeighbor(id, nb => { if (!mem.has(nb) && inLayout(nb)) nbs.add(nb); });
     const hx = Math.max(gw / 2, box.width / 2 / sc), hy = Math.max(gh / 2, box.height / 2 / sc), RS = Math.hypot(hx, hy);
@@ -1142,11 +1156,11 @@ async function openInPortal(n) {
       for (const u of U) { const dx = u.x - cx, dy = u.y - cy, d = Math.hypot(dx, dy), want = u.own ? RS * 1.05 + u.r : beyond + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = cx + (d < 1e-9 ? want : dx * k); u.y = cy + (d < 1e-9 ? 0 : dy * k); moved = true; } }
       if (!moved) break; }
     for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id); moves.push({ id, x: u.x + (a.x - u.ox), y: u.y + (a.y - u.oy) }); }
-    catView = { key, kind, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
-    // the camera: the grid centred, or its top left corner when it is taller than the screen
-    const over = gh * sc > uh, centre = { x: left + gw / 2, y: over ? top + (uh * .8) / sc : top + gh / 2 };
-    const vp = sigma.graphToViewport(centre), fr = sigma.viewportToFramedGraph(vp);
-    sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc }, { duration: 500 });
+    catView = { key, kind: kinds[0], kinds, heads, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
+    if (keep) for (const [id, p] of keep) saved.set(id, p); // the way back is to the layout before the first grid, not to the previous grid
+    // the camera: the whole grid centred, zoomed out as far as it takes to see all of it
+    const zoomOut = Math.max(1, lay.H / uh, lay.W / uw), vp = sigma.graphToViewport({ x: cx, y: cy + 40 * zoomOut / sc }), fr = sigma.viewportToFramedGraph(vp); // 40 px lower on screen: the breadcrumb is above
+    sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: pxu1 / sc * zoomOut }, { duration: 500 });
     tween(moves, 500, () => { ids.forEach(id => g.setNodeAttribute(id, "fixed", true)); collide(40); ids.forEach(id => g.removeNodeAttribute(id, "fixed")); sigma.refresh(); }); lit = null; sel.clear(); refresh(); stats(); showCrumbs();
   }
   function fitLit() { // the camera onto the selection and what it links to
@@ -1157,16 +1171,17 @@ async function openInPortal(n) {
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
-    const { saved, key, typeKind, cam } = catView; if (typeKind && toCluster) { toCluster = false; sigma.getCamera().animate({ x: cam.x, y: cam.y, ratio: cam.ratio }, { duration: 500 }); } catView = null; crumbs.hidden = true; labelSlot.clear();
-    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); done?.(); });
+    const { saved, key, typeKind } = catView; if (typeKind) toCluster = false; catView = null; crumbs.hidden = true; labelSlot.clear();
+    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); else fitView(); done?.(); }); // the way back refits the whole graph
     refresh(); stats();
   }
   function showCrumbs() {
     crumbs.hidden = !catView; if (!catView) return;
-    const html = `<button data-c="all">Overview</button> &rsaquo; ${catView.name ? `<button data-c="cluster">${e(catView.name)}</button> &rsaquo; ` : ""}<b>${e(PLURAL[catView.kind] || (NAMES[catView.kind] || catView.kind).toLowerCase() + "s")}, ${catView.n}</b>`;
+    const html = `<button data-c="all">Overview</button> &rsaquo; ${catView.name ? `<button data-c="cluster">${e(catView.name)}</button> &rsaquo; ` : ""}<b>${catView.kinds.length > 3 ? catView.kinds.length + " types" : catView.kinds.map(k => e(PLURAL[k] || (NAMES[k] || k).toLowerCase() + "s")).join(" + ")}, ${catView.n}</b>`;
     if (crumbs.dataset.h !== html) { crumbs.dataset.h = html; crumbs.innerHTML = html; crumbs.querySelectorAll("button").forEach(b => b.onclick = () => { exitCat(b.dataset.c === "cluster"); if (b.dataset.c === "all") setTimeout(fitView, 480); }); }
   }
   const gapOf = G => G.spread * Math.sqrt(Math.PI / (G.c.members.length * .9)); // the average distance between neighbours in the cluster, on screen
+  let chipsOf = "";
   function drawTerritories() {
     const box = terr.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1, w = box.width, h = box.height;
     if (terr.width !== Math.round(w * k) || terr.height !== Math.round(h * k)) { terr.width = Math.round(w * k); terr.height = Math.round(h * k); }
@@ -1174,6 +1189,8 @@ async function openInPortal(n) {
     if (!clusters.length || !compactBox.checked) { lctx2.clearRect(0, 0, links.width, links.height); }
     terrHits = []; terrLabels = []; catHits = [];
     if (catView) showCrumbs(); else crumbs.hidden = true;
+    { const ck = catView ? catView.kinds.join() : ""; if (ck !== chipsOf) { chipsOf = ck; renderChips(); } } // the pressed counts follow the grid, however it was opened or left
+    if (catView?.heads.length) { tctx.font = '600 13px "Public Sans", system-ui, sans-serif'; tctx.fillStyle = "#264030"; for (const h of catView.heads) { const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; tctx.fillText(`${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`, v.x, v.y + 14); } }
     if (!w || !h || !clusters.length || !compactBox.checked) return;
     const geo = new Map();
     clusters.forEach((c, i) => {
@@ -1301,7 +1318,7 @@ async function openInPortal(n) {
   const want = params.get("focus");
   if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, pushStep, home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
