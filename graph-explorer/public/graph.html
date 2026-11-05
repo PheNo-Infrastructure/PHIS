@@ -21,6 +21,7 @@
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
   .chip.static { cursor:default; border-color:transparent; background:none; }
+  .chipset { display:inline-flex; } .chipset .chip:first-child:not(:last-child) { border-top-right-radius:0; border-bottom-right-radius:0; } .chip.open { border-top-left-radius:0; border-bottom-left-radius:0; margin-left:-1px; padding:2px 7px; } /* the count beside a type: opens that type as a grid */
   button, .chk { font:inherit; padding:5px 10px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:6px; cursor:pointer; }
   .chk { display:inline-flex; gap:6px; align-items:center; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -717,7 +718,9 @@ async function openInPortal(n) {
   // ---- type chips ----
   function renderChips() {
     const legend = document.getElementById("legend");
-    legend.innerHTML = FILTERS.map(t => `<button class="chip" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}</button>`).join("");
+    const count = {}; g.forEachNode(id => { if (inLayout(id)) { const k = filterKind(g.getNodeAttributes(id)); count[k] = (count[k] || 0) + 1; } });
+    legend.innerHTML = FILTERS.map(t => `<span class="chipset"><button class="chip" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}</button>${count[t] > 1 ? `<button class="chip open" data-g="${t}" title="Show the ${count[t]} ${PLURAL[t] || NAMES[t].toLowerCase() + "s"} on their own">${count[t]}</button>` : ""}</span>`).join("");
+    legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = () => showCategory(catView?.kind === b.dataset.g ? null : b.dataset.g)); // the same grid as the big graph's category view; press again to leave
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = () => { hiddenKinds.has(b.dataset.t) ? hiddenKinds.delete(b.dataset.t) : hiddenKinds.add(b.dataset.t); refreshView(); });
   }
   function stats() {

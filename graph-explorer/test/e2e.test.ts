@@ -4523,6 +4523,20 @@ test("e2e: graph: a type's list in Browse shows that type in the graph's grid, a
   });
 });
 
+test("e2e: graph: the count beside a type in the legend opens that type as a grid, and pressing it again leaves", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const cat = () => frame.evaluate(() => (window as any).__graph.cat());
+    const btn = page.locator('#graphInfo [data-g="organization"]');
+    await btn.waitFor();
+    await btn.click();
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
+    assert.equal((await cat()).n, 2);
+    await btn.click();
+    await frame.waitForFunction(() => (window as any).__graph.cat() === null);
+  });
+});
+
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
