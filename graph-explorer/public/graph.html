@@ -1039,7 +1039,7 @@ async function openInPortal(n) {
   sigma.getContainer().appendChild(labelLayer);
   let labelRects = []; const labelSlot = new Map();
   const LABEL_H = 18, LABEL_FONT = '13px "Public Sans", Arial';
-  const slotsFor = (x, y, r, w) => { const gap = r + 3, h = LABEL_H; return [
+  const slotsFor = (x, y, r, w, h = LABEL_H) => { const gap = r + 3; return [
     [x + gap, y - h / 2], [x - gap - w, y - h / 2], [x + r * .5, y - r - h], [x + r * .5, y + r], [x - r * .5 - w, y - r - h], [x - r * .5 - w, y + r],
     [x - w / 2, y - r - h - 1], [x - w / 2, y + r + 1], [x + gap + 12, y - h * 1.4], [x + gap + 12, y + h * .4], [x - gap - 12 - w, y - h * 1.4], [x - gap - 12 - w, y + h * .4],
     [x + gap + 30, y - h / 2], [x - gap - 30 - w, y - h / 2], [x - w / 2, y - r - h * 2.2], [x - w / 2, y + r + h * 1.2]
@@ -1059,21 +1059,25 @@ async function openInPortal(n) {
     const grid = !!catView; // in a grid every name stands to the right of its node, or is left out: reading order decides who is named when space is short
     items.sort((a, b) => a.rank - b.rank || (grid ? a.y - b.y || a.x - b.x : b.size - a.size));
     const cellPx = grid ? Math.abs(sigma.graphToViewport({ x: catView.cellG, y: 0 }).x - sigma.graphToViewport({ x: 0, y: 0 }).x) : 0; // one grid cell, in pixels now
+    const rowPx = grid ? Math.abs(sigma.graphToViewport({ x: 0, y: catView.rowG }).y - sigma.graphToViewport({ x: 0, y: 0 }).y) : 0, LH = grid ? Math.min(LABEL_H, Math.max(13, rowPx - 1)) : LABEL_H; // in a grid a name only reserves the height its row has
     const heads = grid ? catView.heads.map(h => { const v = sigma.graphToViewport(h); return { x: v.x - 4, y: v.y - 4, w: 190, h: 26 }; }) : [];
     const placed = [], clash = R => heads.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y) || placed.some(P => R.x < P.x + P.w && R.x + R.w > P.x && R.y < P.y + P.h && R.y + R.h > P.y)
       || R.x < 3 || R.x + R.w > box.width - 3 || R.y < 3 || R.y + R.h > box.height - 3 // a name never runs off the edge of the view
       || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
     for (const it of items) {
       it.text = it.rank === 0 || it.label.length <= 32 ? it.label : it.label.slice(0, 30).trimEnd() + "…"; // long names are shortened, except for what is selected
-      if (grid) { const avail = cellPx - 2 * it.r - 14; if (lctx.measureText(it.text).width > avail) { let t = it.text; while (t.length > 1 && lctx.measureText(t + "…").width > avail) t = t.slice(0, -1); it.text = t.length > 3 ? t.trimEnd() + "…" : ""; } if (!it.text) continue; } // in a grid a name is cut to its cell, so it never runs into the next node
-      const w = lctx.measureText(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w), first = labelSlot.get(it.id) ?? 0;
+      if (grid) { const avail = cellPx - 2 * it.r - 14; if (lctx.measureText(it.text).width > avail) { // cut to the cell; a short last word (a number, a code) is kept, because it is what tells names apart
+          const m = it.text.match(/^(.*\S)\s+(\S{1,6})$/), tail = m ? "…" + m[2] : "…"; let t = m ? m[1] : it.text;
+          while (t.length > 1 && lctx.measureText(t + tail).width > avail) t = t.slice(0, -1);
+          it.text = t.length >= (m ? 2 : 4) ? t.trimEnd() + tail : ""; } if (!it.text) continue; } // in a grid a name is cut to its cell, so it never runs into the next node
+      const w = lctx.measureText(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w, LH), first = labelSlot.get(it.id) ?? 0;
       const order = grid ? [0] : [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
       let pick = -1;
-      for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LABEL_H }; if (!clash(R)) { pick = si; break; } }
+      for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LH }; if (!clash(R)) { pick = si; break; } }
       if (pick < 0 && it.rank === 0) pick = 0; // a selected node always keeps its name
       if (pick < 0) { labelSlot.delete(it.id); continue; }
       labelSlot.set(it.id, pick);
-      placed.push({ id:it.id, x:slots[pick][0], y:slots[pick][1], w, h:LABEL_H, rank:it.rank, text:it.text });
+      placed.push({ id:it.id, x:slots[pick][0], y:slots[pick][1], w, h:LH, rank:it.rank, text:it.text });
     }
     labelRects = placed;
     const ink = dark ? "#e6ebe0" : "#264030", paper = dark ? "22,27,20" : "255,255,255";
@@ -1162,7 +1166,7 @@ async function openInPortal(n) {
         sc.ids.sort((a, b) => { const ma = mean.get(a), mb = mean.get(b); if (ma !== mb) return ma === null ? 1 : mb === null ? -1 : ma - mb; return hub.get(a) < hub.get(b) ? -1 : hub.get(a) > hub.get(b) ? 1 : String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))); });
         sc.ids.forEach((id, i) => pos.set(id, i / Math.max(1, sc.ids.length - 1))); } }
     const nameW = secs.length > 1 ? Math.min(labelW, 140) : labelW; // several sections: a tighter name column, so more than one section fits on a shelf
-    const pack = (R, UW = uw, z = 1) => { const maxR = R * maxS / avg, cw = 2 * maxR + nameW + (secs.length > 1 ? 24 : 40), ch = 2 * maxR + 22, fit = Math.max(1, Math.floor(UW / cw)), head = HEAD * z, gap = GAP * z; let x = 0, y = 0, rowH = 0, W = 0;
+    const pack = (R, UW = uw, z = 1) => { const maxR = R * maxS / avg, cw = 2 * maxR + nameW + (secs.length > 1 ? 24 : 40), ch = 2 * maxR + 14, fit = Math.max(1, Math.floor(UW / cw)), head = HEAD * z, gap = GAP * z; let x = 0, y = 0, rowH = 0, W = 0;
       const blocks = secs.map(sc => { const m = sc.ids.length, cols = secs.length > 1 ? Math.min(m, fit, Math.ceil(Math.sqrt(m))) : Math.min(m, fit), w = cols * cw, h = head + Math.ceil(m / cols) * ch;
         if (x && x + w > UW) { y += rowH + gap; x = 0; rowH = 0; } const b = { ...sc, cols, x, y, head }; x += w + gap; rowH = Math.max(rowH, h); W = Math.max(W, b.x + w); return b; });
       return { blocks, cw, ch, maxR, W, H: y + rowH, z }; };
@@ -1194,7 +1198,7 @@ async function openInPortal(n) {
     // The links between a grid's own nodes fade as there are more of them: full strength up to LINKS_FULL, gone from LINKS_OFF (a grid of everything is otherwise a block of lines). Picking a node shows its links in the connected view.
     let nLinks = 0; g.forEachEdge((e, a, s2, t2) => { if (mem.has(s2) && mem.has(t2)) nLinks++; });
     const fade = nLinks <= LINKS_FULL ? 1 : nLinks >= LINKS_OFF ? 0 : 1 - (nLinks - LINKS_FULL) / (LINKS_OFF - LINKS_FULL), linkColor = [0xc4, 0xd0, 0xb2].map(v => Math.round(v + (255 - v) * (1 - fade) * .9).toString(16).padStart(2, "0")).join("");
-    catView = { key, kind: kinds[0], kinds, heads, cellG: lay.cw / sc, sizes0, nLinks, fade, linkColor: "#" + linkColor, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
+    catView = { key, kind: kinds[0], kinds, heads, cellG: lay.cw / sc, rowG: lay.ch / sc, sizes0, nLinks, fade, linkColor: "#" + linkColor, set: mem, nb: nbs, saved, name: c.typeKind ? null : c.name, n, cam: { ...sigma.getCamera().getState() }, typeKind: !!c.typeKind };
     if (keep) for (const [id, p] of keep) saved.set(id, p); // the way back is to the layout before the first grid, not to the previous grid
     // the camera: the whole grid centred, zoomed out as far as it takes to see all of it
     sigma.refresh(); // measure against the camera as it is now, not as it was at the last render
