@@ -1249,22 +1249,35 @@ async function openInPortal(n) {
   // Their first places are kept in `pulled`; clearing the selection hands them to the restore glide, a new selection sends the ones no longer involved back first.
   // The connected view arranges what is involved like the category grid: one painted section per type, names to the right of the nodes, the selected nodes first in each section and larger.
   let arr = null; // { pos, heads, cellG, rowG } while the involved nodes are arranged
-  function layoutLit(groups, cx, cy) { // groups: [{ title, ids, off }]: each laid out as sections by type, in screen pixels for the pane there is; a group marked off goes below the screen, in sight when you zoom out
+  function layoutLit(groups, cx, cy) { // groups: [{ title, ids, off }]: each laid out as sections by type, in screen pixels for the pane there is. The groups that are not off sit side by side (the first is a narrow column on the left); a group marked off goes below the screen
     tctx.font = LABEL_FONT;
     const box = terr.getBoundingClientRect(), uw = Math.max(200, box.width - 24), uh = Math.max(200, box.height - 80), label = id => String(g.getNodeAttribute(id, "label"));
-    const shown = groups.filter(gr => gr.ids.length), allIds = shown.flatMap(gr => gr.ids), full = Math.min(150, Math.max(...allIds.map(id => tctx.measureText(label(id).slice(0, 28)).width)) + 8), HEAD = 28, GAP = 22, TITLE = 30, BAND = 26;
-    const pack = R => { const nameW = Math.min(full, R >= 10 ? 150 : 110), cw = 2 * R + nameW + 12, ch = Math.max(2 * R * 15 / 11 + 6, 2 * R + 10), fit = Math.max(1, Math.floor(uw / cw)); let W = 0, y = 0, onH = 0; const out = [];
-      for (const gr of shown) { if (gr.off) y = Math.max(y, uh) + 160; const kinds = FILTERS.filter(k => gr.ids.some(id => kindOf(id) === k)); let x = 0, yy = y + TITLE, rowH = 0; const blocks = [];
-        for (const k of kinds) { const ids = gr.ids.filter(id => kindOf(id) === k).sort((a, b) => label(a).localeCompare(label(b))), m = ids.length, cols = Math.max(1, Math.min(m, fit, Math.ceil(Math.sqrt(m * 1.6)))), w = cols * cw, h = HEAD + Math.ceil(m / cols) * ch;
-          if (x && x + w > uw) { yy += rowH + GAP; x = 0; rowH = 0; } blocks.push({ kind: k, ids, cols, x, y: yy, w, h }); x += w + GAP; rowH = Math.max(rowH, h); if (!gr.off) W = Math.max(W, x - GAP); }
-        const bottom = yy + rowH; out.push({ title: gr.title, n: gr.ids.length, y0: y, blocks }); y = bottom + BAND; if (!gr.off) onH = bottom; }
-      return { out, cw, ch, W, H: onH, R }; };
+    const shown = groups.filter(gr => gr.ids.length), allIds = shown.flatMap(gr => gr.ids), full = Math.min(150, Math.max(...allIds.map(id => tctx.measureText(label(id).slice(0, 28)).width)) + 8), HEAD = 28, GAP = 22, TITLE = 30, SIDE = 44;
+    const pack = R => { const nameW = Math.min(full, R >= 10 ? 150 : 110), cw = 2 * R + nameW + 12, ch = Math.max(2 * R * 15 / 11 + 6, 2 * R + 10), on = shown.filter(gr => !gr.off), off = shown.filter(gr => gr.off);
+      const packGroup = (gr, cols, x0, y0) => { const kinds = FILTERS.filter(k => gr.ids.some(id => kindOf(id) === k)), lim = Math.max(1, cols) * cw; let x = 0, y = y0 + TITLE, rowH = 0, W = 0; const blocks = [];
+        for (const k of kinds) { const ids = gr.ids.filter(id => kindOf(id) === k).sort((a, b) => label(a).localeCompare(label(b))), m = ids.length, c = Math.max(1, Math.min(m, Math.max(1, cols), Math.ceil(Math.sqrt(m * 1.6)))), w = c * cw, h = HEAD + Math.ceil(m / c) * ch;
+          if (x && x + w > lim) { y += rowH + GAP; x = 0; rowH = 0; } blocks.push({ kind: k, ids, cols: c, x: x0 + x, y, w, h }); x += w + GAP; rowH = Math.max(rowH, h); W = Math.max(W, x - GAP); }
+        return { title: gr.title, n: gr.ids.length, x0, y0, blocks, W, bottom: y + rowH }; };
+      const total = Math.floor(uw / cw), selCols = on.length > 1 ? Math.max(1, Math.min(Math.floor(uw * .36 / cw), 3)) : total, out = []; let x0 = 0, onH = 0, W = 0;
+      on.forEach((gr, k) => { const cols = on.length > 1 ? (k === 0 ? selCols : Math.max(1, Math.floor((uw - x0) / cw))) : total, pg = packGroup(gr, cols, x0, 0); out.push(pg); onH = Math.max(onH, pg.bottom); W = Math.max(W, x0 + pg.W); x0 += pg.W + SIDE; });
+      let offBottom = onH, offW = 0; for (const gr of off) { const pg = packGroup(gr, total, 0, Math.max(onH, uh) + 90); out.push(pg); offBottom = pg.bottom; offW = Math.max(offW, pg.W); }
+      return { out, cw, ch, W, H: onH, Wall: Math.max(W, offW), Hall: offBottom, R }; };
     let lay = pack(13); for (let R = 13; R >= 6; R--) { lay = pack(R); if (lay.H <= uh && lay.W <= uw) break; }
-    const R = lay.R, u = 11 * K / R, extra = Math.max(1, lay.H / uh, lay.W / uw), pos = new Map(), heads = [], titles = [], gx = px => cx + (px - lay.W / 2) * u, gy = py => cy - (py - lay.H / 2) * u; // graph units per layout pixel (y points up)
-    for (const gr of lay.out) { titles.push({ text: gr.title, n: gr.n, x: gx(0), y: gy(gr.y0) });
+    const R = lay.R, u = 11 * K / R, extra = Math.max(1, lay.H / uh, lay.W / uw), extraAll = Math.max(extra, lay.Hall / uh, lay.Wall / uw), pos = new Map(), heads = [], titles = [], gx = px => cx + (px - lay.W / 2) * u, gy = py => cy - (py - lay.H / 2) * u; // graph units per layout pixel (y points up)
+    for (const gr of lay.out) { titles.push({ text: gr.title, n: gr.n, x: gx(gr.x0), y: gy(gr.y0) });
       for (const b of gr.blocks) { heads.push({ kind: b.kind, n: b.ids.length, x: gx(b.x), y: gy(b.y), w: b.w * u, h: b.h * u }); b.ids.forEach((id, i) => pos.set(id, [gx(b.x + (i % b.cols) * lay.cw + R * 15 / 11 + 4), gy(b.y + HEAD + (Math.floor(i / b.cols) + .5) * lay.ch)])); } }
-    return { pos, heads, titles, cellG: lay.cw * u, rowG: lay.ch * u, cx, cy: cy + 28 * u * extra, ratio: 11 * K * pxu1 / R * extra }; // the camera looks 28 px above the middle, so the arrangement sits below the toolbar
+    const base = 11 * K * pxu1 / R, focus = { x: cx, y: cy + 28 * u * extra, ratio: base * extra }; // the camera looks 28 px above the middle, so the arrangement sits below the toolbar
+    const all = lay.Hall > lay.H ? { x: gx(lay.Wall / 2), y: gy(lay.Hall / 2) + 28 * u * extraAll, ratio: base * extraAll } : null; // one exact fit of every group
+    return { pos, heads, titles, cellG: lay.cw * u, rowG: lay.ch * u, cx: focus.x, cy: focus.y, ratio: focus.ratio, focus, all, mode: "focus" };
   }
+  // The zoom of an arrangement has two stops: the selection and what it links to, and everything. Zooming out from the first snaps to the second, zooming in from the second snaps back; nothing zooms out past the second.
+  let snapping = false;
+  function snapTo(v) { snapping = true; const fr = sigma.viewportToFramedGraph(sigma.graphToViewport({ x: v.x, y: v.y })); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: v.ratio }, { duration: 350 }, () => { snapping = false; }); } // the camera works in framed coordinates, not graph units
+  sigma.getCamera().on("updated", st => {
+    if (!arr?.all || !lit || snapping) return; const A = arr;
+    if (A.mode === "focus" && st.ratio > A.focus.ratio * 1.2) { A.mode = "all"; snapTo(A.all); }
+    else if (A.mode === "all" && st.ratio < A.all.ratio * .96) { A.mode = "focus"; snapTo(A.focus); }
+  });
   const pulled = new Map();
   function gatherBig() {
     if (!lit || catView || plain()) return;
@@ -1279,7 +1292,7 @@ async function openInPortal(n) {
     const all = [...moves, ...back]; gathering = all; tween(all, 500, () => { if (gathering === all) gathering = null; });
     const fr = sigma.viewportToFramedGraph(sigma.graphToViewport({ x: lay.cx, y: lay.cy })); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: lay.ratio }, { duration: 500 });
   }
-  const releasePulled = () => { arr = null; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
+  const releasePulled = () => { arr = null; sigma.getCamera().maxRatio = null; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
   const snapHome = () => { for (const [id, h] of home) if (g.hasNode(id)) g.mergeNodeAttributes(id, { x: h.x, y: h.y }); home.clear(); };
   // The connected view: the camera frames only the selection and what it links to (they stay where they are). Everything else moves aside as whole blocks, each group of unselected nodes that link to each other as one,
   // to just beyond the frame, so it keeps its shape and its place among the others and is in sight when you zoom out. Clearing the selection glides everything home.
@@ -1294,7 +1307,7 @@ async function openInPortal(n) {
     let cx = 0, cy = 0; for (const id of L) { const q = first.get(id); cx += q.x / L.length; cy += q.y / L.length; }
     // Three groups: what is selected, what it links to, and everything else (below the screen: zoom out to see it, arranged the same way)
     const lay = layoutLit([{ title: "Selected resources", ids: L.filter(id => litSel.has(id)) }, { title: "Connected resources", ids: L.filter(id => !litSel.has(id)) }, { title: "Remaining resources", ids: rest.length > 1500 ? [] : rest, off: true }], cx, cy);
-    arr = lay; labelSlot.clear();
+    arr = lay; labelSlot.clear(); sigma.getCamera().maxRatio = (lay.all ?? lay.focus).ratio * 1.02;
     const moves = [];
     for (const [id, q] of lay.pos) { home.set(id, first.get(id)); g.mergeNodeAttributes(id, was.get(id) ?? first.get(id)); moves.push({ id, x: q[0], y: q[1] }); }
     for (const [id, p] of was) if (!lay.pos.has(id) && g.hasNode(id)) { g.mergeNodeAttributes(id, p); moves.push({ id, x: first.get(id).x, y: first.get(id).y }); } // no longer arranged: back to its place
