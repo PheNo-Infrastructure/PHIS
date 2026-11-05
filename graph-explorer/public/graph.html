@@ -952,11 +952,13 @@ async function openInPortal(n) {
     });
   }
   // Browse is on a type's list: show that type in the grid; any other page puts the graph back.
+  let tallPane = false;
   function setKinds(kinds, tries = 20) { // the types shown as grid sections, in the legend's order; none = back to the graph
     kinds = FILTERS.filter(k => kinds.includes(k));
     if (!kinds.length) return catView && exitCat(false);
     if (catView && catView.kinds.join() === kinds.join()) return;
     if (!pxu1 && tries) return setTimeout(() => setKinds(kinds, tries - 1), 150); // the first frame has not been measured yet
+    if (embedded && !catView && !tallPane) { tallPane = true; parent.postMessage({ kind: "grid", open: true }, location.origin); return setTimeout(() => setKinds(kinds, tries), 300); } // the portal makes the pane taller first, so the grid is laid out at its final size
     const prev = catView; catView = null; enterCat(null, kinds, prev?.saved, prev?.sizes0); // replacing one grid by another goes straight there, no trip back to the graph
   }
   const showCategory = kind => setKinds(kind ? [kind] : []);
@@ -1180,7 +1182,7 @@ async function openInPortal(n) {
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
-    const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); crumbs.hidden = true; labelSlot.clear();
+    const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; if (tallPane) { tallPane = false; parent.postMessage({ kind: "grid", open: false }, location.origin); } for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); crumbs.hidden = true; labelSlot.clear();
     tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); else fitView(); done?.(); }); // the way back refits the whole graph
     refresh(); stats();
   }
