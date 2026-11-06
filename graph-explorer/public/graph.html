@@ -761,7 +761,7 @@ async function openInPortal(n) {
   function legendClick(t, ev) {
     const cur = catView?.kinds ?? [], shown = FILTERS.filter(k => !hiddenKinds.has(k) && kindCount[k]);
     const grids = plain(); // Ctrl, Shift and All build grids from the legend: plain graphs only
-    if (selView && !catView && sel.size && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) return soloKind(t, ev, shown); // inside the selection view they filter its three grids instead
+    if (!catView && sel.size && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) return soloKind(t, ev, shown); // inside the selection view they filter its three grids instead
     if (grids && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) leaveSelection();
     if (t === "*") return grids && setKinds(cur.length === shown.length ? [] : shown);
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
@@ -775,11 +775,11 @@ async function openInPortal(n) {
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
-  function soloKind(t, ev, shown) { // the selection view keeps its selection: Ctrl adds or removes a type from what its grids show, Shift a range, All shows every type again
+  function soloKind(t, ev, shown) { // a selection is kept: Ctrl adds or removes a type from what is shown (the first time it starts from the types already selected, so the selection stays in view), Shift a range, All shows every type again
     if (t === "*") soloKinds.clear();
     else if (ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? [...soloKinds][0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; soloKinds.clear(); FILTERS.slice(x, y + 1).filter(k => shown.includes(k)).forEach(k => soloKinds.add(k)); }
-    else { hiddenKinds.delete(t); kindAnchor = t; soloKinds.has(t) ? soloKinds.delete(t) : soloKinds.add(t); }
-    computeFocus(); refresh(); stats(); renderChips(); renderPanel(); gather();
+    else { if (!soloKinds.size) for (const id of sel) soloKinds.add(filterKind(g.getNodeAttributes(id))); hiddenKinds.delete(t); kindAnchor = t; soloKinds.has(t) ? soloKinds.delete(t) : soloKinds.add(t); }
+    computeFocus(); refresh(); stats(); renderChips(); renderPanel(); connected();
   }
   function renderChips() {
     const legend = document.getElementById("legend");
@@ -1274,7 +1274,7 @@ async function openInPortal(n) {
     const E = extentPx(true), box = terr.getBoundingClientRect(); if (!E) return; // fresh: the matrix is stale until a render
     const dy = Math.max(-Math.max(0, 40 - E.top), Math.min(ev.deltaY * (ev.deltaMode === 1 ? 16 : 1), Math.max(0, E.bottom + 30 - box.height))); // down by at most what is below the pane, up by at most what is above it
     if (!dy) return; const c = sigma.getCamera(), st = c.getState();
-    const fr = sigma.viewportToFramedGraph({ x: box.width / 2, y: box.height / 2 + dy }); c.setState({ x: fr.x, y: fr.y, ratio: st.ratio });
+    const fr = sigma.viewportToFramedGraph({ x: box.width / 2, y: box.height / 2 + dy }); c.setState({ x: st.x, y: fr.y, ratio: st.ratio }); // y only: x is left alone, so repeated steps cannot drift sideways
   }, { capture: true, passive: false });
   function openBand(t) {
     if (!arr || catView || !pxu1) return;
@@ -1380,11 +1380,12 @@ async function openInPortal(n) {
     snapHome(); // measure from the first places
     const orig = new Map([...was.keys()].map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
     const box = terr.getBoundingClientRect(), cam = sigma.getCamera(), st = cam.getState(), tgt = spreadLit(L);
-    const pts = L.map(id => sigma.graphToViewport(tgt.get(id))), x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y));
-    const f = Math.max((x1 - x0) * 1.8 / (box.width * .9), (y1 - y0) * 1.8 / (box.height * .85), .05), ratio = Math.max(.3, st.ratio * f); // never closer than about 3x: a lone node is not blown up to fill the screen; the group fills about half the view, the rest is in sight round it
+    const pts = (soloKinds.size ? g.nodes().filter(isVisible) : L).map(id => sigma.graphToViewport(tgt.get(id) ?? g.getNodeAttributes(id))), // with a legend filter on, the whole filtered view is framed: you are picking from it
+ x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y));
+    const FR = soloKinds.size ? 1.15 : 1.8, f = Math.max((x1 - x0) * FR / (box.width * .9), (y1 - y0) * FR / (box.height * .85), .05), ratio = Math.max(.3, st.ratio * f); // never closer than about 3x: a lone node is not blown up to fill the screen; the group fills about half the view, the rest is in sight round it
     const o = sigma.graphToViewport({ x: 0, y: 0 }), ppu = (Math.abs(sigma.graphToViewport({ x: 1, y: 0 }).x - o.x) || 1) * st.ratio / ratio; // pixels per graph unit once the camera is there
     const c = sigma.viewportToGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), Rl = Math.max(...L.map(id => Math.hypot(tgt.get(id).x - c.x, tgt.get(id).y - c.y))), RS = Math.max(Rl * 1.12, Math.hypot(box.width / 2, box.height / 2) / ppu * .5); // the rest starts just outside the group, not beyond the screen: it stays in reach to add to the selection
-    const inLit = new Set(L), rest = new Set(); g.forEachNode((id, a) => { if (!inLit.has(id) && isVisible(id) && !a.fixed) rest.add(id); });
+    const inLit = new Set(L), rest = new Set(); g.forEachNode((id, a) => { if (!inLit.has(id) && isVisible(id) && !a.fixed && !soloKinds.size) rest.add(id); }); // filtered by the legend: nothing is moved aside
     const U = [], seen = new Set();
     for (const id of rest) { if (seen.has(id)) continue; const list = [id], stack = [id]; seen.add(id); // a block: nodes that link to each other
       while (stack.length) g.forEachNeighbor(stack.pop(), nb => { if (rest.has(nb) && !seen.has(nb)) { seen.add(nb); list.push(nb); stack.push(nb); } });
