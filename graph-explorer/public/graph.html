@@ -118,7 +118,8 @@ async function openInPortal(n) {
   FA2.assign(g, { iterations:200, settings: settingsFor(g) });
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
-  const hiddenKinds = new Set();
+  const stash = new Map(); let stashOwn = false; // stash: what hiding a type took out of the selection, given back when it is shown again (until the selection is changed some other way)
+  const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
   const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
@@ -204,6 +205,7 @@ async function openInPortal(n) {
   let cur = null; // inside the portal: the resource open in Browse; lit and unfolded like a selection, but not part of it (nothing is linked to it by being open)
   const sel = new Set();           // selected node ids; a folded group stands for all its members
   const home = new Map(); let restoring = false; // first places of nodes moved aside by the connected view
+  let focusSec = null; // the section or grid opened inside the selection view (see openHit)
   let litSize = new Map(), canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
   const bg = dark => dark ? [22, 27, 20] : [255, 255, 255];
@@ -222,7 +224,7 @@ async function openInPortal(n) {
     }
     for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
   }
-  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
+  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id)))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
   let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
@@ -298,12 +300,12 @@ async function openInPortal(n) {
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
       if (litSel.has(id)) return { ...a, size: catView ? a.size : litSize.get(id) ?? a.size, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
       if (lit.has(id)) return { ...a, size: catView ? a.size : litSize.get(id) ?? a.size, zIndex:1, forceLabel: lit.size < 60 };
-      if (canLink.has(id)) return { ...a, zIndex: 1, forceLabel: true };
+      if (canLink.has(id)) return { ...a, size: arr ? 11 : a.size, zIndex: 1, forceLabel: true };
       return { ...a, color: fade(a.color, dark), size: arr ? 11 : a.size, forceLabel: visCount < 80 }; // unrelated nodes keep their names while the graph is small, so they can be added
     },
     edgeReducer: (ed, a) => {
       const [s, t] = g.extremities(ed);
-      if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t))) return { ...a, hidden:true };
+      if (!isVisible(s) || !isVisible(t) || (lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t)) || (focusSec?.pair && !(focusSec.pair.has(s) && focusSec.pair.has(t)))) return { ...a, hidden:true };
       if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
       if (catView && !lit) return catView.set.has(s) && catView.set.has(t) && catView.fade > 0 ? { ...a, color: dark ? "#3a4536" : catView.linkColor, size: .9, zIndex: 1 } : { ...a, hidden: true }; // in a grid only the links between its own nodes are drawn; a link to the rest of the graph appears when its node is selected
       return a;
@@ -758,22 +760,31 @@ async function openInPortal(n) {
   function legendClick(t, ev) {
     const cur = catView?.kinds ?? [], shown = FILTERS.filter(k => !hiddenKinds.has(k) && kindCount[k]);
     const grids = plain(); // Ctrl, Shift and All build grids from the legend: plain graphs only
+    if (grids && !catView && sel.size && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) return soloKind(t, ev, shown); // inside the selection view they filter its three grids instead
     if (grids && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) leaveSelection();
     if (t === "*") return grids && setKinds(cur.length === shown.length ? [] : shown);
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
     hiddenKinds.has(t) ? hiddenKinds.delete(t) : hiddenKinds.add(t);
-    if (hiddenKinds.has(t) && [...sel].some(id => filterKind(g.getNodeAttributes(id)) === t)) setSelection([...sel].filter(id => filterKind(g.getNodeAttributes(id)) !== t), "replace"); // a hidden type is not selected
+    const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
+    if (hiddenKinds.has(t) && mine.length) { stashOwn = true; setSelection([...sel].filter(id => !mine.includes(id)), "replace"); stashOwn = false; stash.set(t, mine); } // a hidden type is not selected, but it is remembered
+    else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
     if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return gather(); } // a selection that is left keeps its connected view
     if (!catView) return refreshView();
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
+  function soloKind(t, ev, shown) { // the selection view keeps its selection: Ctrl adds or removes a type from what its grids show, Shift a range, All shows every type again
+    if (t === "*") soloKinds.clear();
+    else if (ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? [...soloKinds][0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; soloKinds.clear(); FILTERS.slice(x, y + 1).filter(k => shown.includes(k)).forEach(k => soloKinds.add(k)); }
+    else { hiddenKinds.delete(t); kindAnchor = t; soloKinds.has(t) ? soloKinds.delete(t) : soloKinds.add(t); }
+    computeFocus(); refresh(); stats(); renderChips(); renderPanel(); gather();
+  }
   function renderChips() {
     const legend = document.getElementById("legend");
     kindCount = {}; g.forEachNode((id, a) => { const k = filterKind(a); kindCount[k] = (kindCount[k] || 0) + 1; });
     const grids = plain();
-    legend.innerHTML = FILTERS.map(t => `<button class="chip${grids && catView?.kinds.includes(t) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Ctrl+click puts it in a grid, Shift+click a range of types" : "Click hides or shows"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`).join("")
+    legend.innerHTML = FILTERS.map(t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`).join("")
       + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "");
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
   }
@@ -972,6 +983,7 @@ async function openInPortal(n) {
   }
   // mode: "replace" (plain click, window), "toggle" (Ctrl+click), "add" (Ctrl+window)
   function setSelection(ids, mode) {
+    if (!stashOwn) stash.clear();
     if (mode === "replace") sel.clear();
     for (const id of ids) {
       if (!g.hasNode(id)) continue;
@@ -983,6 +995,7 @@ async function openInPortal(n) {
     selected = sel.size ? [...sel].at(-1) : cur;
     const leaving = catView && !fromPortal && (mode !== "replace" || ids.length);
     if (leaving) exitCat(false, () => plain() ? gather() : lit && fitLit()); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
+    if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
     if (!leaving && sel.size && !catView) { if (plain()) gather(); else if (lit) gatherBig(); }
     if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
@@ -1180,7 +1193,7 @@ async function openInPortal(n) {
     const c = key == null ? { key: null, name: null, typeKind: true, members: g.nodes() } : clusters.find(c => c.key === key); if (!c || (catView && !keep) || !pxu1) return; // key null: every node of the types, whatever its cluster (Browse and the legend ask for this)
     const ids = c.members.filter(id => g.hasNode(id) && inLayout(id) && kinds.includes(kindOf(id))).sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label"))));
     if (!ids.length) return;
-    if (gathering) gathering.stop = true; releasePulled(); snapHome();
+    if (gathering) gathering.stop = true; releasePulled(); snapHome(); soloKinds.clear();
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
     const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 130, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and a little below // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
     // Size inside a grid follows the links between the grid's own nodes (log scale, none below 7); the links to the hidden rest of the graph do not count. The first sizes come back when the grid is left.
@@ -1239,7 +1252,6 @@ async function openInPortal(n) {
   }
   // A grid title of the connected view zooms onto that grid; a section title brings that section and what its nodes link to side by side into the free space right of the arrangement (laid out the same way) and zooms there.
   // Everything else stays where it is. Leaving goes back to the arrangement (moved nodes return to their blocks) and keeps the selection.
-  let focusSec = null;
   const framedAt = (x, y) => sigma.viewportToFramedGraph(sigma.graphToViewport({ x, y })); // the camera works in framed coordinates, not graph units
   const leaveSection = () => {
     const band = focusSec?.band; focusSec = null; crumbs.dataset.h = "";
@@ -1262,9 +1274,9 @@ async function openInPortal(n) {
     const right = Math.max(...A.heads.map(q => q.x + q.w), ...A.titles.map(q => q.x + q.w)), top = Math.max(...A.titles.map(q => q.y)), t = sub.titles[0], dx = right + 2 * A.SIDEG - t.x, dy = top - t.y; // left of the arrangement's right edge nothing is free
     const moves = [...sub.pos].map(([id, q]) => ({ id, x: q[0] + dx, y: q[1] + dy }));
     arr = { ...A, heads: [...A.heads, ...sub.heads.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))], titles: [...A.titles, ...sub.titles.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))] };
-    focusSec = { name: Name, n: h.n }; labelSlot.clear();
+    focusSec = { name: Name, n: h.n, pair: new Set([...h.ids, ...nb]) }; labelSlot.clear();
     if (gathering) gathering.stop = true; gathering = moves; tween(moves, 500, () => { if (gathering === moves) gathering = null; });
-    sigma.refresh(); const fr = framedAt(sub.cx + dx, sub.cy + dy); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: sub.ratio }, { duration: 500 }); // the pair fills the pane
+    sigma.refresh(); const fr = framedAt(sub.cx + dx, sub.cy + dy + 24 * sub.u); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: sub.ratio }, { duration: 500 }); // the pair fills the pane
   }
   let zoomedToSelection = false, gathering = null;
   function fitLit() { // the camera onto the selection and what it links to
@@ -1283,7 +1295,7 @@ async function openInPortal(n) {
     tctx.font = LABEL_FONT;
     const box = terr.getBoundingClientRect(), uw = Math.max(200, box.width - 24), uh = Math.max(200, box.height - 90), label = id => String(g.getNodeAttribute(id, "label"));
     const shown = groups.filter(gr => gr.ids.length), on = shown.filter(gr => !gr.off), off = shown.filter(gr => gr.off);
-    const full = Math.min(150, Math.max(...shown.flatMap(gr => gr.ids).map(id => tctx.measureText(label(id).slice(0, 28)).width)) + 8), HEAD = 28, GAP = 22, TITLE = 30, SIDE = 40, RMAX = 22, STRETCH = 1.7;
+    const full = Math.min(150, Math.max(...shown.flatMap(gr => gr.ids).map(id => tctx.measureText(label(id).slice(0, 28)).width)) + 8), HEAD = 28, GAP = 22, TITLE = 30, SIDE = 40, RMAX = 22, STRETCH = 1.3;
     const wt = gr => Math.pow(gr.ids.length, .8), nOn = on.reduce((t, gr) => t + gr.ids.length, 0) || 1, wOn = on.reduce((t, gr) => t + wt(gr), 0) || 1, free = uw - SIDE * Math.max(0, on.length - 1), MINW = Math.min(170, free / Math.max(1, on.length));
     let wid = on.map(gr => free * wt(gr) / wOn); // widths by count (a little flattened, so a small group is not a strip); a small group keeps room for its title
     for (let it = 0; it < 3; it++) { const small = wid.map(w => w < MINW); if (!small.some(Boolean)) break; const fixed = small.filter(Boolean).length * MINW, rest = wid.reduce((t, w, i) => t + (small[i] ? 0 : w), 0); wid = wid.map((w, i) => small[i] ? MINW : w * (free - fixed) / rest); }
@@ -1323,12 +1335,13 @@ async function openInPortal(n) {
     const back = []; for (const [id, p] of pulled) if (!inL.has(id) && g.hasNode(id)) { back.push({ id, x: p.x, y: p.y }); pulled.delete(id); } // no longer involved: back to their place
     for (const id of L) { home.delete(id); if (!pulled.has(id)) { const a = g.getNodeAttributes(id); pulled.set(id, { x: a.x, y: a.y }); } }
     let cx = 0, cy = 0, n = 0; for (const id of litSel) if (inL.has(id)) { const p = pulled.get(id); cx += p.x; cy += p.y; n++; } if (!n) { for (const id of L) { const p = pulled.get(id); cx += p.x; cy += p.y; n++; } } cx /= n; cy /= n;
-    const lay = layoutLit([{ title: "Selected resources", ids: L.filter(id => litSel.has(id)) }, { title: "Connected resources", ids: L.filter(id => !litSel.has(id)) }], cx, cy); arr = lay; labelSlot.clear();
+    const lay = layoutLit([{ title: "Selected resources", ids: L.filter(id => litSel.has(id)) }, { title: "Connected resources", ids: L.filter(id => !litSel.has(id)) }], cx, cy); arr = lay; labelSlot.clear(); noForceAtlas();
     const moves = L.map(id => ({ id, x: lay.pos.get(id)[0], y: lay.pos.get(id)[1] }));
     const all = [...moves, ...back]; gathering = all; tween(all, 500, () => { if (gathering === all) gathering = null; });
     const fr = sigma.viewportToFramedGraph(sigma.graphToViewport({ x: lay.cx, y: lay.cy })); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: lay.ratio }, { duration: 500 });
   }
-  const releasePulled = () => { arr = null; focusSec = null; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
+  const noForceAtlas = () => { stopLive(); live.checked = false; live.closest("label").hidden = true; }; // the arrangement is the layout: physics would undo it
+  const releasePulled = () => { arr = null; focusSec = null; live.closest("label").hidden = false; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes them home
   const snapHome = () => { for (const [id, h] of home) if (g.hasNode(id)) g.mergeNodeAttributes(id, { x: h.x, y: h.y }); home.clear(); };
   // The connected view: the camera frames only the selection and what it links to (they stay where they are). Everything else moves aside as whole blocks, each group of unselected nodes that link to each other as one,
   // to just beyond the frame, so it keeps its shape and its place among the others and is in sight when you zoom out. Clearing the selection glides everything home.
@@ -1343,7 +1356,7 @@ async function openInPortal(n) {
     let cx = 0, cy = 0; for (const id of L) { const q = first.get(id); cx += q.x / L.length; cy += q.y / L.length; }
     // Three groups: what is selected, what it links to, and everything else (below the screen: zoom out to see it, arranged the same way)
     const lay = layoutLit([{ title: "Selected resources", ids: L.filter(id => litSel.has(id)) }, { title: "Connected resources", ids: L.filter(id => !litSel.has(id)) }, { title: "Remaining resources", ids: rest.length > 1500 ? [] : rest, off: true }], cx, cy);
-    arr = lay; labelSlot.clear();
+    arr = lay; labelSlot.clear(); noForceAtlas();
     const moves = [];
     for (const [id, q] of lay.pos) { home.set(id, first.get(id)); g.mergeNodeAttributes(id, was.get(id) ?? first.get(id)); moves.push({ id, x: q[0], y: q[1] }); }
     for (const [id, p] of was) if (!lay.pos.has(id) && g.hasNode(id)) { g.mergeNodeAttributes(id, p); moves.push({ id, x: first.get(id).x, y: first.get(id).y }); } // no longer arranged: back to its place
