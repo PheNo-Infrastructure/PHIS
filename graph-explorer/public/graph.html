@@ -296,7 +296,7 @@ async function openInPortal(n) {
     labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
     nodeReducer: (id, a) => {
       if (!isVisible(id)) return { ...a, hidden:true };
-      if (catView && !lit) return catView.set.has(id) || catView.nb.has(id) ? { ...a, forceLabel:true } : { ...a, color: fade(a.color, dark, .35) }; // the category and what it links to are named; the rest of the graph is dimmed
+      if (catView) return litSel.has(id) ? { ...a, zIndex:2, forceLabel:true, highlighted:true } : catView.set.has(id) || catView.nb.has(id) ? { ...a, forceLabel:true } : { ...a, color: fade(a.color, dark, .35) }; // a node picked in a grid stays in the grid and is marked // the category and what it links to are named; the rest of the graph is dimmed
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
       if (litSel.has(id)) return { ...a, size: catView ? a.size : arr ? 11 : litSize.get(id) ?? a.size, zIndex:2, forceLabel:true, highlighted:true, ...(misfit.has(id) ? { color: "#d33" } : {}) };
       if (lit.has(id)) return { ...a, size: catView ? a.size : arr ? 11 : litSize.get(id) ?? a.size, zIndex:1, forceLabel: lit.size < 60 };
@@ -305,9 +305,9 @@ async function openInPortal(n) {
     },
     edgeReducer: (ed, a) => {
       const [s, t] = g.extremities(ed);
-      if (!isVisible(s) || !isVisible(t) || (!focusSec?.pair && lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t)) || (focusSec?.pair && !(focusSec.pair.has(s) && focusSec.pair.has(t)))) return { ...a, hidden:true };
+      if (!isVisible(s) || !isVisible(t) || (!catView && !focusSec?.pair && lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t)) || (focusSec?.pair && !(focusSec.pair.has(s) && focusSec.pair.has(t)))) return { ...a, hidden:true };
       if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
-      if (catView && !lit) return catView.set.has(s) && catView.set.has(t) && catView.fade > 0 ? { ...a, color: dark ? "#3a4536" : catView.linkColor, size: .9, zIndex: 1 } : { ...a, hidden: true }; // in a grid only the links between its own nodes are drawn; a link to the rest of the graph appears when its node is selected
+      if (catView) return catView.set.has(s) && catView.set.has(t) && catView.fade > 0 ? { ...a, color: dark ? "#3a4536" : catView.linkColor, size: .9, zIndex: 1 } : { ...a, hidden: true }; // in a grid only the links between its own nodes are drawn; a link to the rest of the graph appears when its node is selected
       return a;
     },
   });
@@ -762,7 +762,6 @@ async function openInPortal(n) {
     const cur = catView?.kinds ?? [], shown = FILTERS.filter(k => !hiddenKinds.has(k) && kindCount[k]);
     const grids = plain(); // Ctrl, Shift and All build grids from the legend: plain graphs only
     if (!catView && sel.size && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) return soloKind(t, ev, shown); // inside the selection view they filter its three grids instead
-    if (grids && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) leaveSelection();
     if (t === "*") return grids && setKinds(cur.length === shown.length ? [] : shown);
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
@@ -995,7 +994,7 @@ async function openInPortal(n) {
     apply(mode !== "replace");
     for (const id of [...sel]) if (!g.hasNode(id)) sel.delete(id);
     selected = sel.size ? [...sel].at(-1) : cur;
-    const leaving = catView && !fromPortal && (mode !== "replace" || ids.length);
+    const leaving = catView && !fromPortal && mode === "replace" && ids.length > 0; // a plain click in a grid leaves it for the connected view; Ctrl/Shift+click adds to the selection and the grid stays
     if (leaving) exitCat(false, connected); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
@@ -1445,14 +1444,14 @@ async function openInPortal(n) {
   function exitCat(toCluster, done) {
     if (!catView) return;
     const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); crumbs.hidden = true; labelSlot.clear();
-    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (toCluster) zoomToCluster(key); else { fitView(); sigma.refresh(); } done?.(); }); // the render makes Sigma use the refitted camera at once; whatever 'done' measures (fitLit) must see it // the way back refits the whole graph
+    tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (sel.size && lit) { sigma.refresh(); connected(); } else if (toCluster) zoomToCluster(key); else { fitView(); sigma.refresh(); } done?.(); }); // the render makes Sigma use the refitted camera at once; whatever 'done' measures (fitLit) must see it // the way back refits the whole graph
     refresh(); stats();
   }
   function showCrumbs() {
     if (!catView && focusSec) { crumbs.hidden = false; const html = `<button data-c="sel">Selection</button> &rsaquo; ${focusSec.from ? e(focusSec.from) + " &rsaquo; " : ""}<b>${e(focusSec.name)}, ${focusSec.n}</b>`; if (crumbs.dataset.h !== html) { crumbs.dataset.h = html; crumbs.innerHTML = html; crumbs.querySelector("button").onclick = leaveSection; } return; }
     crumbs.hidden = !catView; if (!catView) return;
     const html = `<button data-c="all">Overview</button> &rsaquo; ${catView.name ? `<button data-c="cluster">${e(catView.name)}</button> &rsaquo; ` : ""}<b>${catView.kinds.length > 3 ? catView.kinds.length + " types" : catView.kinds.map(k => e(PLURAL[k] || (NAMES[k] || k).toLowerCase() + "s")).join(" + ")}, ${catView.n}</b>`;
-    if (crumbs.dataset.h !== html) { crumbs.dataset.h = html; crumbs.innerHTML = html; crumbs.querySelectorAll("button").forEach(b => b.onclick = () => { exitCat(b.dataset.c === "cluster"); if (b.dataset.c === "all") setTimeout(fitView, 480); }); }
+    if (crumbs.dataset.h !== html) { crumbs.dataset.h = html; crumbs.innerHTML = html; crumbs.querySelectorAll("button").forEach(b => b.onclick = () => { exitCat(b.dataset.c === "cluster"); if (b.dataset.c === "all" && !sel.size) setTimeout(fitView, 480); }); }
   }
   const gapOf = G => G.spread * Math.sqrt(Math.PI / (G.c.members.length * .9)); // the average distance between neighbours in the cluster, on screen
   let chipsOf = "";
