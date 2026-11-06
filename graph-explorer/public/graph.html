@@ -736,7 +736,7 @@ async function openInPortal(n) {
     };
     raf = requestAnimationFrame(tick);
   };
-  live.onchange = () => { if (arr) { live.checked = false; return; } live.checked ? startLive() : stopLive(); }; // not in the selection view
+  live.onchange = () => { if (arr || catView || lit || embedded) { live.checked = false; return; } live.checked ? startLive() : stopLive(); }; // see faState()
   // a short ForceAtlas run: used when a group opens, so its members spread out instead of crowding the hub, whether or not ForceAtlas is switched on
   let burstTimer = 0;
   function burst() {
@@ -790,6 +790,7 @@ async function openInPortal(n) {
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
   }
   function stats() {
+    faState();
     let shown = 0, orphans = 0; g.forEachNode((id, a) => { if (isVisible(id)) { shown++; a.orphan && orphans++; } });
     document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link.`;
   }
@@ -1406,12 +1407,19 @@ async function openInPortal(n) {
   }
   const connected = () => selView ? gather() : plain() ? gatherBasic() : gatherBigBasic();
   function enterSelView() { if (!sel.size || catView) return; selView = true; releasePulled(); gather(); selBtn(); }
-  function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; live.closest("label").style.display = ""; crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
-  const selBtn = () => { const b = document.getElementById("selview"); b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; };
+  function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
+  const selBtn = () => { faState(); const b = document.getElementById("selview"); b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; };
   document.getElementById("selview").onclick = () => selView ? leaveSelView() : enterSelView();
   addEventListener("keydown", ev => { if (ev.key === "Escape" && selView && !catView && !/INPUT|TEXTAREA/.test(ev.target.tagName)) leaveSelView(); });
-  const noForceAtlas = () => { stopLive(); live.checked = false; live.closest("label").style.display = "none"; }; // the arrangement is the layout: physics would undo it
-  const releasePulled = () => { arr = null; focusSec = null; live.closest("label").style.display = ""; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes the moved nodes home (`home` holds their first places)
+  // ForceAtlas: available in the overview; hidden in a grid, in the selection view and when embedded in Browse; greyed while something is selected (the physics would pull the connected view apart).
+  const OFF_TIP = "Clear the selection first: ForceAtlas would pull the connected view apart";
+  function faState() {
+    const lab = live.closest("label"), off = embedded || !!catView || !!arr, grey = !off && !!lit;
+    lab.style.display = off ? "none" : ""; live.disabled = grey; lab.title = grey ? OFF_TIP : lab.dataset.tip ??= lab.title;
+    if ((off || grey) && (live.checked || liveOn)) { live.checked = false; if (!dragRun) stopLive(); }
+  }
+  const noForceAtlas = () => faState(); // the arrangement is the layout: physics would undo it
+  const releasePulled = () => { arr = null; focusSec = null; for (const [id, p] of pulled) if (g.hasNode(id)) home.set(id, p); pulled.clear(); }; // the restore glide takes the moved nodes home (`home` holds their first places)
   const snapHome = () => { for (const [id, h] of home) if (g.hasNode(id)) g.mergeNodeAttributes(id, { x: h.x, y: h.y }); home.clear(); };
   // The connected view: the camera frames only the selection and what it links to (they stay where they are). Everything else moves aside as whole blocks, each group of unselected nodes that link to each other as one,
   // to just beyond the frame, so it keeps its shape and its place among the others and is in sight when you zoom out. Clearing the selection glides everything home.
