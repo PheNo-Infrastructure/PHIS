@@ -770,7 +770,7 @@ async function openInPortal(n) {
     if (hiddenKinds.has(t) && mine.length) { stashOwn = true; setSelection([...sel].filter(id => !mine.includes(id)), "replace"); stashOwn = false; stash.set(t, mine); } // a hidden type is not selected, but it is remembered
     else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
     if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
-    if (!catView) return refreshView();
+    if (!catView) { refreshView(); if (hiddenKinds.has(t)) burst(); return; } // hiding a type: ForceAtlas runs briefly so what is left closes up
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
