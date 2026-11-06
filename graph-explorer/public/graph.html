@@ -55,7 +55,7 @@
 <script>
 // Nodes and the painted regions around them are the brand greens (Forest, Leaf dark, Leaf light, between Leaf light and Straw, Straw dark), told apart by lightness and,
 // on the discs, by the icon inside.
-const COLORS = { fold:"#a8c79b", organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a" };
+const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a" };
 // Minimal line icons (24 x 24), drawn over the discs in the style of the PheNo icon set.
 const ICON_PATHS = {
   organization: "M5 21V5l7-2 7 2v16M3 21h18M9 9h2M13 9h2M9 13h2M13 13h2M10 21v-4h4v4",
@@ -64,15 +64,14 @@ const ICON_PATHS = {
   project: "M3 7h7l2 2h9v10H3z",
   experiment: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3M8 15h8",
   device: "M7 7h10v10H7zM10 10h4v4h-4zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4",
-  fold: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
   person: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4.4 3.6-8 8-8s8 3.6 8 8",
   group: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 11a2.5 2.5 0 1 0 0-5M17 14.2c2.4.4 4 2.4 4 5.8",
   factor: "M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4",
   species: "M5 19c0-8 5-14 14-14 0 9-6 14-14 14zM5 19c3-5 6-8 10-10",
 };
-const NAMES = { fold:"Folded group", organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", species:"Species" };
-const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species"]; // a folded group follows its facilities
-const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. A grey group opens when you click it or something linked to it, and folds when you click anything unrelated; Ctrl or Shift keeps it open. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
+const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", species:"Species" };
+const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species"];
+const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 
@@ -100,8 +99,8 @@ async function openInPortal(n) {
   // Small graphs keep a compact layout (gravity 1, repulsion 6); as a graph grows it spreads (gravity .1, repulsion 80) so its clusters separate instead of forming a hairball.
   const settingsFor = gr => { const t = Math.min(1, Math.max(0, (gr.order - 60) / 240)); return { ...FA2.inferSettings(gr), gravity: 1 - .9 * t, scalingRatio: 6 + 74 * t, slowDown:4, barnesHutOptimize: gr.order > 500 }; };
   const kindOf = id => g.getNodeAttribute(id, "kind");
-  const hasPage = k => k !== "fold" && k !== "species"; // a folded group and a species have no resource page to open
-  const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
+  const hasPage = k => k !== "species"; // a species has no resource page to open
+  const filterKind = a => a.kind;
   // Size follows the number of links on a log scale, relative to the most linked node of this graph: the biggest hub is always the largest (22), a node with one link the smallest (about 8),
   // whatever the data looks like. The log keeps one huge hub from shrinking everything else to the same size.
   // With types hidden in the legend it counts only the links to nodes that are shown (restyle), so what is left scales among itself.
@@ -111,14 +110,13 @@ async function openInPortal(n) {
   const styleOf = (id) => {
     const a = g.getNodeAttributes(id), deg = g.degree(id);
     const orphan = deg === 0;
-    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : 4 + 18 * Math.log1p(visDeg(id)) / Math.log1p(maxDeg) };
+    return { orphan, color: COLORS[a.kind], size: 4 + 18 * Math.log1p(visDeg(id)) / Math.log1p(maxDeg) };
   };
   const restyle = () => { byVisible = true; setMaxDeg(); g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id))); setK(); }; // after a type is hidden or shown
   data.nodes.forEach(({ type, ...n }) => g.addNode(n.id, { ...n, kind:type, x:Math.random(), y:Math.random() }));
   data.edges.forEach(ed => g.hasEdge(ed.source, ed.target) || g.addEdge(ed.source, ed.target));
 
   // Nothing is grouped by type: facilities, devices and everything else are ordinary nodes. Structure comes from the clusters below, found from the links.
-  const folds = new Map(), memberFold = new Map(), open = new Set(); // ponytail: the old collapsed-node code further down is dead (nothing folds any more); remove it in its own change
   setMaxDeg();
   g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id)));
   FA2.assign(g, { iterations:200, settings: settingsFor(g) });
@@ -129,7 +127,7 @@ async function openInPortal(n) {
   const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
-  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors", fold:"facilities and devices" };
+  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
   // A cluster shows its nodes once it nearly fills the view and they have room (average gap between neighbours in px), and is painted again when it shrinks below the lower share.
   // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.
@@ -189,7 +187,7 @@ async function openInPortal(n) {
     clusters = [...by.values()].filter(m => m.length >= MIN_CLUSTER).map(members => {
       const n = {}; let top = null;
       for (const id of members) {
-        const a = g.getNodeAttributes(id); n[a.kind] = (n[a.kind] || 0) + (a.kind === "fold" ? a.count : 1);
+        const a = g.getNodeAttributes(id); n[a.kind] = (n[a.kind] || 0) + 1;
         if (a.kind === "organization" && (!top || g.degree(id) > g.degree(top))) top = id;
       }
       top ??= members.reduce((b, id) => g.degree(id) > g.degree(b) ? id : b);
@@ -209,42 +207,37 @@ async function openInPortal(n) {
     stats();
   }
   let focus = null, focusSet = null, selected = null, lit = null;
-  let cur = null; // inside the portal: the resource open in Browse; lit and unfolded like a selection, but not part of it (nothing is linked to it by being open)
-  const sel = new Set();           // selected node ids; a folded group stands for all its members
+  let cur = null; // inside the portal: the resource open in Browse; lit like a selection, but not part of it (nothing is linked to it by being open)
+  const sel = new Set();           // selected node ids
   const home = new Map(); let restoring = false; // first places of nodes moved aside by the connected view
   let focusSec = null; // the section or grid opened inside the selection view (see openHit)
   let litSize = new Map(), canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
   const bg = dark => dark ? [22, 27, 20] : [255, 255, 255];
   const fade = (hex, isDark, keep = .4) => { if (hex.length === 4) hex = "#" + [...hex.slice(1)].map(ch => ch + ch).join(""); const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)), b = bg(isDark); return "#" + c.map((v, i) => Math.round(v * keep + b[i] * (1 - keep)).toString(16).padStart(2, "0")).join(""); };
-  // In a focus view an opened group's hub steps aside when the focused node links straight to the facilities it uses.
-  const hubHidden = f => focus && open.has(f) && f !== focus.id && folds.get(f).members.some(m => g.hasEdge(focus.id, m.id));
   function computeFocus() {
     if (focus && !g.hasNode(focus.id)) focus = null;
     if (!focus) { focusSet = null; return; }
     focusSet = new Set([focus.id]);
     let frontier = [focus.id];
-    for (let h = 0; h < focus.hops; h++) { // the walk stops at the members of an opened group
+    for (let h = 0; h < focus.hops; h++) {
       const next = [];
-      for (const id of frontier) if (!memberFold.has(id)) g.forEachNeighbor(id, nb => { if (!focusSet.has(nb)) { focusSet.add(nb); next.push(nb); } });
+      for (const id of frontier) g.forEachNeighbor(id, nb => { if (!focusSet.has(nb)) { focusSet.add(nb); next.push(nb); } });
       frontier = next;
     }
-    for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
   }
-  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) && (!nameQ || sel.has(id) || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
-    (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
+  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) && (!nameQ || sel.has(id) || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)) &&
+    (!focusSet || focusSet.has(id));
   let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
   const isVisible = id => catView ? inLayout(id) : (!hiddenByArea(id) || !!lit?.has(id) || !!arr) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
-  const verdictNow = () => ([...sel].every(id => folds.has(id)) && sel.size === 1) ? { kind: "none", why: "Select something else to link this group to." } : linkVerdict(selItems());
-  // What a selection lights up: the node, its neighbours, and the members of any opened group among them (they hang off the group, not off the node).
-  // The selection as PHIS things: a folded group is every facility and device inside it.
+  const verdictNow = () => linkVerdict(selItems());
+  // The selection as PHIS things.
   const lens = () => cur && g.hasNode(cur) && !sel.has(cur) ? [...sel, cur] : [...sel];
   function selItems() {
     const out = [];
     for (const id of sel) {
-      if (folds.has(id)) folds.get(id).members.forEach(({ id: mid, attrs }) => out.push({ id: mid, type: attrs.kind, label: attrs.label }));
-      else if (g.hasNode(id)) out.push({ id, type: kindOf(id), label: g.getNodeAttribute(id, "label") });
+      if (g.hasNode(id)) out.push({ id, type: kindOf(id), label: g.getNodeAttribute(id, "label") });
     }
     return out;
   }
@@ -276,12 +269,7 @@ async function openInPortal(n) {
     for (const id of L) g.forEachNeighbor(id, n => lit.add(n));
     litSize = new Map(); { const d = new Map([...lit].map(id => { let n = 0; g.forEachNeighbor(id, nb => { if (lit.has(nb)) n++; }); return [id, n]; })), mx = Math.max(1, ...d.values()); for (const [id, n] of d) litSize.set(id, 9 + 7 * Math.log1p(n) / Math.log1p(mx)); } // in the connected view the sizes follow the links inside it, in a narrow range (the selection view draws everything one size)
     visCount = 0; g.forEachNode(id => { if (isVisible(id)) visCount++; }); // lit is known now: it decides what is drawn inside a painted cluster
-    // The members of an opened group are named, not painted (an organization or site would otherwise paint every facility of it), unless something that is not the group's parent
-    // (a person, an experiment) is linked to them directly: then they are what that selection is about.
-    const parentKind = id => ["organization", "site"].includes(kindOf(id));
-    tintIds = new Set([...lit].filter(id => L.includes(id) || !(memberFold.has(id) && open.has(memberFold.get(id))) || L.some(x => g.hasEdge(x, id) && !parentKind(x))));
-    for (const f of [...lit]) if (open.has(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && lit.add(id));
-    for (const f of L) if (open.has(f)) folds.get(f)?.members.forEach(({ id }) => g.hasNode(id) && litSel.add(id)); // an opened group that is selected: all its members are
+    tintIds = new Set(lit);
     const v = verdictNow();
     (v.bad || []).forEach(id => misfit.add(id));
     // Unlinked nodes the selection could be linked to are shown a little stronger than the rest (device and facility need a date, so they are left out)
@@ -446,7 +434,6 @@ async function openInPortal(n) {
   // The painted region takes each type's disc colour; its lightness is stretched so the wash still reads, and where two types meet they blend and marble.
   const tintOf = key => {
     if (key === "blocked") return [2, .56, .5];
-    if (key === "fold") { const [h] = toHsl(rgbOfHex(COLORS.facility)); return [h, .5, .52]; } // a collapsed node's own area: the facility green, firmer than a cluster's wash
     if (key.startsWith("cc:")) { const [h] = toHsl(rgbOfHex(clusterHex.get(key))); return [h, .5, .58]; }
     const [h, sat, l] = toHsl(rgbOfHex(clusterHex.get(key) ?? COLORS[key]));
     return [h, Math.max(.15, Math.min(.7, sat + .1)), .36 + .48 * Math.max(0, Math.min(1, (l - .2) / .6))];
@@ -751,9 +738,6 @@ async function openInPortal(n) {
     clearTimeout(burstTimer);
     burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); if (!clusters.length && outOfView(g.nodes().filter(isVisible))) easeFit(); }, 2200); // long enough for a big group to find its shape; the view then eases out only if something has drifted off it
   }
-  function settle(newIds) { // new nodes find their place while everything on screen stays put
-    const wasLive = liveOn; stopLive(); relax(400, id => !newIds.has(id)); if (wasLive) startLive();
-  }
   document.getElementById("reset").onclick = () => {
     const wasLive = liveOn; stopLive();
     g.forEachNode((id) => inLayout(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
@@ -803,36 +787,6 @@ async function openInPortal(n) {
   }
   function refreshView() { computeFocus(); refresh(); fitView(); stats(); renderChips(); renderPanel(); }
 
-  // ---- opening and folding: a group stays open while the selection (or the focus) is the group, one of its members, or a node linked to it ----
-  // Compact (default): groups open only around the selection. Not compact: every group stays open.
-  const compact = document.getElementById("compact");
-  const wanted = (keep) => {
-    if (!compact.checked) return new Set(folds.keys());
-    const next = new Set(keep ? open : []);
-    for (const sid of [...lens(), focus?.id]) {
-      if (!sid || !g.hasNode(sid)) continue;
-      if (folds.has(sid)) next.add(sid);
-      if (memberFold.has(sid)) next.add(memberFold.get(sid));
-      g.forEachNeighbor(sid, nb => folds.has(nb) && next.add(nb));
-    }
-    return next;
-  };
-  function expand(fid) {
-    const at = g.getNodeAttributes(fid), ids = new Set();
-    const { members, links, outside, facs } = folds.get(fid);
-    for (const { id, attrs } of members) {
-      if (g.hasNode(id)) continue;
-      g.addNode(id, { ...attrs, x:at.x + (Math.random() - .5) * 8, y:at.y + (Math.random() - .5) * 8 });
-      ids.add(id);
-    }
-    facs.forEach(f => g.addEdge(fid, f)); // facilities hang off the group node, their devices off them
-    for (const parent of g.neighbors(fid)) { const k = g.getNodeAttribute(parent, "kind"); if (k === "organization" || k === "site") facs.forEach(f => g.hasEdge(parent, f) || g.addEdge(parent, f)); } // the group stands for its facilities having these parents, so while it is open they link to them directly
-    links.forEach(([a, b]) => g.hasEdge(a, b) || g.addEdge(a, b));
-    outside.forEach(([x, m]) => g.hasNode(x) && !g.hasEdge(x, m) && g.addEdge(x, m)); // which facility an experiment uses
-    ids.forEach(id => g.mergeNodeAttributes(id, styleOf(id)));
-    return ids;
-  }
-  const fold = fid => folds.get(fid).members.forEach(({ id }) => g.hasNode(id) && g.dropNode(id));
   function outOfView(ids) { const { width, height } = sigma.getDimensions(); for (const id of ids) { if (!g.hasNode(id)) continue; const v = sigma.graphToViewport({ x:g.getNodeAttribute(id, "x"), y:g.getNodeAttribute(id, "y") }); if (v.x < 10 || v.y < 10 || v.x > width - 10 || v.y > height - 10) return true; } return false; }
   // Zoom out and re-centre, smoothly, just enough to bring everything visible into view; the nodes themselves stay where they are.
   function easeFit() {
@@ -842,16 +796,7 @@ async function openInPortal(n) {
     const cam = sigma.getCamera(), st = cam.getState(), k = Math.max(1, (x1 - x0 + 160) / width, (y1 - y0 + 80) / height), c = sigma.viewportToFramedGraph({ x:(x0 + x1) / 2, y:(y0 + y1) / 2 });
     cam.animate({ x:c.x, y:c.y, ratio:st.ratio * k }, { duration:600 });
   }
-  function apply(keep) {
-    const next = wanted(keep), added = new Set();
-    if ([...open].some(f => !next.has(f)) || [...next].some(f => !open.has(f))) freezeBBox(); // opening or folding a group must not rescale the view under the reader's eyes
-    let folded = false;
-    for (const fid of [...open]) if (!next.has(fid)) { fold(fid); open.delete(fid); folded = true; }
-    for (const fid of next) if (!open.has(fid)) { open.add(fid); expand(fid).forEach(i => added.add(i)); }
-    computeFocus();
-    if (folded && !added.size) burst(); // ForceAtlas runs a little after a group folds, so what is left closes up
-    if (added.size) { settle(added); if (!clusters.length && outOfView(added)) easeFit(); burst(); } // with painted clusters the camera is the reader's: things off screen are expected // the view only moves when something would land outside it; no shaking of the rest
-  }
+  function apply() { computeFocus(); }
   function setFocus(id, hops) {
     focus = id ? { id, hops } : null;
     apply(false); computeFocus(); relax(250); refresh(); fitView(); stats(); renderPanel();
@@ -927,7 +872,7 @@ async function openInPortal(n) {
   }
 
   // The picture follows the change at once: PHIS has accepted it, so the links it must now have are drawn (the nodes snap together / pop apart) without waiting,
-  // and PHIS is asked in the background afterwards to confirm. If the change touches something folded away, the picture is rebuilt instead.
+  // and PHIS is asked in the background afterwards to confirm.
   let known = new Set(data.edges.map(ed => edgeKey(ed.source, ed.target)));
   function applyDiff(added, gone, animate) {
     for (const [a, b] of gone) { known.delete(edgeKey(a, b)); if (g.hasEdge(a, b)) g.dropEdge(a, b); }
@@ -1043,7 +988,7 @@ async function openInPortal(n) {
   async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
 
   // ---- dragging: the node follows the cursor and is pinned while held; with live physics the rest follows ----
-  let drag = null, lastDrag = 0, dragRun = false, box = null; // a drag ends with a click event of its own, which must not select or fold
+  let drag = null, lastDrag = 0, dragRun = false, box = null; // a drag ends with a click event of its own, which must not select
   sigma.on("downNode", ({ node, event }) => { if (event.original.button !== 0) return; freezeBBox(); home.delete(node); drag = { node, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(node, "fixed", true); }); // left button only: a right-drag moves the view
   // a node is also dragged by its text: a press on a label starts the same drag as a press on the dot
   sigma.on("downStage", ({ event }) => {
@@ -1658,9 +1603,8 @@ async function openInPortal(n) {
   }
   // ?focus=<uri>&hops=1|2 opens the graph around one resource (how a resource page will link here)
   const want = params.get("focus");
-  if (want && memberFold.has(want) && !g.hasNode(want)) { open.add(memberFold.get(want)); expand(memberFold.get(want)); }
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, open, folds, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
