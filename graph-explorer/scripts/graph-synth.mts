@@ -1,11 +1,13 @@
 // Serves public/ plus a made-up /api/graph so the graph can be judged at any size in your own browser, without PHIS.
 // Run: node --experimental-strip-types scripts/graph-synth.mts [scale=1] [port=4001]   then open http://localhost:4001/graph
+// Or pass the path of a SNAP-style edge list ("a b" per line, # comments) to judge a real graph: node scripts/graph-synth.mts email-Eu-core.txt 4002
 // scale 1 is about 680 nodes, 3 about 2000. Organisations own their facilities, devices, experiments, people (a few cross links).
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 
-const scale = Number(process.argv[2]) || 1, port = Number(process.argv[3]) || 4001;
+const file = Number.isNaN(Number(process.argv[2] ?? 1)) ? process.argv[2] : null, scale = Number(process.argv[2]) || 1, port = Number(process.argv[3]) || 4001;
 let seed = 42;
 const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
 const pick = <T,>(a: T[]): T => a[Math.floor(rnd() * a.length)];
@@ -30,6 +32,16 @@ org.forEach((o, k) => {
   C.forEach((f) => e(f, pick(X))); G.forEach((g) => U.slice(0, 6).forEach((u) => e(g, u))); P.forEach((p) => e(p, pick(U)));
   if (rnd() < .3) e(pick(X), pick(part(per, (k + 1) % N)));
 });
+
+if (file) { // a real edge list replaces the made-up graph (ponytail: one type, no labels, so only the structure is judged)
+  nodes.length = edges.length = 0;
+  const seen = new Set<string>();
+  for (const l of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const [a, b] = l.trim().split(/\s+/); if (!b || l.startsWith("#") || a === b) continue;
+    for (const id of [a, b]) if (!seen.has(id)) { seen.add(id); nodes.push({ id, type: "person", label: id }); }
+    edges.push({ source: a, target: b });
+  }
+}
 
 const root = join(import.meta.dirname, "..", "public");
 const adjacency = join(root, "..", "src", "adjacency.js"); // the portal serves this one at the top level too
