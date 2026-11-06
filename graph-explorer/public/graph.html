@@ -224,7 +224,7 @@ async function openInPortal(n) {
     }
     for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
   }
-  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id)))) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
+  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
   let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
@@ -774,10 +774,10 @@ async function openInPortal(n) {
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
-  function soloKind(t, ev, shown) { // a selection is kept: Ctrl adds or removes a type from what is shown (the first time it starts from the types already selected, so the selection stays in view), Shift a range, All shows every type again
+  function soloKind(t, ev, shown) { // a selection is kept: Ctrl adds or removes a type from what is shown, Shift a range, All shows every type again; the chips mean only what was clicked, and selected nodes stay shown whatever their type
     if (t === "*") soloKinds.clear();
     else if (ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? [...soloKinds][0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; soloKinds.clear(); FILTERS.slice(x, y + 1).filter(k => shown.includes(k)).forEach(k => soloKinds.add(k)); }
-    else { if (!soloKinds.size) for (const id of sel) soloKinds.add(filterKind(g.getNodeAttributes(id))); hiddenKinds.delete(t); kindAnchor = t; soloKinds.has(t) ? soloKinds.delete(t) : soloKinds.add(t); }
+    else { hiddenKinds.delete(t); kindAnchor = t; soloKinds.has(t) ? soloKinds.delete(t) : soloKinds.add(t); }
     computeFocus(); refresh(); stats(); renderChips(); renderPanel(); connected();
   }
   function renderChips() {
