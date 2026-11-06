@@ -362,6 +362,7 @@ async function openInPortal(n) {
     const fw = Math.ceil(w / RES), fh = Math.ceil(h / RES);
     if (field.width !== fw || field.height !== fh) { field.width = shape.width = fw; field.height = shape.height = fh; }
     hctx.setTransform(k, 0, 0, k, 0, 0); hctx.clearRect(0, 0, w, h);
+    if (catView || (lit && arr)) { flowing = false; return; } // nothing is painted over a grid or an arrangement, so the (costly) field is not built either
     if (!lit) startRestore();
     if (!lit && !clusters.length) { cache = null; return; } // nothing to paint: no selection and no clusters
     dims = { fw, fh, w, h, k };
@@ -539,7 +540,7 @@ async function openInPortal(n) {
     if (flowing) return;
     flowing = true; let last = 0;
     const loop = t => {
-      if (!cache || !lit) { flowing = false; return; }
+      if (!cache || !lit || arr || catView) { flowing = false; return; }
       if (!plain() && !arr) { if (litSeen !== lit) { litSeen = lit; pushBudget = 150; } if (pushBudget > 0 && pushStep() > .3) pushBudget--; } // a big graph: the others are eased out of the tint one by one for about 2.5 s (a plain graph gathers instead)
       const moving = stepLag(); if (moving) rebuild(); // the areas are still catching up with their nodes
       if (moving || t - last > 40) { if (t - last > 40) phase += .02; paintHalo(); last = t; }
@@ -1088,6 +1089,8 @@ async function openInPortal(n) {
     [x - w / 2, y - r - h - 1], [x - w / 2, y + r + 1], [x + gap + 12, y - h * 1.4], [x + gap + 12, y + h * .4], [x - gap - 12 - w, y - h * 1.4], [x - gap - 12 - w, y + h * .4],
     [x + gap + 30, y - h / 2], [x - gap - 30 - w, y - h / 2], [x - w / 2, y - r - h * 2.2], [x - w / 2, y + r + h * 1.2]
   ]; };
+  const widthMemo = new Map(); // text widths: measuring is the slow part of placing hundreds of names every frame
+  const textW = t => { let w = widthMemo.get(t); if (w === undefined) { w = { width: lctx.measureText(t).width }; if (widthMemo.size > 20000) widthMemo.clear(); widthMemo.set(t, w); } return w; };
   function drawLabels() {
     const box = labelLayer.parentElement.getBoundingClientRect(), k = window.devicePixelRatio || 1;
     if (labelLayer.width !== Math.round(box.width * k) || labelLayer.height !== Math.round(box.height * k)) { labelLayer.width = Math.round(box.width * k); labelLayer.height = Math.round(box.height * k); }
@@ -1110,11 +1113,11 @@ async function openInPortal(n) {
       || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
     for (const it of items) {
       it.text = (it.rank === 0 && litSel.size <= 6) || it.label.length <= 32 ? it.label : it.label.slice(0, 30).trimEnd() + "…"; // long names are shortened, except for a small selection
-      if (grid) { const avail = cellPx - 2 * it.r - 14; if (lctx.measureText(it.text).width > avail) { // cut to the cell; a short last word (a number, a code) is kept, because it is what tells names apart
+      if (grid) { const avail = cellPx - 2 * it.r - 14; if (textW(it.text).width > avail) { // cut to the cell; a short last word (a number, a code) is kept, because it is what tells names apart
           const m = it.text.match(/^(.*\S)\s+(\S{1,6})$/), tail = m ? "…" + m[2] : "…"; let t = m ? m[1] : it.text;
-          while (t.length > 1 && lctx.measureText(t + tail).width > avail) t = t.slice(0, -1);
+          while (t.length > 1 && textW(t + tail).width > avail) t = t.slice(0, -1);
           it.text = t.length >= (m ? 2 : 4) ? t.trimEnd() + tail : ""; } if (!it.text) continue; } // in a grid a name is cut to its cell, so it never runs into the next node
-      const w = lctx.measureText(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w, LH), first = labelSlot.get(it.id) ?? 0;
+      const w = textW(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w, LH), first = labelSlot.get(it.id) ?? 0;
       const order = grid ? [0] : [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
       let pick = -1;
       for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LH }; if (!clash(R)) { pick = si; break; } }
