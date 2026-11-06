@@ -101,13 +101,16 @@ async function openInPortal(n) {
   const filterKind = a => a.kind === "fold" ? "facility" : a.kind;
   // Size follows the number of links on a log scale, relative to the most linked node of this graph: the biggest hub is always the largest (22), a node with one link the smallest (about 8),
   // whatever the data looks like. The log keeps one huge hub from shrinking everything else to the same size.
-  let maxDeg = 1;
-  const setMaxDeg = () => { maxDeg = 1; g.forEachNode(id => { maxDeg = Math.max(maxDeg, g.degree(id)); }); };
+  // With types hidden in the legend it counts only the links to nodes that are shown (restyle), so what is left scales among itself.
+  let maxDeg = 1, byVisible = false;
+  const visDeg = id => { if (!byVisible) return g.degree(id); let d = 0; g.forEachNeighbor(id, nb => { if (!hiddenKinds.has(filterKind(g.getNodeAttributes(nb)))) d++; }); return d; };
+  const setMaxDeg = () => { maxDeg = 1; g.forEachNode(id => { if (!byVisible || !hiddenKinds.has(filterKind(g.getNodeAttributes(id)))) maxDeg = Math.max(maxDeg, visDeg(id)); }); };
   const styleOf = (id) => {
     const a = g.getNodeAttributes(id), deg = g.degree(id);
     const orphan = deg === 0;
-    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : 4 + 18 * Math.log1p(deg) / Math.log1p(maxDeg) };
+    return { orphan, color: COLORS[a.kind], size: a.kind === "fold" ? 10 + Math.sqrt(a.count) * 2 : 4 + 18 * Math.log1p(visDeg(id)) / Math.log1p(maxDeg) };
   };
+  const restyle = () => { byVisible = true; setMaxDeg(); g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id))); setK(); }; // after a type is hidden or shown
   data.nodes.forEach(({ type, ...n }) => g.addNode(n.id, { ...n, kind:type, x:Math.random(), y:Math.random() }));
   data.edges.forEach(ed => g.hasEdge(ed.source, ed.target) || g.addEdge(ed.source, ed.target));
 
@@ -766,11 +769,12 @@ async function openInPortal(n) {
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
     hiddenKinds.has(t) ? hiddenKinds.delete(t) : hiddenKinds.add(t);
+    if (!catView) restyle();
     const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
     if (hiddenKinds.has(t) && mine.length) { stashOwn = true; setSelection([...sel].filter(id => !mine.includes(id)), "replace"); stashOwn = false; stash.set(t, mine); } // a hidden type is not selected, but it is remembered
     else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
     if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
-    if (!catView) { refreshView(); if (hiddenKinds.has(t)) burst(); return; } // hiding a type: ForceAtlas runs briefly so what is left closes up
+    if (!catView) { refreshView(); burst(); return; } // hiding or showing a type: ForceAtlas runs briefly so the graph settles
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
@@ -1443,7 +1447,7 @@ async function openInPortal(n) {
   }
   function exitCat(toCluster, done) {
     if (!catView) return;
-    const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); crumbs.hidden = true; labelSlot.clear();
+    const { saved, key, typeKind, sizes0 } = catView; if (typeKind) toCluster = false; catView = null; for (const [id, v] of sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); if (byVisible) restyle(); crumbs.hidden = true; labelSlot.clear();
     tween([...saved].map(([id, p]) => ({ id, x: p.x, y: p.y })), 450, () => { refresh(); stats(); if (sel.size && lit) { sigma.refresh(); connected(); } else if (toCluster) zoomToCluster(key); else { fitView(); sigma.refresh(); } done?.(); }); // the render makes Sigma use the refitted camera at once; whatever 'done' measures (fitLit) must see it // the way back refits the whole graph
     refresh(); stats();
   }
