@@ -1258,6 +1258,16 @@ async function openInPortal(n) {
     if (band && arr) { sigma.refresh(); const fr = framedAt(arr.cx, arr.cy); return void sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: arr.ratio }, { duration: 500 }); }
     gather();
   };
+  // In the selection view the wheel scrolls the arrangement up and down (nothing zooms there: the grids already fill the pane and a section or grid can be opened to look closer).
+  // The camera stays at its zoom; scrolling is clamped so the arrangement's top and bottom edges stop at the pane's edges.
+  const extentPx = fresh => { if (!arr) return null; const x = arr.cx, up = Math.max(...arr.titles.map(t => t.y)), low = Math.min(...arr.heads.map(h => h.y - h.h)); if (fresh) sigma.refresh(); return { top: sigma.graphToViewport({ x, y: up }).y, bottom: sigma.graphToViewport({ x, y: low }).y }; };
+  document.getElementById("graph").addEventListener("wheel", ev => {
+    if (!arr || catView || (focusSec && !focusSec.band)) return; ev.preventDefault(); ev.stopImmediatePropagation();
+    const E = extentPx(true), box = terr.getBoundingClientRect(); if (!E) return; // fresh: the matrix is stale until a render
+    const dy = Math.max(-Math.max(0, 40 - E.top), Math.min(ev.deltaY * (ev.deltaMode === 1 ? 16 : 1), Math.max(0, E.bottom + 30 - box.height))); // down by at most what is below the pane, up by at most what is above it
+    if (!dy) return; const c = sigma.getCamera(), st = c.getState();
+    const fr = sigma.viewportToFramedGraph({ x: box.width / 2, y: box.height / 2 + dy }); c.setState({ x: fr.x, y: fr.y, ratio: st.ratio });
+  }, { capture: true, passive: false });
   function openBand(t) {
     if (!arr || catView || !pxu1) return;
     const box = terr.getBoundingClientRect(), r = t.rect, upp = Math.max(r.w / Math.max(200, box.width - 40), r.h / Math.max(200, box.height - 120));
@@ -1376,6 +1386,7 @@ async function openInPortal(n) {
       const a = sigma.graphToViewport(h), b = sigma.graphToViewport({ x: h.x + h.w, y: h.y - h.h }), c = COLORS[h.kind] || "#888888", rgb = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(","), pad = Math.max(2, 8 * (gview.ratio ? Math.min(1, gview.ratio / sigma.getCamera().getState().ratio) : 1));
       tctx.beginPath(); tctx.roundRect(a.x - pad, a.y - pad / 2, b.x - a.x + 2 * pad, b.y - a.y + pad * 1.5, 12); tctx.fillStyle = `rgba(${rgb},.11)`; tctx.fill(); tctx.strokeStyle = `rgba(${rgb},.4)`; tctx.lineWidth = 1; tctx.stroke(); }
     const rel = gview?.ratio ? Math.min(1, gview.ratio / sigma.getCamera().getState().ratio) : 1; // zoomed out past the arrangement's own zoom, the titles shrink with the spacing
+    if (lit && arr && !catView && (!focusSec || focusSec.band)) { const E = extentPx(), total = E ? E.bottom - E.top + 70 : 0; if (total > h * 1.05) { const th = Math.max(30, h * h / total), y0 = Math.min(h - th - 4, Math.max(4, (40 - E.top) / total * h)); tctx.fillStyle = "rgba(38,64,48,.25)"; tctx.beginPath(); tctx.roundRect(w - 7, y0, 4, th, 2); tctx.fill(); } } // where you are in the arrangement
     if (gview?.titles) { tctx.textAlign = "left"; tctx.font = `700 ${16 * rel}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const t of gview.titles) { if (16 * rel < 9) break; const v = sigma.graphToViewport(t), wpx = Math.abs(sigma.graphToViewport({ x: t.x + t.w, y: t.y }).x - v.x); let txt = `${t.text}  ${t.n}`; if (tctx.measureText(txt).width > wpx) txt = `${t.text.split(" ")[0]}  ${t.n}`; tctx.fillText(txt, v.x, v.y + 16); if (!catView && lit && arr && t.band) catHits.push({ band: t, x0: v.x - 2, x1: v.x + tctx.measureText(txt).width + 2, y0: v.y, y1: v.y + 22 }); } } // the three bands
     if (gview?.heads.length) { tctx.textAlign = "left"; tctx.font = `600 ${13 * rel}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const h of gview.heads) { if (13 * rel < 7) break; const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; const txt = `${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`; tctx.fillText(txt, v.x, v.y + 14); if (!catView && lit && arr && h.band) catHits.push({ sec: h, x0: v.x - 2, x1: v.x + tctx.measureText(txt).width + 2, y0: v.y + 1, y1: v.y + 20 }); } }
     if (!w || !h || !clusters.length || !compactBox.checked || arr) return; // no cluster paint inside the selection view
