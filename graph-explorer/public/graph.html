@@ -26,6 +26,8 @@
   .chk { display:inline-flex; gap:6px; align-items:center; }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
+  #keys { position:absolute; left:10px; bottom:8px; z-index:2; max-width:calc(100% - 20px); font-size:12px; line-height:1.5; color:var(--ink); background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:8px; padding:4px 10px; pointer-events:none; }
+  #keys b { font-weight:600; }
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
   #crumbs { position:absolute; top:54px; left:10px; max-width:calc(100% - 20px); z-index:3; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-size:13px; display:flex; gap:8px; align-items:center; }
@@ -44,7 +46,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="selview" hidden title="Arrange the selection, what it links to and everything else as grids">Selection view</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="keys"></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="selview" hidden title="Arrange the selection, what it links to and everything else as grids">Selection view</button><button id="focusbtn" hidden title="Gather what is selected and what it links to, and zoom on it">Focus selection</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -544,7 +546,7 @@ async function openInPortal(n) {
     flowing = true; let last = 0;
     const loop = t => {
       if (!cache || !lit || arr || catView) { flowing = false; return; }
-      if (!plain() && !arr) { if (litSeen !== lit) { litSeen = lit; pushBudget = 150; } if (pushBudget > 0 && pushStep() > .3) pushBudget--; } // a big graph: the others are eased out of the tint one by one for about 2.5 s (a plain graph gathers instead)
+      if (!plain() && !arr && !marking) { if (litSeen !== lit) { litSeen = lit; pushBudget = 150; } if (pushBudget > 0 && pushStep() > .3) pushBudget--; } // a big graph: the others are eased out of the tint one by one for about 2.5 s (a plain graph gathers instead)
       const moving = stepLag(); if (moving) rebuild(); // the areas are still catching up with their nodes
       if (moving || t - last > 40) { if (t - last > 40) phase += .02; paintHalo(); last = t; }
       requestAnimationFrame(loop);
@@ -793,7 +795,7 @@ async function openInPortal(n) {
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
   }
   function stats() {
-    faState();
+    selBtn(); // buttons, hint line and ForceAtlas follow the view
     let shown = 0, orphans = 0; g.forEachNode((id, a) => { if (isVisible(id)) { shown++; a.orphan && orphans++; } });
     document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link.`;
   }
@@ -987,12 +989,12 @@ async function openInPortal(n) {
     document.getElementById("everything")?.addEventListener("click", () => setFocus(null));
   }
   // mode: "replace" (plain click, window), "toggle" (Ctrl+click), "add" (Ctrl+window)
-  function setSelection(ids, mode) {
+  function setSelection(ids, mode, inPlace = false) { // modes: replace, toggle, add, remove; anything but a plain replace (and every box) marks the selection where it is, see markInPlace
     if (!stashOwn) stash.clear();
     if (mode === "replace") sel.clear();
     for (const id of ids) {
       if (!g.hasNode(id)) continue;
-      if (mode === "toggle") sel.has(id) ? sel.delete(id) : sel.add(id); else sel.add(id);
+      if (mode === "toggle") sel.has(id) ? sel.delete(id) : sel.add(id); else if (mode === "remove") sel.delete(id); else sel.add(id);
     }
     selected = sel.size ? [...sel].at(-1) : cur;
     apply(mode !== "replace");
@@ -1002,8 +1004,8 @@ async function openInPortal(n) {
     if (leaving) exitCat(false, connected); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
-    if (!leaving && sel.size && !catView) connected();
-    if (!sel.size) selView = false;
+    if (!leaving && sel.size && !catView) connected(mode !== "replace" || inPlace);
+    if (!sel.size) { selView = false; marking = false; }
     selBtn();
     if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
@@ -1047,7 +1049,7 @@ async function openInPortal(n) {
     if (id && event.original.button === 0) { freezeBBox(); drag = { node:id, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(id, "fixed", true); return; }
     const L = event.original.button === 0 && terrLabels.find(R => event.x >= R.x0 && event.x <= R.x1 && event.y >= R.y0 && event.y <= R.y1);
     if (L) { freezeBBox(); const gp = sigma.viewportToGraph(event); drag = { cluster: L.members, gx: gp.x, gy: gp.y, x:event.x, y:event.y, moved:false }; L.members.forEach(m => g.setNodeAttribute(m, "fixed", true)); return; } // a cluster is dragged by its name
-    if (event.original.button === 0) box = { x:event.x, y:event.y, moved:false, add: mods(event) }; // left-drag on empty space draws a selection window
+    if (event.original.button === 0) box = { x:event.x, y:event.y, moved:false, add: mods(event), remove: event.original.altKey }; // left-drag on empty space draws a selection window
   });
   sigma.getMouseCaptor().on("mousemovebody", (ev) => {
     if (!drag || drag.released) return; // a drag that has ended is still around for one tick (its click must not select): it must not start the physics again
@@ -1076,7 +1078,7 @@ async function openInPortal(n) {
     lastDrag = Date.now();
     const x0 = Math.min(b.x, b.x1), x1 = Math.max(b.x, b.x1), y0 = Math.min(b.y, b.y1), y1 = Math.max(b.y, b.y1), ids = [];
     g.forEachNode((id, a) => { if (!inLayout(id)) return; const v = sigma.graphToViewport({ x:a.x, y:a.y }); if (v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1) ids.push(id); });
-    setSelection(ids, b.add ? "add" : "replace");
+    setSelection(ids, b.remove ? "remove" : b.add ? "add" : "replace", true);
   };
   sigma.getMouseCaptor().on("mouseup", endBox);
   sigma.getMouseCaptor().on("mouseup", release);
@@ -1409,10 +1411,33 @@ async function openInPortal(n) {
     gathering = moves; tween(moves, 500, () => { if (gathering === moves) gathering = null; });
     cam.animate({ ...sigma.viewportToFramedGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), ratio }, { duration: 500 });
   }
-  const connected = () => selView ? gather() : plain() ? gatherBasic() : gatherBigBasic();
+  // Two ways to show a selection in the painted view. Inspect (a plain click): the view is reorganised around it. Mark in place (Ctrl/Shift+click, a box, the legend): nothing moves, so the next node can be found
+  // and the structure of the graph stays; what was pushed aside by an inspect goes back to its first place. "Focus selection" does the inspect on demand.
+  let marking = false;
+  const connected = (inPlace = false) => selView ? gather() : inPlace ? markInPlace() : (marking = false, plain() ? gatherBasic() : gatherBigBasic());
+  function markInPlace() {
+    if (selView || catView || !lit) return; marking = true; if (gathering) gathering.stop = true;
+    for (const [id, p] of pulled) if (!home.has(id)) home.set(id, p); pulled.clear();
+    const moves = [...home].filter(([id]) => g.hasNode(id)).map(([id, h]) => ({ id, x: h.x, y: h.y })); home.clear();
+    const done = () => { if (gathering === moves) gathering = null; const bx = terr.getBoundingClientRect(); // only if a marked node is now out of sight does the camera move: it shows everything again
+      if ([...lit].some(id => { if (!g.hasNode(id) || !isVisible(id)) return false; const v = sigma.graphToViewport(g.getNodeAttributes(id)); return v.x < 20 || v.y < 20 || v.x > bx.width - 20 || v.y > bx.height - 20; })) { fitView(); } };
+    if (moves.length) { gathering = moves; tween(moves, 450, done); } // nothing pushed aside: nothing moves and neither does the camera
+    selBtn();
+  }
+  function focusSel() { if (!sel.size || catView || selView) return; marking = false; plain() ? gatherBasic() : gatherBigBasic(); selBtn(); }
   function enterSelView() { if (!sel.size || catView) return; selView = true; releasePulled(); gather(); selBtn(); }
   function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
-  const selBtn = () => { faState(); const b = document.getElementById("selview"); b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; };
+  const KEYS = {
+    graph: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Drag</b> a box to select &middot; <b>Ctrl+drag</b> add &middot; <b>Alt+drag</b> remove &middot; <b>Right-drag</b> move the view",
+    selection: "<b>Scroll</b> move &middot; <b>Ctrl+click</b> add or remove &middot; <b>Drag</b> a box to select &middot; <b>Ctrl+drag</b> add &middot; <b>Alt+drag</b> remove &middot; <b>Esc</b> leave",
+    grid: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Ctrl+click a type</b> add it to the grid &middot; click empty space to leave" };
+  const selBtn = () => {
+    faState(); const b = document.getElementById("selview"), f = document.getElementById("focusbtn");
+    b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; f.hidden = !(sel.size && !catView && !selView && marking);
+    document.getElementById("keys").innerHTML = catView ? KEYS.grid : selView ? KEYS.selection : KEYS.graph;
+  };
+  document.getElementById("focusbtn").onclick = focusSel;
+  selBtn();
   document.getElementById("selview").onclick = () => selView ? leaveSelView() : enterSelView();
   addEventListener("keydown", ev => { if (ev.key === "Escape" && selView && !catView && !/INPUT|TEXTAREA/.test(ev.target.tagName)) leaveSelView(); });
   // ForceAtlas: available in the overview; hidden in a grid, in the selection view and when embedded in Browse; greyed while something is selected (the physics would pull the connected view apart).
