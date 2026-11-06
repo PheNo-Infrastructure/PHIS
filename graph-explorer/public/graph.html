@@ -128,7 +128,7 @@ async function openInPortal(n) {
   // (rewritten: a cluster must nearly fill the view, and its nodes must also have room)
   const SHOW_FRAC = .28, HIDE_FRAC = .2; // a cluster's radius as a share of the shorter side of the view
   const MIN_GAP = 30; // and its neighbours at least this far apart on screen, so a crowded cluster needs more zoom than a sparse one
-  const MIN_NODES = 150, MAX_PLAIN = 1500, MAX_CONDUCTANCE = .2, MIN_STABLE = .8, MIN_GROUPS = 3; // when the graph is clustered by default (guesses: tune on real data); MIN_CLUSTER and the rest below
+  const MIN_NODES = 150, MAX_PLAIN = 1500, MAX_CONDUCTANCE = .5, MIN_STABLE = .5, MIN_GROUPS = 3; // when the graph is clustered by default (tuned 2026-11-06 on 9 real SNAP graphs and 4 random ones: random graphs score stability <= .27, real ones >= .56; a lattice scores .54 and clusters); MIN_CLUSTER and the rest below
   const MIN_CLUSTER = 8, TYPE_MIN = 12, TYPE_SHARE = .2; // a graph that is not clustered is plain, except for a type with at least TYPE_MIN nodes and TYPE_SHARE of the graph: it becomes a category area of its own // ponytail: below this many nodes a graph is readable as it is; 500 is a guess, tune on real data
   const collapsed = new Set(), clusterOf = new Map(), // collapsed: the clusters painted right now, not drawn as nodes
     clusterHex = new Map(TERR.map((hex, i) => ["cc:" + i, hex])); // clusterHex: paint layer key -> colour; clusters share a few colour layers (the painter blends only so many) // collapsed: cluster keys (the id of its biggest organisation); clusterOf: node id -> cluster key
