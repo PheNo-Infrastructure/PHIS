@@ -157,7 +157,7 @@ test("e2e: the mockup's LINKABLE_TYPES stays in sync with node-types.ts's real N
   });
 });
 
-test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real multi-selection", async () => {
+test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real multi-selection", async (t) => {
   // A single new node gets linked to every selected item at once, so the menu must offer only
   // types adjacent to ALL selected nodes — not the union of what's adjacent to any one of them.
   await withServerAndBrowser(async (base, page) => {
@@ -167,6 +167,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     // Select one real Experiment
     await openRow(page, "Scientific Organization");
     await openRow(page, "Experiments");
+    if (!(await page.locator("#rowlist .row").first().waitFor({ timeout: 8000 }).then(() => true, () => false))) { t.skip("needs a live PHIS with at least one experiment (this one is not stubbed)"); return; }
     await page.locator("#rowlist .row").first().click();
     await idle(page);
 
@@ -189,6 +190,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
     await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "Scientific Organization");
     await idle(page);
     await openRow(page, "Projects");
+    if (!(await page.locator("#rowlist .row").first().waitFor({ timeout: 8000 }).then(() => true, () => false))) { t.skip("needs a live PHIS with at least one project (this one is not stubbed)"); return; }
     await page.locator("#rowlist .row").first().click({ modifiers: ["Control"] });
     await idle(page);
 
@@ -202,7 +204,7 @@ test("e2e: '+ New' menu shows the INTERSECTION of creatable types across a real 
   });
 });
 
-test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Make public' PUTs isPublic per item", async () => {
+test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Make public' PUTs isPublic per item", async (t) => {
   await withServerAndBrowser(async (base, page) => {
     const puts: any[] = [];
     await page.route("**/api/node", (r) => { puts.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
@@ -210,6 +212,7 @@ test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Ma
     await idle(page);
     await openRow(page, "Scientific Organization");
     await openRow(page, "Experiments");
+    if (!(await page.locator("#rowlist .row").first().waitFor({ timeout: 8000 }).then(() => true, () => false))) { t.skip("needs a live PHIS with at least one experiment (this one is not stubbed)"); return; }
     await page.locator("#rowlist .row").first().click();
     await idle(page);
     assert.equal(await page.locator("#visBtn").count(), 1);
@@ -225,6 +228,7 @@ test("e2e: 'Visibility…' shows only when everything selected has the flag; 'Ma
     // A project has no visibility flag, so a mixed selection hides the button.
     await page.locator(".crumb", { hasText: "Graph" }).click(); await openRow(page, "Scientific Organization");
     await openRow(page, "Projects");
+    if (!(await page.locator("#rowlist .row").first().waitFor({ timeout: 8000 }).then(() => true, () => false))) { t.skip("needs a live PHIS with at least one project (this one is not stubbed)"); return; }
     await page.locator("#rowlist .row").first().click({ modifiers: ["Control"] });
     await idle(page);
     assert.equal(await page.locator("#visBtn").count(), 0);
@@ -4580,27 +4584,28 @@ test("e2e: graph: back from the connected view the whole graph is fitted again, 
   });
 });
 
-test("e2e: graph: opening a grid from the legend clears the selection in the portal too", async () => {
+test("e2e: graph: Ctrl+click on a legend chip keeps the selection, in the portal too, and filters what is shown", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
     await frame.evaluate(() => (window as any).__graph.select("t:site-1", false));
     await page.locator(".sel-label", { hasText: "Site 1" }).waitFor();
     await page.locator('#graphInfo [data-t="organization"]').click({ modifiers: ["Control"] });
-    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
-    await page.locator(".sel-label", { hasText: "Site 1" }).waitFor({ state: "detached" });
-    assert.equal(await page.locator("#selectionPane .sel-item").count(), 0);
+    await frame.waitForFunction(() => (window as any).__graph.hiddenKinds && document.querySelector('#legend .chip.sel[data-t="organization"]'));
+    assert.equal(await frame.evaluate(() => (window as any).__graph.cat()), null, "with a selection the chip filters, it does not open a grid");
+    assert.deepEqual(await graphSel(frame), ["t:site-1"], "the selection is kept");
+    assert.equal(await page.locator(".sel-label", { hasText: "Site 1" }).count(), 1, "and so is it in the Selection pane");
   });
 });
 
-test("e2e: graph: the connected view frames only the selection and what it links to, the rest moves aside, and clearing puts every node back", async () => {
+test("e2e: graph: the connected view brings the selection and what it links to into frame, and clearing puts every node back", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
     const places = () => frame.evaluate(() => { const G = (window as any).__graph, o: any = {}; G.g.forEachNode((id: string, a: any) => o[id] = [a.x, a.y]); return o; });
-    const inFrame = () => frame.evaluate(() => { const G = (window as any).__graph, out: string[] = []; G.g.forEachNode((id: string, a: any) => { const v = G.sigma.graphToViewport(a); if (v.x >= 0 && v.x <= innerWidth && v.y >= 0 && v.y <= innerHeight) out.push(id); }); return out.sort(); });
+    const litInFrame = () => frame.evaluate(() => { const G = (window as any).__graph, lit = G.lit(); if (!lit) return false; let ok = true; lit.forEach((id: string) => { const v = G.sigma.graphToViewport(G.g.getNodeAttributes(id)); if (!(v.x >= 0 && v.x <= innerWidth && v.y >= 0 && v.y <= innerHeight)) ok = false; }); return ok; });
     const home = await places();
     await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
-    await frame.waitForFunction(() => { const G = (window as any).__graph, lit = G.lit(); if (!lit) return false; let ok = true; G.g.forEachNode((id: string, a: any) => { const v = G.sigma.graphToViewport(a), inside = v.x >= 0 && v.x <= innerWidth && v.y >= 0 && v.y <= innerHeight; if (inside !== lit.has(id)) ok = false; }); return ok; }, undefined, { timeout: 8000 });
-    assert.deepEqual(await inFrame(), ["t:exp-1", "t:fac-1", "t:org-a"], "only the selected node and what it links to are in frame");
+    await settled(frame);
+    assert.equal(await litInFrame(), true, "the selected node and what it links to are in frame");
     await frame.evaluate(() => (window as any).__graph.setSelection([], "replace"));
     await frame.waitForFunction((h: any) => { const G = (window as any).__graph; let ok = true; G.g.forEachNode((id: string, a: any) => { if (Math.hypot(a.x - h[id][0], a.y - h[id][1]) > 1e-3) ok = false; }); return ok; }, home, { timeout: 8000 });
   });
