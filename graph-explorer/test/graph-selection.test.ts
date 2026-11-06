@@ -23,7 +23,7 @@ function stubGraph() {
   return { nodes, edges };
 }
 
-async function withGraph(fn: (page: Page) => Promise<void>, viewport = { width: 1400, height: 860 }) {
+async function withGraph(fn: (page: Page) => Promise<void>, viewport = { width: 1400, height: 860 }, query = "") {
   const server = createServer(handleRequest);
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const address = server.address(), port = typeof address === "object" && address ? address.port : 0;
@@ -35,7 +35,7 @@ async function withGraph(fn: (page: Page) => Promise<void>, viewport = { width: 
   await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(stubGraph()) }));
   await page.route("**/api/instance", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"test":false}' }));
   try {
-    await page.goto(`http://localhost:${port}/graph`);
+    await page.goto(`http://localhost:${port}/graph${query}`);
     await page.waitForFunction(() => (window as any).__graph?.g.order > 0);
     await settled(page);
     await fn(page);
@@ -259,4 +259,54 @@ test("e2e: graph selection: in the selection view the wheel scrolls (y only, no 
     await settled(page);
     assert.ok(Math.abs((await camera(page)).y - c0.y) < 1e-3, "scrolling back up returns to the top");
   }, { width: 1100, height: 520 });
+});
+
+// What Browse sends when a resource is opened there (a search result, say): its id as `current`.
+const openedInBrowse = (page: Page, id: string) => page.evaluate((i) => window.postMessage({ kind: "selection", ids: [], current: i }, location.origin), id);
+const onScreen = (page: Page, id: string) => page.evaluate((i) => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), v = G.sigma.graphToViewport(G.g.getNodeAttributes(i)); return v.x > 0 && v.y > 0 && v.x < r.width && v.y < r.height; }, id);
+
+test("e2e: graph selection: a resource opened in Browse is brought into view when it is off screen, and left alone when it is already in sight", async () => {
+  await withGraph(async (page) => {
+    const before = await camera(page);
+    await openedInBrowse(page, "organization-0"); await settled(page);
+    assert.ok(sameCamera(await camera(page), before), "already on screen: the camera does not move");
+    // zoom in far on one node, so most of the graph is out of sight
+    await page.evaluate(() => { const G = (window as any).__graph, f = G.sigma.viewportToFramedGraph(G.sigma.graphToViewport(G.g.getNodeAttributes("organization-0"))); G.sigma.getCamera().setState({ x: f.x, y: f.y, ratio: 0.12 }); });
+    await settled(page);
+    const far = "device-17";
+    assert.equal(await onScreen(page, far), false, "the node is out of sight");
+    await openedInBrowse(page, far); await settled(page);
+    assert.equal(await onScreen(page, far), true, "opening it brings it into view");
+    assert.ok((await camera(page)).ratio <= 0.4, "close enough to see it");
+  }, { width: 1400, height: 860 }, "?embed=1");
+});
+
+test("e2e: graph selection: a resource opened in Browse whose type is hidden in the legend shows its type again", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => (document.querySelector('#legend button[data-t="device"]') as HTMLElement).click()); await settled(page); // the portal's copy of the legend clicks this one
+    assert.equal((await shown(page)).device, undefined, "devices are hidden");
+    await openedInBrowse(page, "device-3"); await settled(page);
+    assert.equal(((await shown(page)).device ?? 0) > 0, true, "opening a device shows the devices again");
+    assert.equal(await onScreen(page, "device-3"), true);
+  }, { width: 1400, height: 860 }, "?embed=1");
+});
+
+test("e2e: graph selection: nothing can be dragged out of the selection view or a grid", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-0"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const home = await places(page), cam = await camera(page), n = await xy(page, "organization-0");
+    await page.mouse.move(n.x, n.y); await page.mouse.down(); await page.mouse.move(n.x + 160, n.y + 90, { steps: 8 }); await page.mouse.up(); await settled(page);
+    assert.equal(sameAs(home, await places(page)), true, "the node stayed where the arrangement put it");
+    assert.ok(sameCamera(await camera(page), cam), "and the view did not pan");
+    assert.equal(await page.evaluate(() => (window as any).__graph.catHits().filter((P: any) => P.band).length), 3, "the selection view is still up");
+    assert.equal(await page.evaluate(() => (window as any).__graph.physics().liveOn), false, "no physics started");
+    // a label can be pressed too
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await settled(page);
+    await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await settled(page);
+    assert.notEqual(await page.evaluate(() => (window as any).__graph.cat()), null, "a grid is open");
+    const g0 = await places(page), o = await xy(page, "organization-1");
+    await page.mouse.move(o.x, o.y); await page.mouse.down(); await page.mouse.move(o.x + 120, o.y + 80, { steps: 8 }); await page.mouse.up(); await settled(page);
+    assert.equal(sameAs(g0, await places(page)), true, "the same in a grid");
+  });
 });

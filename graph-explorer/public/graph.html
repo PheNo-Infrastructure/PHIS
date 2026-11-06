@@ -967,7 +967,7 @@ async function openInPortal(n) {
     addEventListener("message", ev => {
       const m = ev.data;
       if (ev.origin !== location.origin || ev.source !== parent || !m) return;
-      if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; }
+      if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; const before = cur; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; if (cur && cur !== before) reveal(cur); }
       else if (m.kind === "changed") reconcile(true);
       else if (m.kind === "kinds" && plain()) { leaveSelection(); const cur = catView?.kinds ?? [], pick = m.kinds.filter(k => !hiddenKinds.has(k) && kindCount[k]); kindAnchor = pick[0] ?? kindAnchor; setKinds(m.add ? [...cur, ...pick] : pick); } // a box dragged over the portal's copy of the legend
       else if (m.kind === "category") showCategory(m.type);
@@ -984,16 +984,32 @@ async function openInPortal(n) {
     regrid(kinds); // replacing one grid by another goes straight there, no trip back to the graph
   }
   const showCategory = kind => setKinds(kind ? [kind] : []);
+  // A resource opened in Browse (a search result, say) is brought into view: its type is shown again if it was hidden, and the camera goes to it when it is not already on screen
+  // (or sits inside a painted cluster, where it is too small to find). Not while a grid or the selection view is up: they have layouts of their own. A selection that was just gathered frames it already.
+  function reveal(id) {
+    if (!g.hasNode(id) || catView || selView || performance.now() - lastGather < 120) return;
+    const k = filterKind(g.getNodeAttributes(id));
+    if (hiddenKinds.has(k)) { hiddenKinds.delete(k); restyle(); computeFocus(); refresh(); stats(); renderChips(); }
+    sigma.refresh();
+    const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x: a.x, y: a.y }), box = terr.getBoundingClientRect(), st = sigma.getCamera().getState();
+    const inside = v.x > 50 && v.y > 70 && v.x < box.width - 50 && v.y < box.height - 50, small = sigma.scaleSize(a.size) < 7; // too small to find (a node inside a painted cluster at the overview zoom)
+    if (inside && !small) return;
+    const fr = sigma.viewportToFramedGraph(v); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: Math.min(st.ratio, .4) }, { duration: 600 }); // centred, and close enough to see
+  }
   function setCurrent(id) { cur = id && g.hasNode(id) ? id : null; selected = sel.size ? [...sel].at(-1) : cur; apply(false); refresh(); stats(); renderPanel(); }
   async function select(id, keep = false) { setSelection(id ? [id] : [], keep ? "toggle" : "replace"); }
 
   // ---- dragging: the node follows the cursor and is pinned while held; with live physics the rest follows ----
   let drag = null, lastDrag = 0, dragRun = false, box = null; // a drag ends with a click event of its own, which must not select
-  sigma.on("downNode", ({ node, event }) => { if (event.original.button !== 0) return; freezeBBox(); home.delete(node); drag = { node, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(node, "fixed", true); }); // left button only: a right-drag moves the view
+  let held = null; // a node pressed in a laid-out view: the move that follows must not pan the camera, and the click that ends it is not a click
+  sigma.getMouseCaptor().on("mousemovebody", ev => { if (held) { if (Math.hypot(ev.x - held.x, ev.y - held.y) > 5) held.moved = true; ev.preventSigmaDefault(); ev.original.preventDefault(); ev.original.stopPropagation(); } });
+  const letGo = () => { if (held?.moved) lastDrag = Date.now(); held = null; };
+  sigma.getMouseCaptor().on("mouseup", letGo); sigma.getMouseCaptor().on("mouseleave", letGo);
+  sigma.on("downNode", ({ node, event }) => { if (event.original.button !== 0) return; if (arr || catView) { event.preventSigmaDefault(); held = { x: event.x, y: event.y, moved: false }; return; } /* a grid and the selection view are laid out: nothing is dragged out of them, and the press does not pan either */ freezeBBox(); home.delete(node); drag = { node, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(node, "fixed", true); }); // left button only: a right-drag moves the view
   // a node is also dragged by its text: a press on a label starts the same drag as a press on the dot
   sigma.on("downStage", ({ event }) => {
     const id = labelAt(event.x, event.y);
-    if (id && event.original.button === 0) { freezeBBox(); drag = { node:id, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(id, "fixed", true); return; }
+    if (id && event.original.button === 0 && !arr && !catView) { freezeBBox(); drag = { node:id, x:event.x, y:event.y, moved:false }; g.setNodeAttribute(id, "fixed", true); return; }
     const L = event.original.button === 0 && terrLabels.find(R => event.x >= R.x0 && event.x <= R.x1 && event.y >= R.y0 && event.y <= R.y1);
     if (L) { freezeBBox(); const gp = sigma.viewportToGraph(event); drag = { cluster: L.members, gx: gp.x, gy: gp.y, x:event.x, y:event.y, moved:false }; L.members.forEach(m => g.setNodeAttribute(m, "fixed", true)); return; } // a cluster is dragged by its name
     if (event.original.button === 0) box = { x:event.x, y:event.y, moved:false, add: mods(event), remove: event.original.altKey }; // left-drag on empty space draws a selection window
@@ -1363,7 +1379,8 @@ async function openInPortal(n) {
   // Two ways to show a selection in the painted view. Inspect (a plain click): the view is reorganised around it. Mark in place (Ctrl/Shift+click, a box, the legend): nothing moves, so the next node can be found
   // and the structure of the graph stays; what was pushed aside by an inspect goes back to its first place. "Focus selection" does the inspect on demand.
   let marking = false;
-  const connected = (inPlace = false) => selView ? gather() : inPlace ? markInPlace() : (marking = false, plain() ? gatherBasic() : gatherBigBasic());
+  let lastGather = 0;
+  const connected = (inPlace = false) => { lastGather = performance.now(); return selView ? gather() : inPlace ? markInPlace() : (marking = false, plain() ? gatherBasic() : gatherBigBasic()); };
   function markInPlace() {
     if (selView || catView || !lit) return; marking = true; if (gathering) gathering.stop = true;
     for (const [id, p] of pulled) if (!home.has(id)) home.set(id, p); pulled.clear();

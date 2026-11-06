@@ -4611,6 +4611,23 @@ test("e2e: graph: the connected view brings the selection and what it links to i
   });
 });
 
+test("e2e: graph: a search result picked in Browse is brought into view in the graph, even when the graph was looking elsewhere", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await stubSearch(page, () => [{ type: "experiment", total: 1, items: [{ id: "t:exp-1", type: "experiment", label: "Experiment 1" }] }]);
+    const frame = await openGraph(page, base);
+    // look somewhere else: zoomed far in on another node, so t:exp-1 is out of sight
+    await frame.evaluate(() => { const G = (window as any).__graph, f = G.sigma.viewportToFramedGraph(G.sigma.graphToViewport(G.g.getNodeAttributes("t:site-1"))); G.sigma.getCamera().setState({ x: f.x, y: f.y, ratio: 0.05 }); });
+    await settled(frame);
+    const inFrame = () => frame.evaluate(() => { const G = (window as any).__graph, v = G.sigma.graphToViewport(G.g.getNodeAttributes("t:exp-1")); return v.x >= 0 && v.x <= innerWidth && v.y >= 0 && v.y <= innerHeight; });
+    assert.equal(await inFrame(), false, "the graph is not showing it");
+    await typeSearch(page, "exp");
+    await page.locator("#rowlist .row", { hasText: "Experiment 1" }).click();
+    await idle(page);
+    await settled(frame);
+    assert.equal(await inFrame(), true, "picking the result brings it into view");
+  });
+});
+
 test("e2e: graph: hiding a type takes its nodes out of the selection, here and in the portal", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
