@@ -1279,7 +1279,8 @@ async function openInPortal(n) {
   document.getElementById("graph").addEventListener("wheel", ev => {
     if (!arr || catView || (focusSec && !focusSec.band)) return; ev.preventDefault(); ev.stopImmediatePropagation();
     const E = extentPx(true), box = terr.getBoundingClientRect(); if (!E) return; // fresh: the matrix is stale until a render
-    const dy = Math.max(-Math.max(0, 40 - E.top), Math.min(ev.deltaY * (ev.deltaMode === 1 ? 16 : 1), Math.max(0, E.bottom + 30 - box.height))); // down by at most what is below the pane, up by at most what is above it
+    const upMax = focusSec?.band ? Math.max(0, 40 - E.top) : Math.max(0, box.height / 2 - sigma.graphToViewport({ x: arr.cx, y: arr.cy }).y); // up to where the view started (a zoomed grid: its own top)
+    const dy = Math.max(-upMax, Math.min(ev.deltaY * (ev.deltaMode === 1 ? 16 : 1), Math.max(0, E.bottom + 30 - box.height))); // down by at most what is below the pane, up by at most what is above it
     if (!dy) return; const c = sigma.getCamera(), st = c.getState();
     const fr = sigma.viewportToFramedGraph({ x: box.width / 2, y: box.height / 2 + dy }); c.setState({ x: st.x, y: fr.y, ratio: st.ratio }); // y only: x is left alone, so repeated steps cannot drift sideways
   }, { capture: true, passive: false });
