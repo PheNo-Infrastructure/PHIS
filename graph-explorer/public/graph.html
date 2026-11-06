@@ -1151,6 +1151,7 @@ async function openInPortal(n) {
       const kind = kindOf(D.id), faded = lit && !lit.has(D.id) && !canLink.has(D.id), k = D.r * 1.15 / 24;
       lctx.globalAlpha = faded ? .4 : 1;
       lctx.lineWidth = 1; lctx.strokeStyle = "#264030"; lctx.beginPath(); lctx.arc(D.x, D.y, D.r, 0, Math.PI * 2); lctx.stroke();
+      if (lit && litSel.has(D.id)) { lctx.lineWidth = 3; lctx.strokeStyle = dark ? "#e6ebe0" : "#1d2f24"; lctx.beginPath(); lctx.arc(D.x, D.y, D.r + 3.5, 0, Math.PI * 2); lctx.stroke(); } // what is selected wears a heavy ring: connected nodes do not
       lctx.save(); lctx.translate(D.x - 12 * k, D.y - 12 * k); lctx.scale(k, k);
       lctx.lineWidth = 2.2; lctx.lineCap = "round"; lctx.lineJoin = "round"; lctx.strokeStyle = ON_DARK.has(kind) ? "#e3eba1" : "#264030"; lctx.stroke(ICONS[kind]);
       lctx.restore();
@@ -1266,6 +1267,7 @@ async function openInPortal(n) {
   // In the selection view the wheel scrolls the arrangement up and down (nothing zooms there: the grids already fill the pane and a section or grid can be opened to look closer).
   // The camera stays at its zoom; scrolling is clamped so the arrangement's top and bottom edges stop at the pane's edges.
   const extentPx = fresh => { if (!arr) return null; const x = arr.cx, up = Math.max(...arr.titles.map(t => t.y)), low = Math.min(...arr.heads.map(h => h.y - h.h)); if (fresh) sigma.refresh(); return { top: sigma.graphToViewport({ x, y: up }).y, bottom: sigma.graphToViewport({ x, y: low }).y }; };
+  document.getElementById("graph").addEventListener("mousedown", ev => { if (arr && !catView && ev.button === 2) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true }); // the wheel scrolls the selection view; it is not panned sideways
   document.getElementById("graph").addEventListener("wheel", ev => {
     if (!arr || catView || (focusSec && !focusSec.band)) return; ev.preventDefault(); ev.stopImmediatePropagation();
     const E = extentPx(true), box = terr.getBoundingClientRect(); if (!E) return; // fresh: the matrix is stale until a render
@@ -1360,6 +1362,15 @@ async function openInPortal(n) {
     const moves = L.map(id => { const a = sub.getNodeAttributes(id); return { id, x: cx + (a.x - mx) * f, y: cy + (a.y - my) * f }; });
     const all = [...moves, ...back]; gathering = all; tween(all, 500, () => { if (gathering === all) gathering = null; fitLit(); });
   }
+  function spreadLit(L) { // the involved nodes keep their places, nudged apart where their drawn discs (larger while selected) would overlap
+    const pos = new Map(L.map(id => { const a = g.getNodeAttributes(id); return [id, { x: a.x, y: a.y }]; })), r = new Map(L.map(id => [id, (litSize.get(id) ?? g.getNodeAttribute(id, "size")) * K * 1.05])), cell = 2 * Math.max(...r.values());
+    for (let it = 0; it < 60; it++) { const grid = new Map(); let moved = false;
+      for (const id of L) { const q = pos.get(id), k = Math.floor(q.x / cell) + "," + Math.floor(q.y / cell); (grid.get(k) ?? grid.set(k, []).get(k)).push(id); }
+      for (const id of L) { const q = pos.get(id), cx = Math.floor(q.x / cell), cy = Math.floor(q.y / cell);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const o of grid.get((cx + dx) + "," + (cy + dy)) ?? []) { if (o <= id) continue; const w = pos.get(o); let vx = w.x - q.x, vy = w.y - q.y, d = Math.hypot(vx, vy); const need = r.get(id) + r.get(o); if (d >= need) continue; if (d < 1e-9) { vx = 1; vy = 0; d = 1; } const f = (need - d) / 2; q.x -= vx / d * f; q.y -= vy / d * f; w.x += vx / d * f; w.y += vy / d * f; moved = true; } }
+      if (!moved) break; }
+    return pos;
+  }
   function gatherBasic() {
     if (!lit || catView || !plain() || selView) return;
     const L = [...lit].filter(isVisible); if (!L.length) return;
@@ -1367,11 +1378,11 @@ async function openInPortal(n) {
     const was = new Map([...home.keys()].filter(id => g.hasNode(id)).map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }])); // where the earlier push left them
     snapHome(); // measure from the first places
     const orig = new Map([...was.keys()].map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
-    const box = terr.getBoundingClientRect(), cam = sigma.getCamera(), st = cam.getState();
-    const pts = L.map(id => sigma.graphToViewport(g.getNodeAttributes(id))), x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y));
-    const f = Math.max((x1 - x0) * 1.4 / (box.width * .9), (y1 - y0) * 1.4 / (box.height * .85), .05), ratio = Math.max(.3, st.ratio * f); // never closer than about 3x: a lone node is not blown up to fill the screen
+    const box = terr.getBoundingClientRect(), cam = sigma.getCamera(), st = cam.getState(), tgt = spreadLit(L);
+    const pts = L.map(id => sigma.graphToViewport(tgt.get(id))), x0 = Math.min(...pts.map(q => q.x)), x1 = Math.max(...pts.map(q => q.x)), y0 = Math.min(...pts.map(q => q.y)), y1 = Math.max(...pts.map(q => q.y));
+    const f = Math.max((x1 - x0) * 1.8 / (box.width * .9), (y1 - y0) * 1.8 / (box.height * .85), .05), ratio = Math.max(.3, st.ratio * f); // never closer than about 3x: a lone node is not blown up to fill the screen; the group fills about half the view, the rest is in sight round it
     const o = sigma.graphToViewport({ x: 0, y: 0 }), ppu = (Math.abs(sigma.graphToViewport({ x: 1, y: 0 }).x - o.x) || 1) * st.ratio / ratio; // pixels per graph unit once the camera is there
-    const c = sigma.viewportToGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), RS = Math.hypot(box.width / 2, box.height / 2) / ppu * 1.05;
+    const c = sigma.viewportToGraph({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), Rl = Math.max(...L.map(id => Math.hypot(tgt.get(id).x - c.x, tgt.get(id).y - c.y))), RS = Math.max(Rl * 1.12, Math.hypot(box.width / 2, box.height / 2) / ppu * .5); // the rest starts just outside the group, not beyond the screen: it stays in reach to add to the selection
     const inLit = new Set(L), rest = new Set(); g.forEachNode((id, a) => { if (!inLit.has(id) && isVisible(id) && !a.fixed) rest.add(id); });
     const U = [], seen = new Set();
     for (const id of rest) { if (seen.has(id)) continue; const list = [id], stack = [id]; seen.add(id); // a block: nodes that link to each other
@@ -1386,6 +1397,7 @@ async function openInPortal(n) {
       for (const u of U) { const dx = u.x - c.x, dy = u.y - c.y, d = Math.hypot(dx, dy), want = RS + u.r; if (d < want) { const k = want / Math.max(d, 1e-9); u.x = c.x + (d < 1e-9 ? want : dx * k); u.y = c.y + (d < 1e-9 ? 0 : dy * k); moved = true; } }
       if (!moved) break; }
     const moves = [];
+    for (const id of L) { const a = g.getNodeAttributes(id), t = tgt.get(id); if (Math.hypot(t.x - a.x, t.y - a.y) > 1e-9) { home.set(id, { x: a.x, y: a.y }); moves.push({ id, x: t.x, y: t.y }); } } // nudged apart
     for (const u of U) for (const id of u.list) { const a = g.getNodeAttributes(id), tx = u.x + (a.x - u.ox), ty = u.y + (a.y - u.oy); home.set(id, { x: a.x, y: a.y }); moves.push({ id, x: tx, y: ty }); }
     const first = new Set(moves.map(m => m.id));
     for (const [id, p] of was) { const o = orig.get(id); g.mergeNodeAttributes(id, p); if (!first.has(id)) moves.push({ id, x: o.x, y: o.y }); } // earlier pushes start the tween from where they are, and what is now connected goes home
@@ -1394,7 +1406,7 @@ async function openInPortal(n) {
   }
   const connected = () => selView ? gather() : plain() ? gatherBasic() : gatherBigBasic();
   function enterSelView() { if (!sel.size || catView) return; selView = true; releasePulled(); gather(); selBtn(); }
-  function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; live.closest("label").style.display = ""; crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); connected(); selBtn(); } // the arrangement's nodes glide from where they are to the connected view
+  function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; live.closest("label").style.display = ""; crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
   const selBtn = () => { const b = document.getElementById("selview"); b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; };
   document.getElementById("selview").onclick = () => selView ? leaveSelView() : enterSelView();
   addEventListener("keydown", ev => { if (ev.key === "Escape" && selView && !catView && !/INPUT|TEXTAREA/.test(ev.target.tagName)) leaveSelView(); });
