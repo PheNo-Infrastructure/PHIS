@@ -28,6 +28,7 @@
   ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
   #keys { position:absolute; left:10px; bottom:8px; z-index:2; max-width:calc(100% - 20px); font-size:12px; line-height:1.5; color:var(--ink); background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:8px; padding:4px 10px; pointer-events:none; }
   #keys b { font-weight:600; }
+  #selsearch { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px; width:150px; background:var(--card); color:var(--ink); }
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
   #crumbs { position:absolute; top:54px; left:10px; max-width:calc(100% - 20px); z-index:3; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-size:13px; display:flex; gap:8px; align-items:center; }
@@ -46,7 +47,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="keys"></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="selview" hidden title="Arrange the selection, what it links to and everything else as grids">Selection view</button><button id="focusbtn" hidden title="Gather what is selected and what it links to, and zoom on it">Focus selection</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="keys"></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="selview" hidden title="Arrange the selection, what it links to and everything else as grids">Selection view</button><button id="focusbtn" hidden title="Gather what is selected and what it links to, and zoom on it">Focus selection</button><input id="selsearch" type="search" placeholder="Search names" hidden><button id="selmatch" hidden>Select matches</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -124,6 +125,7 @@ async function openInPortal(n) {
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const stash = new Map(); let stashOwn = false; // stash: what hiding a type took out of the selection, given back when it is shown again (until the selection is changed some other way)
+  let nameQ = ""; // the selection view's name search; selected nodes stay shown
   const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
@@ -229,7 +231,7 @@ async function openInPortal(n) {
     }
     for (const f of [...focusSet]) if (open.has(f) && !hubHidden(f)) folds.get(f).members.forEach(({ id }) => g.hasNode(id) && focusSet.add(id));
   }
-  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
+  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) && (!nameQ || sel.has(id) || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)) && !(open.has(id) && g.getNodeAttribute(id, "kind") === "fold") && // an opened group has no node of its own: its facilities hang off its parents
     (!focusSet || (focusSet.has(id) && !(g.getNodeAttribute(id, "kind") === "fold" && hubHidden(id))));
   let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
@@ -1005,7 +1007,7 @@ async function openInPortal(n) {
     if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
     if (!leaving && sel.size && !catView) connected(mode !== "replace" || inPlace);
-    if (!sel.size) { selView = false; marking = false; }
+    if (!sel.size) { selView = false; marking = false; if (nameQ) resetSearch(); }
     selBtn();
     if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
@@ -1288,6 +1290,7 @@ async function openInPortal(n) {
     const fr = framedAt(r.x + r.w / 2, r.y - r.h / 2 + 30 * upp); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: Math.max(arr.ratio * .4, pxu1 * upp * 1.04) }, { duration: 500 }); // 30 px lower on screen: the breadcrumb is above
   }
   function openHit(P) {
+    if (P.act) return setSelection(P.sec.ids, P.act, true); // the section's Select all / Clear
     if (P.band) return openBand(P.band);
     if (!P.sec) return enterCat(P.key, P.kind);
     const h = P.sec, A = arr; if (!A || catView || !pxu1) return;
@@ -1340,8 +1343,8 @@ async function openInPortal(n) {
     if (!found) found = { R: 4, named: false, pk: on.map((gr, i) => blocksOf(gr, wid[i], 4, false)) };
     const { R, named, pk } = found, xs = wid.map((w, i) => wid.slice(0, i).reduce((t, v) => t + v + SIDE, 0));
     const Hr = Math.min(H0, Math.max(...pk.map(p => p.H)) * HFILL), rects = on.map((gr, i) => ({ gr, W: wid[i], x0: xs[i], y0: TITLE, ...place(pk[i], xs[i], TITLE, wid[i], Hr) })), Hon = Math.max(...rects.map(r => r.bottom));
-    for (const gr of off) { const p = blocksOf(gr, uw, R, named), y0 = Hon + 90 + TITLE; rects.push({ gr, W: uw, x0: 0, y0, ...place(p, 0, y0, uw, Math.max(p.H, H0 * gr.ids.length / nOn)) }); } // the same density as the screen
-    const u = 11 * K / R, extra = Math.max(1, Hon / uh), pos = new Map(), heads = [], titles = [], gx = px => cx + (px - uw / 2) * u, gy = py => cy - (py - Hon / 2) * u; // graph units per layout pixel (y points up)
+    for (const gr of off) { const p = blocksOf(gr, uw, R, named), y0 = Hon + 90 + TITLE; rects.push({ gr, W: uw, x0: 0, y0, ...place(p, 0, y0, uw, Math.min(p.H * HFILL, Math.max(p.H, H0 * gr.ids.length / nOn))) }); } // the same density as the screen
+    const u = 11 * K / R, extra = Math.max(1, Hon / uh), pos = new Map(), heads = [], titles = [], gx = px => cx + (px - uw / 2) * u, gy = py => cy - (py - Math.max(Hon, uh) / 2) * u; // a layout shorter than the pane sits at the top, not in the middle // graph units per layout pixel (y points up)
     let minPx = Infinity, minPy = Infinity;
     for (const r of rects) { titles.push({ text: r.gr.title, n: r.gr.ids.length, band: r.gr.title, x: gx(r.x0), y: gy(r.y0 - TITLE), w: r.W * u, rect: { x: gx(r.x0), y: gy(r.y0), w: r.W * u, h: (r.bottom - r.y0) * u } });
       for (const b of r.blocks) { minPx = Math.min(minPx, b.px); minPy = Math.min(minPy, b.py); heads.push({ kind: b.kind, ids: b.ids, band: r.gr.title, n: b.m, x: gx(b.x), y: gy(b.y), w: b.w * u, h: b.h * u }); b.ids.forEach((id, i) => { const row = Math.floor(i / b.cols), last = Math.floor((b.m - 1) / b.cols), lone = row === last ? (b.cols - (b.m - last * b.cols)) * b.px / 2 : 0; // the part-filled last row is centred
@@ -1426,17 +1429,24 @@ async function openInPortal(n) {
   }
   function focusSel() { if (!sel.size || catView || selView) return; marking = false; plain() ? gatherBasic() : gatherBigBasic(); selBtn(); }
   function enterSelView() { if (!sel.size || catView) return; selView = true; releasePulled(); gather(); selBtn(); }
-  function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
+  function leaveSelView() { if (!selView) return; selView = false; resetSearch(); arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
   const KEYS = {
     graph: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Drag</b> a box to select &middot; <b>Ctrl+drag</b> add &middot; <b>Alt+drag</b> remove &middot; <b>Right-drag</b> move the view",
-    selection: "<b>Scroll</b> move &middot; <b>Ctrl+click</b> add or remove &middot; <b>Drag</b> a box to select &middot; <b>Ctrl+drag</b> add &middot; <b>Alt+drag</b> remove &middot; <b>Esc</b> leave",
+    selection: "<b>Click</b> a node to add or remove it &middot; <b>Select all</b> / <b>Clear</b> on a section &middot; <b>Search</b> names &middot; <b>Drag</b> a box (<b>Ctrl</b> add, <b>Alt</b> remove) &middot; <b>Scroll</b> to move &middot; <b>Esc</b> leave",
     grid: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Ctrl+click a type</b> add it to the grid &middot; click empty space to leave" };
   const selBtn = () => {
     faState(); const b = document.getElementById("selview"), f = document.getElementById("focusbtn");
     b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; f.hidden = !(sel.size && !catView && !selView && marking);
+    document.getElementById("selsearch").hidden = document.getElementById("selmatch").hidden = !selView;
     document.getElementById("keys").innerHTML = catView ? KEYS.grid : selView ? KEYS.selection : KEYS.graph;
   };
   document.getElementById("focusbtn").onclick = focusSel;
+  const searchBox = document.getElementById("selsearch"), matchBtn = document.getElementById("selmatch"); let searchT = 0;
+  const matches = () => g.nodes().filter(id => inLayout(id) && !sel.has(id) && (!nameQ || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)));
+  const markMatches = () => { const n = nameQ ? matches().length : 0; matchBtn.textContent = nameQ ? `Select ${n} match${n === 1 ? "" : "es"}` : "Select matches"; matchBtn.disabled = !n; };
+  const resetSearch = () => { nameQ = ""; searchBox.value = ""; markMatches(); };
+  searchBox.oninput = () => { clearTimeout(searchT); searchT = setTimeout(() => { nameQ = searchBox.value.trim().toLowerCase(); computeFocus(); refresh(); stats(); markMatches(); if (selView) gather(); }, 200); };
+  matchBtn.onclick = () => { const ids = matches(); if (ids.length) setSelection(ids, "add", true); markMatches(); };
   selBtn();
   document.getElementById("selview").onclick = () => selView ? leaveSelView() : enterSelView();
   addEventListener("keydown", ev => { if (ev.key === "Escape" && selView && !catView && !/INPUT|TEXTAREA/.test(ev.target.tagName)) leaveSelView(); });
@@ -1499,7 +1509,13 @@ async function openInPortal(n) {
     const rel = gview?.ratio ? Math.min(1, gview.ratio / sigma.getCamera().getState().ratio) : 1; // zoomed out past the arrangement's own zoom, the titles shrink with the spacing
     if (lit && arr && !catView && (!focusSec || focusSec.band)) { const E = extentPx(), total = E ? E.bottom - E.top + 70 : 0; if (total > h * 1.05) { const th = Math.max(30, h * h / total), y0 = Math.min(h - th - 4, Math.max(4, (40 - E.top) / total * h)); tctx.fillStyle = "rgba(38,64,48,.25)"; tctx.beginPath(); tctx.roundRect(w - 7, y0, 4, th, 2); tctx.fill(); } } // where you are in the arrangement
     if (gview?.titles) { tctx.textAlign = "left"; tctx.font = `700 ${16 * rel}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const t of gview.titles) { if (16 * rel < 9) break; const v = sigma.graphToViewport(t), wpx = Math.abs(sigma.graphToViewport({ x: t.x + t.w, y: t.y }).x - v.x); let txt = `${t.text}  ${t.n}`; if (tctx.measureText(txt).width > wpx) txt = `${t.text.split(" ")[0]}  ${t.n}`; tctx.fillText(txt, v.x, v.y + 16); if (!catView && lit && arr && t.band) catHits.push({ band: t, x0: v.x - 2, x1: v.x + tctx.measureText(txt).width + 2, y0: v.y, y1: v.y + 22 }); } } // the three bands
-    if (gview?.heads.length) { tctx.textAlign = "left"; tctx.font = `600 ${13 * rel}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const h of gview.heads) { if (13 * rel < 7) break; const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; const txt = `${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`; tctx.fillText(txt, v.x, v.y + 14); if (!catView && lit && arr && h.band) catHits.push({ sec: h, x0: v.x - 2, x1: v.x + tctx.measureText(txt).width + 2, y0: v.y + 1, y1: v.y + 20 }); } }
+    if (gview?.heads.length) { tctx.textAlign = "left"; tctx.font = `600 ${13 * rel}px "Public Sans", system-ui, sans-serif`; tctx.fillStyle = "#264030"; for (const h of gview.heads) { if (13 * rel < 7) break; const v = sigma.graphToViewport(h), nm = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s"; const txt = `${nm[0].toUpperCase()}${nm.slice(1)}  ${h.n}`; tctx.fillText(txt, v.x, v.y + 14);
+      if (!catView && lit && arr && h.band) { // "Select all" / "Clear" for the whole section, at the right end of its header
+        const hf = tctx.font, clear = h.band.startsWith("Selected"), lab = clear ? "Clear" : "Select all", right = sigma.graphToViewport({ x: h.x + h.w, y: h.y }).x - 8;
+        tctx.font = `600 ${Math.max(10, 11 * rel)}px "Public Sans", system-ui, sans-serif`; const bw = tctx.measureText(lab).width + 14, bx = right - bw;
+        if (bx > v.x + tctx.measureText(txt).width + 14) { tctx.fillStyle = "rgba(255,255,255,.9)"; tctx.strokeStyle = "#3d8526"; tctx.lineWidth = 1; tctx.beginPath(); tctx.roundRect(bx, v.y + 2, bw, 18, 9); tctx.fill(); tctx.stroke(); tctx.fillStyle = "#2c6a1b"; tctx.fillText(lab, bx + 7, v.y + 15); catHits.push({ act: clear ? "remove" : "add", sec: h, x0: bx, x1: bx + bw, y0: v.y + 2, y1: v.y + 20 }); }
+        tctx.font = hf; tctx.fillStyle = "#264030"; }
+      if (!catView && lit && arr && h.band) catHits.push({ sec: h, x0: v.x - 2, x1: v.x + tctx.measureText(txt).width + 2, y0: v.y + 1, y1: v.y + 20 }); } }
     if (!w || !h || !clusters.length || !compactBox.checked || arr) return; // no cluster paint inside the selection view
     const geo = new Map();
     clusters.forEach((c, i) => {
@@ -1590,6 +1606,7 @@ async function openInPortal(n) {
   const mods = ev => ev.original.ctrlKey || ev.original.metaKey;
   // In the portal a click works as in Browse: a plain click opens the resource, Ctrl+click adds it to the selection.
   function pick(id, event) {
+    if (selView) return id ? select(id, true) : undefined; // the selection view is for curating: a click adds or removes a node, and empty space does not clear what you have built
     if (!embedded || mods(event)) return select(id, id && mods(event));
     if (!id) { cur = null; return setSelection([], "replace"); } // a click on empty space clears the selection and the highlight
     setCurrent(id);
