@@ -1236,7 +1236,8 @@ async function openInPortal(n) {
   // In the selection view the wheel scrolls the arrangement up and down (nothing zooms there: the grids already fill the pane and a section or grid can be opened to look closer).
   // The camera stays at its zoom; scrolling is clamped so the arrangement's top and bottom edges stop at the pane's edges.
   const extentPx = fresh => { if (!arr) return null; const x = arr.cx, up = Math.max(...arr.titles.map(t => t.y)), low = Math.min(...arr.heads.map(h => h.y - h.h)); if (fresh) sigma.refresh(); return { top: sigma.graphToViewport({ x, y: up }).y, bottom: sigma.graphToViewport({ x, y: low }).y }; };
-  document.getElementById("graph").addEventListener("mousedown", ev => { if (arr && !catView && ev.button === 2) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true }); // the wheel scrolls the selection view; it is not panned sideways
+  document.getElementById("graph").addEventListener("mousedown", ev => { if ((arr || catView) && ev.button === 2) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true }); // the wheel scrolls the selection view; it is not panned sideways
+  document.getElementById("graph").addEventListener("wheel", ev => { if (catView) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true, passive: false }); // a grid fits the pane as it is: no zoom (leave with a click on empty space or the breadcrumb)
   document.getElementById("graph").addEventListener("wheel", ev => {
     if (!arr || catView || (focusSec && !focusSec.band)) return; ev.preventDefault(); ev.stopImmediatePropagation();
     const E = extentPx(true), box = terr.getBoundingClientRect(); if (!E) return; // fresh: the matrix is stale until a render
@@ -1578,13 +1579,13 @@ async function openInPortal(n) {
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) { const P = !catView && catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return openHit(P); pick(node, event); } }); // a category pill wins over the node under it
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
   sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return openHit(P); const H = clusterHit(event.x, event.y); if (H) { const c = clusters.find(c => c.key === H.key); return c?.typeKind ? enterCat(c.key, c.typeKind) : zoomToCluster(H.key); } const id = labelAt(event.x, event.y); pick(id, event); } });
-    sigma.on("doubleClickStage", ({ event }) => { const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
+    sigma.on("doubleClickStage", ({ event }) => { if (catView) event.preventSigmaDefault(); const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) || catHits.some(P => ev.x >= P.x0 && ev.x <= P.x1 && ev.y >= P.y0 && ev.y <= P.y1) ? "pointer" : ""; });
 
   // right-drag moves the view
   const surface = sigma.getContainer(); let pan = null;
   surface.addEventListener("contextmenu", ev => ev.preventDefault());
-  surface.addEventListener("mousedown", ev => { if (ev.button !== 2) return; const r = surface.getBoundingClientRect(); pan = { x: ev.clientX - r.left, y: ev.clientY - r.top }; ev.preventDefault(); });
+  surface.addEventListener("mousedown", ev => { if (ev.button !== 2 || catView) return; const r = surface.getBoundingClientRect(); pan = { x: ev.clientX - r.left, y: ev.clientY - r.top }; ev.preventDefault(); });
   window.addEventListener("mousemove", ev => {
     if (!pan) return;
     const r = surface.getBoundingClientRect(), cur = { x: ev.clientX - r.left, y: ev.clientY - r.top };

@@ -4533,6 +4533,24 @@ test("e2e: graph: a type's list in Browse shows that type in the graph's grid, a
   });
 });
 
+test("e2e: graph: a grid cannot be zoomed or panned (wheel, double-click, right-drag): only a click on empty space or the breadcrumb leaves it", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    await page.evaluate(() => (window as any).navigateTo([{ id: "root", type: "category", label: "Graph" }, { id: "cat-org", type: "category", label: "Scientific Organization" }, { id: "cat-organizations", type: "category", label: "Organizations" }]));
+    await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
+    await page.waitForTimeout(800); // the camera settles on the grid
+    const cam = () => frame.evaluate(() => JSON.stringify((window as any).__graph.sigma.getCamera().getState()));
+    const before = await cam();
+    const box = (await page.locator("#graphPane").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 600); await page.mouse.wheel(0, -1200);
+    await page.mouse.dblclick(box.x + box.width - 8, box.y + 8);
+    await page.mouse.down({ button: "right" }); await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 80, { steps: 5 }); await page.mouse.up({ button: "right" });
+    await page.waitForTimeout(500);
+    assert.equal(await cam(), before, "the camera did not move");
+  });
+});
+
 test("e2e: graph: Ctrl+click on a type in the legend puts it in a grid, Ctrl+click again takes it out, and a plain click hides it", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
