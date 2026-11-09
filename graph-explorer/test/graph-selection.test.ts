@@ -172,7 +172,7 @@ test("e2e: graph selection: the selection view arranges the grids, Esc and the b
     const bands = () => page.evaluate(() => (window as any).__graph.catHits().filter((P: any) => P.band).map((P: any) => P.band.text.split(" ")[0]));
     assert.deepEqual(await bands(), [], "selecting alone does not open the selection view");
     await page.locator("#selview").click(); await settled(page);
-    assert.deepEqual(await bands(), ["Selected", "Connected", "Remaining"]);
+    assert.deepEqual(await bands(), ["Selected", "Connected", "Could", "Can't"]);
     assert.equal(await page.locator("#keys").innerText().then((t) => /Select all/.test(t)), true, "the controls of this view are written on screen");
     await page.keyboard.press("Escape"); await settled(page);
     assert.deepEqual(await bands(), []);
@@ -237,6 +237,28 @@ test("e2e: graph selection: after a link two nodes that ended up on top of each 
     await page.waitForTimeout(3000); await settled(page);
     assert.ok(await gap() >= -1, "after the link they no longer overlap (gap " + Math.round(await gap()) + "px)");
   });
+});
+
+test("e2e: graph selection: what is not connected is split into Could be linked and Can't be linked; the second is folded until its header is clicked", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-0"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const info = () => page.evaluate(() => { const G = (window as any).__graph, H = G.catHits().filter((P: any) => P.band).map((P: any) => P.band); const shownOf = (kind: string) => G.g.nodes().filter((id: string) => id.startsWith(kind + "-") && !G.sigma.getNodeDisplayData(id)?.hidden).length; return { bands: H.map((b: any) => b.text + ":" + b.n), device: shownOf("device"), person: shownOf("person"), site: shownOf("site") }; });
+    const a = await info();
+    assert.ok(a.bands.some((b: string) => /^Could be linked:/.test(b)), "a band of what could be linked");
+    assert.ok(a.bands.some((b: string) => /^Can't be linked:/.test(b)), "and one of what cannot");
+    assert.equal(a.device, 0, "folded: devices (an organization cannot be linked to them) are not drawn");
+    assert.ok(a.site > 0, "sites could be linked and are drawn");
+    const hit = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), P = G.catHits().find((P: any) => P.band && P.band.toggle); return P ? { x: (P.x0 + P.x1) / 2 + r.left, y: (P.y0 + P.y1) / 2 + r.top } : null; });
+    assert.ok(hit, "the folded band has a header to click");
+    // scroll to it, then open it
+    await page.evaluate(() => { const G = (window as any).__graph, c = G.sigma.getCamera(); c.animate({ y: c.getState().y - 0.0 }, { duration: 1 }); });
+    await page.mouse.move(500, 400); for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 300); await settled(page);
+    const hit2 = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), P = G.catHits().find((P: any) => P.band && P.band.toggle); return P ? { x: (P.x0 + P.x1) / 2 + r.left, y: (P.y0 + P.y1) / 2 + r.top } : null; });
+    assert.ok(hit2, "the header can be scrolled to");
+    await page.mouse.click(hit2.x, hit2.y); await page.waitForTimeout(1500);
+    assert.ok((await info()).device > 0, "opened: the devices are drawn");
+  }, { width: 1400, height: 700 });
 });
 
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
@@ -414,7 +436,7 @@ test("e2e: graph selection: nothing can be dragged out of the selection view or 
     await page.mouse.move(n.x, n.y); await page.mouse.down(); await page.mouse.move(n.x + 160, n.y + 90, { steps: 8 }); await page.mouse.up(); await settled(page);
     assert.equal(sameAs(home, await places(page)), true, "the node stayed where the arrangement put it");
     assert.ok(sameCamera(await camera(page), cam), "and the view did not pan");
-    assert.equal(await page.evaluate(() => (window as any).__graph.catHits().filter((P: any) => P.band).length), 3, "the selection view is still up");
+    assert.equal(await page.evaluate(() => (window as any).__graph.catHits().filter((P: any) => P.band).length), 4, "the selection view is still up");
     assert.equal(await page.evaluate(() => (window as any).__graph.physics().liveOn), false, "no physics started");
     // a label can be pressed too
     await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await settled(page);
