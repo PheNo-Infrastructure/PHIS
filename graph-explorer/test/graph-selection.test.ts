@@ -272,6 +272,26 @@ test("e2e: graph selection: hovering a node in a legend grid draws only links be
   });
 });
 
+test("e2e: graph selection: from a legend grid the selection view can be opened, and leaving it returns to the same grid", async () => {
+  await withGraph(async (page) => {
+    await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await settled(page);
+    await page.locator('#legend button[data-t="facility"]').click({ modifiers: ["Control"] }); await settled(page);
+    const kinds = () => page.evaluate(() => (window as any).__graph.cat()?.kinds ?? null);
+    assert.deepEqual(await kinds(), ["organization", "facility"]);
+    assert.equal(await page.locator("#selview").isVisible(), false, "nothing selected: no selection view yet");
+    const o = await xy(page, "organization-0"); await ctrlClick(page, o.x, o.y); await settled(page);
+    assert.deepEqual(await selected(page), ["organization-0"]);
+    assert.equal(await page.locator("#selview").isVisible(), true, "the selection view is offered in a grid");
+    await page.locator("#selview").click(); await page.waitForTimeout(1500); await settled(page);
+    assert.equal(await kinds(), null, "the grid is left");
+    assert.equal(await page.evaluate(() => (window as any).__graph.catHits().filter((P: any) => P.band).length), 4, "the selection is arranged in bands");
+    assert.equal(await page.locator("#selview").innerText(), "Back to the grid");
+    await page.locator("#selview").click(); await page.waitForTimeout(1500); await settled(page);
+    assert.deepEqual(await kinds(), ["organization", "facility"], "the same grid is back");
+    assert.deepEqual(await selected(page), ["organization-0"], "with the selection kept");
+  });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });

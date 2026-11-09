@@ -969,7 +969,7 @@ async function openInPortal(n) {
     if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
     if (!leaving && sel.size && !catView) { if (selView && focusSec) refreshSection(); else connected(mode !== "replace" || inPlace); } // an opened section stays open: a node taken out of the selection leaves it, one put in joins it (leaving it arranges the selection again)
-    if (!sel.size) { selView = false; marking = false; if (nameQ) resetSearch(); }
+    if (!sel.size) { selView = false; backToGrid = null; marking = false; if (nameQ) resetSearch(); }
     selBtn();
     if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
@@ -1438,15 +1438,20 @@ async function openInPortal(n) {
     selBtn();
   }
   function focusSel() { if (!sel.size || catView || selView) return; marking = false; plain() ? gatherBasic() : gatherBigBasic(); selBtn(); }
-  function enterSelView() { if (!sel.size || catView) return; selView = true; releasePulled(); gather(); selBtn(); }
-  function leaveSelView() { if (!selView) return; selView = false; resetSearch(); arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
+  let backToGrid = null; // the legend types of the grid the selection view was opened from: leaving the selection view returns to it
+  function enterSelView() {
+    if (!sel.size) return;
+    if (catView) { backToGrid = [...catView.kinds]; selView = true; exitCat(false, selBtn); return; } // the grid is left (its nodes glide home), and the selection is arranged in its place
+    selView = true; releasePulled(); gather(); selBtn();
+  }
+  function leaveSelView() { if (!selView) return; selView = false; resetSearch(); arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); if (gathering) gathering.stop = true; snapHome(); connected(); selBtn(); if (backToGrid) { const k = backToGrid; backToGrid = null; setKinds(k); } } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
   const KEYS = {
     graph: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Drag</b> a box to select &middot; <b>Ctrl+drag</b> add &middot; <b>Alt+drag</b> remove &middot; <b>Right-drag</b> move the view",
     selection: "<b>Click</b> a node to add or remove it &middot; <b>Select all</b> / <b>Clear</b> on a section &middot; <b>Search</b> names &middot; <b>Drag</b> a box (<b>Ctrl</b> add, <b>Alt</b> remove) &middot; <b>Scroll</b> to move &middot; <b>Esc</b> leave",
     grid: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Ctrl+click a type</b> add it to the grid &middot; click empty space to leave" };
   const selBtn = () => {
     faState(); const b = document.getElementById("selview"), f = document.getElementById("focusbtn");
-    b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; f.hidden = !(sel.size && !catView && !selView); f.textContent = marking ? "Focus selection" : "Show in place"; f.title = marking ? "Gather what is selected and what it links to, and zoom on it" : "Put everything back where it was, with the selection marked in place"; // one button, both ways
+    b.hidden = !sel.size; b.textContent = selView ? (backToGrid ? "Back to the grid" : "Leave selection view") : "Selection view"; f.hidden = !(sel.size && !catView && !selView); f.textContent = marking ? "Focus selection" : "Show in place"; f.title = marking ? "Gather what is selected and what it links to, and zoom on it" : "Put everything back where it was, with the selection marked in place"; // one button, both ways
     document.getElementById("selsearch").hidden = document.getElementById("selmatch").hidden = !selView;
     document.getElementById("keys").innerHTML = catView ? KEYS.grid : selView ? KEYS.selection : KEYS.graph;
   };
