@@ -256,8 +256,11 @@ test("e2e: graph selection: what is not connected is split into Could be linked 
     await page.mouse.move(500, 400); for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 300); await settled(page);
     const hit2 = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), P = G.catHits().find((P: any) => P.band && P.band.toggle); return P ? { x: (P.x0 + P.x1) / 2 + r.left, y: (P.y0 + P.y1) / 2 + r.top } : null; });
     assert.ok(hit2, "the header can be scrolled to");
-    await page.mouse.click(hit2.x, hit2.y); await page.waitForTimeout(1500);
+    const ratioNow = () => page.evaluate(() => (window as any).__graph.sigma.getCamera().getState().ratio as number);
+    const ratio0 = await ratioNow();
+    await page.mouse.click(hit2.x, hit2.y); await page.waitForTimeout(2000);
     assert.ok((await info()).device > 0, "opened: the devices are drawn");
+    assert.ok(Math.abs((await ratioNow()) / ratio0 - 1) < .01, "opening the band does not change the zoom");
   }, { width: 1400, height: 700 });
 });
 
@@ -303,6 +306,64 @@ test("e2e: graph selection: hiding and showing a type again and again with a sel
     assert.ok(Math.abs(last.K / first.K - 1) < .1, `the scale K stays (${first.K.toFixed(3)} -> ${last.K.toFixed(3)})`);
     assert.ok(Math.abs(last.width / first.width - 1) < .1, `and so does the spread of the layout (${first.width.toFixed(0)} -> ${last.width.toFixed(0)})`);
     assert.ok(Math.abs(last.maxSize - first.maxSize) < .01, "and the node sizes");
+  });
+});
+
+test("e2e: graph selection: select, hide and show a type, deselect, repeat (clicks that land mid-animation): every node ends exactly where it started", async () => {
+  await withGraph(async (page) => {
+    const home = await places(page), K0 = await page.evaluate(() => (window as any).__graph.K() as number);
+    const sets = [["facility-0", "facility-1", "facility-2", "experiment-2", "device-0"], ["facility-3", "facility-4", "site-1", "experiment-3", "person-0"]];
+    for (let c = 1; c <= 8; c++) {
+      const kind = c % 2 ? "organization" : "site";
+      await page.evaluate((s) => (window as any).__graph.setSelection(s, "replace"), sets[c % 2]); await page.waitForTimeout(300 + (c % 3) * 200);
+      for (let i = 0; i < 6; i++) { await page.locator(`#legend button[data-t="${kind}"]`).click(); await page.waitForTimeout(120 + (i % 3) * 100); }
+      await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await page.waitForTimeout(250 + (c % 3) * 250);
+    }
+    await page.waitForTimeout(1500); await settled(page);
+    assert.equal(sameAs(home, await places(page)), true, "after the rounds every node is back where it was");
+    const K1 = await page.evaluate(() => (window as any).__graph.K() as number);
+    assert.ok(Math.abs(K1 / K0 - 1) < .05, `and the scale is the same (every type is shown again, so the degree-based sizes are back: ${K0.toFixed(3)} -> ${K1.toFixed(3)})`);
+  });
+});
+
+test("e2e: graph selection: hide and show a type, then a box in a legend grid and a click on empty space: the scale and the node sizes are the same as before", async () => {
+  await withGraph(async (page) => {
+    const stat = () => page.evaluate(() => { const G = (window as any).__graph; let px = 0; G.g.forEachNode((id: string) => { const d = G.sigma.getNodeDisplayData(id); if (d && !d.hidden) px = Math.max(px, G.sigma.scaleSize(d.size)); }); return { K: G.K() as number, px }; });
+    await page.waitForTimeout(500);
+    const first = await stat();
+    await page.evaluate(() => (window as any).__graph.setSelection(["facility-0", "facility-1", "experiment-2"], "replace")); await page.waitForTimeout(900);
+    for (let i = 0; i < 2; i++) { await page.locator('#legend button[data-t="organization"]').click(); await page.waitForTimeout(500); }
+    await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await page.waitForTimeout(1200);
+    await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await page.waitForTimeout(1200);
+    const a = await xy(page, "organization-0"), b = await xy(page, "organization-1");
+    await drag(page, Math.min(a.x, b.x) - 30, Math.min(a.y, b.y) - 30, Math.max(a.x, b.x) + 30, Math.max(a.y, b.y) + 30); await page.waitForTimeout(900);
+    assert.equal((await selected(page)).length, 2, "the box picked two");
+    const boxed = await stat();
+    assert.ok(Math.abs(boxed.K / first.K - 1) < .1, `leaving the grid keeps the scale (${first.K.toFixed(3)} -> ${boxed.K.toFixed(3)})`);
+    const e = await emptyNear(page, 900, 700); await page.mouse.click(e.x, e.y); await page.waitForTimeout(1200);
+    await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await page.waitForTimeout(1200);
+    const end = await stat();
+    assert.ok(Math.abs(end.K / first.K - 1) < .1 && Math.abs(end.px / first.px - 1) < .1, `and so do the node sizes on screen (${first.px.toFixed(0)}px -> ${end.px.toFixed(0)}px)`);
+  });
+});
+
+test("e2e: graph selection: a box in a legend grid marks the nodes it touches and the grid stays (Ctrl adds, Alt removes)", async () => {
+  await withGraph(async (page) => {
+    await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await settled(page);
+    const inGrid = () => page.evaluate(() => (window as any).__graph.cat() !== null);
+    assert.equal(await inGrid(), true);
+    const a = await xy(page, "organization-0"), b = await xy(page, "organization-1"), c = await xy(page, "organization-2");
+    const around = (p: { x: number; y: number }, q: { x: number; y: number }) => [Math.min(p.x, q.x) - 25, Math.min(p.y, q.y) - 25, Math.max(p.x, q.x) + 25, Math.max(p.y, q.y) + 25] as const;
+    await drag(page, ...around(a, b)); await settled(page);
+    assert.equal(await inGrid(), true, "the grid stays after a box");
+    const picked = await selected(page);
+    assert.ok(picked.includes("organization-0") && picked.includes("organization-1"), "the nodes in the box are selected");
+    await drag(page, ...around(c, c), "Control"); await settled(page);
+    assert.equal(await inGrid(), true);
+    assert.ok((await selected(page)).includes("organization-2") && (await selected(page)).includes("organization-0"), "Ctrl adds");
+    await drag(page, ...around(a, a), "Alt"); await settled(page);
+    assert.equal(await inGrid(), true);
+    assert.ok(!(await selected(page)).includes("organization-0"), "Alt removes");
   });
 });
 
