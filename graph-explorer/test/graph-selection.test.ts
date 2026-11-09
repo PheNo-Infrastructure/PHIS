@@ -99,9 +99,15 @@ test("e2e: graph selection: Ctrl+click marks in place (nothing moves, what an in
     assert.deepEqual(await selected(page), ["experiment-0", "organization-0"]);
     assert.equal(sameAs(home, await places(page)), true, "marking in place: every node is back where it was");
     assert.equal(await page.locator("#focusbtn").isVisible(), true, "the way back to the gathered view is offered");
+    assert.equal(await page.locator("#focusbtn").innerText(), "Focus selection");
     await page.locator("#focusbtn").click(); await settled(page);
     assert.equal(sameAs(home, await places(page)), false, "Focus selection gathers it again");
-    assert.equal(await page.locator("#focusbtn").isVisible(), false);
+    assert.equal(await page.locator("#focusbtn").innerText(), "Show in place", "and the same button takes it back");
+    await page.locator("#focusbtn").click(); await settled(page);
+    assert.equal(sameAs(home, await places(page)), true, "Show in place: every node is back where it was, the selection stays marked");
+    assert.deepEqual(await selected(page), ["experiment-0", "organization-0"]);
+    assert.equal(await page.locator("#focusbtn").innerText(), "Focus selection");
+    await page.locator("#focusbtn").click(); await settled(page);
     await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await settled(page);
     assert.equal(sameAs(home, await places(page)), true, "clearing puts every node back");
   });

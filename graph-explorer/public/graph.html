@@ -1428,11 +1428,11 @@ async function openInPortal(n) {
     grid: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Ctrl+click a type</b> add it to the grid &middot; click empty space to leave" };
   const selBtn = () => {
     faState(); const b = document.getElementById("selview"), f = document.getElementById("focusbtn");
-    b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; f.hidden = !(sel.size && !catView && !selView && marking);
+    b.hidden = !sel.size || !!catView; b.textContent = selView ? "Leave selection view" : "Selection view"; f.hidden = !(sel.size && !catView && !selView); f.textContent = marking ? "Focus selection" : "Show in place"; f.title = marking ? "Gather what is selected and what it links to, and zoom on it" : "Put everything back where it was, with the selection marked in place"; // one button, both ways
     document.getElementById("selsearch").hidden = document.getElementById("selmatch").hidden = !selView;
     document.getElementById("keys").innerHTML = catView ? KEYS.grid : selView ? KEYS.selection : KEYS.graph;
   };
-  document.getElementById("focusbtn").onclick = focusSel;
+  document.getElementById("focusbtn").onclick = () => marking ? focusSel() : markInPlace();
   const searchBox = document.getElementById("selsearch"), matchBtn = document.getElementById("selmatch"); let searchT = 0;
   const matches = () => g.nodes().filter(id => inLayout(id) && !sel.has(id) && (!nameQ || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)));
   const markMatches = () => { const n = nameQ ? matches().length : 0; matchBtn.textContent = nameQ ? `Select ${n} match${n === 1 ? "" : "es"}` : "Select matches"; matchBtn.disabled = !n; };
