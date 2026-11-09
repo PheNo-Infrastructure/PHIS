@@ -367,6 +367,20 @@ test("e2e: graph selection: a box in a legend grid marks the nodes it touches an
   });
 });
 
+test("e2e: graph selection: a grid and an opened section end above the controls line, also in a low window", async () => {
+  for (const height of [560, 760]) await withGraph(async (page) => {
+    const gap = (ids: string) => page.evaluate((which) => { const G = (window as any).__graph, k = document.getElementById("keys")!.getBoundingClientRect(), r = document.getElementById("terr")!.getBoundingClientRect(); const set: Set<string> | null = which === "grid" ? G.catSet() : G.sectionIds(); let low = -1e9; for (const id of set ?? []) { if (G.sigma.getNodeDisplayData(id)?.hidden) continue; const v = G.sigma.graphToViewport(G.g.getNodeAttributes(id)); low = Math.max(low, v.y + r.top + G.sigma.scaleSize(G.sigma.getNodeDisplayData(id).size)); } return k.top - low; }, ids);
+    await page.locator('#legend button[data-t="facility"]').click({ modifiers: ["Control"] }); await page.waitForTimeout(1500); await settled(page);
+    assert.ok(await gap("grid") >= 4, `a grid ends above the controls line at ${height}px high (gap ${Math.round(await gap("grid"))})`);
+    await page.locator('#legend button[data-t="facility"]').click({ modifiers: ["Control"] }); await settled(page);
+    await page.evaluate(() => (window as any).__graph.setSelection(["facility-0", "facility-1", "facility-2"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const pill = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), h = G.catHits().find((P: any) => P.sec && !P.act && !P.band && P.sec.kind === "facility"); return { x: (h.x0 + h.x1) / 2 + r.left, y: (h.y0 + h.y1) / 2 + r.top }; });
+    await page.mouse.click(pill.x, pill.y); await page.waitForTimeout(1500);
+    assert.ok(await gap("section") >= 4, `an opened section ends above the controls line at ${height}px high (gap ${Math.round(await gap("section"))})`);
+  }, { width: 1100, height });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });

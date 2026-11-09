@@ -1198,7 +1198,7 @@ async function openInPortal(n) {
     if (!ids.length) return;
     stopGathering(); releasePulled(); snapHome(); soloKinds.clear();
     freezeBBox(); stopLive(); live.checked = false; labelSlot.clear();
-    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 130, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and a little below // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
+    const box = terr.getBoundingClientRect(), uw = box.width - 40, uh = box.height - 170, n = ids.length; // room under the toolbar and the breadcrumb (about 85 px) and above the controls line (about 70 px) // the grid fills the screen; everything it is linked to is just off screen, in sight when you zoom out
     // Size inside a grid follows the links between the grid's own nodes (log scale, none below 7); the links to the hidden rest of the graph do not count. The first sizes come back when the grid is left.
     if (keepSizes) for (const [id, v] of keepSizes) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v);
     const inGrid = new Set(ids), sizes0 = new Map(ids.map(id => [id, g.getNodeAttribute(id, "size")])), degs = ids.map(id => { let d = 0; g.forEachNeighbor(id, nb => { if (inGrid.has(nb)) d++; }); return d; }), maxD = Math.max(1, ...degs);
@@ -1288,7 +1288,7 @@ async function openInPortal(n) {
   }
   function zoomBand(t) {
     if (!arr || catView || !pxu1) return;
-    const box = terr.getBoundingClientRect(), r = t.rect, upp = Math.max(r.w / Math.max(200, box.width - 40), r.h / Math.max(200, box.height - 120));
+    const box = terr.getBoundingClientRect(), r = t.rect, upp = Math.max(r.w / Math.max(200, box.width - 40), r.h / Math.max(200, box.height - 160));
     focusSec = { name: t.text, n: t.n, band: true }; labelSlot.clear(); sigma.refresh();
     const fr = framedAt(r.x + r.w / 2, r.y - r.h / 2 + 30 * upp); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: Math.max(arr.ratio * .4, pxu1 * upp * 1.04) }, { duration: 500 }); // 30 px lower on screen: the breadcrumb is above
   }
@@ -1308,7 +1308,7 @@ async function openInPortal(n) {
     arr = { ...A, cellG: sub.cellG, rowG: sub.rowG, ratio: sub.ratio, heads: [...A.heads, ...sub.heads.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))], titles: [...A.titles, ...sub.titles.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))] };
     focusSec = { name: Name, n: h.n, from: h.band.replace(" resources", ""), pair: new Set([...h.ids, ...nb]), base: A, hit: P }; labelSlot.clear();
     stopGathering(); gathering = moves; tween(moves, 500, () => { if (gathering === moves) gathering = null; });
-    sigma.refresh(); const fr = framedAt(sub.cx + dx, sub.cy + dy + 24 * sub.u); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: sub.ratio }, { duration: 500 }); // the pair fills the pane
+    sigma.refresh(); const fr = framedAt(sub.cx + dx, sub.cy + dy - 18 * sub.u); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: sub.ratio }, { duration: 500 }); // the pair fills the pane
   }
   function refreshSection() { // the opened section of the selected: what is selected of its type (a section of the connected keeps its nodes, they are only marked)
     const P = focusSec?.hit; if (!P || focusSec.band) return;
@@ -1332,7 +1332,7 @@ async function openInPortal(n) {
   function layoutLit(groups, cx, cy) { // groups: [{ title, ids, off }]. Each group is a rectangle: those not off stand side by side across the pane, wide by how many nodes they hold; a group marked off goes below the screen at the same density.
     // Inside, the sections (one per type) are packed in shelves and stretched to fill the rectangle: one node size, the same number of rows across a shelf, the spacing takes up the rest. Laid out in screen pixels for the pane.
     tctx.font = LABEL_FONT;
-    const box = terr.getBoundingClientRect(), uw = Math.max(200, box.width - 64), uh = Math.max(200, box.height - 140), label = id => String(g.getNodeAttribute(id, "label"));
+    const box = terr.getBoundingClientRect(), uw = Math.max(200, box.width - 64), uh = Math.max(200, box.height - 170), label = id => String(g.getNodeAttribute(id, "label"));
     const shown = groups.filter(gr => gr.ids.length || gr.collapsed), on = shown.filter(gr => !gr.off), off = shown.filter(gr => gr.off);
     const full = Math.min(150, Math.max(...shown.flatMap(gr => gr.ids).map(id => tctx.measureText(label(id).slice(0, 28)).width)) + 8), HEAD = 28, GAP = 22, TITLE = 30, SIDE = 40, RMAX = 22, PCAP = 2.2, HFILL = 1.6; // PCAP: the most a cell may be stretched; HFILL: the most a group's rectangle is taller than its natural packing
     const wt = gr => Math.pow(gr.ids.length, .8), nOn = on.reduce((t, gr) => t + gr.ids.length, 0) || 1, wOn = on.reduce((t, gr) => t + wt(gr), 0) || 1, free = uw - SIDE * Math.max(0, on.length - 1), MINW = Math.min(170, free / Math.max(1, on.length));
@@ -1696,7 +1696,7 @@ async function openInPortal(n) {
   // ?focus=<uri>&hops=1|2 opens the graph around one resource (how a resource page will link here)
   const want = params.get("focus");
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { commitLocal, settleOverlaps, catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { commitLocal, settleOverlaps, sectionIds: () => focusSec?.pair ?? null, catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
