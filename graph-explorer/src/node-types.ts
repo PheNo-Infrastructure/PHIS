@@ -1,5 +1,6 @@
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete, compactUri, escapeRegex } from "./opensilex.ts";
 import { experimentStructure } from "./experiment-structure.ts";
+import { experimentsOfFactor, factorsOf, madeIn } from "./experiment-factors.ts";
 
 // View/edit/delete config, one entry per type — same reasoning as CREATABLE in creation.js:
 // adding a type is "add one entry here," not a new code path. Unlike CREATABLE this doesn't
@@ -211,13 +212,28 @@ async function factorLevelItems(factorId: string) {
   return (f.levels ?? []).map((l) => levelItem(f, l));
 }
 
-// How many objects in the factor's experiment have any of these levels (OpenSILEX's factor_levels filter).
+// How many objects, in every experiment that holds the factor, have any of these levels (OpenSILEX's factor_levels filter).
 async function levelUsers(f: FactorDto, levelUris: string[]) {
-  if (!levelUris.length || !f.experiment) return { n: 0, expName: "" };
+  if (!levelUris.length) return { n: 0, expName: "" };
   const filter = levelUris.map((u) => `factor_levels=${encodeURIComponent(u)}`).join("&");
-  const n = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(f.experiment)}&${filter}&page_size=1`)).metadata?.pagination?.totalCount ?? 0;
-  const expName = n ? String((await authedGetOne(`/core/experiments/${encodeURIComponent(f.experiment)}`)).result.name ?? f.experiment) : "";
-  return { n, expName };
+  const held = f.uri ? await experimentsOfFactor(f.uri).catch(() => []) : [];
+  const where = held.length ? held : f.experiment ? [{ uri: f.experiment, name: "" }] : [];
+  let n = 0;
+  const names: string[] = [];
+  for (const e of where) {
+    const k = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(e.uri)}&${filter}&page_size=1`)).metadata?.pagination?.totalCount ?? 0;
+    if (!k) continue;
+    n += k;
+    names.push(e.name || String((await authedGetOne(`/core/experiments/${encodeURIComponent(e.uri)}`)).result.name ?? e.uri));
+  }
+  return { n, expName: names.join(" and ") };
+}
+// The names of the experiments holding a factor, other than `except` (compared compacted: uris come back full or prefixed).
+async function otherExperiments(factorId: string, except: string) {
+  const skip = await compactUri(except);
+  const out: string[] = [];
+  for (const e of await experimentsOfFactor(factorId)) if ((await compactUri(e.uri)) !== skip) out.push(e.name);
+  return out;
 }
 const objectsIn = (n: number, expName: string) => `${n} scientific object${n === 1 ? "" : "s"} in ${expName}`;
 
@@ -866,15 +882,34 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       { label: "Scientific supervisors", field: "scientific_supervisors", type: "person" },
       { label: "Technical supervisors", field: "technical_supervisors", type: "person" },
       { label: "Shared with", field: "groups", type: "group" },
+      // The factors this experiment uses, made in it or linked in from another (PHIS allows both). Bare uris in the DTO: named in relationsFor.
+      { label: "Factors", field: "factors", type: "factor" },
     ],
-    // `factors` stays in the PUT (or it'd be wiped) but is shown by name through the query below.
     updateLinkFields: ["organisations", "facilities", "projects", "scientific_supervisors", "technical_supervisors", "factors", "groups"],
     deleteRemovesLinks: true,
+    // PHIS deletes every factor an experiment holds, even one made elsewhere (probed 2026-11-09), so a factor made here and used by
+    // another experiment blocks the delete, and one linked in from elsewhere is unlinked first (it stays there).
+    deleteBlockedBy: async (_dto, id) => {
+      for (const f of await factorsOf(id)) {
+        if (!(await madeIn(f, id))) continue;
+        const others = await otherExperiments(f.uri, id);
+        if (others.length) return `has the factor ${f.name}, which ${others.join(", ")} also use${others.length === 1 ? "s" : ""}: deleting it would take the factor from them. Unlink the factor from ${others.length === 1 ? "that experiment" : "those experiments"} first.`;
+      }
+      return null;
+    },
+    deleteWarning: async (id) => {
+      const shared = [];
+      for (const f of await factorsOf(id)) if (!(await madeIn(f, id))) shared.push(f.name);
+      return shared.length ? `The factor${shared.length === 1 ? "" : "s"} ${shared.join(", ")} ${shared.length === 1 ? "was" : "were"} made in another experiment: ${shared.length === 1 ? "it is" : "they are"} only unlinked from this one and stay${shared.length === 1 ? "s" : ""} there.` : "";
+    },
+    remove: async (id) => {
+      for (const f of await factorsOf(id)) if (!(await madeIn(f, id))) await updateNode(NODE_TYPES.experiment, id, { unlink: { field: "factors", uri: f.uri } });
+      await authedDelete(`/core/experiments/${encodeURIComponent(id)}`);
+    },
     visibility: true,
     structure: experimentStructure,
     queryRelations: [
       EXPERIMENT_SOS,
-      { label: "Factors", type: "factor", url: (id) => `/core/experiments/${encodeURIComponent(id)}/factors` },
       // Derived by OpenSILEX from its objects' germplasm (not settable on the experiment).
       { label: "Species", type: "germplasm", url: (id) => `/core/experiments/${encodeURIComponent(id)}/species`, compactIds: true },
     ],
@@ -1027,7 +1062,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
           .map((g) => ({ id: String(g.uri), label: String(g.name ?? g.uri) })) },
     ],
   },
-  // A factor belongs to one experiment; its levels are listed as selectable items. Rename sends
+  // A factor is made in one experiment and can be linked into others (an experiment's `factors`); its levels are listed as selectable items. Rename sends
   // the levels back as objects (putPayload); delete cascades to the objects using its levels,
   // so the confirm says how many (deleteWarning).
   factor: {
@@ -1036,7 +1071,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     deleteUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: ["rename", "delete"],
+    actions: ["rename", "delete", "link"],
     // The PUT replaces the whole factor (FactorUpdateDTO), so everything it holds goes back.
     putPayload: (dto, name) => ({
       uri: dto.uri, name, experiment: dto.experiment,
@@ -1045,13 +1080,18 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       levels: ((dto.levels as FactorDto["levels"] | undefined) ?? []).map((l) => ({ uri: l.uri, name: l.name, description: l.description ?? null })),
     }),
     deleteRemovesLinks: true,
+    // PHIS refuses to delete a factor while another experiment (not the one it was made in) holds it.
+    deleteBlockedBy: async (dto, id) => {
+      const others = await otherExperiments(id, String(dto.experiment));
+      return others.length ? `is also used by ${others.join(", ")}. Unlink it from ${others.length === 1 ? "that experiment" : "those experiments"} first.` : null;
+    },
     deleteWarning: async (_id, dto) => {
       const f = dto as unknown as FactorDto;
       const { n, expName } = await levelUsers(f, (f.levels ?? []).map((l) => l.uri));
       return n ? `It also removes its level from ${objectsIn(n, expName)}.` : "No scientific object uses it.";
     },
     queryRelations: [
-      { label: "Experiment", type: "experiment", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/experiments` },
+      { label: "Experiments", type: "experiment", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/experiments` },
       { label: "Levels", type: "factor_level", url: (id) => `/core/experiments/factors/${encodeURIComponent(id)}/levels`, load: factorLevelItems },
     ],
   },
@@ -1689,6 +1729,13 @@ async function groupLabels() {
   } catch { /* the uri stays */ }
   return names;
 }
+async function factorLabels() {
+  const names = new Map<string, string>();
+  try {
+    for (const f of (await authedGet("/core/experiments/factors?page_size=500")).result) names.set(await compactUri(String(f.uri)), String(f.name ?? f.uri));
+  } catch { /* the uri stays */ }
+  return names;
+}
 export async function relationsFor(id: string, dto: Record<string, unknown>, config: NodeConfig) {
   const groups: { label: string; field?: string; blocksDelete?: true; emptyText?: string; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
   for (const q of config.queryRelations ?? []) {
@@ -1698,7 +1745,7 @@ export async function relationsFor(id: string, dto: Record<string, unknown>, con
       groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
     }
   }
-  for (const [type, labels] of [["person", personLabels], ["group", groupLabels]] as const) {
+  for (const [type, labels] of [["person", personLabels], ["group", groupLabels], ["factor", factorLabels]] as const) {
     if (!groups.some((g) => g.items.some((it) => it.type === type && it.label === it.id))) continue;
     const names = await labels();
     for (const g of groups) for (const it of g.items) if (it.type === type && it.label === it.id) it.label = names.get(await compactUri(it.id)) ?? it.label;

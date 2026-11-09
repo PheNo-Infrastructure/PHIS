@@ -1,6 +1,7 @@
 import { OpenSilexError, authedDelete, authedGet, authedGetOne, authedPost, authedPut, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
-import { NODE_TYPES } from "../node-types.ts";
+import { NODE_TYPES, updateNode } from "../node-types.ts";
+import { experimentsOfFactor, factorsOf, madeIn } from "../experiment-factors.ts";
 import { objectsElsewhere } from "./elsewhere.ts";
 
 const enc = encodeURIComponent;
@@ -22,13 +23,22 @@ async function look(id: string) {
   const elsewhere = await objectsElsewhere(id);
   const isTray = (o: Record<string, unknown>) => /tray|block/i.test(String(o.rdf_type_name ?? o.rdf_type));
   const values = await countValues(`experiments=${enc(id)}`);
-  const factors = (await authedGet(`/core/experiments/${enc(id)}/factors`)).result;
+  // PHIS lets experiments share a factor, and deleting an experiment deletes every factor it holds, even one made elsewhere
+  // (probed 2026-11-09). So: factors made here and used only here go with it; factors made elsewhere are first unlinked from
+  // this experiment (they stay); a factor made here that others use blocks the delete (it would vanish from them).
+  const factors: Record<string, unknown>[] = [], linkedIn: Record<string, unknown>[] = [], blocked: { name: string; usedBy: string[] }[] = [];
+  for (const f of await factorsOf(id)) {
+    if (!(await madeIn(f, id))) { linkedIn.push(f); continue; }
+    const others = [];
+    for (const e of await experimentsOfFactor(f.uri)) if ((await compactUri(e.uri)) !== (await compactUri(id))) others.push(e.name);
+    if (others.length) blocked.push({ name: f.name, usedBy: others }); else factors.push(f);
+  }
   const provenances = (await authedGet(`/core/experiments/${enc(id)}/provenances?page_size=500`)).result;
   const variables = values ? (await authedGet(`/core/experiments/${enc(id)}/variables`)).result : [];
   // Notes about the experiment or its provenances (the import keeps one).
   const notes = new Map<string, Record<string, unknown>>();
   for (const uri of [id, ...provenances.map((p) => String(p.uri))]) for (const n of (await authedGet(`/core/annotations?target=${enc(uri)}&page_size=200`)).result) notes.set(String(n.uri), n);
-  return { exp, name: String(exp.name ?? id), objects, isTray, elsewhere, values, factors, provenances, variables, notes: [...notes.values()] };
+  return { exp, name: String(exp.name ?? id), objects, isTray, elsewhere, values, factors, linkedIn, blocked, provenances, variables, notes: [...notes.values()] };
 }
 // A note about what has just been deleted: gone if that was all it was about, otherwise it loses those targets.
 async function tidyNotes(notes: Record<string, unknown>[], goneUris: string[]) {
@@ -68,7 +78,7 @@ export const handleExperimentDelete: RouteHandler = async (req, res, { pathname,
       res.end(JSON.stringify({
         name: l.name,
         objects: l.objects.length, trays, shared,
-        values: l.values, factors: l.factors.length, provenances: l.provenances.map((p) => String(p.name ?? p.uri)), notes: l.notes.length,
+        values: l.values, factors: l.factors.length, unlinked: l.linkedIn.map((f) => String(f.name)), blocked: l.blocked, provenances: l.provenances.map((p) => String(p.name ?? p.uri)), notes: l.notes.length,
       }));
     });
     return true;
@@ -81,8 +91,9 @@ export const handleExperimentDelete: RouteHandler = async (req, res, { pathname,
   try {
     const l = await look(id);
     if (!sameTypedName(searchParams.get("name") ?? "", l.name)) throw new OpenSilexError(400, "Type the experiment's name to confirm (a plain - works in place of a long dash).");
-    const cleared = { variables: 0, values: l.values, provenances: 0, kept: [] as string[], removed: 0, deleted: 0, factors: 0, notes: 0 };
-    const steps = l.variables.length + l.provenances.length + l.objects.length + l.factors.length + 2;
+    if (l.blocked.length) throw new OpenSilexError(409, `${l.blocked.map((b) => `${b.name} (also used by ${b.usedBy.join(", ")})`).join("; ")} was made in this experiment and other experiments use it, so deleting the experiment would take it from them. Unlink it from ${l.blocked.length === 1 ? "them" : "those"} first (select the factor and the experiment, then Unlink selection), then run this again.`);
+    const cleared = { unlinked: 0, variables: 0, values: l.values, provenances: 0, kept: [] as string[], removed: 0, deleted: 0, factors: 0, notes: 0 };
+    const steps = l.variables.length + l.provenances.length + l.objects.length + l.factors.length + l.linkedIn.length + 2;
     const goneProvenances: string[] = [];
     let done = 0;
     const tick = (step: string) => line({ progress: { step, done: ++done, total: steps } });
@@ -126,6 +137,11 @@ export const handleExperimentDelete: RouteHandler = async (req, res, { pathname,
       await authedDelete(`/core/experiments/factors/${enc(String(f.uri))}`);
       cleared.factors++;
       tick(`Deleting factors: ${cleared.factors} of ${l.factors.length}`);
+    }
+    for (const f of l.linkedIn) {
+      await updateNode(NODE_TYPES.experiment, id, { unlink: { field: "factors", uri: String(f.uri) } });
+      cleared.unlinked++;
+      tick(`Letting go of shared factors: ${cleared.unlinked} of ${l.linkedIn.length}`);
     }
     cleared.notes = await tidyNotes(l.notes, [id, ...goneProvenances]);
     tick("Tidying annotations about it");

@@ -1226,7 +1226,7 @@ const CATEGORY_ITEMS = {
     { id: "cat-scientificobjects", type: "category", label: "Scientific Objects", hint: "what you measure: plants, plots, pots, samples" },
     { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
     { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
-    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought. Each belongs to one experiment" },
+    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought. Made in one experiment, shareable with others" },
     { id: "cat-germplasmgroups", type: "category", label: "Germplasm groups", hint: "named sets of germplasm, e.g. a panel" },
     { id: "cat-variablegroups", type: "category", label: "Variable groups", hint: "named sets of variables, e.g. all drone traits" },
   ],
@@ -1439,7 +1439,7 @@ function rowEl(item, note) {
   row.setAttribute("style", typeStyle(item.type));
   row.dataset.id = item.id;
   if (item.type === "category" && item.hint) row.title = item.hint;
-  // The experiment(s) a thing belongs to: one for a factor, any number for a scientific object.
+  // The experiment(s) a thing belongs to: the one a factor was made in (it can be linked into others), any number for a scientific object.
   const scopes = [item.scope ?? []].flat().map(id => (CATEGORY_ITEMS["cat-experiments"] || []).find(e => sameId(e.id, id))?.label ?? "an experiment");
   const scopeName = scopes.length > 3 ? `${scopes.slice(0, 3).join(", ")} +${scopes.length - 3} more` : scopes.join(", ");
   const typeLine = item.type === "category" ? escapeHtml(item.hint ?? "") : typeName(item.type) + (scopes.length ? ` · in ${escapeHtml(scopeName)}` : "") + (note ? ` · ${note}` : "");
@@ -1726,9 +1726,9 @@ const SETUP_STEPS = [
   { label: "Annotations", relation: "Annotations", category: "cat-annotations", optional: true, hint: "notes about it" },
 ];
 // What can be done from an experiment, straight from what PHIS lets us write (the same rules as + New and Link in Browse):
-// create = a new one made and linked to the trial; pick = an existing one linked to it. A factor belongs to ONE experiment
-// (made here, never picked); germplasm is set on the scientific objects, not on the experiment; a person is picked with a role.
-const PICKABLE = new Set(["scientific_object", "facility", "organization", "project", "group", "person"]);
+// create = a new one made and linked to the trial; pick = an existing one linked to it. A factor is made in ONE experiment
+// but PHIS lets others use it too (picked); germplasm is set on the scientific objects, not on the experiment; a person is picked with a role.
+const PICKABLE = new Set(["scientific_object", "factor", "facility", "organization", "project", "group", "person"]);
 function addCaps(categoryId, owner = "experiment") {
   const t = TYPE_FOR_CATEGORY[categoryId], c = CREATABLE[t];
   const create = !!c && t !== "germplasm" && (c.fromOnly ? c.fromOnly.includes(owner)
@@ -2413,7 +2413,7 @@ async function deleteExperimentEverything(item, p) {
     if (path[path.length - 1]?.id === item.id) { path = path.slice(0, -1); historyPaths.set(history.state?.n, path); }
     await reloadCategories(["cat-experiments", "cat-scientificobjects", "cat-factors", "cat-provenances"]);
     render();
-    showToast(`Deleted ${result.name}: ${result.deleted + result.removed} scientific objects, ${result.factors} factors${result.kept.length ? `; kept ${result.kept.join(", ")} (still used elsewhere)` : ""}.`, 8000);
+    showToast(`Deleted ${result.name}: ${result.deleted + result.removed} scientific objects, ${result.factors} factors${result.unlinked ? `, ${result.unlinked} shared ${result.unlinked === 1 ? "factor" : "factors"} let go (kept)` : ""}${result.kept.length ? `; kept ${result.kept.join(", ")} (still used elsewhere)` : ""}.`, 8000);
   } catch (err) {
     showToast(`The delete failed: ${err}`, 8000);
   }
@@ -3526,8 +3526,14 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         const p = await res.json();
         if (!res.ok) throw new Error(p.error || res.status);
         if (!body.isConnected) return; // the user moved on
-        body.innerHTML = `${deleteCardCounts(p)} will be deleted for good.${p.shared ? ` ${p.shared} of the objects are also in other experiments and stay there.` : ""}`;
-        ready = true; update();
+        const names = (list) => list.map(escapeHtml).join(", ");
+        const stays = p.unlinked?.length ? ` The factor${p.unlinked.length === 1 ? "" : "s"} <b>${names(p.unlinked)}</b> ${p.unlinked.length === 1 ? "was" : "were"} made in another experiment: ${p.unlinked.length === 1 ? "it is" : "they are"} only unlinked from this one and stay${p.unlinked.length === 1 ? "s" : ""} there.` : "";
+        // A factor made here that other experiments use would be taken from them: the way forward is to unlink it there first.
+        const stuck = (p.blocked ?? []).map(b => `<b>${escapeHtml(b.name)}</b> (also used by ${names(b.usedBy)})`);
+        body.innerHTML = stuck.length
+          ? `Can't delete yet: ${stuck.join("; ")} ${stuck.length === 1 ? "was" : "were"} made in this experiment and other experiments use ${stuck.length === 1 ? "it" : "them"}, so deleting would take ${stuck.length === 1 ? "it" : "them"} from them. Unlink ${stuck.length === 1 ? "it" : "them"} from the other experiments first (select the factor and the experiment, then Unlink selection).`
+          : `${deleteCardCounts(p)} will be deleted for good.${p.shared ? ` ${p.shared} of the objects are also in other experiments and stay there.` : ""}${stays}`;
+        ready = !stuck.length; update();
         delBtn.addEventListener("click", () => { if (!delBtn.disabled) deleteExperimentEverything(focusNode, p); });
       }).catch(err => { if (body.isConnected) body.textContent = `Couldn't count what is in it: ${err.message || err}`; });
     }
@@ -4814,7 +4820,7 @@ function renderActionbar() {
             type: required,
             confirmLabel: (n) => `Create ${niceType} in ${n} ${typeName(required, n)}`,
             onConfirm: async (picked) => {
-              // Said before the form, so nothing typed is lost (a factor belongs to one experiment).
+              // Said before the form, so nothing typed is lost (a factor is made in one experiment).
               if (one && picked.length > 1) { showToast(`A ${niceType} belongs to one ${niceReq} — pick just one.`, 3000); return; }
               const v = await askCreateValues(standaloneType);
               if (v) createNode(standaloneType, v.name, picked.map((p) => ({ type: p.type, id: p.id })), `in ${picked.map((p) => p.label).join(", ")}`, v.fields);
@@ -5304,7 +5310,7 @@ const chipItemOf = c => findItemById(c.dataset.openid) || { id: c.dataset.openid
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation", "provenance"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation", "provenance"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —

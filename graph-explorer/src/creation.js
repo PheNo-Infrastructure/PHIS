@@ -69,7 +69,7 @@ export const CREATABLE = {
     requiresLink: "organization",
     linkFields: { organization: "organizations", facility: "facilities" },
   },
-  // A factor belongs to exactly one experiment (requiresLink + onlyOne) and is created with its
+  // A factor is MADE in exactly one experiment (requiresLink + onlyOne; PHIS takes one on creation, other experiments can be linked in later) and is created with its
   // levels: input "lines" = one per line, sent as [{name}], at least one.
   factor: {
     url: "/core/experiments/factors",

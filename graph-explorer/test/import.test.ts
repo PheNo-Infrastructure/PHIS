@@ -373,6 +373,7 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
     if (url.includes("/core/experiments?name=")) return jsonResponse(200, { result: [{ uri: exp, name: existingName }] });
     if (path.startsWith(`/core/scientific_objects?experiment=${encodeURIComponent(exp)}`)) return jsonResponse(200, { result: [{ uri: "so:block1", name: "Block 1" }, { uri: "so:old1", name: "B1-C1" }, { uri: "so:old2", name: "B1-C2" }] });
     if (path === `/core/experiments/${encodeURIComponent(exp)}/factors`) return jsonResponse(200, { result: [{ uri: "f:Treatment", name: "Treatment", experiment: exp, levels: [{ uri: "lvl:Treatment.15C", name: "15C" }] }] });
+    if (path === `/core/experiments/${encodeURIComponent(exp)}`) return jsonResponse(200, { result: { uri: exp, name: existingName, factors: ["f:Treatment"] } }); // the experiment's own record: its `factors` field names the shared ones too
     const copy = path.match(/^\/core\/scientific_objects\/so%3A(old1|old2|block1)\?experiment=/);
     if (copy) return jsonResponse(200, { result: copy[1] === "block1" ? { uri: "so:block1", name: "Block 1", rdf_type: "https://phis.pheno.no/vocabulary#Block", relations: [] }
       : copy[1] === "old1"

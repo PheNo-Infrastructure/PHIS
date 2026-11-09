@@ -50,7 +50,8 @@ export const ADJACENT = {
   site: ["organization", "facility", "group", "annotation"],
   experiment: ["organization", "facility", "project", "person", "factor", "scientific_object", "group", "annotation"],
   project: ["experiment", "project", "person", "annotation"],
-  scientific_object: ["experiment", "scientific_object", "germplasm", "factor", "event", "annotation"],
+  // An object takes a factor's LEVEL (factor_level), never the factor itself: "factor" here would offer a link that cannot resolve.
+  scientific_object: ["experiment", "scientific_object", "germplasm", "event", "annotation"],
   germplasm: ["scientific_object", "germplasm", "group", "germplasm_group", "annotation"],
   variable: ["entity", "entity_of_interest", "characteristic", "method", "unit", "variable_group", "annotation"],
   variable_group: ["variable", "facility", "annotation"],

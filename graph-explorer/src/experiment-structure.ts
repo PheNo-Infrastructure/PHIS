@@ -1,6 +1,7 @@
 // How an experiment's objects and variables sit, for its page: the variables with values (and how many),
 // each factor's levels with the plants that have them, and the objects in no factor. Read-only.
 import { authedGet, authedPost, compactUri } from "./opensilex.ts";
+import { factorsOf } from "./experiment-factors.ts";
 
 const enc = encodeURIComponent;
 const natural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
@@ -69,7 +70,7 @@ export async function experimentStructure(expId: string): Promise<Structure> {
   const e = enc(expId);
   const [varRows, factorRows, soPage] = await Promise.all([
     authedGet(`/core/experiments/${e}/variables`),
-    authedGet(`/core/experiments/${e}/factors`),
+    factorsOf(expId),
     authedGet(`/core/scientific_objects?experiment=${e}&page_size=${PAGE}`),
   ]);
 
@@ -86,7 +87,7 @@ export async function experimentStructure(expId: string): Promise<Structure> {
   const key = async (id: string) => keyOf.get(id) ?? compactUri(id);
   const inAnyFactor = new Set<string>();
 
-  const factorList = factorRows.result as unknown as FactorRow[];
+  const factorList: FactorRow[] = factorRows;
   const flat = factorList.flatMap((f) => (f.levels ?? []).map((l) => ({ f, l })));
   let levelCut = false; // a level with more plants than one page: its overflow would sit under the wrong box
   const fetched = await inBatches(flat, AT_ONCE, async ({ l }) => {

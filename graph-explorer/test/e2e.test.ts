@@ -4091,12 +4091,18 @@ test("e2e: adding — picked rows are linked on Done, Cancel links nothing", asy
   }
 });
 
-test("e2e: factors can only be created for the trial (they belong to one experiment): no list to pick from", async () => {
+test("e2e: a trial's Factors step lists the existing factors to pick from (PHIS lets experiments share one) as well as + New", async () => {
   await withServerAndBrowser(async (base, page) => {
+    const links: any[] = [];
+    await page.route("**/api/link", (r) => { links.push(r.request().postDataJSON()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ touched: [], linkedPairs: 1 }) }); });
     await openAddingFactors(page, base);
-    assert.equal(await page.locator("#addingList").count(), 0);
-    assert.match(await page.locator("#pageBody").textContent() ?? "", /belongs to one experiment/);
+    assert.deepEqual(await page.locator("#addingList .row .row-label").allTextContents(), ["Irrigation", "Sowing density"]);
+    assert.doesNotMatch(await page.locator("#pageBody").textContent() ?? "", /belongs to one experiment/);
     assert.equal(await page.locator("#addingNew").isVisible(), true);
+    await page.locator("#addingList .row", { hasText: "Irrigation" }).click();
+    await page.locator("#addingDone").click();
+    await page.waitForFunction(() => document.body.dataset.view === "setup");
+    assert.deepEqual(links[0].items.map((i: any) => i.id), ["phis:id/experiment/e1", "phis:id/factor/f1"], "the picked factor is linked to the trial, not copied");
   });
 });
 

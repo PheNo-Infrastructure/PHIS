@@ -3,6 +3,7 @@
 // block and position, measured values — and nothing in PHIS is changed. Where PHIS says something else,
 // it's listed in the plan and PHIS is kept. Fewer orphans: an old import gets its blocks and values.
 import { authedGet, authedGetOne, authedPost, authedPut, compactUri } from "../opensilex.ts";
+import { factorsOf } from "../experiment-factors.ts";
 import { POSITION_IN_BLOCK } from "./ontology.ts";
 import type { TrialData } from "./plugins.ts";
 import type { Value } from "./measurements.ts";
@@ -23,7 +24,7 @@ async function inBatches<T>(items: T[], fn: (item: T) => Promise<void>) {
 
 export async function readExperiment(id: string) {
   const objects = (await authedGet(`/core/scientific_objects?experiment=${enc(id)}&page_size=100000`)).result;
-  const factors = (await authedGet(`/core/experiments/${enc(id)}/factors`)).result as unknown as Factor[];
+  const factors: Factor[] = await factorsOf(id);
   return { id, objects: new Map(objects.map((o) => [String(o.name), String(o.uri)])), factors };
 }
 

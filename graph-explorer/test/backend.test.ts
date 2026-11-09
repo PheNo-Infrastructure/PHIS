@@ -477,6 +477,9 @@ test("DELETE experiment: refused (409, nothing deleted) while it holds scientifi
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
       if (init?.method === "DELETE") { deletes.push(url); return jsonResponse(200, { result: "ok" }); }
       if (url.includes("/core/scientific_objects?experiment=")) return jsonResponse(200, { result: sos });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.endsWith("/core/experiments/exp-1/factors")) return jsonResponse(200, { result: [] });
+      if (url.endsWith("/core/experiments/exp-1")) return jsonResponse(200, { result: { uri: "exp-1", name: "Trial", factors: [] } });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
 
@@ -1891,7 +1894,7 @@ test("factor detail: rename and delete allowed, levels are selectable 'Replicate
   await withServer(async (base) => {
     globalThis.fetch = factorStub([]);
     const d = await (await realFetch(`${base}/api/node-detail?type=factor&id=${encodeURIComponent(FAC)}`)).json();
-    assert.deepEqual(d.actions, ["rename", "delete"]);
+    assert.deepEqual(d.actions, ["rename", "delete", "link"]);
     assert.equal(d.deleteRemovesLinks, true);
     assert.equal(d.deleteWarning, "It also removes its level from 100 scientific objects in PBar1x4.");
     const levels = d.relations.find((r: any) => r.label === "Levels");
@@ -2489,6 +2492,7 @@ test("GET /api/node-detail for an experiment adds its structure: variables with 
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
       if (url.includes("/core/data/count")) return jsonResponse(200, { result: url.includes("variables=var-1") ? 5 : 3 });
       if (url.includes("/core/experiments/exp-1/variables")) return jsonResponse(200, { result: [{ uri: "var-2", name: "Leaf area" }, { uri: "var-1", name: "Height" }] });
+      if (/\/core\/experiments\/factors\/[^/]+\/experiments/.test(url)) return jsonResponse(200, { result: [{ uri: "exp-1", name: "Trial" }] });
       if (url.includes("/core/experiments/exp-1/species")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/experiments/exp-1/factors")) return jsonResponse(200, { result: [
         { uri: "fac-g", name: "GroupID", experiment: "exp-1", levels: [{ uri: "lv-g1", name: "1" }, { uri: "lv-g2", name: "2" }] },
@@ -2564,6 +2568,7 @@ test("structure: a cut-off level list is flagged too, because its plants would s
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
       if (url.includes("/core/experiments/exp-4/variables")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/experiments/exp-4/species")) return jsonResponse(200, { result: [] });
+      if (/\/core\/experiments\/factors\/[^/]+\/experiments/.test(url)) return jsonResponse(200, { result: [{ uri: "exp-4", name: "Trial" }] });
       if (url.includes("/core/experiments/exp-4/factors")) return jsonResponse(200, { result: [{ uri: "fac-g", name: "G", experiment: "exp-4", levels: [{ uri: "lv-1", name: "1" }] }] });
       if (url.includes("factor_levels=lv-1")) return jsonResponse(200, { result: [{ uri: "so-a", name: "A" }], metadata: { pagination: { totalCount: 900 } } });
       if (url.includes("/core/scientific_objects?experiment=exp-4")) return jsonResponse(200, { result: [{ uri: "so-a", name: "A" }], metadata: { pagination: { totalCount: 1 } } });
@@ -3544,7 +3549,8 @@ test("delete an experiment and everything in it: the preview counts, the name mu
       if (path.startsWith(`/core/scientific_objects?experiment=${E}`)) return list(objs);
       if (path.startsWith("/core/scientific_objects?experiment=")) return list([objs[1]]); // exp-2 also holds PB001
       if (path.startsWith("/core/experiments?")) return list([{ uri: E, name: "Trial" }, { uri: "exp-2", name: "Other" }]);
-      if (path === `/core/experiments/${E}/factors`) return list([{ uri: "f-1", name: "Replicate" }]);
+      if (path === `/core/experiments/${E}/factors`) return list([{ uri: "f-1", name: "Replicate", experiment: E }]);
+      if (path === "/core/experiments/factors/f-1/experiments") return list([{ uri: E, name: "Trial" }]); // used by this experiment only
       if (path.startsWith(`/core/experiments/${E}/provenances`)) return list([{ uri: "prov-1", name: "Import" }]);
       if (path === `/core/experiments/${E}/variables`) return list([{ uri: "var-1" }, { uri: "var-2" }]);
       if (path.startsWith("/core/annotations?target=")) return list(path.includes(`target=${E}`) ? notes : path.includes("target=prov-1") ? [notes[0]] : []);
@@ -3553,7 +3559,7 @@ test("delete an experiment and everything in it: the preview counts, the name mu
     }) as typeof fetch;
 
     const prev = await (await realFetch(`${base}/api/experiment-delete/preview?id=${E}`)).json();
-    assert.deepEqual(prev, { name: "Trial", objects: 3, trays: 1, shared: 1, values: 336, factors: 1, provenances: ["Import"], notes: 2 });
+    assert.deepEqual(prev, { name: "Trial", objects: 3, trays: 1, shared: 1, values: 336, factors: 1, unlinked: [], blocked: [], provenances: ["Import"], notes: 2 });
     assert.equal((await realFetch(`${base}/api/experiment-delete?id=${E}&name=nope`, { method: "DELETE" })).status, 400, "the name has to be typed");
     assert.equal((await realFetch(`${base}/api/experiment-delete?id=${E}&name=${encodeURIComponent("tri")}`, { method: "DELETE" })).status, 400, "part of a name is not the name");
     assert.deepEqual(calls, [], "nothing deleted yet");
@@ -3561,7 +3567,7 @@ test("delete an experiment and everything in it: the preview counts, the name mu
     const res = await realFetch(`${base}/api/experiment-delete?id=${E}&name=${encodeURIComponent("Trial")}`, { method: "DELETE" });
     assert.equal(res.status, 200, await res.clone().text());
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(lines.at(-1), { result: { name: "Trial", variables: 2, values: 336, provenances: 1, kept: [], removed: 1, deleted: 2, factors: 1, notes: 1 } });
+    assert.deepEqual(lines.at(-1), { result: { name: "Trial", unlinked: 0, variables: 2, values: 336, provenances: 1, kept: [], removed: 1, deleted: 2, factors: 1, notes: 1 } });
     assert.deepEqual(calls, [
       `DELETE /core/data?experiment=${E}&variable=var-1`, `DELETE /core/data?experiment=${E}&variable=var-2`,
       "DELETE /core/provenances/prov-1",
@@ -3708,5 +3714,115 @@ test("graph: people, groups and factors are nodes, linked through device, experi
     assert.equal(body.nodes.find((n: any) => n.id === "p:1").label, "Ada Lovelace");
     const links = body.edges.map((e: any) => [e.source, e.target].sort().join(" ")).sort();
     assert.deepEqual(links, ["d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "g:1 p:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
+  });
+});
+
+// ---- a factor shared by several experiments (PHIS allows it; probed 2026-11-09) ----
+// Trial A made the factor Drought; Trial B has it linked in. PHIS's `/experiments/exp-b/factors` lists only the factors made
+// in B (none), so B's own `factors` field is what names the shared one. `holders` = the experiments that hold Drought.
+function sharedFactorStub(calls: string[], opts: { holders?: string[]; bFactors?: string[]; empty?: boolean } = {}) {
+  const holders = opts.holders ?? ["exp-a", "exp-b"];
+  const nameOf = (u: string) => (u === "exp-a" ? "Trial A" : "Trial B");
+  const aDto = { uri: "fac-a", name: "Drought", experiment: "exp-a", levels: [{ uri: "lv-1", name: "Dry" }] };
+  const expDto = (u: string) => ({ uri: u, name: nameOf(u), objective: "o", start_date: "2026-01-01", is_public: true, organisations: [], facilities: [], projects: [], scientific_supervisors: [], technical_supervisors: [], groups: [], factors: u === "exp-b" ? (opts.bFactors ?? ["fac-a"]) : ["fac-a"] });
+  return (async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+    if (method !== "GET" && !path.startsWith("/core/data/count")) { calls.push(`${method} ${path}${init?.body ? ` ${JSON.stringify(JSON.parse(String(init.body)).factors ?? null)}` : ""}`); return jsonResponse(200, { result: "ok" }); }
+    if (path === "/core/experiments/factors/fac-a/experiments") return jsonResponse(200, { result: holders.map((u) => ({ uri: u, name: nameOf(u) })) });
+    if (path === "/core/experiments/factors/fac-a") return jsonResponse(200, { result: aDto });
+    if (path.startsWith("/core/experiments/factors?")) return jsonResponse(200, { result: [aDto] });
+    if (path.startsWith("/core/experiments?")) return jsonResponse(200, { result: [{ uri: "exp-a", name: "Trial A" }, { uri: "exp-b", name: "Trial B" }] });
+    if (path === "/core/experiments/exp-a/factors") return jsonResponse(200, { result: [aDto] });
+    if (path === "/core/experiments/exp-b/factors") return jsonResponse(200, { result: [] }); // PHIS lists a factor only under the experiment it was made in
+    if (path === "/core/experiments/exp-a" || path === "/core/experiments/exp-b") return jsonResponse(200, { result: expDto(path.split("/").pop()!) });
+    if (path.match(/^\/core\/experiments\/exp-[ab]\/(variables|species|provenances)/)) return jsonResponse(200, { result: [] });
+    if (path.includes("factor_levels=lv-1")) return jsonResponse(200, { result: [{ uri: "so-1", name: "Plant 1" }], metadata: { pagination: { totalCount: 1 } } });
+    if (!opts.empty && path.startsWith("/core/scientific_objects?experiment=exp-b&page_size=500")) return jsonResponse(200, { result: [{ uri: "so-1", name: "Plant 1" }], metadata: { pagination: { totalCount: 1 } } });
+    if (path.startsWith("/core/scientific_objects?experiment=")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+    if (path.startsWith("/core/data/count")) return jsonResponse(200, { result: 0 });
+    if (path.startsWith("/core/annotations?target=")) return jsonResponse(200, { result: [] });
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  }) as typeof fetch;
+}
+
+test("an experiment shows a factor linked in from another experiment: by name, unlinkable, with its levels' plants in the structure", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = sharedFactorStub([]);
+    const d = await (await realFetch(`${base}/api/node-detail?type=experiment&id=exp-b`)).json();
+    const factors = d.relations.find((r: any) => r.label === "Factors");
+    assert.deepEqual(factors, { label: "Factors", field: "factors", items: [{ id: "fac-a", type: "factor", label: "Drought" }] }, "named, and removable through the experiment's own field");
+    assert.deepEqual(d.structure.factors.map((f: any) => [f.label, f.levels.map((l: any) => [l.label, l.plants.map((p: any) => p.label)])]), [["Drought", [["Drought: Dry", ["Plant 1"]]]]], "PHIS's own factor list for B is empty; the shared factor still gets its box");
+    assert.match(d.deleteWarning, /Drought was made in another experiment: it is only unlinked from this one and stays there/);
+    assert.equal(d.deleteBlocked, undefined);
+  });
+});
+
+test("linking and unlinking an experiment and a factor writes the experiment's `factors`, from either side", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = sharedFactorStub(calls, { bFactors: [] });
+    const post = (path: string, items: unknown[]) => realFetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, confirm: true }) });
+    // the factor is picked first, the experiment second: the experiment still owns the link
+    const link = await post("/api/link", [{ type: "factor", id: "fac-a" }, { type: "experiment", id: "exp-b" }]);
+    assert.equal(link.status, 200, await link.clone().text());
+    assert.deepEqual(calls, ['PUT /core/experiments ["fac-a"]']);
+    calls.length = 0;
+    globalThis.fetch = sharedFactorStub(calls);
+    const un = await post("/api/unlink", [{ type: "experiment", id: "exp-b" }, { type: "factor", id: "fac-a" }]);
+    assert.equal(un.status, 200, await un.clone().text());
+    assert.deepEqual(calls, ["PUT /core/experiments []"], "B's record goes back without the factor; the factor itself is untouched");
+  });
+});
+
+test("deleting an experiment that only shares a factor unlinks it first, so the factor survives (PHIS would delete it, and take it from every experiment)", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = sharedFactorStub(calls, { empty: true });
+    const res = await realFetch(`${base}/api/node?type=experiment&id=exp-b`, { method: "DELETE" });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.deepEqual(calls, ["PUT /core/experiments []", "DELETE /core/experiments/exp-b"], "unlinked, then deleted; no DELETE ever reaches the factor");
+  });
+});
+
+test("an experiment whose factor others use refuses to be deleted, and the factor refuses too, both saying who else uses it", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = sharedFactorStub(calls);
+    const exp = await realFetch(`${base}/api/node?type=experiment&id=exp-a`, { method: "DELETE" });
+    assert.equal(exp.status, 409);
+    assert.match((await exp.json()).error, /the factor Drought, which Trial B also uses: deleting it would take the factor from them\. Unlink the factor from that experiment first/);
+    const fac = await realFetch(`${base}/api/node?type=factor&id=fac-a`, { method: "DELETE" });
+    assert.equal(fac.status, 409);
+    assert.match((await fac.json()).error, /is also used by Trial B\. Unlink it from that experiment first/);
+    assert.deepEqual(calls, [], "nothing was deleted");
+    globalThis.fetch = sharedFactorStub(calls, { holders: ["exp-a"] });
+    assert.equal((await realFetch(`${base}/api/node?type=factor&id=fac-a`, { method: "DELETE" })).status, 200, "used by its own experiment only: an ordinary delete");
+  });
+});
+
+test("delete an experiment and everything in it: a factor made elsewhere is let go (stays), one made here that others use stops the run before anything is deleted", async () => {
+  await withServer(async (base) => {
+    const calls: string[] = [];
+    globalThis.fetch = sharedFactorStub(calls, { empty: true });
+    const prevB = await (await realFetch(`${base}/api/experiment-delete/preview?id=exp-b`)).json();
+    assert.deepEqual([prevB.factors, prevB.unlinked, prevB.blocked], [0, ["Drought"], []], JSON.stringify(prevB));
+    const runB = await realFetch(`${base}/api/experiment-delete?id=exp-b&name=${encodeURIComponent("Trial B")}`, { method: "DELETE" });
+    assert.equal(runB.status, 200, await runB.clone().text());
+    const last = (await runB.text()).trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    assert.equal(last.result.unlinked, 1);
+    assert.equal(last.result.factors, 0);
+    assert.ok(!calls.some((c) => c.startsWith("DELETE /core/experiments/factors")), "the shared factor is never deleted");
+    assert.deepEqual(calls.slice(-2), ["PUT /core/experiments []", "DELETE /core/experiments/exp-b"]);
+
+    calls.length = 0;
+    const prevA = await (await realFetch(`${base}/api/experiment-delete/preview?id=exp-a`)).json();
+    assert.deepEqual(prevA.blocked, [{ name: "Drought", usedBy: ["Trial B"] }]);
+    const runA = await realFetch(`${base}/api/experiment-delete?id=exp-a&name=${encodeURIComponent("Trial A")}`, { method: "DELETE" });
+    assert.equal(runA.status, 409);
+    assert.match((await runA.json()).error, /Drought \(also used by Trial B\) was made in this experiment and other experiments use it/);
+    assert.deepEqual(calls, [], "refused before anything was written");
   });
 });
