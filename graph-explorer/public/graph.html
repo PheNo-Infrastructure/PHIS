@@ -233,7 +233,7 @@ async function openInPortal(n) {
   const isVisible = id => catView ? inLayout(id) : (!hiddenByArea(id) || !!lit?.has(id) || !!arr) && inLayout(id); // what is selected and connected is drawn at any zoom, on top of the paint; // a node in a collapsed cluster is not drawn, but it is still a node: physics, fit and the selection window use inLayout
   const verdictNow = () => linkVerdict(selItems());
   // The selection as PHIS things.
-  const lens = () => cur && g.hasNode(cur) && !sel.has(cur) ? [...sel, cur] : [...sel];
+  const lens = () => cur && !selView && g.hasNode(cur) && !sel.has(cur) ? [...sel, cur] : [...sel]; // the selection view shows the selection only: the node opened in Browse is not part of it
   function selItems() {
     const out = [];
     for (const id of sel) {
@@ -951,7 +951,7 @@ async function openInPortal(n) {
     if (leaving) exitCat(false, connected); // picking a node in a grid leaves it for the connected view (a selection the portal's own list sends does not)
     if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
-    if (!leaving && sel.size && !catView) connected(mode !== "replace" || inPlace);
+    if (!leaving && sel.size && !catView) { if (selView && focusSec) refreshSection(); else connected(mode !== "replace" || inPlace); } // an opened section stays open: a node taken out of the selection leaves it, one put in joins it (leaving it arranges the selection again)
     if (!sel.size) { selView = false; marking = false; if (nameQ) resetSearch(); }
     selBtn();
     if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); if (gathering) gathering.stop = true; fitView(); } // back from the connected view: the whole graph again, everything gliding home
@@ -1060,6 +1060,7 @@ async function openInPortal(n) {
     [x - w / 2, y - r - h - 1], [x - w / 2, y + r + 1], [x + gap + 12, y - h * 1.4], [x + gap + 12, y + h * .4], [x - gap - 12 - w, y - h * 1.4], [x - gap - 12 - w, y + h * .4],
     [x + gap + 30, y - h / 2], [x - gap - 30 - w, y - h / 2], [x - w / 2, y - r - h * 2.2], [x - w / 2, y + r + h * 1.2]
   ]; };
+  let hoverId = null, lastDiscs = []; // the node or name under the pointer: its whole name is shown
   const widthMemo = new Map(); // text widths: measuring is the slow part of placing hundreds of names every frame
   const textW = t => { let w = widthMemo.get(t); if (w === undefined) { w = { width: lctx.measureText(t).width }; if (widthMemo.size > 20000) widthMemo.clear(); widthMemo.set(t, w); } return w; };
   function drawLabels() {
@@ -1084,11 +1085,12 @@ async function openInPortal(n) {
       || discs.some(D => D.id !== R.id && R.x < D.x + D.r + 1 && R.x + R.w > D.x - D.r - 1 && R.y < D.y + D.r + 1 && R.y + R.h > D.y - D.r - 1);
     for (const it of items) {
       it.text = (it.rank === 0 && litSel.size <= 6) || it.label.length <= 32 ? it.label : it.label.slice(0, 30).trimEnd() + "…"; // long names are shortened, except for a small selection
-      if (grid) { const avail = cellPx - 2 * it.r - 14; if (textW(it.text).width > avail) { // cut to the cell; a short last word (a number, a code) is kept, because it is what tells names apart
+      if (grid) { let avail = cellPx - 2 * it.r - 14; it.below = avail < 70 && rowPx - 2 * it.r >= LH + 6; if (it.below) avail = cellPx - 10; // no room to the right of the node: the name goes under it, as wide as its cell
+        if (textW(it.text).width > avail) { // cut to the cell; a short last word (a number, a code) is kept, because it is what tells names apart
           const m = it.text.match(/^(.*\S)\s+(\S{1,6})$/), tail = m ? "…" + m[2] : "…"; let t = m ? m[1] : it.text;
           while (t.length > 1 && textW(t + tail).width > avail) t = t.slice(0, -1);
           it.text = t.length >= (m ? 2 : 4) ? t.trimEnd() + tail : ""; } if (!it.text) continue; } // in a grid a name is cut to its cell, so it never runs into the next node
-      const w = textW(it.text).width + 8, slots = slotsFor(it.x, it.y, it.r, w, LH), first = labelSlot.get(it.id) ?? 0;
+      const w = textW(it.text).width + 8, slots = it.below ? [[it.x - w / 2, it.y + it.r + 2]] : slotsFor(it.x, it.y, it.r, w, LH), first = labelSlot.get(it.id) ?? 0;
       const order = grid ? [0] : [first, ...slots.keys()].filter((v, i, arr) => arr.indexOf(v) === i);
       let pick = -1;
       for (const si of order) { const R = { id:it.id, x:slots[si][0], y:slots[si][1], w, h:LH }; if (!clash(R)) { pick = si; break; } }
@@ -1111,6 +1113,15 @@ async function openInPortal(n) {
       lctx.fillStyle = ink; lctx.fillText(R.text, R.x + 4, R.y + R.h / 2);
     }
     lctx.globalAlpha = 1;
+    lastDiscs = discs;
+    if (hoverId && g.hasNode(hoverId)) { // the whole name of what is hovered, over the others, kept inside the view
+      const full = String(g.getNodeAttribute(hoverId, "label")), R = placed.find(P => P.id === hoverId), D = discs.find(P => P.id === hoverId);
+      if (full && (R ? R.text !== full : !!D)) {
+        const w = textW(full).width + 10, x0 = R ? R.x : D.x + D.r + 3, y0 = R ? R.y : D.y - LABEL_H / 2, h = R ? R.h : LABEL_H, x = Math.max(3, Math.min(x0, box.width - w - 3));
+        lctx.fillStyle = "#fff"; lctx.strokeStyle = "#264030"; lctx.lineWidth = 1; lctx.shadowColor = "rgba(0,0,0,.25)"; lctx.shadowBlur = 4; lctx.beginPath(); lctx.roundRect(x, y0, w, h, 4); lctx.fill(); lctx.shadowBlur = 0; lctx.stroke();
+        lctx.fillStyle = ink; lctx.fillText(full, x + 5, y0 + h / 2);
+      }
+    }
     drawFx();
   }
   const ICONS = Object.fromEntries(Object.entries(ICON_PATHS).map(([k, d]) => [k, new Path2D(d)]));
@@ -1237,7 +1248,7 @@ async function openInPortal(n) {
   // The camera stays at its zoom; scrolling is clamped so the arrangement's top and bottom edges stop at the pane's edges.
   const extentPx = fresh => { if (!arr) return null; const x = arr.cx, up = Math.max(...arr.titles.map(t => t.y)), low = Math.min(...arr.heads.map(h => h.y - h.h)); if (fresh) sigma.refresh(); return { top: sigma.graphToViewport({ x, y: up }).y, bottom: sigma.graphToViewport({ x, y: low }).y }; };
   document.getElementById("graph").addEventListener("mousedown", ev => { if ((arr || catView) && ev.button === 2) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true }); // the wheel scrolls the selection view; it is not panned sideways
-  document.getElementById("graph").addEventListener("wheel", ev => { if (catView) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true, passive: false }); // a grid fits the pane as it is: no zoom (leave with a click on empty space or the breadcrumb)
+  document.getElementById("graph").addEventListener("wheel", ev => { if (catView || (arr && focusSec && !focusSec.band)) { ev.preventDefault(); ev.stopImmediatePropagation(); } }, { capture: true, passive: false }); // a grid fits the pane as it is: no zoom (leave with a click on empty space or the breadcrumb)
   document.getElementById("graph").addEventListener("wheel", ev => {
     if (!arr || catView || (focusSec && !focusSec.band)) return; ev.preventDefault(); ev.stopImmediatePropagation();
     const E = extentPx(true), box = terr.getBoundingClientRect(); if (!E) return; // fresh: the matrix is stale until a render
@@ -1252,20 +1263,28 @@ async function openInPortal(n) {
     focusSec = { name: t.text, n: t.n, band: true }; labelSlot.clear(); sigma.refresh();
     const fr = framedAt(r.x + r.w / 2, r.y - r.h / 2 + 30 * upp); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: Math.max(arr.ratio * .4, pxu1 * upp * 1.04) }, { duration: 500 }); // 30 px lower on screen: the breadcrumb is above
   }
-  function openHit(P) {
+  function openHit(P, gone = []) { // gone: nodes just taken out of the section, which glide back to their first places
     if (P.act) return setSelection(P.sec.ids, P.act, true); // the section's Select all / Clear
     if (P.band) return openBand(P.band);
     if (!P.sec) return enterCat(P.key, P.kind);
-    const h = P.sec, A = arr; if (!A || catView || !pxu1) return;
+    const h = P.sec, A = focusSec?.base ?? arr; if (!A || catView || !pxu1) return; // base: the arrangement before this section was opened (it is laid out again when the section changes)
     const own = new Set(h.ids), nb = new Set(); for (const id of h.ids) g.forEachNeighbor(id, n => { if (!own.has(n) && A.pos.has(n) && isVisible(n)) nb.add(n); });
     const name = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s", Name = name[0].toUpperCase() + name.slice(1);
     const sub = layoutLit([{ title: Name, ids: h.ids }, { title: "Linked to these", ids: [...nb] }], 0, 0);
     const right = Math.max(...A.heads.map(q => q.x + q.w), ...A.titles.map(q => q.x + q.w)), top = Math.max(...A.titles.map(q => q.y)), t = sub.titles[0], dx = right + 2 * A.SIDEG - t.x, dy = top - t.y; // left of the arrangement's right edge nothing is free
-    const moves = [...sub.pos].map(([id, q]) => ({ id, x: q[0] + dx, y: q[1] + dy }));
+    const moves = [...sub.pos].map(([id, q]) => ({ id, x: q[0] + dx, y: q[1] + dy })); for (const id of gone) { const q = home.get(id); if (q && g.hasNode(id)) moves.push({ id, x: q.x, y: q.y }); }
     arr = { ...A, cellG: sub.cellG, rowG: sub.rowG, ratio: sub.ratio, heads: [...A.heads, ...sub.heads.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))], titles: [...A.titles, ...sub.titles.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))] };
-    focusSec = { name: Name, n: h.n, from: h.band.replace(" resources", ""), pair: new Set([...h.ids, ...nb]) }; labelSlot.clear();
+    focusSec = { name: Name, n: h.n, from: h.band.replace(" resources", ""), pair: new Set([...h.ids, ...nb]), base: A, hit: P }; labelSlot.clear();
     if (gathering) gathering.stop = true; gathering = moves; tween(moves, 500, () => { if (gathering === moves) gathering = null; });
     sigma.refresh(); const fr = framedAt(sub.cx + dx, sub.cy + dy + 24 * sub.u); sigma.getCamera().animate({ x: fr.x, y: fr.y, ratio: sub.ratio }, { duration: 500 }); // the pair fills the pane
+  }
+  function refreshSection() { // the opened section of the selected: what is selected of its type (a section of the connected keeps its nodes, they are only marked)
+    const P = focusSec?.hit; if (!P || focusSec.band) return;
+    if (focusSec.from !== "Selected") return void sigma.refresh();
+    const ids = [...sel].filter(id => g.hasNode(id) && kindOf(id) === P.sec.kind && isVisible(id)), gone = P.sec.ids.filter(id => !sel.has(id));
+    if (!ids.length) return leaveSection();
+    if (ids.length === P.sec.ids.length && !gone.length && ids.every(id => P.sec.ids.includes(id))) return void sigma.refresh();
+    openHit({ ...P, sec: { ...P.sec, ids, n: ids.length } }, gone);
   }
   let zoomedToSelection = false, gathering = null;
   function fitLit() { // the camera onto the selection and what it links to
@@ -1579,7 +1598,10 @@ async function openInPortal(n) {
   sigma.on("clickNode", ({ node, event }) => { if (Date.now() - lastDrag > 400) { const P = !catView && catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return openHit(P); pick(node, event); } }); // a category pill wins over the node under it
   sigma.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); const a = g.getNodeAttributes(node); if (hasPage(a.kind)) openInPortal(a); });
   sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return openHit(P); const H = clusterHit(event.x, event.y); if (H) { const c = clusters.find(c => c.key === H.key); return c?.typeKind ? enterCat(c.key, c.typeKind) : zoomToCluster(H.key); } const id = labelAt(event.x, event.y); pick(id, event); } });
-    sigma.on("doubleClickStage", ({ event }) => { if (catView) event.preventSigmaDefault(); const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
+    sigma.on("doubleClickStage", ({ event }) => { if (catView || arr) event.preventSigmaDefault(); const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
+  const hoverIdAt = (x, y) => labelAt(x, y) ?? lastDiscs.find(D => Math.hypot(D.x - x, D.y - y) <= D.r)?.id ?? null;
+  sigma.getMouseCaptor().on("mousemovebody", ev => { if (drag) return; const id = hoverIdAt(ev.x, ev.y); if (id !== hoverId) { hoverId = id; drawLabels(); } });
+  sigma.getContainer().addEventListener("mouseleave", () => { if (hoverId) { hoverId = null; drawLabels(); } });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) || catHits.some(P => ev.x >= P.x0 && ev.x <= P.x1 && ev.y >= P.y0 && ev.y <= P.y1) ? "pointer" : ""; });
 
   // right-drag moves the view

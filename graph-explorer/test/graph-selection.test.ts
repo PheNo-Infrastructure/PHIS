@@ -262,7 +262,60 @@ test("e2e: graph selection: in the selection view the wheel scrolls (y only, no 
 });
 
 // What Browse sends when a resource is opened there (a search result, say): its id as `current`.
+test("e2e: graph selection: a section opened from the selection view cannot be zoomed or panned (wheel, double-click, right-drag)", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-0"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const pill = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), h = G.catHits().filter((P: any) => P.sec && !P.act && !P.band).sort((a: any, b: any) => a.sec.n - b.sec.n)[0]; return h ? { x: (h.x0 + h.x1) / 2 + r.left, y: (h.y0 + h.y1) / 2 + r.top } : null; });
+    assert.ok(pill, "a section has a pill to open it");
+    await page.mouse.click(pill.x, pill.y); await page.waitForTimeout(1500);
+    assert.ok(await page.evaluate(() => /›/.test(document.getElementById("crumbs")?.innerText ?? "") ), "the section is open (a breadcrumb leads back)");
+    const c0 = await camera(page);
+    await page.mouse.move(500, 400);
+    await page.mouse.wheel(0, -600); await page.mouse.wheel(0, 900);
+    await page.mouse.dblclick(1380, 800); // empty space (a double-click on a node opens its page)
+    await page.mouse.down({ button: "right" }); await page.mouse.move(300, 250, { steps: 6 }); await page.mouse.up({ button: "right" });
+    await page.waitForTimeout(800);
+    assert.ok(sameCamera(await camera(page), c0), "the camera did not move");
+  });
+});
+
+test("e2e: graph selection: in an opened section Ctrl+click keeps the section open: a deselected node leaves it, an added one joins it, and every node is named", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => (window as any).__graph.setSelection(["facility-0", "facility-1", "facility-2", "facility-3"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const pill = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), h = G.catHits().find((P: any) => P.sec && !P.act && !P.band && P.sec.kind === "facility"); return h ? { x: (h.x0 + h.x1) / 2 + r.left, y: (h.y0 + h.y1) / 2 + r.top } : null; });
+    assert.ok(pill, "the selected facilities have a section");
+    await page.mouse.click(pill.x, pill.y); await page.waitForTimeout(1500);
+    const crumb = () => page.evaluate(() => document.getElementById("crumbs")!.innerText);
+    assert.match(await crumb(), /Facilities/);
+    const named = await page.evaluate(() => (window as any).__graph.labelRects().length);
+    assert.ok(named >= 4, "the section's nodes are named (got " + named + ")");
+    const p = await xy(page, "facility-1"); await page.keyboard.down("Control"); await page.mouse.click(p.x, p.y); await page.keyboard.up("Control"); await page.waitForTimeout(800);
+    assert.deepEqual(await selected(page), ["facility-0", "facility-2", "facility-3"]);
+    assert.match(await crumb(), /Facilities/, "the section is still open");
+    assert.match(await crumb(), /Facilities, 3/, "the deselected node left the section");
+    const gone = await xy(page, "facility-1"); assert.ok(Math.hypot(gone.x - p.x, gone.y - p.y) > 20, "and it glided out of the section");
+    // a node put into the selection (from the list of what is linked) joins the section of its type
+    await page.evaluate(() => (window as any).__graph.setSelection(["facility-1"], "add")); await page.waitForTimeout(800);
+    assert.match(await crumb(), /Facilities, 4/, "a facility added to the selection joins it");
+  });
+});
+
 const openedInBrowse = (page: Page, id: string) => page.evaluate((i) => window.postMessage({ kind: "selection", ids: [], current: i }, location.origin), id);
+
+test("e2e: graph selection: in the selection view the node opened in Browse is not drawn as selected when it is not (deselecting it removes it from Selected)", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => window.postMessage({ kind: "selection", ids: ["facility-0", "facility-1", "facility-2"], current: "facility-0" }, location.origin)); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const inSelected = () => page.evaluate(() => { const G = (window as any).__graph; return G.catHits().find((P: any) => P.band && /^Selected/.test(P.band.text))?.band.n as number; });
+    assert.equal(await inSelected(), 3);
+    const p = await xy(page, "facility-0"); await page.keyboard.down("Control"); await page.mouse.click(p.x, p.y); await page.keyboard.up("Control"); await settled(page);
+    assert.deepEqual(await selected(page), ["facility-1", "facility-2"]);
+    assert.equal(await inSelected(), 2, "the deselected node (still the one opened in Browse) is not in the Selected section");
+  }, { width: 1400, height: 860 }, "?embed=1");
+});
+
 const onScreen = (page: Page, id: string) => page.evaluate((i) => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), v = G.sigma.graphToViewport(G.g.getNodeAttributes(i)); return v.x > 0 && v.y > 0 && v.x < r.width && v.y < r.height; }, id);
 
 test("e2e: graph selection: a resource opened in Browse is brought into view when it is off screen, and left alone when it is already in sight", async () => {
