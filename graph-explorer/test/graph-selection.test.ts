@@ -292,6 +292,20 @@ test("e2e: graph selection: from a legend grid the selection view can be opened,
   });
 });
 
+test("e2e: graph selection: hiding and showing a type again and again with a selection does not change the scale of the graph", async () => {
+  await withGraph(async (page) => {
+    const stat = () => page.evaluate(() => { const G = (window as any).__graph; let mx = 0, x0 = 1e9, x1 = -1e9; G.g.forEachNode((id: string, a: any) => { mx = Math.max(mx, a.size); x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); }); return { K: G.K() as number, width: x1 - x0, maxSize: mx }; });
+    await page.evaluate(() => (window as any).__graph.setSelection(["facility-0", "facility-1", "experiment-2"], "replace")); await settled(page);
+    const first = await stat();
+    for (let i = 0; i < 14; i++) { await page.locator('#legend button[data-t="organization"]').click(); await page.waitForTimeout(120); }
+    await settled(page);
+    const last = await stat();
+    assert.ok(Math.abs(last.K / first.K - 1) < .1, `the scale K stays (${first.K.toFixed(3)} -> ${last.K.toFixed(3)})`);
+    assert.ok(Math.abs(last.width / first.width - 1) < .1, `and so does the spread of the layout (${first.width.toFixed(0)} -> ${last.width.toFixed(0)})`);
+    assert.ok(Math.abs(last.maxSize - first.maxSize) < .01, "and the node sizes");
+  });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });
