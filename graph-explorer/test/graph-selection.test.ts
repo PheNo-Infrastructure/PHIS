@@ -322,6 +322,16 @@ test("e2e: graph selection: a small section is two columns, the linked nodes in 
   });
 });
 
+test("e2e: graph selection: every section of the selection view has its Select all / Clear, also in a narrow window", async () => {
+  for (const width of [1400, 760, 520]) await withGraph(async (page) => {
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-0", "organization-1", "facility-0"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const n = await page.evaluate(() => { const H = (window as any).__graph.catHits(); return { pills: H.filter((P: any) => P.sec && !P.act && !P.band).length, acts: H.filter((P: any) => P.act).length }; });
+    assert.ok(n.pills >= 3, "there are sections");
+    assert.equal(n.acts, n.pills, `at ${width}px wide every section has its button`);
+  }, { width, height: 700 });
+});
+
 const openedInBrowse = (page: Page, id: string) => page.evaluate((i) => window.postMessage({ kind: "selection", ids: [], current: i }, location.origin), id);
 
 test("e2e: graph selection: in the selection view the node opened in Browse is not drawn as selected when it is not (deselecting it removes it from Selected)", async () => {
