@@ -309,7 +309,7 @@ async function openInPortal(n) {
       const [s, t] = g.extremities(ed);
       if (!isVisible(s) || !isVisible(t) || (!catView && !focusSec?.pair && lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t)) || (focusSec?.pair && !(focusSec.pair.has(s) && focusSec.pair.has(t)))) return { ...a, hidden:true };
       if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
-      if (hoverId && (arr || catView)) return s === hoverId || t === hoverId ? { ...a, color: "#1d2f24", size: 2.4, zIndex: 3 } : { ...a, color: "#e3e9d8", size: .6 }; // hovering a node: its own links are drawn dark, the others pale
+      if (hoverId && (arr || catView)) return catView && !(catView.set.has(s) && catView.set.has(t)) ? { ...a, hidden: true } : s === hoverId || t === hoverId ? { ...a, color: "#1d2f24", size: 2.4, zIndex: 3 } : { ...a, color: "#e3e9d8", size: .6 }; // hovering a node: its own links are drawn dark, the others pale
       if (catView) return catView.set.has(s) && catView.set.has(t) && catView.fade > 0 ? { ...a, color: dark ? "#3a4536" : catView.linkColor, size: .9, zIndex: 1 } : { ...a, hidden: true }; // in a grid only the links between its own nodes are drawn; a link to the rest of the graph appears when its node is selected
       return a;
     },

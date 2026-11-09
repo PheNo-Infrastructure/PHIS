@@ -261,6 +261,17 @@ test("e2e: graph selection: what is not connected is split into Could be linked 
   }, { width: 1400, height: 700 });
 });
 
+test("e2e: graph selection: hovering a node in a legend grid draws only links between the grid's own nodes (nothing runs off to the rest of the graph)", async () => {
+  await withGraph(async (page) => {
+    await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await settled(page);
+    assert.notEqual(await page.evaluate(() => (window as any).__graph.cat()), null, "a grid is open");
+    const o = await xy(page, "organization-0"); await page.mouse.move(o.x, o.y); await page.waitForTimeout(400);
+    const hidden = (a: string, b: string) => page.evaluate(([x, y]) => { const G = (window as any).__graph, e = G.g.edge(x, y) ?? G.g.edge(y, x); return e ? !!G.sigma.getEdgeDisplayData(e)?.hidden : null; }, [a, b]);
+    assert.equal(await hidden("organization-0", "facility-0"), true, "a link to a facility, which is not in the grid, is not drawn");
+    assert.equal(await hidden("organization-0", "experiment-0"), true, "nor one to an experiment");
+  });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });
