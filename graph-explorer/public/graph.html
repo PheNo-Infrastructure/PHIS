@@ -1535,7 +1535,8 @@ async function openInPortal(n) {
         const two = !!h.two, by = two ? v.y + 22 : v.y + 2; // two: a narrow section has the button on a second line, under its name
         if (two ? bw > right - v.x + 8 : right - bw < v.x + tw + 14) { lab = clear ? "×" : "All"; bw = tctx.measureText(lab).width + 14; }
         const bx = two ? v.x : Math.max(v.x, right - bw); room = two ? right - v.x + 8 : bx - v.x - 8;
-        tctx.fillStyle = "rgba(255,255,255,.9)"; tctx.strokeStyle = "#3d8526"; tctx.lineWidth = 1; tctx.beginPath(); tctx.roundRect(bx, by, bw, 18, 9); tctx.fill(); tctx.stroke(); tctx.fillStyle = "#2c6a1b"; tctx.fillText(lab, bx + 7, by + 13); catHits.push({ act: clear ? "remove" : "add", sec: h, x0: bx, x1: bx + bw, y0: by, y1: by + 18 });
+        tctx.fillStyle = "rgba(255,255,255,.9)"; tctx.strokeStyle = "#3d8526"; tctx.lineWidth = 1; tctx.beginPath(); tctx.roundRect(bx, by, bw, 18, 9); tctx.fill(); tctx.stroke(); tctx.fillStyle = "#2c6a1b"; { const m = tctx.measureText(lab); // the ink of the word (not its font box) is centred in the pill
+          tctx.fillText(lab, bx + bw / 2 - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2 + m.actualBoundingBoxLeft, by + 9 + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2); } catHits.push({ act: clear ? "remove" : "add", sec: h, x0: bx, x1: bx + bw, y0: by, y1: by + 18 });
         tctx.font = hf; tctx.fillStyle = "#264030"; }
       let shown = txt; if (tctx.measureText(shown).width > room) { shown = shown.replace(/\s+\d+$/, ""); while (shown.length > 1 && tctx.measureText(shown + "…").width > room) shown = shown.slice(0, -1); if (shown !== txt.replace(/\s+\d+$/, "")) shown += "…"; }
       tctx.fillText(shown, v.x, v.y + 14);
