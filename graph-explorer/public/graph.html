@@ -1319,14 +1319,14 @@ async function openInPortal(n) {
       const { cw, ch } = pitch(R, named), fit = gr.cols || Math.max(1, Math.floor(W / cw)), kinds = FILTERS.filter(k => gr.ids.some(id => kindOf(id) === k));
       const items = kinds.map(k => { const ids = gr.ids.filter(id => kindOf(id) === k).sort((a, b) => (gr.rank ? (gr.rank.get(a) ?? 0) - (gr.rank.get(b) ?? 0) : 0) || label(a).localeCompare(label(b))), m = ids.length, rows = Math.ceil(m / fit); return { kind: k, ids, m, rows, cols: Math.ceil(m / rows) }; }).sort((a, b) => b.m - a.m), shelves = [];
       for (const it of items) { const w = it.cols * cw; let sh = shelves.find(s => s.w + w + GAP <= W); if (!sh) shelves.push(sh = { items: [], w: -GAP }); sh.w += w + GAP; sh.items.push(it); }
-      for (const sh of shelves) { sh.rows = Math.max(...sh.items.map(i => i.rows)); for (const it of sh.items) it.cols = Math.ceil(it.m / (it.rows = sh.rows)); sh.h = HEAD + sh.rows * ch; }
+      for (const sh of shelves) { sh.rows = Math.max(...sh.items.map(i => i.rows)); for (const it of sh.items) it.cols = Math.ceil(it.m / (it.rows = sh.rows)); sh.two = sh.items.some(it => it.cols * cw < 150); sh.head = sh.two ? HEAD + 20 : HEAD; sh.h = sh.head + sh.rows * ch; } // a shelf with a narrow section has a second header line: the name above, the button under it
       return { shelves, cw, ch, H: shelves.reduce((t, s) => t + s.h, 0) + GAP * Math.max(0, shelves.length - 1) };
     };
     const place = (pk, x0, y0, W, Hr) => { // the shelves fill the rectangle; inside a block the grid is centred, so a part-filled grid still looks even
       const ky = Math.max(1, (Hr - GAP * (pk.shelves.length - 1)) / pk.shelves.reduce((t, s) => t + s.h, 0)), blocks = []; let y = y0;
       for (const sh of pk.shelves) { const base = sh.items.reduce((t, it) => t + it.cols * pk.cw, 0), kx = Math.max(1, (W - GAP * (sh.items.length - 1)) / base), hh = sh.h * ky; let x = x0;
-        for (const it of sh.items) { const w = it.cols * pk.cw * kx, px = Math.min(w / it.cols, pk.cw * PCAP), py = Math.min((hh - HEAD) / it.rows, pk.ch * PCAP);
-          blocks.push({ ...it, x, y, w, h: hh, px, py, ox: (w - it.cols * px) / 2, oy: (hh - HEAD - it.rows * py) / 2 }); x += w + GAP; } y += hh + GAP; }
+        for (const it of sh.items) { const w = it.cols * pk.cw * kx, px = Math.min(w / it.cols, pk.cw * PCAP), py = Math.min((hh - sh.head) / it.rows, pk.ch * PCAP);
+          blocks.push({ ...it, x, y, w, h: hh, px, py, head: sh.head, two: sh.two, ox: (w - it.cols * px) / 2, oy: (hh - sh.head - it.rows * py) / 2 }); x += w + GAP; } y += hh + GAP; }
       return { blocks, bottom: y - GAP };
     };
     const H0 = uh - TITLE; let found = null;
@@ -1338,8 +1338,8 @@ async function openInPortal(n) {
     const u = 11 * K / R, extra = Math.max(1, Hon / uh), pos = new Map(), heads = [], titles = [], gx = px => cx + (px - uw / 2) * u, gy = py => cy - (py - Math.max(Hon, uh) / 2) * u; // a layout shorter than the pane sits at the top, not in the middle // graph units per layout pixel (y points up)
     let minPx = Infinity, minPy = Infinity;
     for (const r of rects) { titles.push({ text: r.gr.title, n: r.gr.ids.length, band: r.gr.title, x: gx(r.x0), y: gy(r.y0 - TITLE), w: r.W * u, rect: { x: gx(r.x0), y: gy(r.y0), w: r.W * u, h: (r.bottom - r.y0) * u } });
-      for (const b of r.blocks) { minPx = Math.min(minPx, b.px); minPy = Math.min(minPy, b.py); heads.push({ kind: b.kind, ids: b.ids, band: r.gr.title, n: b.m, x: gx(b.x), y: gy(b.y), w: b.w * u, h: b.h * u }); b.ids.forEach((id, i) => { const row = Math.floor(i / b.cols), last = Math.floor((b.m - 1) / b.cols), lone = row === last ? (b.cols - (b.m - last * b.cols)) * b.px / 2 : 0; // the part-filled last row is centred
-        pos.set(id, [gx(b.x + b.ox + lone + (named ? (i % b.cols) * b.px + R + 8 : (i % b.cols + .5) * b.px)), gy(b.y + HEAD + b.oy + (row + .5) * b.py)]); }); } }
+      for (const b of r.blocks) { minPx = Math.min(minPx, b.px); minPy = Math.min(minPy, b.py); heads.push({ kind: b.kind, ids: b.ids, band: r.gr.title, n: b.m, two: b.two, x: gx(b.x), y: gy(b.y), w: b.w * u, h: b.h * u }); b.ids.forEach((id, i) => { const row = Math.floor(i / b.cols), last = Math.floor((b.m - 1) / b.cols), lone = row === last ? (b.cols - (b.m - last * b.cols)) * b.px / 2 : 0; // the part-filled last row is centred
+        pos.set(id, [gx(b.x + b.ox + lone + (named ? (i % b.cols) * b.px + R + 8 : (i % b.cols + .5) * b.px)), gy(b.y + b.head + b.oy + (row + .5) * b.py)]); }); } }
     const base = 11 * K * pxu1 / R, focus = { x: cx, y: cy + 28 * u * extra, ratio: base * extra }; // the camera looks 28 px above the middle, so the arrangement sits below the toolbar
     return { pos, heads, titles, cellG: minPx * u, rowG: minPy * u, cx: focus.x, cy: focus.y, ratio: focus.ratio, R, u, named, SIDEG: SIDE * u };
   }
@@ -1506,9 +1506,10 @@ async function openInPortal(n) {
         const hf = tctx.font, clear = h.band.startsWith("Selected"), right = sigma.graphToViewport({ x: h.x + h.w, y: h.y }).x - 8, tw = tctx.measureText(txt).width;
         tctx.font = `600 ${Math.max(10, 11 * rel)}px "Public Sans", system-ui, sans-serif`;
         let lab = clear ? "Clear" : "Select all", bw = tctx.measureText(lab).width + 14;
-        if (right - bw < v.x + tw + 14) { lab = clear ? "×" : "All"; bw = tctx.measureText(lab).width + 14; }
-        const bx = Math.max(v.x, right - bw); room = bx - v.x - 8;
-        tctx.fillStyle = "rgba(255,255,255,.9)"; tctx.strokeStyle = "#3d8526"; tctx.lineWidth = 1; tctx.beginPath(); tctx.roundRect(bx, v.y + 2, bw, 18, 9); tctx.fill(); tctx.stroke(); tctx.fillStyle = "#2c6a1b"; tctx.fillText(lab, bx + 7, v.y + 15); catHits.push({ act: clear ? "remove" : "add", sec: h, x0: bx, x1: bx + bw, y0: v.y + 2, y1: v.y + 20 });
+        const two = !!h.two, by = two ? v.y + 22 : v.y + 2; // two: a narrow section has the button on a second line, under its name
+        if (two ? bw > right - v.x + 8 : right - bw < v.x + tw + 14) { lab = clear ? "×" : "All"; bw = tctx.measureText(lab).width + 14; }
+        const bx = two ? v.x : Math.max(v.x, right - bw); room = two ? right - v.x + 8 : bx - v.x - 8;
+        tctx.fillStyle = "rgba(255,255,255,.9)"; tctx.strokeStyle = "#3d8526"; tctx.lineWidth = 1; tctx.beginPath(); tctx.roundRect(bx, by, bw, 18, 9); tctx.fill(); tctx.stroke(); tctx.fillStyle = "#2c6a1b"; tctx.fillText(lab, bx + 7, by + 13); catHits.push({ act: clear ? "remove" : "add", sec: h, x0: bx, x1: bx + bw, y0: by, y1: by + 18 });
         tctx.font = hf; tctx.fillStyle = "#264030"; }
       let shown = txt; if (tctx.measureText(shown).width > room) { shown = shown.replace(/\s+\d+$/, ""); while (shown.length > 1 && tctx.measureText(shown + "…").width > room) shown = shown.slice(0, -1); if (shown !== txt.replace(/\s+\d+$/, "")) shown += "…"; }
       tctx.fillText(shown, v.x, v.y + 14);
