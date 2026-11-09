@@ -4271,8 +4271,8 @@ async function linkItems(items, experiments, extra = {}) {
       const names = andList((n.notInAny || []).map(o => escapeHtml(o.label)));
       experimentChoice = n.placeOptions
         ? { what: "factor level", lone: n.notInAny, placeOptions: n.placeOptions, retry: () => linkItems(items),
-            lonePrompt: `${names} ${n.notInAny.length === 1 ? "isn't" : "aren't"} in ${escapeHtml(n.placeOptions[0].label)}, where this factor level belongs. Add ${n.notInAny.length === 1 ? "it" : "them"} there first?` }
-        : { what: "germplasm", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
+            lonePrompt: `${names} ${n.notInAny.length === 1 ? "isn't" : "aren't"} in ${andList(n.placeOptions.map(o => escapeHtml(o.label)))}, where this factor level belongs. Add ${n.notInAny.length === 1 ? "it" : "them"} there first?` }
+        : { what: n.what || "germplasm", lone: n.notInAny, experiments: n.experiments, objects: n.objects, retry: (exps) => linkItems(items, exps) };
       renderActionbar();
       return;
     }

@@ -79,9 +79,10 @@ export type NodeConfig = {
     // The "part of" relation for /api/parent (child is part of parent), if the type has one.
     parentField?: string;
     experimentsOf: (id: string) => Promise<{ id: string; label: string }[]>;
-    // Values that belong to ONE experiment (a factor level): keyed by the value's type, gives
-    // that experiment — the link is written there only, and no "which experiment?" is asked.
-    fixedExperiment?: Record<string, (valueIds: string[]) => Promise<{ id: string; label: string }>>;
+    // Values that belong to certain experiments (a factor level: every experiment holding its factor): keyed by the
+    // value's type, gives those experiments — the link is written in them only (one of them is asked for when the
+    // object is in several).
+    fixedExperiment?: Record<string, (valueIds: string[]) => Promise<{ id: string; label: string }[]>>;
     update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void>;
     // After values were ADDED on a node inside an experiment: its children there (part of it)
     // lacking them — offered, never applied (a plot's variety doesn't pass down — probed).
@@ -167,7 +168,7 @@ const SO_ROWS_PER_EXPERIMENT = [
   { label: "Contains", property: "contains", inverseOf: "isPartOf", type: "scientific_object", byUris: (expId: string) => `/core/scientific_objects/by_uris?experiment=${encodeURIComponent(expId)}`, addable: false, removable: true, single: false },
   // A level has no node of its own beyond uri + name; its chip is "Replicate: 2" (type
   // factor_level, selectable). Removable here; set through Link selection (byType below), never
-  // carried over or offered to children — levels belong to ONE experiment's factors.
+  // carried over or offered to children — a level belongs to its factor's experiments.
   { label: "Factor levels", property: "hasFactorLevel", type: "factor_level", names: factorLevelChips, addable: false, removable: true, single: false },
 ];
 type FactorDto = { uri: string; name: string; experiment: string; levels: { uri: string; name: string; description?: string | null }[] };
@@ -184,24 +185,31 @@ export async function factorOfLevel(levelId: string): Promise<FactorDto> {
   return f;
 }
 
-// The one experiment a set of levels belongs to; refuses two levels of one factor (an object holds
-// one level per factor) and levels from different experiments.
-async function levelsExperiment(levelIds: string[]) {
+// The experiments a set of levels can be set in: those holding the levels' factor (made there or linked in), and for
+// levels of several factors those holding all of them. Refuses two levels of one factor (an object holds one level per factor).
+async function levelsExperiments(levelIds: string[]) {
   const factors = await Promise.all(levelIds.map(factorOfLevel));
   const seen = new Set<string>();
   for (const f of factors) {
     if (seen.has(f.uri)) throw new OpenSilexError(400, `Two levels of ${f.name} can't both be on a scientific object.`);
     seen.add(f.uri);
   }
-  const exps = new Set(factors.map((f) => f.experiment));
-  if (exps.size !== 1) throw new OpenSilexError(400, "These factor levels belong to different experiments.");
-  const id = factors[0].experiment;
-  return { id, label: String((await authedGetOne(`/core/experiments/${encodeURIComponent(id)}`)).result.name ?? id) };
+  let common: { id: string; label: string }[] | null = null;
+  for (const f of factors) {
+    const held = (await experimentsOfFactor(f.uri)).map((e) => ({ id: e.uri, label: e.name }));
+    if (common === null) { common = held; continue; }
+    const keys = new Set(await Promise.all(held.map((e) => compactUri(e.id))));
+    const kept: typeof held = [];
+    for (const e of common) if (keys.has(await compactUri(e.id))) kept.push(e);
+    common = kept;
+  }
+  if (!common?.length) throw new OpenSilexError(400, "These factor levels have no experiment in common.");
+  return common;
 }
 
 // Every factor of the experiment with its levels comes back in one call — enough to name them all.
 async function factorLevelChips(expId: string, uris: string[]) {
-  const factors = (await authedGet(`/core/experiments/${encodeURIComponent(expId)}/factors`)).result as unknown as FactorDto[];
+  const factors = await factorsOf(expId); // the ones made in it and the ones linked in
   const byLevel = new Map<string, ReturnType<typeof levelItem>>();
   for (const f of factors) for (const l of f.levels ?? []) byLevel.set(await compactUri(l.uri), levelItem(f, l));
   return Promise.all(uris.map(async (u) => byLevel.get(await compactUri(u)) ?? { id: u, type: "factor_level", label: u, factor: "" }));
@@ -978,7 +986,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       byType: { ...Object.fromEntries(SO_ROWS_PER_EXPERIMENT.filter((r) => r.addable).map((r) => [r.type, r.property])), factor_level: "hasFactorLevel" },
       parentField: "isPartOf",
       experimentsOf: (id) => queryItems(SO_EXPERIMENTS, id),
-      fixedExperiment: { factor_level: levelsExperiment },
+      fixedExperiment: { factor_level: levelsExperiments },
       update: updateSoInExperiment,
       childOffer: soChildOffer,
       valuesIn: async (id, expId, field) => ((await soRowsIn(id, expId)).find((g) => "field" in g && g.field === field)?.items ?? []).map((i) => i.id),
@@ -1132,15 +1140,15 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     },
     queryRelations: [
       { label: "Factor", type: "factor", url: () => "", load: async (id) => { const f = await factorOfLevel(id); return [{ id: f.uri, label: f.name }]; } },
-      { label: "Experiment", type: "experiment", url: () => "", load: async (id) => {
-        const f = await factorOfLevel(id);
-        return [{ id: f.experiment, label: String((await authedGetOne(`/core/experiments/${encodeURIComponent(f.experiment)}`)).result.name ?? f.experiment) }];
-      } },
+      { label: "Experiments", type: "experiment", url: () => "", load: async (id) => (await experimentsOfFactor((await factorOfLevel(id)).uri)).map((e) => ({ id: e.uri, label: e.name })) },
       // The objects that have this level, through OpenSILEX's own factor_levels filter (probed).
       { label: "Scientific objects", type: "scientific_object", url: () => "", load: async (id) => {
-        const f = await factorOfLevel(id);
-        const rows = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(f.experiment)}&factor_levels=${encodeURIComponent(id)}&page_size=500`)).result;
-        return rows.map((r) => ({ id: String(r.uri), label: String(r.name ?? r.uri) }));
+        const out = new Map<string, { id: string; label: string }>();
+        for (const e of await experimentsOfFactor((await factorOfLevel(id)).uri)) {
+          const rows = (await authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(e.uri)}&factor_levels=${encodeURIComponent(id)}&page_size=500`)).result;
+          for (const r of rows) out.set(String(r.uri), { id: String(r.uri), label: String(r.name ?? r.uri) });
+        }
+        return [...out.values()];
       } },
     ],
   },

@@ -157,24 +157,33 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     const notInAny: { id: string; label: string }[] = [];
     const choices = new Map<string, { id: string; label: string; objects: number }>();
     let needsChoice = false;
+    let fixedChoice = false; // the choice is about a value that belongs to certain experiments (a factor level), not germplasm
     const notInFixed: { id: string; label: string }[] = [];
     let placeOptions: { id: string; type: string; label: string }[] | null = null;
     for (const p of inExp) {
       const cfg = NODE_TYPES[p.ownerType].inExperiment!;
-      const fixed = cfg.fixedExperiment?.[p.otherType] ? await cfg.fixedExperiment[p.otherType](p.otherIds) : null;
+      const fixed = cfg.fixedExperiment?.[p.otherType] ? await cfg.fixedExperiment[p.otherType](p.otherIds) : null; // the experiments that can hold the value
       for (const id of p.ownerIds) {
         const exps = await cfg.experimentsOf(id);
         if (fixed) {
-          // The value belongs to one experiment: write there only; an object not in it is asked
-          // to be added there first (the page's lone-object question), never silently skipped.
-          const key = await compactUri(fixed.id);
-          const there = (await Promise.all(exps.map(async (e) => ((await compactUri(e.id)) === key ? e : null)))).filter((e) => e !== null);
+          // The value belongs to certain experiments (those holding its factor): write there only; an object in none
+          // of them is asked to be added to one first (the page's lone-object question), never silently skipped,
+          // and one in several of them is asked which.
+          const keys = new Set(await Promise.all(fixed.map((e) => compactUri(e.id))));
+          const there = (await Promise.all(exps.map(async (e) => (keys.has(await compactUri(e.id)) ? e : null)))).filter((e) => e !== null);
           if (!there.length) {
             notInFixed.push({ id, label: String((await authedGetOne(NODE_TYPES[p.ownerType].getUrl(id))).result.name ?? id) });
-            placeOptions = [{ id: fixed.id, type: "experiment", label: fixed.label }];
+            placeOptions = fixed.map((e) => ({ id: e.id, type: "experiment", label: e.label }));
             continue;
           }
-          targets.push({ ownerType: p.ownerType, field: p.field, id, exps: there, otherIds: p.otherIds, fixed: true });
+          if (there.length > 1 && !chosen) { needsChoice = true; fixedChoice = true; }
+          for (const e of there) {
+            const c = choices.get(e.id) ?? { id: e.id, label: e.label, objects: 0 };
+            c.objects++;
+            choices.set(e.id, c);
+          }
+          const keep = chosen ? (await Promise.all(there.map(async (e) => (chosen.has(await compactUri(e.id)) ? e : null)))).filter((e) => e !== null) : there;
+          targets.push({ ownerType: p.ownerType, field: p.field, id, exps: keep, otherIds: p.otherIds, fixed: true });
           continue;
         }
         if (!exps.length) {
@@ -198,7 +207,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       return;
     }
     if (notInAny.length || needsChoice) {
-      const out = JSON.stringify({ needsExperiment: { notInAny, ...(needsChoice && !notInAny.length ? { experiments: [...choices.values()], objects: targets.length } : {}) } });
+      const out = JSON.stringify({ needsExperiment: { notInAny, ...(needsChoice && !notInAny.length ? { experiments: [...choices.values()], objects: targets.length, ...(fixedChoice ? { what: "factor level" } : {}) } : {}) } });
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(out);
       return;

@@ -2284,7 +2284,7 @@ test("e2e: set a level on a plant not in its experiment — asked to add it ther
   });
 });
 
-test("e2e: + New factor asks for levels (one per line) and posts them; with two experiments it is greyed", async () => {
+test("e2e: + New factor asks for levels (one per line) and posts them; with two experiments it is offered too (one factor, linked to both)", async () => {
   await withServerAndBrowser(async (base, page) => {
     let posted: any = null;
     await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: FL, type: "factor", label: "Replicate" }) }); });
@@ -2303,8 +2303,13 @@ test("e2e: + New factor asks for levels (one per line) and posts them; with two 
     await page.evaluate(() => { selection = new Map([["exp-1", { id: "exp-1", type: "experiment", label: "A" }], ["exp-2", { id: "exp-2", type: "experiment", label: "B" }]]); renderActionbar(); });
     await page.locator("#newBtn").click();
     const item = page.locator("#newList .newmenu-item", { hasText: "factor" });
-    assert.equal(await item.isDisabled(), true);
-    assert.match(await item.textContent() ?? "", /one experiment only/);
+    assert.equal(await item.isDisabled(), false, "PHIS lets experiments share a factor");
+    await item.click();
+    await page.locator("dialog input[name=name]").fill("Shared");
+    await page.locator("dialog textarea[name=levels]").fill("1");
+    await page.locator("dialog button[value=ok]").click();
+    await idle(page);
+    assert.deepEqual(posted.links, [{ type: "experiment", id: "exp-1" }, { type: "experiment", id: "exp-2" }], "both experiments are sent: the server makes it in the first and links the second");
   });
 });
 
@@ -2329,22 +2334,28 @@ test("e2e: the delete confirm counts again at delete time — a level set since 
   });
 });
 
-test("e2e: + New factor from the Factors list with two experiments picked says to pick one — before the form, nothing typed is lost", async () => {
+test("e2e: + New factor from the Factors list with two experiments picked opens the form and sends both", async () => {
   await withServerAndBrowser(async (base, page) => {
+    let posted: any = null;
+    await page.route("**/api/create", (r) => { posted = r.request().postDataJSON(); return r.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: FL, type: "factor", label: "Shared" }) }); });
     await page.goto(base + "/#browse");
     await idle(page);
     await openRow(page, "Scientific Information");
     await openRow(page, "Factors");
     await page.locator("#newStandaloneBtn").click();
     await idle(page);
-    assert.match(await page.locator("#linkList .linkmenu-title").textContent() ?? "", /in which experiment\?$/); // CSS-uppercased: read the text
+    assert.match(await page.locator("#linkList .linkmenu-title").textContent() ?? "", /in which experiment\(s\)\?$/); // CSS-uppercased: read the text
     const rows = page.locator("#linkList .linkmenu-items .newmenu-item");
     await rows.nth(0).click();
     await rows.nth(1).click({ modifiers: ["Control"] });
     await page.locator(".linkmenu-confirm").click();
     await idle(page);
-    assert.equal(await page.locator("dialog[open]").count(), 0, "no form opened");
-    assert.match(await page.locator("#toast").textContent() ?? "", /A factor belongs to one experiment — pick just one/);
+    assert.equal(await page.locator("dialog[open]").count(), 1, "the form opens");
+    await page.locator("dialog input[name=name]").fill("Shared");
+    await page.locator("dialog textarea[name=levels]").fill("1");
+    await page.locator("dialog button[value=ok]").click();
+    await idle(page);
+    assert.equal(posted.links.length, 2, "both experiments are sent");
   });
 });
 

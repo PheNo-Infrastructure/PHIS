@@ -851,6 +851,7 @@ test("scientific object: factor levels show per experiment as selectable levels 
       if (url.includes("/experiments/exp-b/factors")) {
         return jsonResponse(200, { result: [{ uri: "https://phis.pheno.no/id/factor/rep", name: "Replicate", levels: [{ uri: "https://phis.pheno.no/id/factor/rep.1", name: "1" }, { uri: "https://phis.pheno.no/id/factor/rep.2", name: "2" }] }] });
       }
+      if (url.endsWith("/core/experiments/exp-b")) return jsonResponse(200, { result: { uri: "exp-b", name: "Barley 2026", factors: ["https://phis.pheno.no/id/factor/rep"] } });
       if (url.includes("so-1?experiment=exp-b")) return jsonResponse(200, { result: { uri: "so-1", name: "P", rdf_type: "vocabulary:Plot", factor_level: null, relations: rels } });
       if (url.includes("/so-1/experiments")) return jsonResponse(200, { result: [{ experiment: "exp-b", experiment_name: "Barley 2026" }] });
       if (url.includes("/by_uris")) return jsonResponse(200, { result: (JSON.parse(String(init?.body)) as string[]).map((u) => ({ uri: u, name: u })) });
@@ -1936,17 +1937,19 @@ test("factor level detail: its factor, its experiment and the scientific objects
     const d = await (await realFetch(`${base}/api/node-detail?type=factor_level&id=${encodeURIComponent(`${FAC}.2`)}`)).json();
     const group = (label: string) => d.relations.find((r: any) => r.label === label)?.items;
     assert.deepEqual(group("Factor"), [{ id: FAC, type: "factor", label: "Replicate" }]);
-    assert.deepEqual(group("Experiment"), [{ id: facDto.experiment, type: "experiment", label: "PBar1x4" }]);
+    assert.deepEqual(group("Experiments"), [{ id: facDto.experiment, type: "experiment", label: "PBar1x4" }]);
     assert.deepEqual(group("Scientific objects"), [{ id: "https://phis.pheno.no/id/scientific-object/so-pb001", type: "scientific_object", label: "PB001" }]);
   });
 });
 
-function levelLinkStub(calls: string[], puts: any[], soExps: Record<string, { experiment: string; experiment_name: string }[]>, rels: any[] = []) {
+// heldAlso: other experiments the factor is linked into (PHIS lets experiments share a factor).
+function levelLinkStub(calls: string[], puts: any[], soExps: Record<string, { experiment: string; experiment_name: string }[]>, rels: any[] = [], heldAlso?: { uri: string; name: string }[]) {
   return (async (url: string, init?: RequestInit) => {
     calls.push(url);
     if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
     if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
     if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "ok" }); }
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}/experiments`)) return jsonResponse(200, { result: [{ uri: facDto.experiment, name: "PBar1x4" }, ...(heldAlso ?? [])] });
     if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`)) return jsonResponse(200, { result: facDto });
     if (url.includes(`/core/experiments/${encodeURIComponent(facDto.experiment)}`)) return jsonResponse(200, { result: { uri: facDto.experiment, name: "PBar1x4" } });
     const m = url.match(/scientific_objects\/([^/?]+)\/experiments/);
@@ -1988,13 +1991,16 @@ test("link object + level: an object not in the level's experiment is asked to b
   });
 });
 
-test("create factor: name + experiment + levels (one per line -> [{name}]); no levels or two experiments refused", async () => {
+test("create factor: name + experiment + levels (one per line -> [{name}]); no levels refused; with two experiments the first makes it and the second gets it linked in", async () => {
   await withServer(async (base) => {
     const posts: any[] = [];
+    const puts: any[] = [];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
       if (init?.method === "POST") { posts.push({ url, body: JSON.parse(String(init.body)) }); return jsonResponse(201, { result: [FAC] }); }
+      if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: "e2" }); }
+      if (url.endsWith("/core/experiments/e2")) return jsonResponse(200, { result: { uri: "e2", name: "E2", objective: "o", start_date: "2026-01-01", is_public: true, organisations: [], facilities: [], projects: [], scientific_supervisors: [], technical_supervisors: [], groups: [], factors: [] } });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
     const create = (body: unknown) => realFetch(`${base}/api/create`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -2010,9 +2016,11 @@ test("create factor: name + experiment + levels (one per line -> [{name}]); no l
     assert.match((await none.json()).error, /Levels/);
 
     const two = await create({ type: "factor", name: "X", links: [exp, { type: "experiment", id: "e2" }], fields: { levels: "1" } });
-    assert.equal(two.status, 400);
-    assert.match((await two.json()).error, /belongs to one experiment/);
-    assert.equal(posts.length, 1);
+    assert.equal(two.status, 201, await two.clone().text());
+    assert.equal(posts.length, 2, "one factor is made, not one per experiment");
+    assert.equal(posts[1].body.experiment, facDto.experiment, "PHIS takes one experiment on creation: the first");
+    assert.equal(puts.length, 1);
+    assert.deepEqual([puts[0].uri, puts[0].factors], ["e2", [FAC]], "the second experiment gets the new factor linked in");
   });
 });
 
@@ -2048,6 +2056,7 @@ function levelListStub(puts: any[], calls: string[] = [], levels = facDto.levels
       return l ? jsonResponse(200, { result: l }) : jsonResponse(404, { result: { message: "not found" } });
     }
     if (url.includes("/core/scientific_objects?") && url.includes("factor_levels=")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 20 } } });
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}/experiments`)) return jsonResponse(200, { result: [{ uri: facDto.experiment, name: "PBar1x4" }] });
     if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`)) return jsonResponse(200, { result: dto });
     if (url.includes(`/core/experiments/${encodeURIComponent(facDto.experiment)}`)) return jsonResponse(200, { result: { uri: facDto.experiment, name: "PBar1x4" } });
     throw new Error(`unexpected fetch: ${url}`);
@@ -3824,5 +3833,63 @@ test("delete an experiment and everything in it: a factor made elsewhere is let 
     assert.equal(runA.status, 409);
     assert.match((await runA.json()).error, /Drought \(also used by Trial B\) was made in this experiment and other experiments use it/);
     assert.deepEqual(calls, [], "refused before anything was written");
+  });
+});
+
+// ---- levels of a shared factor: a level belongs to every experiment that holds its factor ----
+const OTHER = { uri: "https://phis.pheno.no/id/experiment/other", name: "Other" };
+const inOther = [{ experiment: OTHER.uri, experiment_name: "Other" }];
+
+test("link object + level of a shared factor: an object in the experiment the factor was LINKED into gets the level there", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = levelLinkStub([], puts, { "so-1": inOther }, [], [OTHER]);
+    const res = await linkPost(base, [{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${FAC}.2` }]);
+    const body = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.needsExperiment, undefined, "the factor is held by Other, so the object belongs there: no question");
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].experiment, OTHER.uri, "written in the object's copy in Other, not in the experiment that made the factor");
+    assert.deepEqual(puts[0].relations.map((r: any) => r.value), [`${FAC}.2`]);
+  });
+});
+
+test("link object + level of a shared factor: an object in several holders is asked which, and only the picked ones are written; one in none is offered every holder", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    const both = [{ experiment: facDto.experiment, experiment_name: "PBar1x4" }, ...inOther];
+    globalThis.fetch = levelLinkStub([], puts, { "so-1": both, "so-2": [{ experiment: "https://phis.pheno.no/id/experiment/elsewhere", experiment_name: "Elsewhere" }] }, [], [OTHER]);
+    const items = [{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${FAC}.2` }];
+    const ask = await (await linkPost(base, items)).json();
+    assert.equal(ask.needsExperiment.what, "factor level");
+    assert.deepEqual(ask.needsExperiment.experiments.map((e: any) => [e.label, e.objects]), [["PBar1x4", 1], ["Other", 1]]);
+    assert.equal(puts.length, 0, "nothing is written before the choice");
+
+    const picked = await realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, experiments: [OTHER.uri] }) });
+    assert.equal(picked.status, 200, await picked.clone().text());
+    assert.deepEqual(puts.map((p) => p.experiment), [OTHER.uri], "only the picked experiment's copy");
+
+    puts.length = 0;
+    const none = await (await linkPost(base, [{ type: "scientific_object", id: "so-2" }, { type: "factor_level", id: `${FAC}.2` }])).json();
+    assert.deepEqual(none.needsExperiment.placeOptions.map((o: any) => o.label), ["PBar1x4", "Other"], "the object can be added to either holder");
+    assert.equal(puts.length, 0);
+  });
+});
+
+test("a level's page lists every experiment holding its factor and the objects that have it in any of them", async () => {
+  await withServer(async (base) => {
+    const stub = factorStub([]);
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes(`/core/experiments/factors/levels/${encodeURIComponent(`${FAC}.2`)}`)) return jsonResponse(200, { result: { uri: `${FAC}.2`, name: "2" } });
+      if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}/experiments`)) return jsonResponse(200, { result: [{ uri: facDto.experiment, name: "PBar1x4" }, OTHER] });
+      if (url.includes("/core/scientific_objects?") && url.includes("factor_levels=")) {
+        return jsonResponse(200, { result: [url.includes(encodeURIComponent(OTHER.uri)) ? { uri: "so-x", name: "In Other" } : { uri: "so-y", name: "In PBar1x4" }] });
+      }
+      return stub(url, init);
+    }) as typeof fetch;
+    const d = await (await realFetch(`${base}/api/node-detail?type=factor_level&id=${encodeURIComponent(`${FAC}.2`)}`)).json();
+    const group = (label: string) => d.relations.find((r: any) => r.label === label)?.items.map((i: any) => i.label);
+    assert.deepEqual(group("Experiments"), ["PBar1x4", "Other"]);
+    assert.deepEqual(group("Scientific objects"), ["In PBar1x4", "In Other"]);
   });
 });
