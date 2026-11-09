@@ -4711,13 +4711,15 @@ test("e2e: graph: what is selected in Browse is shown selected in the graph; thi
 
 test("e2e: graph: two organizations can be linked (parent and child), two experiments cannot; the reason is shown in the Selection pane", async () => {
   await withServerAndBrowser(async (base, page) => {
-    await openGraph(page, base, { nodes: [...GRAPH_STUB.nodes, { id: "t:exp-2", type: "experiment", label: "Experiment 2", count: 0 }], edges: GRAPH_STUB.edges });
+    const frame = await openGraph(page, base, { nodes: [...GRAPH_STUB.nodes, { id: "t:exp-2", type: "experiment", label: "Experiment 2", count: 0 }], edges: GRAPH_STUB.edges });
     await page.evaluate(() => { selection.set("t:org-a", { id: "t:org-a", type: "organization", label: "Org A" }); selection.set("t:org-b", { id: "t:org-b", type: "organization", label: "Org B" }); refreshLeftPane(); });
     await page.locator("#graphInfo .verdict.ok").waitFor();
     assert.match((await page.locator("#graphInfo .verdict").textContent()) ?? "", /parent and child/);
     await page.evaluate(() => { selection.clear(); selection.set("t:exp-1", { id: "t:exp-1", type: "experiment", label: "Experiment 1" }); selection.set("t:exp-2", { id: "t:exp-2", type: "experiment", label: "Experiment 2" }); refreshLeftPane(); });
     await page.locator("#graphInfo .verdict.no").waitFor();
     assert.match((await page.locator("#graphInfo .verdict").textContent()) ?? "", /be linked/);
+    // both experiments are the ones blocking the link, so both are drawn red (as a species picked with an experiment is)
+    await frame.waitForFunction(() => { const G = (window as any).__graph; return G.linkVerdict(G.selItems()).bad?.length === 2; });
   });
 });
 

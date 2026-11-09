@@ -250,7 +250,7 @@ async function openInPortal(n) {
   function linkVerdict(items) {
     if (items.length < 2) return { kind: "none", why: items.length ? "Select a second thing to link it to." : "" };
     const types = [...new Set(items.map(v => v.type))];
-    if (types.length === 1 && !selfLinkable(types[0])) return { kind: "none", why: `Two ${types[0] === "facility" ? "facilities" : plural(types[0])} can't be linked to each other.` };
+    if (types.length === 1 && !selfLinkable(types[0])) return { kind: "none", why: `Two ${types[0] === "facility" ? "facilities" : plural(types[0])} can't be linked to each other.`, bad: items.map(v => v.id) };
     if (types.length === 2 && types.includes("device") && types.includes("facility")) return { kind: "later", why: "Moving devices into a facility needs a date. Do that in Browse for now." };
     const pairOk = (a, b) => adjacent(a, b);
     const bad = items.filter(v => !items.some(w => w !== v && pairOk(v.type, w.type)));
