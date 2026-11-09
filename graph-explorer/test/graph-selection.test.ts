@@ -302,6 +302,26 @@ test("e2e: graph selection: in an opened section Ctrl+click keeps the section op
   });
 });
 
+test("e2e: graph selection: a small section is two columns, the linked nodes in the order of their partners; hovering a node draws its own links dark and the others pale", async () => {
+  await withGraph(async (page) => {
+    await page.evaluate(() => { const G = (window as any).__graph; for (const n of G.g.nodes()) if (/^(device|person|site)-/.test(n)) G.g.dropNode(n); G.setSelection(["facility-0", "facility-1"], "replace"); }); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    const pill = await page.evaluate(() => { const G = (window as any).__graph, r = document.getElementById("terr")!.getBoundingClientRect(), h = G.catHits().find((P: any) => P.sec && !P.act && !P.band && P.sec.kind === "facility"); return { x: (h.x0 + h.x1) / 2 + r.left, y: (h.y0 + h.y1) / 2 + r.top }; });
+    await page.mouse.click(pill.x, pill.y); await page.waitForTimeout(1500);
+    const f0 = await xy(page, "facility-0"), f1 = await xy(page, "facility-1");
+    assert.ok(Math.abs(f0.x - f1.x) < 1 && f0.y !== f1.y, "the two facilities stand in one column");
+    const [a, b] = f0.y < f1.y ? ["experiment-0", "experiment-1"] : ["experiment-1", "experiment-0"]; // experiment i is linked to facility i % 6
+    const ya = (await xy(page, a)).y, yb = (await xy(page, b)).y, ya2 = (await xy(page, a === "experiment-0" ? "experiment-6" : "experiment-7")).y, yb2 = (await xy(page, b === "experiment-1" ? "experiment-7" : "experiment-6")).y;
+    assert.ok(Math.max(ya, ya2) < Math.min(yb, yb2), "the experiments of the upper facility are above those of the lower one, so no link crosses");
+    await page.mouse.move(f0.x, f0.y); await page.waitForTimeout(400);
+    const col = (s: string, t: string) => page.evaluate(([x, y]) => { const G = (window as any).__graph, e = G.g.edge(x, y) ?? G.g.edge(y, x); return e ? G.sigma.getEdgeDisplayData(e)?.color : null; }, [s, t]);
+    assert.equal(await col("facility-0", "experiment-0"), "#1d2f24", "a link of the hovered node is dark");
+    assert.equal(await col("facility-1", "experiment-1"), "#e3e9d8", "the other links are pale");
+    await page.mouse.move(5, 5); await page.waitForTimeout(300);
+    assert.notEqual(await col("facility-0", "experiment-0"), "#1d2f24", "and they return to normal when the pointer leaves");
+  });
+});
+
 const openedInBrowse = (page: Page, id: string) => page.evaluate((i) => window.postMessage({ kind: "selection", ids: [], current: i }, location.origin), id);
 
 test("e2e: graph selection: in the selection view the node opened in Browse is not drawn as selected when it is not (deselecting it removes it from Selected)", async () => {

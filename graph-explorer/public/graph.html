@@ -210,6 +210,7 @@ async function openInPortal(n) {
   let cur = null; // inside the portal: the resource open in Browse; lit like a selection, but not part of it (nothing is linked to it by being open)
   const sel = new Set();           // selected node ids
   const home = new Map(); let restoring = false; // first places of nodes moved aside by the connected view
+  let hoverId = null; // the node or name under the pointer: in a grid its links stand out and its whole name is shown
   let focusSec = null; // the section or grid opened inside the selection view (see openHit)
   let litSize = new Map(), canLink = new Set(), litSel = new Set(), misfit = new Set(), visCount = 0, tintIds = new Set(); // tintIds: the selection and what it links to directly; the members of an opened group are not tinted
   // Faded, not grey: an unrelated node keeps its own colour (a red orphan stays reddish) so it can still be found and added to the selection.
@@ -282,14 +283,7 @@ async function openInPortal(n) {
   const edgeKey = (a, b) => a < b ? a + " " + b : b + " " + a;
   const fx = { pulses: [], sparks: [], flash: new Set() }; // short-lived effects for a link being made or undone
   const dark = false; // PheNo has one light theme
-  const sigma = new Sigma(g, document.getElementById("graph"), {
-    labelColor: { color: dark ? "#e6ebe0" : "#264030" },
-    // Sigma draws a hovered node with a white label box, unreadable in the dark theme
-    allowInvalidContainer: true, // the portal's graph pane is hidden (zero width) on other views
-    renderLabels: false,
-    hoverRenderer: (ctx, d) => { ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 1, 0, Math.PI * 2); ctx.stroke(); }, // a ring, not a filled disc: if the node is ever drawn smaller than its size says, the highlight stays a thin outline
-    labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
-    nodeReducer: (id, a) => {
+  const nodeBase = (id, a) => {
       if (!isVisible(id)) return { ...a, hidden:true };
       if (catView) return litSel.has(id) ? { ...a, zIndex:2, forceLabel:true, highlighted:true } : catView.set.has(id) || catView.nb.has(id) ? { ...a, forceLabel:true } : { ...a, color: fade(a.color, dark, .35) }; // a node picked in a grid stays in the grid and is marked // the category and what it links to are named; the rest of the graph is dimmed
       if (!lit) return a.orphan && visCount < 80 ? { ...a, forceLabel:true } : a; // the gaps are named, so they can be found
@@ -297,11 +291,23 @@ async function openInPortal(n) {
       if (lit.has(id)) return { ...a, size: catView ? a.size : arr ? 11 : litSize.get(id) ?? a.size, zIndex:1, forceLabel: lit.size < 60 };
       if (canLink.has(id)) return { ...a, size: arr ? 11 : a.size, zIndex: 1, forceLabel: true };
       return { ...a, color: fade(a.color, dark), size: arr ? 11 : a.size, forceLabel: visCount < 80 }; // unrelated nodes keep their names while the graph is small, so they can be added
+  };
+  const sigma = new Sigma(g, document.getElementById("graph"), {
+    labelColor: { color: dark ? "#e6ebe0" : "#264030" },
+    // Sigma draws a hovered node with a white label box, unreadable in the dark theme
+    allowInvalidContainer: true, // the portal's graph pane is hidden (zero width) on other views
+    renderLabels: false,
+    hoverRenderer: (ctx, d) => { ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(d.x, d.y, d.size + 1, 0, Math.PI * 2); ctx.stroke(); }, // a ring, not a filled disc: if the node is ever drawn smaller than its size says, the highlight stays a thin outline
+    labelRenderedSizeThreshold: 6, defaultEdgeColor: dark ? "#3a4536" : "#c7d1b8",
+    nodeReducer: (id, a) => { // hovering a node (in a grid): only it and what it links to keep their colour
+      const r = nodeBase(id, a);
+      return hoverId && (arr || catView) && !r.hidden && g.hasNode(hoverId) && id !== hoverId && !g.areNeighbors(hoverId, id) ? { ...r, color: fade(r.color, dark, .35) } : r;
     },
     edgeReducer: (ed, a) => {
       const [s, t] = g.extremities(ed);
       if (!isVisible(s) || !isVisible(t) || (!catView && !focusSec?.pair && lit && !(lit.has(s) && lit.has(t))) || (catView && !catView.set.has(s) && !catView.set.has(t)) || (focusSec?.pair && !(focusSec.pair.has(s) && focusSec.pair.has(t)))) return { ...a, hidden:true };
       if (fx.flash.has(edgeKey(s, t))) return { ...a, color: dark ? "#9be7a8" : "#3d8526", size: 3.5, zIndex: 3 };
+      if (hoverId && (arr || catView)) return s === hoverId || t === hoverId ? { ...a, color: "#1d2f24", size: 2.4, zIndex: 3 } : { ...a, color: "#e3e9d8", size: .6 }; // hovering a node: its own links are drawn dark, the others pale
       if (catView) return catView.set.has(s) && catView.set.has(t) && catView.fade > 0 ? { ...a, color: dark ? "#3a4536" : catView.linkColor, size: .9, zIndex: 1 } : { ...a, hidden: true }; // in a grid only the links between its own nodes are drawn; a link to the rest of the graph appears when its node is selected
       return a;
     },
@@ -1060,7 +1066,7 @@ async function openInPortal(n) {
     [x - w / 2, y - r - h - 1], [x - w / 2, y + r + 1], [x + gap + 12, y - h * 1.4], [x + gap + 12, y + h * .4], [x - gap - 12 - w, y - h * 1.4], [x - gap - 12 - w, y + h * .4],
     [x + gap + 30, y - h / 2], [x - gap - 30 - w, y - h / 2], [x - w / 2, y - r - h * 2.2], [x - w / 2, y + r + h * 1.2]
   ]; };
-  let hoverId = null, lastDiscs = []; // the node or name under the pointer: its whole name is shown
+  let lastDiscs = [];
   const widthMemo = new Map(); // text widths: measuring is the slow part of placing hundreds of names every frame
   const textW = t => { let w = widthMemo.get(t); if (w === undefined) { w = { width: lctx.measureText(t).width }; if (widthMemo.size > 20000) widthMemo.clear(); widthMemo.set(t, w); } return w; };
   function drawLabels() {
@@ -1270,7 +1276,10 @@ async function openInPortal(n) {
     const h = P.sec, A = focusSec?.base ?? arr; if (!A || catView || !pxu1) return; // base: the arrangement before this section was opened (it is laid out again when the section changes)
     const own = new Set(h.ids), nb = new Set(); for (const id of h.ids) g.forEachNeighbor(id, n => { if (!own.has(n) && A.pos.has(n) && isVisible(n)) nb.add(n); });
     const name = PLURAL[h.kind] || (NAMES[h.kind] || h.kind).toLowerCase() + "s", Name = name[0].toUpperCase() + name.slice(1);
-    const sub = layoutLit([{ title: Name, ids: h.ids }, { title: "Linked to these", ids: [...nb] }], 0, 0);
+    // Few nodes: each group is one column, and the linked ones stand in the order of the nodes they link to (the average of their places), so the links run side by side and do not cross or overlap
+    const small = h.ids.length <= 6 && nb.size <= 10, byName = [...h.ids].sort((a, b) => String(g.getNodeAttribute(a, "label")).localeCompare(String(g.getNodeAttribute(b, "label")))), at = new Map(byName.map((id, i) => [id, i])), rank = new Map();
+    if (small) for (const id of nb) { const l = []; g.forEachNeighbor(id, n => { if (at.has(n)) l.push(at.get(n)); }); rank.set(id, l.reduce((t, v) => t + v, 0) / Math.max(1, l.length)); }
+    const sub = layoutLit([{ title: Name, ids: h.ids, ...(small ? { cols: 1 } : {}) }, { title: "Linked to these", ids: [...nb], ...(small ? { cols: 1, rank } : {}) }], 0, 0);
     const right = Math.max(...A.heads.map(q => q.x + q.w), ...A.titles.map(q => q.x + q.w)), top = Math.max(...A.titles.map(q => q.y)), t = sub.titles[0], dx = right + 2 * A.SIDEG - t.x, dy = top - t.y; // left of the arrangement's right edge nothing is free
     const moves = [...sub.pos].map(([id, q]) => ({ id, x: q[0] + dx, y: q[1] + dy })); for (const id of gone) { const q = home.get(id); if (q && g.hasNode(id)) moves.push({ id, x: q.x, y: q.y }); }
     arr = { ...A, cellG: sub.cellG, rowG: sub.rowG, ratio: sub.ratio, heads: [...A.heads, ...sub.heads.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))], titles: [...A.titles, ...sub.titles.map(q => ({ ...q, x: q.x + dx, y: q.y + dy, band: null }))] };
@@ -1307,8 +1316,8 @@ async function openInPortal(n) {
     for (let it = 0; it < 3; it++) { const small = wid.map(w => w < MINW); if (!small.some(Boolean)) break; const fixed = small.filter(Boolean).length * MINW, rest = wid.reduce((t, w, i) => t + (small[i] ? 0 : w), 0); wid = wid.map((w, i) => small[i] ? MINW : w * (free - fixed) / rest); }
     const pitch = (R, named) => { const gap = Math.max(8, R * .7); return { cw: 2 * R + gap + (named ? Math.min(full, R >= 12 ? 150 : 110) : 0), ch: 2 * R + gap }; }; // one cell: the node, a gap, and (named) its name
     const blocksOf = (gr, W, R, named) => { // the natural packing: sections in shelves of width W
-      const { cw, ch } = pitch(R, named), fit = Math.max(1, Math.floor(W / cw)), kinds = FILTERS.filter(k => gr.ids.some(id => kindOf(id) === k));
-      const items = kinds.map(k => { const ids = gr.ids.filter(id => kindOf(id) === k).sort((a, b) => label(a).localeCompare(label(b))), m = ids.length, rows = Math.ceil(m / fit); return { kind: k, ids, m, rows, cols: Math.ceil(m / rows) }; }).sort((a, b) => b.m - a.m), shelves = [];
+      const { cw, ch } = pitch(R, named), fit = gr.cols || Math.max(1, Math.floor(W / cw)), kinds = FILTERS.filter(k => gr.ids.some(id => kindOf(id) === k));
+      const items = kinds.map(k => { const ids = gr.ids.filter(id => kindOf(id) === k).sort((a, b) => (gr.rank ? (gr.rank.get(a) ?? 0) - (gr.rank.get(b) ?? 0) : 0) || label(a).localeCompare(label(b))), m = ids.length, rows = Math.ceil(m / fit); return { kind: k, ids, m, rows, cols: Math.ceil(m / rows) }; }).sort((a, b) => b.m - a.m), shelves = [];
       for (const it of items) { const w = it.cols * cw; let sh = shelves.find(s => s.w + w + GAP <= W); if (!sh) shelves.push(sh = { items: [], w: -GAP }); sh.w += w + GAP; sh.items.push(it); }
       for (const sh of shelves) { sh.rows = Math.max(...sh.items.map(i => i.rows)); for (const it of sh.items) it.cols = Math.ceil(it.m / (it.rows = sh.rows)); sh.h = HEAD + sh.rows * ch; }
       return { shelves, cw, ch, H: shelves.reduce((t, s) => t + s.h, 0) + GAP * Math.max(0, shelves.length - 1) };
@@ -1600,8 +1609,8 @@ async function openInPortal(n) {
   sigma.on("clickStage", ({ event }) => { if (Date.now() - lastDrag > 400) { if (catView) { const id = labelAt(event.x, event.y); return id ? pick(id, event) : exitCat(true); } const P = catHits.find(P => event.x >= P.x0 && event.x <= P.x1 && event.y >= P.y0 && event.y <= P.y1); if (P) return openHit(P); const H = clusterHit(event.x, event.y); if (H) { const c = clusters.find(c => c.key === H.key); return c?.typeKind ? enterCat(c.key, c.typeKind) : zoomToCluster(H.key); } const id = labelAt(event.x, event.y); pick(id, event); } });
     sigma.on("doubleClickStage", ({ event }) => { if (catView || arr) event.preventSigmaDefault(); const id = labelAt(event.x, event.y); if (!id) return; event.preventSigmaDefault(); const a = g.getNodeAttributes(id); if (hasPage(a.kind)) openInPortal(a); });
   const hoverIdAt = (x, y) => labelAt(x, y) ?? lastDiscs.find(D => Math.hypot(D.x - x, D.y - y) <= D.r)?.id ?? null;
-  sigma.getMouseCaptor().on("mousemovebody", ev => { if (drag) return; const id = hoverIdAt(ev.x, ev.y); if (id !== hoverId) { hoverId = id; drawLabels(); } });
-  sigma.getContainer().addEventListener("mouseleave", () => { if (hoverId) { hoverId = null; drawLabels(); } });
+  sigma.getMouseCaptor().on("mousemovebody", ev => { if (drag) return; const id = hoverIdAt(ev.x, ev.y); if (id !== hoverId) { hoverId = id; if (arr || catView) sigma.refresh(); else drawLabels(); } });
+  sigma.getContainer().addEventListener("mouseleave", () => { if (hoverId) { hoverId = null; if (arr || catView) sigma.refresh(); else drawLabels(); } });
   sigma.getMouseCaptor().on("mousemovebody", ev => { if (!drag) sigma.getContainer().style.cursor = labelAt(ev.x, ev.y) || clusterHit(ev.x, ev.y) || catHits.some(P => ev.x >= P.x0 && ev.x <= P.x1 && ev.y >= P.y0 && ev.y <= P.y1) ? "pointer" : ""; });
 
   // right-drag moves the view
