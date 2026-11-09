@@ -228,6 +228,17 @@ test("e2e: graph selection: Reset layout is greyed in the selection view and in 
   });
 });
 
+test("e2e: graph selection: after a link two nodes that ended up on top of each other are moved apart", async () => {
+  await withGraph(async (page) => {
+    const gap = () => page.evaluate(() => { const G = (window as any).__graph, a = G.g.getNodeAttributes("facility-1"), b = G.g.getNodeAttributes("organization-2"); const va = G.sigma.graphToViewport(a), vb = G.sigma.graphToViewport(b); const r = (id: string) => G.sigma.scaleSize(G.sigma.getNodeDisplayData(id).size); return Math.hypot(va.x - vb.x, va.y - vb.y) - (r("facility-1") + r("organization-2")); });
+    await page.evaluate(() => { const G = (window as any).__graph, a = G.g.getNodeAttributes("facility-1"); G.g.mergeNodeAttributes("organization-2", { x: a.x, y: a.y }); G.sigma.refresh(); });
+    assert.ok(await gap() < -5, "they start on top of each other");
+    await page.evaluate(() => (window as any).__graph.commitLocal("link", [{ id: "facility-1", type: "facility", label: "F" }, { id: "organization-2", type: "organization", label: "O" }]));
+    await page.waitForTimeout(3000); await settled(page);
+    assert.ok(await gap() >= -1, "after the link they no longer overlap (gap " + Math.round(await gap()) + "px)");
+  });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });

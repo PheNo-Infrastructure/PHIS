@@ -685,9 +685,9 @@ async function openInPortal(n) {
       for (const u of live) if (u.dx || u.dy) for (const id of u.ids) { const a = g.getNodeAttributes(id); if (!a.fixed) g.mergeNodeAttributes(id, { x: a.x + u.dx * .8, y: a.y + u.dy * .8 }); }
     }
   }
-  function collide(iterations) {
+  function collide(iterations, sizeOf) { // sizeOf: the size a node is drawn at (the connected view draws them larger than their own size)
     const ids = g.nodes().filter(inLayout); if (ids.length < 2 || !K) return;
-    const r = new Map(ids.map(id => [id, g.getNodeAttribute(id, "size") * K * 1.05])), cell = 2 * Math.max(...r.values());
+    const r = new Map(ids.map(id => [id, (sizeOf ? sizeOf(id) : g.getNodeAttribute(id, "size")) * K * 1.05])), cell = 2 * Math.max(...r.values());
     for (let it = 0; it < iterations; it++) {
       const grid = new Map(); let moved = false;
       for (const id of ids) { const a = g.getNodeAttributes(id), k = Math.floor(a.x / cell) + "," + Math.floor(a.y / cell); (grid.get(k) ?? grid.set(k, []).get(k)).push(id); }
@@ -909,6 +909,14 @@ async function openInPortal(n) {
   }
   // Motion: linked nodes are pulled together fast, touch, and settle with a small bounce, with a ring where they meet and the new link flashing; unlinked nodes
   // are thrown apart, overshoot a little and settle, with a ring and sparks where the link was.
+  // After a link the two nodes touch, and a node can end up on top of another: those are moved apart (they glide there), nothing else moves. Not in a grid or the selection view, which place their own nodes.
+  function settleOverlaps() {
+    if (arr || catView) return;
+    const before = new Map(g.nodes().map(id => [id, { x: g.getNodeAttribute(id, "x"), y: g.getNodeAttribute(id, "y") }]));
+    collide(80, id => sigma.getNodeDisplayData(id)?.size ?? g.getNodeAttribute(id, "size"));
+    const moves = []; for (const [id, p] of before) { const a = g.getNodeAttributes(id); if (Math.hypot(a.x - p.x, a.y - p.y) > 1e-9) { moves.push({ id, x: a.x, y: a.y }); g.mergeNodeAttributes(id, p); } }
+    if (moves.length) tween(moves, 450, () => sigma.refresh());
+  }
   function animatePairs(linked, unlinked) {
     const T0 = performance.now(), DUR = 750, moves = [];
     const at = id => { const a = g.getNodeAttributes(id); return { x: a.x, y: a.y }; };
@@ -934,7 +942,7 @@ async function openInPortal(n) {
       }
       drawLabels();
       if (t < 1 || fx.pulses.length || fx.sparks.length) requestAnimationFrame(loop);
-      else { nodes.forEach(id => g.hasNode(id) && g.removeNodeAttribute(id, "fixed")); setTimeout(() => { fx.flash.clear(); sigma.refresh(); }, 250); }
+      else { nodes.forEach(id => g.hasNode(id) && g.removeNodeAttribute(id, "fixed")); settleOverlaps(); setTimeout(() => { fx.flash.clear(); sigma.refresh(); }, 250); }
     };
     requestAnimationFrame(loop);
   }
@@ -1661,7 +1669,7 @@ async function openInPortal(n) {
   // ?focus=<uri>&hops=1|2 opens the graph around one resource (how a resource page will link here)
   const want = params.get("focus");
   if (want && g.hasNode(want)) { await select(want); setFocus(want, Number(params.get("hops")) === 2 ? 2 : 1); }
-  window.__graph = { catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, setFocus, hiddenKinds, refreshView, isVisible };
+  window.__graph = { commitLocal, settleOverlaps, catSet: () => catView ? catView.set : new Set(), catNb: () => catView ? catView.nb.size : 0, clusterMembers: () => clusters.map(c => c.members), K: () => K, catHits: () => catHits, cat: () => catView && { n: catView.n, kind: catView.kind, kinds: catView.kinds, links: catView.nLinks, fade: +catView.fade.toFixed(2) }, labelRects: () => labelRects, enterCat, exitCat, physics: () => ({ liveOn, dragRun, drag: !!drag, lit: !!lit, restoring, flowing, homes: home.size }), clusterHits: () => terrHits, clusterLabels: () => terrLabels, spillCount: () => { spill = 0; countSpill = true; paintHalo(); countSpill = false; return spill; }, setSeam: (v, e) => { SEAM = v; if (e !== undefined) SEAMEXP = e; paintHalo(); }, setMarble: v => { MARBLE = v; paintHalo(); }, gather, lit: () => lit, mode: () => ({ clustered: clusters.length > 0, ...modeStats }), home, labelRects: () => labelRects, g, select, setSelection, sel, selItems, linkVerdict, sigma, setFocus, hiddenKinds, refreshView, isVisible };
 })();
 </script>
 </body>
