@@ -881,6 +881,41 @@ test("e2e: ctrl-clicking a relation chip adds it to the current selection instea
   });
 });
 
+test("e2e: relation chips of a resource's page: Shift+click picks the range, a box picks (Ctrl/Shift adds, Alt removes)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const fac = [1, 2, 3, 4, 5].map((n) => ({ id: `mock-fac-${n}`, type: "facility", label: `Mock Facility ${n}` }));
+    await page.route("**/api/node-detail*", (route) => {
+      const type = new URL(route.request().url()).searchParams.get("type");
+      const relations = type === "organization" ? [{ label: "Facilities", field: "facilities", items: fac }] : [];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "mock-uri", relations }) });
+    });
+    await page.goto(base + "/#browse"); await idle(page);
+    await openRow(page, "Scientific Organization"); await openRow(page, "Organizations");
+    await page.locator("#rowlist .row .row-nav").first().click(); await idle(page);
+    const picked = async () => (await page.evaluate(() => [...selection.keys()].sort())) as string[];
+    const chip = (n: number) => page.locator(`.chip[data-openid='mock-fac-${n}']`);
+    await chip(2).click({ modifiers: ["Control"] }); await idle(page);
+    await chip(4).click({ modifiers: ["Shift"] }); await idle(page);
+    assert.deepEqual(await picked(), ["mock-fac-2", "mock-fac-3", "mock-fac-4"], "Shift picks the range from the last Ctrl-clicked chip");
+    assert.equal((await page.locator(".crumb").allTextContents()).join(" ").includes("Mock Facility"), false, "and it did not navigate");
+    // a box over chips 1-2 replaces; Ctrl adds; Alt removes
+    const boxOver = async (a: number, b: number, mods: string[] = []) => {
+      const ra = (await chip(a).boundingBox())!, rb = (await chip(b).boundingBox())!;
+      const x0 = Math.min(ra.x, rb.x) - 6, x1 = Math.max(ra.x + ra.width, rb.x + rb.width) + 6, y0 = Math.min(ra.y, rb.y) - 5, y1 = Math.max(ra.y + ra.height, rb.y + rb.height) + 5;
+      for (const m of mods) await page.keyboard.down(m);
+      await page.mouse.move(x1, y1); await page.mouse.down(); await page.mouse.move(x0, y0, { steps: 6 }); await page.mouse.up();
+      for (const m of mods) await page.keyboard.up(m);
+      await idle(page);
+    };
+    await boxOver(1, 2);
+    assert.deepEqual(await picked(), ["mock-fac-1", "mock-fac-2"], "a box replaces the selection with the chips it touches");
+    await boxOver(4, 5, ["Control"]);
+    assert.deepEqual(await picked(), ["mock-fac-1", "mock-fac-2", "mock-fac-4", "mock-fac-5"], "Ctrl adds");
+    await boxOver(1, 2, ["Alt"]);
+    assert.deepEqual(await picked(), ["mock-fac-4", "mock-fac-5"], "Alt removes");
+  });
+});
+
 test("e2e: unlinking a relation from one side drops the OTHER side's cached detail too, so navigating back shows the change without a full reload", async () => {
   // Regression test for a real bug: unlinkOne only refreshed NODE_DETAIL for the node the
   // unlink button was clicked on, never the other end of the relation — so going back to that

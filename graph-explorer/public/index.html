@@ -1142,6 +1142,7 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
     <span><kbd>click</kbd> select</span>
     <span class="browse-only"><kbd>ctrl</kbd>+<kbd>click</kbd> toggle</span>
     <span><kbd>shift</kbd>+<kbd>click</kbd> range</span>
+    <span class="browse-only"><kbd>drag</kbd> box select &middot; <kbd>ctrl</kbd> add &middot; <kbd>alt</kbd> remove</span>
     <span class="browse-only"><kbd>&rsaquo;</kbd> open</span>
   </div>
 </div>
@@ -3580,8 +3581,23 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
         toggleChipSelection(found);
         return;
       }
+      // Chips of a plain relation list (a resource's facilities, say): Shift picks the range between the anchor and this one, like Ctrl+click picks one.
+      const rowEl = inGroup ? null : chip.closest(".chip-row"), rowKey = rowEl ? "row:" + [...els.detailBody.querySelectorAll(".chip-row")].indexOf(rowEl) : null;
+      if (rowEl && e.shiftKey && !unlinking) {
+        const chips = [...rowEl.querySelectorAll(".chip[data-openid]")], ids = chips.map(c => c.dataset.openid);
+        if (chipAnchor && chipAnchor.group === rowKey && selection.has(chipAnchor.id) && ids.includes(chipAnchor.id)) {
+          const lo = Math.min(ids.indexOf(chipAnchor.id), ids.indexOf(id)), hi = Math.max(ids.indexOf(chipAnchor.id), ids.indexOf(id));
+          selection = new Map();
+          chips.slice(lo, hi + 1).forEach(c => selection.set(c.dataset.openid, chipItemOf(c)));
+          hxAfterPick();
+          return;
+        }
+        chipAnchor = { id, group: rowKey };
+        toggleChipSelection(found);
+        return;
+      }
       if (e.ctrlKey || e.metaKey) {
-        if (inGroup) chipAnchor = { id, group: grpKey };
+        if (inGroup) chipAnchor = { id, group: grpKey }; else if (rowKey) chipAnchor = { id, group: rowKey };
         toggleChipSelection(found);
         return;
       }
@@ -3898,7 +3914,11 @@ function hxSweep(hits, mod) {
   const plants = hits.filter(x => x.dataset.hx === "plant");
   const chosen = plants.length ? plants : hits;
   if (!chosen.length) return;
-  if (mod !== "ctrl") selection = new Map();
+  if (mod === "alt") { // Alt: what the box touches is taken out
+    chosen.forEach(x => { const it = hxItem(x); if (it.type === "scientific_object") { const cur = selection.get(it.id); if (cur && plantInstances(cur).includes(x.dataset.via)) togglePlantVia(it, x.dataset.via); } else selection.delete(it.id); });
+    return hxAfterPick();
+  }
+  if (mod !== "ctrl" && mod !== "shift") selection = new Map();
   chosen.forEach(x => {
     const it = hxItem(x);
     if (it.type === "scientific_object") { const cur = selection.get(it.id); if (!cur || !plantInstances(cur).includes(x.dataset.via)) togglePlantVia(it, x.dataset.via); }
@@ -5186,8 +5206,10 @@ function findItemById(id) {
     if (sub) { sub.textContent = `${host}${test ? " (test server)" : ""} · design prototype`; }
   } catch { /* no banner */ }
 })();
+// The item a relation chip stands for (what a Ctrl+click on it picks).
+const chipItemOf = c => findItemById(c.dataset.openid) || { id: c.dataset.openid, type: c.dataset.type, label: c.textContent.trim(), ...(c.dataset.factor ? { factor: c.dataset.factor } : {}) };
 (function setupSelection() {
-  let tracking = false, startX = 0, startY = 0, mod = "plain", box = null;
+  let tracking = false, startX = 0, startY = 0, mod = "plain", box = null, alt = false; // alt: an Alt+drag removes what the box touches (a click with Alt is still a plain click)
   let downItem = null;   // the row (item + type) the mousedown actually started on, if any
   let downInTree = false; // …and whether it was in the tree (shift ranges stay within one area)
   let downHx = null, downFac = null; // …or the factor-box element (and its box) it started on
@@ -5206,7 +5228,7 @@ function findItemById(id) {
     e.preventDefault();
     document.body.style.userSelect = "none";
 
-    tracking = true; startX = e.clientX; startY = e.clientY; mod = modFromEvent(e);
+    tracking = true; startX = e.clientX; startY = e.clientY; mod = modFromEvent(e); alt = e.altKey;
     const rowEl = e.target.closest(".row");
     downItem = rowEl ? (addressableItems.get(rowEl.dataset.id) || null) : null;
     downInTree = !!rowEl?.closest("#treeArea");
@@ -5247,7 +5269,7 @@ function findItemById(id) {
       hxSweep([...downFac.querySelectorAll(".hx")].filter(x => {
         const r = x.getBoundingClientRect();
         return r.right > rect.left && r.left < rect.right && r.bottom > rect.top && r.top < rect.bottom;
-      }), mod);
+      }), alt ? "alt" : mod);
     } else if (box) {
       const bx = box.getBoundingClientRect();
       const hit = [];
@@ -5257,13 +5279,17 @@ function findItemById(id) {
           hit.push(row.dataset.id);
         }
       });
-      if (hit.length) {
-        if (mod !== "ctrl") selection = new Map();
-        hit.forEach(id => {
-          const found = addressableItems.get(id);
-          if (found) expandForSelection(found).forEach(m => selection.set(m.id, m));
-        });
-        anchorId = hit[hit.length - 1];
+      // The relation chips of a resource's page are picked by the box too (the same rules: a box replaces, Ctrl or Shift adds, Alt removes).
+      const chipHits = [...document.querySelectorAll(".chip[data-openid]")].filter(c => {
+        if (c.closest(".ov-levels, .var-grid, .hx, dialog") || c.querySelector(".chip-unlink")) return false;
+        const r = c.getBoundingClientRect();
+        return r.right > bx.left && r.left < bx.right && r.bottom > bx.top && r.top < bx.bottom;
+      }).map(chipItemOf);
+      if (hit.length || chipHits.length) {
+        const items = [...hit.flatMap(id => { const found = addressableItems.get(id); return found ? expandForSelection(found) : []; }), ...chipHits];
+        if (alt) items.forEach(m => selection.delete(m.id));
+        else { if (mod !== "ctrl" && mod !== "shift") selection = new Map(); items.forEach(m => selection.set(m.id, m)); }
+        if (hit.length) anchorId = hit[hit.length - 1];
         refreshLeftPane(); renderDetail(); renderActionbar();
       }
     }
