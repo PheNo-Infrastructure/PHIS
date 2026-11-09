@@ -381,6 +381,30 @@ test("e2e: graph selection: a grid and an opened section end above the controls 
   }, { width: 1100, height });
 });
 
+test("e2e: graph selection: linking and unlinking in the selection view lays the bands out again and leaves no node on top of another", async () => {
+  await withGraph(async (page) => {
+    const overlaps = () => page.evaluate(() => { const G = (window as any).__graph, ids = G.g.nodes().filter((id: string) => !G.sigma.getNodeDisplayData(id)?.hidden); let bad = 0; for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) { const a = G.sigma.graphToViewport(G.g.getNodeAttributes(ids[i])), b = G.sigma.graphToViewport(G.g.getNodeAttributes(ids[j])), r = G.sigma.scaleSize(G.sigma.getNodeDisplayData(ids[i]).size) + G.sigma.scaleSize(G.sigma.getNodeDisplayData(ids[j]).size); if (Math.hypot(a.x - b.x, a.y - b.y) < r * .6) bad++; } return bad; });
+    const connected = () => page.evaluate(() => { const G = (window as any).__graph, b = G.catHits().find((P: any) => P.band && /^Connected/.test(P.band.text)); return b ? b.band.n as number : 0; });
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-2"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    assert.equal(await overlaps(), 0, "the arrangement starts without overlaps");
+    const before = await connected();
+    const linked = stubGraph(); linked.edges.push({ source: "facility-0", target: "organization-2" }, { source: "facility-1", target: "organization-2" }); // what PHIS answers after the link
+    await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(linked) }));
+    await page.evaluate(() => (window as any).__graph.commitLocal("link", [{ id: "organization-2", type: "organization", label: "O" }, { id: "facility-0", type: "facility", label: "F" }, { id: "facility-1", type: "facility", label: "F1" }]));
+    await page.waitForTimeout(2200); await settled(page);
+    assert.equal(await overlaps(), 0, "after a link nothing sits on top of anything");
+    assert.ok((await connected()) > before, "the linked nodes are in the Connected band now");
+    assert.equal(await page.locator("#selview").innerText(), "Leave selection view", "and the selection view is still up");
+    const linkedCount = await connected();
+    await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(stubGraph()) }));
+    await page.evaluate(() => (window as any).__graph.commitLocal("unlink", [{ id: "organization-2", type: "organization", label: "O" }, { id: "facility-0", type: "facility", label: "F" }, { id: "facility-1", type: "facility", label: "F1" }]));
+    await page.waitForTimeout(2200); await settled(page);
+    assert.ok((await connected()) < linkedCount, "unlinking takes them out of the Connected band again");
+    assert.equal(await overlaps(), 0, "and nothing overlaps");
+  }, { width: 1400, height: 800 });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });

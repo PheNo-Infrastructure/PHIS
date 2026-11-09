@@ -887,8 +887,11 @@ async function openInPortal(n) {
     for (const [a, b] of gone) { known.delete(edgeKey(a, b)); if (g.hasEdge(a, b)) g.dropEdge(a, b); }
     for (const [a, b] of added) { known.add(edgeKey(a, b)); if (!g.hasEdge(a, b)) g.addEdge(a, b); }
     setMaxDeg(); g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id))); // a link changes the scale for everyone
-    if (animate) animatePairs(added, gone);
+    if (animate) { // a grid and the selection view place their nodes themselves: the nodes are not pulled together there, the new links only flash
+      if (arr || catView) { for (const [x, y] of added) fx.flash.add(edgeKey(x, y)); setTimeout(() => { fx.flash.clear(); sigma.refresh(); }, 1500); } else animatePairs(added, gone);
+    }
     stats(); refresh(); renderPanel();
+    if (selView && lit) { if (focusSec && !focusSec.band && focusSec.hit) openHit(focusSec.hit); else gather(); } // what is connected has changed: the arrangement (or the opened section) is laid out again
     if (animate) note(added.length ? `Linked (${added.length} new)` : gone.length ? `Removed ${gone.length} link${gone.length === 1 ? "" : "s"}` : "Nothing changed.");
   }
   function commitLocal(kind, items) {
