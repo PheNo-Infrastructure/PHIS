@@ -215,6 +215,19 @@ test("e2e: graph selection: in the selection view a click toggles a node, Select
   });
 });
 
+test("e2e: graph selection: Reset layout is greyed in the selection view and in a grid, and works again outside them", async () => {
+  await withGraph(async (page) => {
+    const reset = page.locator("#reset");
+    assert.equal(await reset.isDisabled(), false);
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-0"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    assert.equal(await reset.isDisabled(), true, "greyed in the selection view");
+    await page.keyboard.press("Escape"); await settled(page);
+    assert.equal(await reset.isDisabled(), false, "back after leaving it");
+    await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await settled(page);
+  });
+});
+
 test("e2e: graph selection: ForceAtlas is available in the overview, greyed while something is selected, and hidden in a grid and in the selection view", async () => {
   await withGraph(async (page) => {
     assert.deepEqual(await faState(page), { visible: true, disabled: false });
@@ -259,6 +272,8 @@ test("e2e: graph selection: in the selection view the wheel scrolls (y only, no 
     assert.ok(Math.abs(down.x - c0.x) < 1e-9 && Math.abs(down.ratio - c0.ratio) < 1e-9, "only y changed: no sideways drift, no zoom");
     await page.mouse.wheel(0, 3000); await settled(page);
     assert.ok(Math.abs((await camera(page)).y - down.y) < 1e-9, "the bottom stops it");
+    const gap = await page.evaluate(() => { const G = (window as any).__graph, k = document.getElementById("keys")!.getBoundingClientRect(), r = document.getElementById("terr")!.getBoundingClientRect(); let low = -1e9; G.g.forEachNode((id: string, a: any) => { if (G.sigma.getNodeDisplayData(id)?.hidden) return; low = Math.max(low, G.sigma.graphToViewport(a).y + r.top); }); return k.top - low; });
+    assert.ok(gap > 20, "at the bottom the last row ends above the controls line (gap " + Math.round(gap) + ")");
     await page.mouse.move(500, 400); await page.mouse.down({ button: "right" }); await page.mouse.move(300, 250, { steps: 6 }); await page.mouse.up({ button: "right" }); await settled(page);
     assert.ok(sameCamera(await camera(page), down), "a right-drag does not pan the selection view");
     for (let i = 0; i < 60; i++) await page.mouse.wheel(0, -300);
