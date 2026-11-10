@@ -50,6 +50,11 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/motivations": { url: "/core/annotations/motivations", type: "motivation", label: byName },
   "/api/scientific-objects": { url: "/core/scientific_objects?page_size=500", type: "scientific_object", label: byName, scopes: true },
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
+  // What a variable is made of: read-only lists (each one's page lists the variables made with it).
+  "/api/entities": { url: "/core/entities?page_size=500", type: "entity", label: byName },
+  "/api/characteristics": { url: "/core/characteristics?page_size=500", type: "characteristic", label: byName },
+  "/api/methods": { url: "/core/methods?page_size=500", type: "method", label: byName },
+  "/api/units": { url: "/core/units?page_size=500", type: "unit", label: byName },
   "/api/germplasm": { url: "/core/germplasm?page_size=500", type: "germplasm", label: byName, parent: (i) => i.species, kind: (i) => germplasmKind(i.rdf_type) },
   // Not a browsable category: the species a new variety/accession is created under (create form).
   "/api/germplasm-species": { url: "/core/germplasm?rdf_type=vocabulary%3ASpecies&page_size=500", type: "germplasm", label: byName },

@@ -784,6 +784,23 @@ test("e2e: a PHIS name containing HTML is shown as text everywhere (rows, title,
   });
 });
 
+test("e2e: Browse lists the parts of a variable (entities, characteristics, methods, units), and a factor + a unit offers 'Link selection'", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    for (const [path, name] of [["entities", "Plant"], ["characteristics", "Height"], ["methods", "3D scan"], ["units", "DegreeCelsius"]]) {
+      await page.route(`**/api/${path}`, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: `${path}-1`, type: path === "entities" ? "entity" : path.slice(0, -1), label: name }]) }));
+    }
+    await page.goto(base + "/#browse");
+    await idle(page);
+    for (const [cat, label, name] of [["cat-entities", "Entities", "Plant"], ["cat-characteristics", "Characteristics", "Height"], ["cat-methods", "Methods", "3D scan"], ["cat-units", "Units", "DegreeCelsius"]]) {
+      await page.evaluate(([c, l]) => navigateTo([path[0], ROOT.find((r: any) => r.label === "Scientific Information"), { id: c, type: "category", label: l }]), [cat, label]);
+      await idle(page);
+      assert.match(await page.locator("#rowlist").innerText(), new RegExp(name), `${label} list shows ${name}`);
+    }
+    await page.evaluate(() => { selection = new Map([["fac-1", { id: "fac-1", type: "factor", label: "Temperature" }], ["unit-1", { id: "unit-1", type: "unit", label: "DegreeCelsius" }]]); renderActionbar(); });
+    assert.equal(await page.locator("#linkSelectionBtn").count(), 1, "a factor and a unit can be linked");
+  });
+});
+
 test("e2e: linking objects + a germplasm asks which experiment (nothing picked) when they're in several, and 'add to one first' when in none — then continues", async () => {
   await withServerAndBrowser(async (base, page) => {
     const posts: any[] = [];

@@ -1225,6 +1225,10 @@ const CATEGORY_ITEMS = {
   "cat-info": [
     { id: "cat-scientificobjects", type: "category", label: "Scientific Objects", hint: "what you measure: plants, plots, pots, samples" },
     { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
+    { id: "cat-entities", type: "category", label: "Entities", hint: "what a variable is measured on, e.g. plant, leaf" },
+    { id: "cat-characteristics", type: "category", label: "Characteristics", hint: "what is measured, e.g. height, NDVI" },
+    { id: "cat-methods", type: "category", label: "Methods", hint: "how it is measured, e.g. a 3D scan" },
+    { id: "cat-units", type: "category", label: "Units", hint: "e.g. millimeter, degree Celsius. A factor can point at its unit" },
     { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
     { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought. Made in one experiment, shareable with others" },
     { id: "cat-germplasmgroups", type: "category", label: "Germplasm groups", hint: "named sets of germplasm, e.g. a panel" },
@@ -1259,6 +1263,10 @@ const CATEGORY_ITEMS = {
   "cat-profiles": [],
   "cat-scientificobjects": [],
   "cat-variables": [],
+  "cat-entities": [],
+  "cat-characteristics": [],
+  "cat-methods": [],
+  "cat-units": [],
   "cat-germplasm": [],
   "cat-germplasmgroups": [],
   "cat-variablegroups": [],
@@ -5309,7 +5317,7 @@ const chipItemOf = c => findItemById(c.dataset.openid) || { id: c.dataset.openid
 // pattern as CATEGORY_FOR_TYPE below; a server-side test asserts it doesn't drift from
 // NODE_TYPES' keys that allow "link". Used by selectionHasLinkablePair to keep "Link selection" from
 // appearing when nothing in it is guaranteed-resolvable — ADJACENT alone is too loose a proxy.
-const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation", "provenance"]);
+const LINKABLE_TYPES = new Set(["facility", "organization", "site", "experiment", "scientific_object", "project", "germplasm", "factor", "factor_level", "device", "person", "account", "group", "variable", "variable_group", "germplasm_group", "event", "annotation", "provenance", "unit"]);
 // Types with an is_public flag (NODE_TYPES' `visibility`) — same hand-kept pattern.
 const VISIBILITY_TYPES = new Set(["experiment", "germplasm"]);
 // Pairs that can only be linked INSIDE an experiment (NODE_TYPES[a].inExperiment.byType[b]) —
@@ -5334,6 +5342,10 @@ const CATEGORY_FOR_TYPE = {
   profile: "cat-profiles",
   scientific_object: "cat-scientificobjects",
   variable: "cat-variables",
+  entity: "cat-entities",
+  characteristic: "cat-characteristics",
+  method: "cat-methods",
+  unit: "cat-units",
   germplasm: "cat-germplasm",
   germplasm_group: "cat-germplasmgroups",
   variable_group: "cat-variablegroups",
@@ -5363,6 +5375,10 @@ const BACKED_CATEGORIES = {
   "cat-profiles": "api/profiles",
   "cat-scientificobjects": "api/scientific-objects",
   "cat-variables": "api/variables",
+  "cat-entities": "api/entities",
+  "cat-characteristics": "api/characteristics",
+  "cat-methods": "api/methods",
+  "cat-units": "api/units",
   "cat-germplasm": "api/germplasm",
   "cat-germplasmgroups": "api/germplasm-groups",
   "cat-variablegroups": "api/variable-groups",
