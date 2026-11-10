@@ -4166,9 +4166,6 @@ function linkPlan() {
   // A person goes into an experiment or project by role, to a device/account on their own; with a provenance (who made the
   // data) or a note (what it is about) it is an ordinary link.
   if (types.includes("person") && !types.includes("provenance") && !types.includes("annotation")) return personPlan(items, types);
-  // An object holds one level per factor.
-  const levels = items.filter(v => v.type === "factor_level");
-  if (new Set(levels.map(l => l.factor)).size < levels.length) return { kind: "none", why: "Two levels of one factor can't both be on a scientific object — keep one." };
   const pairOk = (a, b) => a !== b && LINKABLE_TYPES.has(a) && LINKABLE_TYPES.has(b) && ((ADJACENT[a] || []).includes(b) || (ADJACENT[b] || []).includes(a) || inExperimentOnly(a, b));
   const misfit = items.find(v => !items.some(w => w !== v && pairOk(v.type, w.type)));
   return misfit
@@ -4294,7 +4291,9 @@ async function linkItems(items, experiments, extra = {}) {
       const w = body.written;
       const where = andList(w.flatMap(x => x.experiments));
       const why = w.every(x => x.only) ? ` — the only experiment ${w.length === 1 ? "it's" : "they're"} in` : "";
-      showToast(`${andList(w.flatMap(x => x.values).map(labelOf))} set on ${andList(w.map(x => labelOf(x.id)))} in ${where}${why}${already}`);
+      // PHIS lets an object hold several levels of a factor: say when one now does, so a mistake shows (unlink the old one to replace it).
+      const also = (body.alsoHolds || []).length ? `. ${andList(body.alsoHolds.map(x => labelOf(x.id)))} also ${body.alsoHolds.length === 1 ? "holds" : "hold"} ${andList([...new Set(body.alsoHolds.flatMap(x => x.levels))])} — unlink ${body.alsoHolds.some(x => x.levels.length > 1) || body.alsoHolds.length > 1 ? "those" : "it"} to replace` : "";
+      showToast(`${andList(w.flatMap(x => x.values).map(labelOf))} set on ${andList(w.map(x => labelOf(x.id)))} in ${where}${why}${already}${also}`);
     } else {
       showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
     }

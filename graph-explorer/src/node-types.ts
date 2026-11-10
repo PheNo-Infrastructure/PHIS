@@ -83,7 +83,7 @@ export type NodeConfig = {
     // value's type, gives those experiments — the link is written in them only (one of them is asked for when the
     // object is in several).
     fixedExperiment?: Record<string, (valueIds: string[]) => Promise<{ id: string; label: string }[]>>;
-    update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void>;
+    update: (id: string, expId: string, mod: { field: string; add?: string[]; remove?: string }) => Promise<void | { alsoHolds?: string[] }>;
     // After values were ADDED on a node inside an experiment: its children there (part of it)
     // lacking them — offered, never applied (a plot's variety doesn't pass down — probed).
     childOffer?: (id: string, expId: string, field: string, values: string[]) => Promise<CarryOver[]>;
@@ -186,14 +186,11 @@ export async function factorOfLevel(levelId: string): Promise<FactorDto> {
 }
 
 // The experiments a set of levels can be set in: those holding the levels' factor (made there or linked in), and for
-// levels of several factors those holding all of them. Refuses two levels of one factor (an object holds one level per factor).
+// levels of several factors those holding all of them. Several levels of one factor are fine (PHIS allows them).
 async function levelsExperiments(levelIds: string[]) {
-  const factors = await Promise.all(levelIds.map(factorOfLevel));
-  const seen = new Set<string>();
-  for (const f of factors) {
-    if (seen.has(f.uri)) throw new OpenSilexError(400, `Two levels of ${f.name} can't both be on a scientific object.`);
-    seen.add(f.uri);
-  }
+  const byUri = new Map<string, FactorDto>();
+  for (const f of await Promise.all(levelIds.map(factorOfLevel))) byUri.set(f.uri, f);
+  const factors = [...byUri.values()];
   let common: { id: string; label: string }[] | null = null;
   for (const f of factors) {
     const held = (await experimentsOfFactor(f.uri)).map((e) => ({ id: e.uri, label: e.name }));
@@ -389,7 +386,7 @@ export async function setGermplasmParent(ids: string[]) {
 // the copy's whole relations list (leaving parent out wiped it — probed), so everything else is
 // read and sent back as-is. geometry is never sent: OpenSILEX refuses it on updates (location
 // changes are move events) and omitting it keeps the location (probed 2026-09-29).
-async function updateSoInExperiment(soId: string, expId: string, mod: { field: string; add?: string[]; remove?: string }): Promise<void> {
+async function updateSoInExperiment(soId: string, expId: string, mod: { field: string; add?: string[]; remove?: string }): Promise<void | { alsoHolds?: string[] }> {
   // An inverse row lives on the OTHER object: removing child C from "Contains" of P clears C's isPartOf P.
   const inverse = SO_ROWS_PER_EXPERIMENT.find((r) => r.property === mod.field)?.inverseOf;
   if (inverse) {
@@ -409,18 +406,23 @@ async function updateSoInExperiment(soId: string, expId: string, mod: { field: s
     relations = relations.filter((_, i) => keep[i]);
   }
   if (mod.add?.length && SO_ROWS_PER_EXPERIMENT.find((r) => r.property === mod.field)?.single) relations = relations.filter((r) => !mine(r));
-  // An object holds one level per factor: a new level replaces the old one of the same factor.
+  // PHIS lets an object hold several levels of one factor, so a new level is added beside the old one. The caller is told which
+  // other levels of the same factor the object holds, so the page can say it (unlinking one is how you replace it).
+  const alsoHolds: string[] = [];
   if (mod.add?.length && mod.field === "hasFactorLevel") {
-    const sameFactor = new Set<string>();
-    for (const uri of mod.add) for (const l of (await factorOfLevel(uri)).levels) sameFactor.add(await compactUri(l.uri));
-    const drop = await Promise.all(relations.map(async (r) => mine(r) && sameFactor.has(await compactUri(r.value))));
-    relations = relations.filter((_, i) => !drop[i]);
+    const held = new Set(await Promise.all(relations.filter(mine).map((r) => compactUri(r.value))));
+    const added = new Set(await Promise.all(mod.add.map(compactUri)));
+    for (const uri of mod.add) {
+      const f = await factorOfLevel(uri);
+      for (const l of f.levels) { const k = await compactUri(l.uri); if (held.has(k) && !added.has(k)) alsoHolds.push(`${f.name}: ${l.name}`); }
+    }
   }
   const have = new Set(await Promise.all(relations.filter(mine).map((r) => compactUri(r.value))));
   for (const uri of mod.add ?? []) {
     if (!have.has(await compactUri(uri))) relations.push({ property: `vocabulary:${mod.field}`, value: uri, inverse: false });
   }
   await authedPut("/core/scientific_objects", { uri: soId, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
+  return alsoHolds.length ? { alsoHolds } : undefined;
 }
 async function soRowsIn(soId: string, expId: string) {
   const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}?experiment=${encodeURIComponent(expId)}`)).result;

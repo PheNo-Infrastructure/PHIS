@@ -2239,7 +2239,7 @@ const levelDetail = (label = "Replicate") => ({
   ],
 });
 
-test("e2e: level chips select with ctrl; plant + level reads 'Set Replicate: 2 on PB001…'; two levels of one factor give a why, not a button; HTML names stay text", async () => {
+test("e2e: level chips select with ctrl; plant + level reads 'Set Replicate: 2 on PB001…'; two levels of one factor still give the button; HTML names stay text", async () => {
   await withServerAndBrowser(async (base, page) => {
     const evil = `<img src=x onerror="window.__pwned=1">Rep`;
     await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(levelDetail(evil)) }));
@@ -2253,8 +2253,7 @@ test("e2e: level chips select with ctrl; plant + level reads 'Set Replicate: 2 o
     assert.match(await page.locator("#linkSelectionBtn").innerText(), /^Set .*Rep: 2 on PB001…$/);
     await page.locator(`.chip[data-openid="${FL}.1"]`).click({ modifiers: ["Control"] });
     await idle(page);
-    assert.equal(await page.locator("#linkSelectionBtn").count(), 0);
-    assert.match(await page.locator("#actionbar").innerText(), /Two levels of one factor can't both be on a scientific object/);
+    assert.match(await page.locator("#linkSelectionBtn").innerText(), /^Set /, "two levels of one factor are allowed, as PHIS allows them");
     assert.equal(await page.locator("img").count(), 0);
     assert.equal(await page.evaluate(() => (window as any).__pwned), undefined);
   });

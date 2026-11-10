@@ -1962,7 +1962,7 @@ function levelLinkStub(calls: string[], puts: any[], soExps: Record<string, { ex
 const linkPost = (base: string, items: any[]) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
 const inPbar = [{ experiment: facDto.experiment, experiment_name: "PBar1x4" }, { experiment: "https://phis.pheno.no/id/experiment/other", experiment_name: "Other" }];
 
-test("link object + level: written on the level's own experiment (no question, even when the object is in two), replacing the same factor's old level and keeping the rest", async () => {
+test("link object + level: written on the level's own experiment (no question, even when the object is in two), adding beside the same factor's old level (PHIS allows several) and saying so", async () => {
   await withServer(async (base) => {
     const puts: any[] = [];
     const rels = [
@@ -1977,7 +1977,8 @@ test("link object + level: written on the level's own experiment (no question, e
     assert.equal(body.needsExperiment, undefined);
     assert.equal(puts.length, 1);
     assert.equal(puts[0].experiment, facDto.experiment);
-    assert.deepEqual(puts[0].relations.map((r: any) => r.value).sort(), [`${FAC}.2`, "https://phis.pheno.no/id/factor/exp.group.a", "https://phis.pheno.no/id/germplasm/annika"].sort());
+    assert.deepEqual(puts[0].relations.map((r: any) => r.value).sort(), [`${FAC}.1`, `${FAC}.2`, "https://phis.pheno.no/id/factor/exp.group.a", "https://phis.pheno.no/id/germplasm/annika"].sort());
+    assert.deepEqual(body.alsoHolds, [{ id: "so-1", levels: ["Replicate: 1"] }], "the old level of the same factor is reported, not removed");
   });
 });
 
@@ -2024,14 +2025,14 @@ test("create factor: name + experiment + levels (one per line -> [{name}]); no l
   });
 });
 
-test("link object + level: two levels of one factor are refused", async () => {
+test("link object + level: two levels of one factor are both set (PHIS allows it)", async () => {
   await withServer(async (base) => {
     const puts: any[] = [];
     globalThis.fetch = levelLinkStub([], puts, { "so-1": inPbar });
     const res = await linkPost(base, [{ type: "scientific_object", id: "so-1" }, { type: "factor_level", id: `${FAC}.1` }, { type: "factor_level", id: `${FAC}.2` }]);
-    assert.equal(res.status, 400);
-    assert.match((await res.json()).error, /Two levels of Replicate/);
-    assert.equal(puts.length, 0);
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(puts.length, 1);
+    assert.deepEqual(puts[0].relations.map((r: any) => r.value).sort(), [`${FAC}.1`, `${FAC}.2`].sort());
   });
 });
 

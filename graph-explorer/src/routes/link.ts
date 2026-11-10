@@ -222,12 +222,14 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
     // What went where, so the page can say it — including when the experiment was the object's
     // only one and nobody was asked (`only`).
     const written: { id: string; values: string[]; experiments: string[]; only: boolean }[] = [];
+    const alsoHolds: { id: string; levels: string[] }[] = []; // objects that now hold another level of the same factor
     for (const t of targets) {
       if (!t.exps.length) skipped++;
       else written.push({ id: t.id, values: t.otherIds, experiments: t.exps.map((e) => e.label), only: !chosen && !t.fixed });
       const cfg = NODE_TYPES[t.ownerType].inExperiment!;
       for (const e of t.exps) {
-        await cfg.update(t.id, e.id, { field: t.field, add: t.otherIds });
+        const r = await cfg.update(t.id, e.id, { field: t.field, add: t.otherIds });
+        if (r?.alsoHolds?.length) alsoHolds.push({ id: t.id, levels: r.alsoHolds });
         linkedPairs += t.otherIds.length;
         touched.add(e.id);
         if (cfg.childOffer && !t.fixed) childOffer.push(...(await cfg.childOffer(t.id, e.id, t.field, t.otherIds)));
@@ -247,6 +249,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       // Children (part of these objects there) that don't have the new germplasm — offered too.
       ...(childOffer.length ? { childOffer } : {}),
       ...(written.length ? { written } : {}),
+      ...(alsoHolds.length ? { alsoHolds } : {}),
       // Experiments whose derived data (Species) changed, and objects not in any picked one.
       ...(touched.size ? { touched: [...touched] } : {}),
       ...(skipped ? { skipped } : {}),
