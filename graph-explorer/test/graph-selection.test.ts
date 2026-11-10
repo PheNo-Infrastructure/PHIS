@@ -228,6 +228,19 @@ test("e2e: graph selection: Reset layout is greyed in the selection view and in 
   });
 });
 
+test("e2e: graph selection: Fit is greyed in the selection view and works again outside it", async () => {
+  await withGraph(async (page) => {
+    const fit = page.locator("#fit");
+    assert.equal(await fit.isDisabled(), false);
+    await page.evaluate(() => (window as any).__graph.setSelection(["organization-0"], "replace")); await settled(page);
+    await page.locator("#selview").click(); await settled(page);
+    assert.equal(await fit.isDisabled(), true, "greyed in the selection view");
+    await page.keyboard.press("Escape"); await settled(page);
+    assert.equal(await fit.isDisabled(), false, "back after leaving it");
+    await page.evaluate(() => (window as any).__graph.setSelection([], "replace")); await settled(page);
+  });
+});
+
 test("e2e: graph selection: after a link two nodes that ended up on top of each other are moved apart", async () => {
   await withGraph(async (page) => {
     const gap = () => page.evaluate(() => { const G = (window as any).__graph, a = G.g.getNodeAttributes("facility-1"), b = G.g.getNodeAttributes("organization-2"); const va = G.sigma.graphToViewport(a), vb = G.sigma.graphToViewport(b); const r = (id: string) => G.sigma.scaleSize(G.sigma.getNodeDisplayData(id).size); return Math.hypot(va.x - vb.x, va.y - vb.y) - (r("facility-1") + r("organization-2")); });

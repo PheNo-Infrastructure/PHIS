@@ -1483,6 +1483,7 @@ async function openInPortal(n) {
   function faState() {
     const lab = live.closest("label"), off = embedded || !!catView || !!arr, grey = !off && !!lit;
     const rb = document.getElementById("reset"); rb.disabled = !!catView || !!arr; rb.title = rb.disabled ? "Not in a grid or the selection view: they arrange the nodes themselves. Leave it first." : "";
+    const fb = document.getElementById("fit"); fb.disabled = !!arr && !catView; fb.title = fb.disabled ? "Not in the selection view: it has its own scroll. Leave it first." : "";
     lab.style.display = off ? "none" : ""; live.disabled = grey; lab.title = grey ? OFF_TIP : lab.dataset.tip ??= lab.title;
     if ((off || grey) && (live.checked || liveOn)) { live.checked = false; if (!dragRun) stopLive(); }
   }
