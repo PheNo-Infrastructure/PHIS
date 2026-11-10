@@ -102,6 +102,7 @@ function ontologyAnswer(url: string, present: boolean) {
 
 // Variables and their parts: this PHIS has the units Millimeter (no symbol) and Percent and the method, nothing else.
 function variablesAnswer(url: string) {
+  if (url.includes("/core/experiments/factors?name=")) return jsonResponse(200, { result: [] }); // no factor of that name in PHIS: the file's factor is made
   if (url.includes("/core/units?")) return jsonResponse(200, { result: [{ uri: "u:mm", name: "Millimeter", symbol: null }, { uri: "u:pct", name: "Percent" }] });
   if (url.includes("/core/methods?name=PlantEye")) return jsonResponse(200, { result: [{ uri: "m:pe", name: "PlantEye 3D scan" }] });
   if (/\/core\/(variables|variables_group|entities|characteristics|methods)\?name=/.test(url)) return jsonResponse(200, { result: [] });
@@ -652,5 +653,120 @@ test("POST /api/import/run with edits writes the edited names: the experiment, t
     assert.ok(!wrote.some((w) => w.includes(NAME) && w.startsWith("POST /core/experiments ")), "the file's own name isn't used");
     const exp = writes.find((w) => w.path === "/core/experiments" && w.method === "POST")!;
     assert.equal(exp.body.start_date, "2025-11-01");
+  });
+});
+
+// ---- factors reused from PHIS, and units ----
+const CEL = { uri: "u:celsius", name: "DegreeCelsius" };
+const OLD_FACTOR = { uri: "f:temp", name: "Treatment", experiment: "exp:other", exact_match: [CEL.uri], levels: [{ uri: "lvl:temp.10", name: "10" }, { uri: "lvl:temp.15", name: "15" }] };
+// PHIS with the units list holding Celsius, `found` as the factors named Treatment, and the answers a reused factor and the experiment link need.
+function mockPhisReuse(writes: { method: string; path: string; body: any }[], found: unknown[] = [OLD_FACTOR], factor: any = OLD_FACTOR) {
+  mockPhisForRun(writes);
+  const base = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    const path = url.replace(/^.*\/rest/, "");
+    if (method === "GET" && url.includes("/core/units?")) { const j = await (await base(url, init)).json(); return jsonResponse(200, { result: [...j.result, CEL] }); }
+    if (method === "GET" && url.includes("/core/experiments/factors?name=Treatment")) return jsonResponse(200, { result: found });
+    if (method === "GET" && /\/core\/experiments\/factors\/f%3A[a-z]+\/experiments/.test(path)) return jsonResponse(200, { result: [{ uri: "exp:other", name: "Other trial" }] });
+    if (method === "GET" && /\/core\/experiments\/factors\/f%3A[a-z]+\/levels/.test(path)) return jsonResponse(200, { result: [...factor.levels, { uri: "lvl:temp.18", name: "18" }] });
+    if (method === "GET" && /\/core\/experiments\/factors\/f%3A[a-z]+$/.test(path)) return jsonResponse(200, { result: { ...factor, uri: decodeURIComponent(path).split("/").pop() } });
+    if (method === "GET" && path === "/core/experiments/exp%3Anew") return jsonResponse(200, { result: { uri: "exp:new", name: NAME, objective: "x", start_date: "2025-11-01", is_public: true, organisations: [], facilities: [], projects: [], scientific_supervisors: [], technical_supervisors: [], groups: [], factors: [] } });
+    if (method === "PUT" && (path === "/core/experiments/factors" || path === "/core/experiments")) { writes.push({ method, path, body: JSON.parse(String(init!.body)) }); return jsonResponse(200, { result: "ok" }); }
+    return base(url, init);
+  }) as typeof fetch;
+}
+const barley = `species=${encodeURIComponent("agrovoc:barley")}`;
+
+test("factor reuse: a file factor named like exactly one PHIS factor with a unit uses it, its levels read as numbers ('15C' -> 15), the review says so", async () => {
+  await withServer(async (base) => {
+    mockPhisReuse([]);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    const f = plan.factors[0];
+    assert.deepEqual(f.levels, ["15", "18"], "the levels are numbers only");
+    assert.equal(f.reuse.uri, "f:temp");
+    assert.deepEqual([f.reuse.unit.name, f.reuse.auto, f.reuse.usedBy, f.reuse.linked], ["DegreeCelsius", true, ["Other trial"], false]);
+    assert.deepEqual(f.newLevels, ["18"], "only 18 is new to the factor (it already has 10 and 15)");
+    assert.deepEqual(plan.factorChoices, [{ file: "Treatment", parsed: [["15C", "15"], ["18C", "18"]], reuse: "f:temp", auto: true }]);
+    assert.equal(plan.objects.sample[0].factors.Treatment, "15", "the objects carry the number");
+  });
+});
+
+test("factor reuse: running it makes no new factor — the new level goes into the shared factor (nothing else of it lost), it is linked into the experiment, and the plants take its levels", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisReuse(writes);
+    const res = await realFetch(`${base}/api/import/run?${barley}`, { method: "POST", body: EXPORT() });
+    assert.equal(res.status, 200, await res.clone().text());
+    await res.text();
+    assert.ok(!writes.some((w) => w.method === "POST" && w.path === "/core/experiments/factors"), "no second Treatment");
+    const put = writes.find((w) => w.method === "PUT" && w.path === "/core/experiments/factors")!;
+    assert.deepEqual(put.body.levels.map((l: any) => l.name), ["10", "15", "18"]);
+    assert.deepEqual(put.body.exact_match, [CEL.uri], "the unit stays");
+    assert.equal(put.body.experiment, "exp:other", "it stays made in its own experiment");
+    const link = writes.find((w) => w.method === "PUT" && w.path === "/core/experiments")!;
+    assert.deepEqual(link.body.factors, ["f:temp"]);
+    const plant = writes.find((w) => w.path === "/core/scientific_objects" && w.body.name === "B1-C1")!;
+    assert.ok(plant.body.relations.some((r: any) => r.property === "vocabulary:hasFactorLevel" && r.value === "lvl:temp.15"), "the plant holds the shared factor's level 15");
+  });
+});
+
+test("factor reuse: a factor without a unit keeps the file's level text ('15C'); a user pick of 'make a new one' is honoured", async () => {
+  await withServer(async (base) => {
+    mockPhisReuse([], [{ ...OLD_FACTOR, exact_match: [] }], { ...OLD_FACTOR, exact_match: [] });
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(plan.factors[0].levels, ["15C", "18C"]);
+    assert.deepEqual(plan.factors[0].newLevels, ["15C", "18C"]);
+    assert.equal(plan.factors[0].reuse.unit, null);
+    const fresh = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT(), headers: editsHeader({ factors: { Treatment: { fresh: true } } }) })).json();
+    assert.equal(fresh.factors[0].reuse, undefined, "a new factor, as asked");
+    assert.deepEqual(fresh.factors[0].levels, ["15C", "18C"]);
+  });
+});
+
+test("factor reuse: several PHIS factors with the name pick nothing and the run refuses until one is picked; an explicit pick (use) wins and a new factor can be given a unit", async () => {
+  await withServer(async (base) => {
+    const two = [OLD_FACTOR, { ...OLD_FACTOR, uri: "f:other" }];
+    mockPhisReuse([], two);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.equal(plan.factors[0].matches.length, 2);
+    assert.equal(plan.factors[0].reuse, undefined);
+    const writes: any[] = [];
+    mockPhisReuse(writes, two);
+    const refused = await realFetch(`${base}/api/import/run?${barley}`, { method: "POST", body: EXPORT() });
+    assert.equal(refused.status, 409);
+    assert.match((await refused.json()).error, /"Treatment" matches 2 factors in PHIS/);
+    assert.deepEqual(writes, []);
+    const picked = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT(), headers: editsHeader({ factors: { Treatment: { use: "f:other" } } }) })).json();
+    assert.equal(picked.factors[0].reuse.uri, "f:other");
+    assert.equal(picked.factors[0].reuse.auto, false);
+    mockPhisReuse([], []);
+    const withUnit = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT(), headers: editsHeader({ factors: { Treatment: { unit: CEL.uri } } }) })).json();
+    assert.deepEqual(withUnit.factors[0].levels, ["15", "18"], "a new factor with a unit reads its levels as numbers");
+    assert.deepEqual(withUnit.factors[0].unit, { id: CEL.uri, name: "DegreeCelsius" });
+    const writes2: any[] = [];
+    mockPhisReuse(writes2, []);
+    const ran = await realFetch(`${base}/api/import/run?${barley}`, { method: "POST", body: EXPORT(), headers: editsHeader({ factors: { Treatment: { unit: CEL.uri } } }) });
+    await ran.text();
+    assert.deepEqual(writes2.find((w) => w.method === "POST" && w.path === "/core/experiments/factors")!.body.exact_match, [CEL.uri], "the unit is written on the new factor");
+  });
+});
+
+test("GET /api/import/factors lists every factor in PHIS with its unit and levels, and /api/import/units the units (the review's chooser)", async () => {
+  await withServer(async (base) => {
+    mockPhisReuse([]);
+    const base2 = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET" && url.includes("/core/experiments/factors?page_size=500")) return jsonResponse(200, { result: [{ uri: "f:temp", name: "Treatment" }, { uri: "f:aaa", name: "Block design" }] });
+      if ((init?.method ?? "GET") === "GET" && url.endsWith("/factors/f%3Aaaa")) return jsonResponse(200, { result: { uri: "f:aaa", name: "Block design", exact_match: ["http://example.org/term"], levels: [{ uri: "l1", name: "A" }] } });
+      return base2(url, init);
+    }) as typeof fetch;
+    const factors = await (await realFetch(`${base}/api/import/factors`)).json();
+    assert.deepEqual(factors, [
+      { id: "f:aaa", label: "Block design", unit: null, levels: ["A"] },
+      { id: "f:temp", label: "Treatment", unit: { id: CEL.uri, name: "DegreeCelsius" }, levels: ["10", "15"] },
+    ], "sorted by name; a foreign ontology term is not a unit");
+    const units = await (await realFetch(`${base}/api/import/units`)).json();
+    assert.ok(units.some((u: any) => u.name === "DegreeCelsius"));
   });
 });

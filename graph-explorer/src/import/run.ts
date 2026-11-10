@@ -5,7 +5,7 @@
 // -> the measured values. Into an experiment that exists, the same order fills in only what PHIS
 // lacks (existing.ts): new factors/levels/objects are created, existing objects get what they miss.
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "../opensilex.ts";
-import { NODE_TYPES, saveLevels, updatePayloadFromDto } from "../node-types.ts";
+import { NODE_TYPES, saveLevels, updateNode, updatePayloadFromDto } from "../node-types.ts";
 import { POSITION_IN_BLOCK, addTerm } from "./ontology.ts";
 import { prepare } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
@@ -45,6 +45,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     if (sameName) blockers.push(`There is already a species named "${sameName.label}" in PHIS; choose it from the list.`);
     else if (choices.newSpecies !== undefined ? !newSpecies : !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
   }
+  for (const f of plan.factors) if (f.matches) blockers.push(`"${f.name}" matches ${f.matches.length} factors in PHIS, so it isn't clear which one is meant: pick one in the review, or choose to make a new one.`);
   if (choices.devices?.some((id) => !plan.options.devices.some((d) => d.id === id))) blockers.push("That device isn't in PHIS.");
   if (choices.person && !plan.options.persons.some((p) => p.id === choices.person)) blockers.push("That person isn't in PHIS.");
   const share = choices.share ?? "public";
@@ -54,7 +55,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   const done = { vocabulary: 0, parts: 0, variables: 0, groups: 0, species: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
   const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
   const newFactors = plan.factors.filter((f) => !f.exists);
-  const grownFactors = plan.factors.filter((f) => f.newLevels?.length);
+  const grownFactors = plan.factors.filter((f) => f.newLevels?.length || (f.reuse && !f.reuse.linked));
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
   const total = plan.vocabulary.length + variables.create.length + variables.missing.length + plan.variableGroups.filter((g) => !g.exists || g.newMembers).length + (experiment ? 0 : 1) + (newSpecies && plan.germplasm.missing.length ? 1 : 0) + plan.germplasm.missing.length + existingCodes.length
@@ -129,8 +130,18 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     for (const f of plan.factors) {
       const inPhis = experiment?.factors.find((x) => x.name.toLowerCase() === f.name.toLowerCase());
       let id = inPhis?.uri;
-      if (!inPhis) {
-        id = firstUri(await authedPost("/core/experiments/factors", { name: f.name, experiment: done.experiment, levels: f.levels.map((name) => ({ name })) }));
+      if (f.reuse) {
+        // A factor PHIS already has: new levels go into it (read fresh, the PUT replaces the whole factor) and it is linked into this experiment.
+        id = f.reuse.uri;
+        if (f.newLevels?.length) {
+          const dto = (await authedGetOne(`/core/experiments/factors/${enc(id)}`)).result as unknown as Parameters<typeof saveLevels>[0];
+          await saveLevels(dto, [...dto.levels, ...f.newLevels.map((name) => ({ name }))]);
+          done.levels += f.newLevels.length;
+        }
+        if (!f.reuse.linked) await updateNode(NODE_TYPES.experiment, done.experiment, { link: { field: "factors", uris: [id] } });
+        tick(`Using the factor ${f.reuse.name}`);
+      } else if (!inPhis) {
+        id = firstUri(await authedPost("/core/experiments/factors", { name: f.name, experiment: done.experiment, ...(f.unit ? { exact_match: [f.unit.id] } : {}), levels: f.levels.map((name) => ({ name })) }));
         done.factors++;
         tick(`Creating factors: ${done.factors} of ${newFactors.length}`);
       } else if (f.newLevels?.length) {

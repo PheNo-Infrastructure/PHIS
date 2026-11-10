@@ -1416,7 +1416,7 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
       ],
     });
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=unit&id=u-1`)).json(), {
-      uri: "u-1", actions: [],
+      uri: "u-1", actions: ["link"],
       facts: [{ label: "Symbol", value: "mm" }],
       relations: [{ label: "Variables", items: [{ id: "var-1", type: "variable", label: "Plant Height Max" }] }],
     });

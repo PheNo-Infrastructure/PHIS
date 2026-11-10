@@ -1,10 +1,11 @@
 // The shared import engine, step 1: the reviewable plan. Whatever the instrument, its TrialData is
 // matched against PHIS by name and summarised as "exists / will be created / needs a choice" —
 // nothing is written here.
-import { OpenSilexError, authedGet, authedGetOne, escapeRegex } from "../opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne, compactUri, escapeRegex } from "../opensilex.ts";
 import { personName } from "../node-types.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
-import { applyEdits, namesIn, type Edits } from "./edits.ts";
+import { applyEdits, namesIn, type Edits, type FactorReuse } from "./edits.ts";
+import { chooseFactors } from "./factors.ts";
 import { POSITION_IN_BLOCK, missingTerms } from "./ontology.ts";
 import { resolveVariables } from "./variables.ts";
 import { groupSummary, resolveGroups } from "./variable-groups.ts";
@@ -43,6 +44,13 @@ export async function prepare(files: Files, edits?: Edits) {
   const sameName = (await authedGet(`/core/experiments?name=${enc(escapeRegex(trial.experiment.name))}&page_size=50`)).result
     .filter((e) => same(e.name, trial.experiment.name));
   const experiment: Experiment | null = sameName.length === 1 ? await readExperiment(String(sameName[0].uri)) : null;
+
+  // Which PHIS factor each file factor becomes (reused where possible) and, for a factor with a unit, its levels read as numbers.
+  const factorChoices = await chooseFactors(original, edits, experiment);
+  const reuse: FactorReuse = new Map(factorChoices.filter((c) => c.reuse || c.parsed.length).map((c) => [c.file, { name: c.reuse?.name, parsed: Object.fromEntries(c.parsed) }]));
+  if (reuse.size) trial = applyEdits(original, edits, reuse);
+  const inExperiment = new Set(await Promise.all((experiment?.factors ?? []).map((f) => compactUri(f.uri))));
+  const finalName = (file: string) => reuse.get(file)?.name ?? edits?.factors?.[file]?.name ?? file;
 
   const germplasmNames = [...new Set(trial.objects.map((o) => o.germplasm).filter((g): g is string => !!g))];
   const existing: { name: string; id: string }[] = [];
@@ -115,11 +123,22 @@ export async function prepare(files: Files, edits?: Edits) {
       codes: setCodes,
     },
     speciesOptions,
-    factors: [...levels].map(([name, set]) => {
+    factors: await Promise.all([...levels].map(async ([name, set]) => {
+      const choice = factorChoices.find((c) => finalName(c.file) === name);
       const inPhis = experiment?.factors.find((f) => same(f.name, name));
       const all = [...set].sort(byNumberThenText);
-      return { name, levels: all, ...(inPhis ? { exists: true, newLevels: all.filter((l) => !inPhis.levels.some((x) => same(x.name, l))) } : {}) };
-    }),
+      // A factor reused from PHIS: its own levels decide which are new (they are added to it, so every experiment holding it sees them).
+      if (choice?.reuse) {
+        const r = choice.reuse;
+        return { name, levels: all, exists: true, parsed: choice.parsed, reuse: { ...r, linked: inExperiment.has(await compactUri(r.uri)) }, newLevels: all.filter((l) => !r.levels.some((x) => same(x, l))) };
+      }
+      return {
+        name, levels: all,
+        ...(choice?.newUnit ? { unit: choice.newUnit, parsed: choice.parsed } : {}),
+        ...(choice?.matches ? { matches: choice.matches } : {}),
+        ...(inPhis ? { exists: true, newLevels: all.filter((l) => !inPhis.levels.some((x) => same(x.name, l))) } : {}),
+      };
+    })),
     vocabulary,
     variables: {
       existing: variables.existing.map((v) => v.name),
@@ -146,6 +165,8 @@ export async function prepare(files: Files, edits?: Edits) {
     // What the file itself called things (the page keys its edits by these) and the edits applied.
     original: { experiment: original.experiment, ...namesIn(original), codes: original.germplasmCodes ?? {} },
     edits: edits ?? {},
+    // Per file factor: the levels read as numbers ("15C" -> 15), shown in the review.
+    factorChoices: factorChoices.map((c) => ({ file: c.file, parsed: c.parsed, ...(c.reuse ? { reuse: c.reuse.uri, auto: c.reuse.auto } : {}), ...(c.matches ? { ambiguous: true } : {}) })),
     warnings,
   };
   return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills };

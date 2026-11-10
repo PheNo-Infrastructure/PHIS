@@ -97,3 +97,12 @@ test("applyEdits: a germplasm's code can be changed or removed, by the file's na
   assert.throws(() => applyEdits(trial(), { germplasmCodes: { Nope: "G1" } }), /no germplasm "Nope"/);
   assert.throws(() => parseEdits(encodeURIComponent('{"germplasmCodes":{"A":5}}')), /edits could not be read/);
 });
+
+import { levelNumber } from "../src/import/factors.ts";
+test("levelNumber reads a number followed by text only: 15C -> 15, '15 °C' -> 15, -2.5mm -> -2.5; control, 10-20, 15C/20C and plain numbers stay as written", () => {
+  assert.equal(levelNumber("15C"), "15");
+  assert.equal(levelNumber("15 °C"), "15");
+  assert.equal(levelNumber("-2.5mm"), "-2.5");
+  assert.equal(levelNumber("1,5 m"), "1,5");
+  for (const same of ["control", "10-20", "15C/20C", "15", "", "C15"]) assert.equal(levelNumber(same), null, same);
+});

@@ -801,6 +801,59 @@ test("e2e: Browse lists the parts of a variable (entities, characteristics, meth
   });
 });
 
+test("e2e: import review — the factor row says what is reused and which levels are read as numbers; its pencil lists PHIS's factors with their units, a pick re-plans with `use`, and 'new' can carry a unit", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const seen: (string | undefined)[] = [];
+    const planFor = (edits: any) => {
+      const use = edits.factors?.Treatment?.use;
+      return {
+        instrument: "TraitFinder (HortControl export)",
+        experiment: { name: "UiT trial", startDate: "2025-11-25", exists: false },
+        germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [],
+        factors: [use
+          ? { name: "Temperature", levels: ["15", "18"], exists: true, parsed: [["15C", "15"], ["18C", "18"]], newLevels: ["18"], reuse: { uri: "f:temp", name: "Temperature", unit: { id: "u:c", name: "DegreeCelsius" }, levels: ["10", "15"], usedBy: ["Trial A"], auto: false, linked: false } }
+          : { name: "Treatment", levels: ["15C", "18C"] }],
+        vocabulary: [], variables: { existing: ["NDVI"], missing: [], parts: [] },
+        objects: { count: 2, kinds: [{ type: "plant", count: 2 }], sample: [] },
+        original: { experiment: { name: "UiT trial", startDate: "2025-11-25" }, germplasm: [], factors: [{ name: "Treatment", levels: ["15C", "18C"] }], variables: ["NDVI"] },
+        edits, warnings: [],
+      };
+    };
+    await page.route("**/api/import/plan", (route) => {
+      const header = route.request().headers()["x-import-edits"];
+      seen.push(header);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(planFor(header ? JSON.parse(decodeURIComponent(header)) : {})) });
+    });
+    await page.route("**/api/import/factors", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: "f:temp", label: "Temperature", unit: { id: "u:c", name: "DegreeCelsius" }, levels: ["10", "15"] },
+      { id: "f:other", label: "Treatment", unit: null, levels: ["control", "drought"] },
+    ]) }));
+    await page.route("**/api/import/units", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "u:c", name: "DegreeCelsius" }]) }));
+    await page.goto(base);
+    await idle(page);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
+    await page.locator("#importRunBtn").waitFor();
+
+    await page.locator('.import-edit[data-edit="factors"]').click();
+    const pick = page.locator('select[data-pick="Treatment"]');
+    await pick.locator('option[value="use:f:temp"]').waitFor({ state: "attached" });
+    assert.match(await pick.locator("optgroup").innerText(), /Temperature — DegreeCelsius \(10, 15\)/);
+    assert.match(await pick.locator("optgroup").innerText(), /Treatment — no unit/);
+    assert.equal(await page.locator('select[data-unit="Treatment"]').isDisabled(), true, "the unit is for a new factor only");
+    await pick.selectOption("fresh");
+    assert.equal(await page.locator('select[data-unit="Treatment"]').isDisabled(), false);
+    await page.locator('select[data-unit="Treatment"]').selectOption("u:c");
+    await pick.selectOption("use:f:temp");
+    await page.locator('[data-act="save"]').click();
+    await page.locator(".import-edited").waitFor();
+    assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1)!)), { factors: { Treatment: { use: "f:temp" } } }, "a picked factor is sent as `use`; the unit only goes with 'new'");
+    const text = (await page.locator('[data-section="factors"]').innerText()).replace(/\s+/g, " ");
+    assert.match(text, /Temperature: reusing the factor already in PHIS \(unit DegreeCelsius\), used by Trial A; adds level 18 to it, which everyone using it will see/);
+    assert.match(text, /read as numbers: 15C → 15, 18C → 18/);
+  });
+});
+
 test("e2e: linking objects + a germplasm asks which experiment (nothing picked) when they're in several, and 'add to one first' when in none — then continues", async () => {
   await withServerAndBrowser(async (base, page) => {
     const posts: any[] = [];

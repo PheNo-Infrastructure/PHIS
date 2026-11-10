@@ -7,7 +7,9 @@ export type Edits = {
   experiment?: { name?: string; startDate?: string };
   germplasm?: Record<string, string>; // file's germplasm name -> new name
   germplasmCodes?: Record<string, string>; // file's germplasm name -> its code (TraitFinder's G_alias); empty = no code
-  factors?: Record<string, { name?: string; levels?: Record<string, string> }>; // file's factor -> new name, and its levels' new names
+  // file's factor -> new name and its levels' new names; `use` = a PHIS factor's uri to use instead (its name replaces `name`, levels are
+  // read as numbers when it has a unit), `unit` = the unit's uri for a NEW factor, `fresh` = make a new one even if the name exists
+  factors?: Record<string, { name?: string; levels?: Record<string, string>; use?: string; unit?: string; fresh?: boolean }>;
   variables?: Record<string, string>; // file's variable name -> new name
 };
 
@@ -27,7 +29,7 @@ export function parseEdits(raw: string | undefined): Edits {
   const factors = e.factors ?? {};
   if ((e.germplasm !== undefined && !isStringMap(e.germplasm)) || (e.germplasmCodes !== undefined && !isStringMap(e.germplasmCodes)) || (e.variables !== undefined && !isStringMap(e.variables))
     || (e.experiment !== undefined && (typeof e.experiment !== "object" || Object.values(e.experiment).some((v) => typeof v !== "string")))
-    || typeof factors !== "object" || Object.values(factors).some((f: any) => !f || typeof f !== "object" || (f.name !== undefined && typeof f.name !== "string") || (f.levels !== undefined && !isStringMap(f.levels)))) throw unreadable();
+    || typeof factors !== "object" || Object.values(factors).some((f: any) => !f || typeof f !== "object" || (f.name !== undefined && typeof f.name !== "string") || (f.levels !== undefined && !isStringMap(f.levels)) || (f.use !== undefined && typeof f.use !== "string") || (f.unit !== undefined && typeof f.unit !== "string") || (f.fresh !== undefined && typeof f.fresh !== "boolean"))) throw unreadable();
   return e;
 }
 
@@ -63,8 +65,12 @@ function rename(all: string[], changes: Record<string, string> | undefined, kind
   return out;
 }
 
-export function applyEdits(trial: TrialData, edits: Edits | undefined): TrialData {
-  if (!edits || !Object.keys(edits).length) return trial;
+// `reuse` = the PHIS factors chosen for file factors (chooseFactors): the factor takes the PHIS name, and levels read as numbers become them
+// (two levels may become one: "15C" and "15 C" are both 15).
+export type FactorReuse = Map<string, { name?: string; parsed: Record<string, string> }>;
+export function applyEdits(trial: TrialData, edits: Edits | undefined, reuse?: FactorReuse): TrialData {
+  if ((!edits || !Object.keys(edits).length) && !reuse?.size) return trial;
+  edits ??= {};
   const names = namesIn(trial);
   const out: TrialData = structuredClone(trial);
 
@@ -88,9 +94,10 @@ export function applyEdits(trial: TrialData, edits: Edits | undefined): TrialDat
   }
 
   for (const f of Object.keys(edits.factors ?? {})) if (!names.factors.some((x) => x.name === f)) throw new EditError(`The file has no factor "${f}".`);
-  const factorNames = rename(names.factors.map((f) => f.name), Object.fromEntries(Object.entries(edits.factors ?? {}).filter(([, v]) => v.name !== undefined).map(([k, v]) => [k, v.name!])), "factor", "factors");
+  const factorNames = rename(names.factors.map((f) => f.name), Object.fromEntries([...Object.entries(edits.factors ?? {}).filter(([, v]) => v.name !== undefined).map(([k, v]) => [k, v.name!]), ...[...(reuse ?? [])].filter(([, v]) => v.name !== undefined).map(([k, v]) => [k, v.name!])]), "factor", "factors");
   const levelNames = new Map(names.factors.map((f) => [f.name, rename(f.levels, edits.factors?.[f.name]?.levels, "level", "levels", ` of ${factorNames.get(f.name)}`)]));
-  for (const o of out.objects) o.factors = Object.fromEntries(Object.entries(o.factors).map(([f, l]) => [factorNames.get(f)!, levelNames.get(f)!.get(l)!]));
+  const levelOf = (f: string, l: string) => (edits!.factors?.[f]?.levels?.[l] === undefined ? reuse?.get(f)?.parsed[l] : undefined) ?? levelNames.get(f)!.get(l)!;
+  for (const o of out.objects) o.factors = Object.fromEntries(Object.entries(o.factors).map(([f, l]) => [factorNames.get(f)!, levelOf(f, l)]));
 
   const variables = rename(names.variables, edits.variables, "variable", "variables");
   for (const v of out.variables ?? []) v.name = variables.get(v.name)!;

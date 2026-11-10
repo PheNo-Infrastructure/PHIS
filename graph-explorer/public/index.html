@@ -5473,6 +5473,25 @@ function editableVariables(p) {
   return (p.original?.variables ?? []).filter((o) => missing.has(ev[o] ?? o) || o in ev);
 }
 
+// The factor chooser in the review: every factor in PHIS (name, unit, levels) and every unit, read when the editor opens.
+async function fillFactorPickers(editor, had) {
+  try {
+    const [factors, units] = await Promise.all([fetch("api/import/factors"), fetch("api/import/units")].map((r) => r.then((x) => x.ok ? x.json() : [])));
+    const e = escapeHtml;
+    editor.querySelectorAll("select[data-pick]").forEach((sel) => {
+      const f = sel.dataset.pick, h = had.factors?.[f] ?? {};
+      sel.insertAdjacentHTML("beforeend", `<optgroup label="Use a factor already in PHIS">${factors.map((x) => `<option value="use:${e(x.id)}">${e(x.label)} — ${x.unit ? e(x.unit.name) : "no unit"} (${e(x.levels.slice(0, 4).join(", ") + (x.levels.length > 4 ? ", …" : ""))})</option>`).join("")}</optgroup>`);
+      sel.value = h.use ? `use:${h.use}` : h.fresh ? "fresh" : "";
+      if (sel.value !== (h.use ? `use:${h.use}` : h.fresh ? "fresh" : "")) sel.value = "";
+      const u = editor.querySelector(`select[data-unit="${CSS.escape(f)}"]`);
+      u.insertAdjacentHTML("beforeend", units.map((x) => `<option value="${e(x.id)}">${e(x.name)}</option>`).join(""));
+      u.value = h.unit ?? "";
+      const sync = () => { u.disabled = sel.value !== "fresh"; };
+      sel.addEventListener("change", sync); sync();
+    });
+  } catch { /* the chooser stays on Automatic / Make a new factor */ }
+}
+
 // The pencil on a review row turns its values into fields. Save asks the server for a new plan with the edit applied (apply
 // answers null, or the server's plain-words refusal, shown in place), so what the review shows is what will be written.
 function wireImportEditing(plan, apply) {
@@ -5484,7 +5503,9 @@ function wireImportEditing(plan, apply) {
     germplasm: () => plan.original.germplasm.map((o) => field(o, `data-orig="${e(o)}"`, had.germplasm?.[o] ?? o)
       + field(`${o}: code`, `data-code="${e(o)}" placeholder="none"`, had.germplasmCodes?.[o] ?? plan.original.codes?.[o] ?? "")).join("")
       + `<p class="import-note">A code is the variety's short name (TraitFinder's G_alias). A variety that already has a different code in PHIS keeps that one.</p>`,
-    factors: () => plan.original.factors.map((f) => field(`${f.name} (factor)`, `data-factor="${e(f.name)}"`, had.factors?.[f.name]?.name ?? f.name)
+    factors: () => plan.original.factors.map((f) => `<label>${e(f.name)}: which factor</label><span class="import-pick"><select data-pick="${e(f.name)}"><option value="">Automatic (same name in PHIS, else new)</option><option value="fresh">Make a new factor</option></select>`
+      + ` <select data-unit="${e(f.name)}" title="The unit of a new factor: its levels are then read as numbers"><option value="">No unit</option></select></span>`
+      + field(`${f.name} (factor)`, `data-factor="${e(f.name)}"`, had.factors?.[f.name]?.name ?? f.name)
       + f.levels.map((l) => field(`${f.name}: ${l}`, `data-factor="${e(f.name)}" data-level="${e(l)}"`, had.factors?.[f.name]?.levels?.[l] ?? l)).join("")).join(""),
     variables: () => editableVariables(plan).map((o) => field(o, `data-orig="${e(o)}"`, had.variables?.[o] ?? o)).join("")
       + `<p class="import-note">Variables already in PHIS keep their names. Give a new one the name of an existing variable to use that one instead.</p>`,
@@ -5516,6 +5537,12 @@ function wireImportEditing(plan, apply) {
           if (l === undefined) x[f].name = val(inp); else (x[f].levels ??= {})[l] = val(inp);
         }
       }
+      // Which PHIS factor each one becomes: a picked factor replaces the name (its own is used); "new" can carry a unit.
+      for (const sel of editor.querySelectorAll("select[data-pick]")) {
+        const f = sel.dataset.pick, pick = sel.value, unit = editor.querySelector(`select[data-unit="${CSS.escape(f)}"]`)?.value;
+        if (pick.startsWith("use:")) { x[f] ??= {}; x[f].use = pick.slice(4); delete x[f].name; }
+        else if (pick === "fresh") { x[f] ??= {}; x[f].fresh = true; if (unit) x[f].unit = unit; }
+      }
       set("factors", x);
     }
     return next;
@@ -5530,6 +5557,7 @@ function wireImportEditing(plan, apply) {
     editor.innerHTML = `<div class="import-form">${builders[kind]()}</div><div class="import-warning" hidden></div>
       <div class="import-editor-actions"><button type="button" class="btn small" data-act="cancel">Cancel</button><button type="button" class="btn small primary" data-act="save">Save</button></div>`;
     section.appendChild(editor);
+    if (kind === "factors") fillFactorPickers(editor, had);
     const save = editor.querySelector('[data-act="save"]'), cancel = editor.querySelector('[data-act="cancel"]'), error = editor.querySelector(".import-warning");
     cancel.addEventListener("click", () => { editor.remove(); section.classList.remove("editing"); });
     save.addEventListener("click", async () => {
@@ -5590,7 +5618,9 @@ function importPlanHtml(p) {
     </div>
     <div data-section="factors" class="import-section${p.factors.some(f => !f.exists) ? " is-new" : ""}">
       <h3><span class="h-title">Factors<small>treatments and design</small></span>${editBtn("factors")}</h3>
-      ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.exists ? (f.newLevels.length ? `already in PHIS; adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))}` : "already in PHIS, with all its levels") : `${f.levels.length} levels`} <span class="import-names">(${list(f.levels, 12)})</span></p>`).join("") : "<p>None.</p>"}
+      ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.reuse
+        ? `<b>reusing the factor already in PHIS</b>${f.reuse.unit ? ` (unit ${escapeHtml(f.reuse.unit.name)})` : " (no unit)"}${f.reuse.usedBy.length ? `, used by ${escapeHtml(andList(f.reuse.usedBy))}` : ""}${f.reuse.auto ? " — same name; ✎ picks another or makes a new one" : ""}; ${f.newLevels.length ? `adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))} to it${f.reuse.usedBy.length ? ", which everyone using it will see" : ""}` : "it already has all the levels"}`
+        : f.exists ? (f.newLevels.length ? `already in PHIS; adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))}` : "already in PHIS, with all its levels") : `${f.levels.length} levels${f.unit ? `, unit ${escapeHtml(f.unit.name)}` : ""}`} <span class="import-names">(${list(f.levels, 12)})</span>${f.parsed?.length ? `<br><span class="import-names">read as numbers: ${list(f.parsed.map(([a, b]) => `${a} → ${b}`), 6)}</span>` : ""}${f.matches ? `<br><span class="import-warning">${f.matches.length} factors in PHIS are named ${escapeHtml(f.name)} (${escapeHtml(f.matches.map(m => m.unit ? m.unit.name : "no unit").join(", "))}): ✎ pick one, or make a new one.</span>` : ""}</p>`).join("") : "<p>None.</p>"}
     </div>
     <div data-section="objects" class="import-section${p.objects.count ? " is-new" : ""}">
       <h3><span class="h-title">${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></span></h3>

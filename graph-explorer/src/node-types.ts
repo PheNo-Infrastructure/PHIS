@@ -1444,10 +1444,12 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
   entity: variablePart("entity", "entities"),
   characteristic: variablePart("characteristic", "characteristics"),
   method: variablePart("method", "methods"),
-  unit: variablePart("unit", "units", (u) => [["Symbol", u.symbol]], [
-    // A factor points at its unit through the unit's uri in `exact_match` (PHIS has no unit field on a factor; probed 2026-11-10).
-    { label: "Factors", type: "factor", url: () => "", load: factorsWithUnit },
-  ]),
+  // A unit is read-only itself, but a factor can point at it (the unit's uri in the factor's `exact_match`; PHIS has no unit field on a
+  // factor, probed 2026-11-10), so it can be linked to a factor: the link is written on the factor.
+  unit: {
+    ...variablePart("unit", "units", (u) => [["Symbol", u.symbol]], [{ label: "Factors", type: "factor", url: () => "", load: factorsWithUnit }]),
+    actions: ["link"],
+  },
   account: {
     getUrl: (id) => `/security/accounts/${encodeURIComponent(id)}`,
     putUrl: "",

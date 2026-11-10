@@ -4,6 +4,7 @@ import { readZip } from "../import/files.ts";
 import { buildPlan } from "../import/plan.ts";
 import { runImport } from "../import/run.ts";
 import { parseEdits } from "../import/edits.ts";
+import { factorCatalogue, unitList } from "../import/factors.ts";
 
 // ponytail: the whole upload is held in memory; fine for sheet exports, capped so a stray
 // multi-GB scan archive is refused instead of exhausting the server.
@@ -14,7 +15,16 @@ const MAX_UPLOAD = 50 * 1024 * 1024;
 //   POST /api/import/run?species=<uri>|newSpecies=<name>&device=<uri>[&device=<uri>…]&person=<uri>&share=<public|private|group uri>&note=1
 //                                       -> writes it, streaming progress (species: for new germplasm; device/person: who made
 //                                          the data; share: who sees a new experiment; note: keep a note of the import)
+//   GET  /api/import/factors            -> the factors in PHIS with their unit and levels (the review's factor chooser)
+//   GET  /api/import/units              -> the units in PHIS (for a new factor's unit)
 export const handleImport: RouteHandler = async (req, res, { pathname, searchParams }) => {
+  if (req.method === "GET" && (pathname === "/api/import/factors" || pathname === "/api/import/units")) {
+    await respondOpenSilexErrors(res, async () => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(pathname.endsWith("factors") ? await factorCatalogue() : await unitList()));
+    });
+    return true;
+  }
   const route = { "/api/import/plan": "plan", "/api/import/run": "run" }[pathname];
   if (!route || req.method !== "POST") return false;
   const reply = (status: number, body: unknown) => {
