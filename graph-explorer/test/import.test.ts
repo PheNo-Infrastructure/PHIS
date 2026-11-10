@@ -134,7 +134,7 @@ test("POST /api/import/plan: HortControl export -> the plan (exact-name germplas
     assert.equal(plan.instrument, "TraitFinder (HortControl export)");
     assert.deepEqual(plan.experiment, { name: NAME, startDate: "2025-10-22", exists: false }, "a name that only contains it isn't a match; earliest date starts it");
     assert.deepEqual(plan.germplasm, { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril"], ambiguous: [], codes: [{ name: "Olve", code: "G5" }, { name: "Tiril", code: "G16" }] }, "case-insensitive exact match; 'Olve 2' ignored; codes from g_alias");
-    assert.deepEqual(plan.vocabulary.map((v: any) => v.label), ["the object type Block", "the plant property Column in block"], "what this PHIS lacks, added first");
+    assert.deepEqual(plan.vocabulary, [], "blocks are PHIS's own Plot type and places are Move events: nothing is added to the ontology");
     assert.deepEqual(plan.variables.missing, ["Height", "NDVI Average", "Leaf inclination", "Hue [0:25]", "Hue [25:50]"], "traits and bins, in the file's order; the header's trailing space is gone");
     assert.deepEqual(plan.variables.parts, [
       { kind: "entities", name: "Plant" }, { kind: "entities", name: "Canopy" }, { kind: "entities", name: "Leaf" },
@@ -150,8 +150,9 @@ test("POST /api/import/plan: HortControl export -> the plan (exact-name germplas
     assert.deepEqual(plan.speciesOptions, [{ id: "agrovoc:barley", label: "barley" }]);
     assert.deepEqual(plan.factors, [{ name: "Treatment", levels: ["15C", "18C"] }]);
     assert.equal(plan.objects.count, 5, "3 plants + their 2 blocks");
-    assert.deepEqual(plan.objects.kinds, [{ type: "block", count: 2 }, { type: "plant", count: 3 }]);
-    assert.deepEqual(plan.objects.sample[0], { name: "B1-C1", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Treatment: "15C" }, parent: "Block 1", position: 1 }, "the sample shows plants, not blocks");
+    assert.deepEqual(plan.objects.kinds, [{ type: "plot", count: 2 }, { type: "plant", count: 3 }]);
+    assert.deepEqual(plan.places, { count: 5, facility: null }, "every object has a place (blocks and plants); no facility is known without a device that stands in one");
+    assert.deepEqual(plan.objects.sample[0], { name: "B1-C1", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Treatment: "15C" }, parent: "Block 1", place: "Block 1, column 1" }, "the sample shows plants, not blocks");
     assert.deepEqual(plan.warnings, []);
     assert.ok(calls.every((c) => c.startsWith("GET ") || c.includes("/security/authenticate")), "the plan writes nothing");
   });
@@ -236,7 +237,7 @@ test("POST /api/import/run refuses before writing anything when a choice is miss
   });
 });
 
-test("POST /api/import/run writes in order: vocabulary, variables (parts first), experiment, new germplasm (with its code), an existing germplasm's code, the factor with its levels, blocks, then each plant with its germplasm, treatment, block and column", async () => {
+test("POST /api/import/run writes in order: vocabulary, variables (parts first), experiment, new germplasm (with its code), an existing germplasm's code, the factor with its levels, blocks, then each plant with its germplasm, treatment and block", async () => {
   await withServer(async (base) => {
     const writes: { method: string; path: string; body: any }[] = [];
     mockPhisForRun(writes);
@@ -244,13 +245,10 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     assert.equal(res.status, 200);
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
     const steps = lines.slice(0, -1).map((l) => `${l.progress.done}/${l.progress.total} ${l.progress.step}`);
-    assert.deepEqual(steps.slice(0, 4), ["1/29 Added the object type Block to PHIS", "2/29 Added the plant property Column in block to PHIS", "3/29 Added the entity Plant", "4/29 Added the entity Canopy"], "one progress line per write");
-    assert.deepEqual(steps.slice(-3), ["27/29 Creating scientific objects: 5 of 5", "28/29 Created the provenance of the measurements", "29/29 Writing measurements: 15 of 15"]);
-    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: NAME }, created: { species: 0, germplasm: 1, codes: 1, factors: 1, objects: 5, filled: 0, levels: 0, vocabulary: 2, variables: 5, variableGroups: 1, values: 15 } } });
+    assert.deepEqual(steps.slice(0, 4), ["1/27 Added the entity Plant", "2/27 Added the entity Canopy", "3/27 Added the entity Leaf", "4/27 Added the characteristic Height"], "one progress line per write");
+    assert.deepEqual(steps.slice(-3), ["25/27 Creating scientific objects: 5 of 5", "26/27 Created the provenance of the measurements", "27/27 Writing measurements: 15 of 15"]);
+    assert.deepEqual(lines.at(-1), { result: { experiment: { id: "exp:new", type: "experiment", label: NAME }, created: { species: 0, germplasm: 1, codes: 1, factors: 1, objects: 5, reused: 0, filled: 0, placed: 0, levels: 0, vocabulary: 0, variables: 5, variableGroups: 1, values: 15 } } });
     assert.deepEqual(writes.map((w) => `${w.method} ${w.path} ${String(w.body.name ?? w.body.uri ?? w.body.property).replace(/ \d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/, "")}`), [
-      "POST /vuejs/owl_extension/rdf_type Block",
-      "POST /ontology/property https://phis.pheno.no/vocabulary#positionInBlock",
-      "POST /ontology/rdf_type_property_restriction https://phis.pheno.no/vocabulary#positionInBlock",
       "POST /core/entities Plant", "POST /core/entities Canopy", "POST /core/entities Leaf",
       "POST /core/characteristics Height", "POST /core/characteristics NDVI Average", "POST /core/characteristics Leaf inclination",
       "POST /core/characteristics Hue [0:25]", "POST /core/characteristics Hue [25:50]",
@@ -292,7 +290,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     assert.equal(writes.find((x) => x.method === "PUT")!.body.species, "agrovoc:barley", "the rest of Olve's record goes back too");
     assert.deepEqual(w("Treatment"), { name: "Treatment", experiment: "exp:new", levels: [{ name: "15C" }, { name: "18C" }] });
     assert.deepEqual(w("Block 1"), {
-      name: "Block 1", rdf_type: "https://phis.pheno.no/vocabulary#Block", experiment: "exp:new",
+      name: "Block 1", rdf_type: "vocabulary:Plot", experiment: "exp:new",
       relations: [],
     }, "a block carries no treatment; its plants do");
     assert.deepEqual(w("B1-C2"), {
@@ -301,11 +299,108 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
         { property: "vocabulary:hasGermplasm", value: "g:Tiril", inverse: false },
         { property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false },
         { property: "vocabulary:isPartOf", value: "so:Block 1", inverse: false },
-        { property: "https://phis.pheno.no/vocabulary#positionInBlock", value: "2", inverse: false },
       ],
     }, "new germplasm by its new uri, existing by PHIS's, level by name, block by its new uri");
     assert.equal(w("B1-C1").relations[0].value, "g:olve");
     assert.equal(w("B2-C1").relations.find((r: any) => r.property === "vocabulary:isPartOf").value, "so:Block 2");
+  });
+});
+
+// A device that stands in a facility in PHIS: its newest move is `to` that facility.
+function mockDeviceInFacility(writes: { method: string; path: string; body: any }[]) {
+  const base = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    const method = init?.method ?? "GET";
+    if (method === "POST" && path === "/core/events/moves") { writes.push({ method, path, body: JSON.parse(String(init!.body)) }); return jsonResponse(201, { result: ["ev:new"] }); }
+    if (method === "GET" && path.startsWith("/core/scientific_objects?name=")) return jsonResponse(200, { result: [] }); // nothing stands there yet
+    if (path.startsWith("/core/events?target=dev-tf")) return jsonResponse(200, { result: [{ uri: "ev:old", rdf_type_name: "Move" }] });
+    if (path.startsWith("/core/events?target=")) return jsonResponse(200, { result: [] });
+    if (path === "/core/events/moves/ev%3Aold") return jsonResponse(200, { result: { uri: "ev:old", end: "2025-03-25T23:00:00Z", location: { to: "fac-1" } } });
+    if (path === "/core/facilities/fac-1") return jsonResponse(200, { result: { uri: "fac-1", name: "HOLT_PT_G" } });
+    return base(url, init);
+  }) as typeof fetch;
+}
+
+test("POST /api/import: the plants' places are recorded as Moves to the facility the chosen device stands in, with the position as text, blocks included; a run without such a device records none", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    mockDeviceInFacility(writes);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(plan.options.devices, [{ id: "dev-tf", label: "UiT-TraitFinder", facility: { id: "fac-1", name: "HOLT_PT_G" } }, { id: "dev-other", label: "Nikon Z6III" }].sort((a, b) => a.label.localeCompare(b.label)), "only a device that was moved carries a facility");
+    assert.deepEqual(plan.places, { count: 5, facility: { id: "fac-1", name: "HOLT_PT_G" } });
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}&device=dev-tf`, { method: "POST", body: EXPORT() });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines.at(-1).result.created.placed, 5);
+    assert.ok(lines.some((l) => l.progress?.step === "Recording where the objects stand in HOLT_PT_G"));
+    const moves = writes.filter((w) => w.path === "/core/events/moves").flatMap((w) => w.body);
+    assert.deepEqual(moves.map((m: any) => [m.targets[0], m.to, m.targets_positions[0].position.text]).sort(), [
+      ["so:B1-C1", "fac-1", "Block 1, column 1"], ["so:B1-C2", "fac-1", "Block 1, column 2"], ["so:B2-C1", "fac-1", "Block 2, column 1"], ["so:Block 1", "fac-1", "Block 1"], ["so:Block 2", "fac-1", "Block 2"],
+    ]);
+    assert.deepEqual(moves[0], { rdf_type: "oeev:Move", is_instant: true, end: "2025-10-22T12:00:00Z", targets: [moves[0].targets[0]], to: "fac-1", targets_positions: [{ target: moves[0].targets[0], position: { text: moves[0].targets_positions[0].position.text } }] }, "dated the first scan, one Move per object");
+    const order = writes.map((w) => w.path);
+    assert.ok(order.lastIndexOf("/core/scientific_objects") < order.indexOf("/core/events/moves") && order.indexOf("/core/events/moves") < order.indexOf("/core/data"), "after the objects exist, before the values");
+  });
+});
+
+// Objects already in PHIS: Block 1 and B1-C1 stand in HOLT_PT_G in the same place as the file's (one object each, newest move = there); a second B1-C1 stands elsewhere.
+function mockStanding(writes: { method: string; path: string; body: any }[]) {
+  mockDeviceInFacility(writes);
+  const base = globalThis.fetch;
+  const moves: Record<string, { to: string; text: string }> = { "so%3Aold-b1": { to: "fac-1", text: "Block 1" }, "so%3Aold-b1c1": { to: "fac-1", text: "Block 1, column 1" }, "so%3Aother-b1c1": { to: "fac-1", text: "somewhere else" } };
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    const path = url.replace(/^.*\/rest/, "");
+    if ((init?.method ?? "GET") === "GET") {
+      if (path.startsWith("/core/scientific_objects?name=")) return jsonResponse(200, { result: [
+        { uri: "so:old-b1", name: "Block 1", rdf_type: "vocabulary:Plot" }, { uri: "so:old-b1c1", name: "B1-C1", rdf_type: "vocabulary:Plant" }, { uri: "so:other-b1c1", name: "B1-C1", rdf_type: "vocabulary:Plant" },
+      ] });
+      const ev = path.match(/^\/core\/events\?target=(so%3A[^&]+)/);
+      if (ev && moves[ev[1]]) return jsonResponse(200, { result: [{ uri: `ev:${ev[1]}`, rdf_type_name: "Move" }] });
+      const mv = path.match(/^\/core\/events\/moves\/ev%3A(so%253A.+)$/);
+      if (mv) { const m = moves[decodeURIComponent(mv[1])]; return jsonResponse(200, { result: { uri: "ev", end: "2025-10-01T10:00:00Z", location: { to: m.to, text: m.text } } }); }
+    }
+    return base(url, init);
+  }) as typeof fetch;
+}
+
+test("POST /api/import/plan: objects that already stand in the same place (same type, name, facility and position text) are reused — one match joins, a place with two matches or none is made new; 'reuse' can be switched off", async () => {
+  await withServer(async (base) => {
+    mockPhisForRun([]);
+    mockStanding([]);
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(plan.places, { count: 3, facility: { id: "fac-1", name: "HOLT_PT_G" } }, "the three new objects are recorded; the two reused already have a place");
+    assert.equal(plan.objects.count, 3, "Block 2, B1-C2 and B2-C1 are new");
+    assert.deepEqual(plan.objects.reuse, { count: 2, kinds: [{ type: "plot", count: 1 }, { type: "plant", count: 1 }], ambiguous: [], off: false }, "Block 1 and B1-C1; the other B1-C1 stands somewhere else");
+    const off = await (await realFetch(`${base}/api/import/plan`, { method: "POST", headers: { "X-Import-Edits": encodeURIComponent(JSON.stringify({ reuseObjects: false })) }, body: EXPORT() })).json();
+    assert.equal(off.objects.count, 5);
+    assert.deepEqual(off.objects.reuse, { count: 0, kinds: [], ambiguous: [], off: true });
+    const none = await (await realFetch(`${base}/api/import/plan`, { method: "POST", headers: { "X-Import-Edits": encodeURIComponent(JSON.stringify({ devices: [] })) }, body: EXPORT() })).json();
+    assert.equal(none.objects.reuse, undefined, "no device = no facility = nothing to match against");
+    assert.equal(none.objects.count, 5);
+  });
+});
+
+test("POST /api/import/run: a reused object joins the new experiment under ITS OWN uri with this experiment's germplasm, level and parent; only the new ones are created and get a place", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockPhisForRun(writes);
+    mockStanding(writes);
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}&device=dev-tf`, { method: "POST", body: EXPORT() });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual({ objects: lines.at(-1).result.created.objects, reused: lines.at(-1).result.created.reused, placed: lines.at(-1).result.created.placed }, { objects: 3, reused: 2, placed: 3 });
+    const objects = writes.filter((w) => w.path === "/core/scientific_objects").map((w) => w.body);
+    const joined = objects.filter((b) => b.uri);
+    assert.deepEqual(joined.map((b) => [b.uri, b.name, b.rdf_type, b.experiment]), [["so:old-b1", "Block 1", "vocabulary:Plot", "exp:new"], ["so:old-b1c1", "B1-C1", "vocabulary:Plant", "exp:new"]]);
+    assert.deepEqual(joined[1].relations, [
+      { property: "vocabulary:hasGermplasm", value: "g:olve", inverse: false },
+      { property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false },
+      { property: "vocabulary:isPartOf", value: "so:old-b1", inverse: false },
+    ], "the plant's block is the REUSED block's uri");
+    assert.deepEqual(objects.filter((b) => !b.uri).map((b) => b.name).sort(), ["B1-C2", "B2-C1", "Block 2"]);
+    assert.equal(objects.find((b) => b.name === "B2-C1").relations.find((r: any) => r.property === "vocabulary:isPartOf").value, "so:Block 2", "a new plant in a new block");
+    const moved = writes.filter((w) => w.path === "/core/events/moves").flatMap((w) => w.body).map((m: any) => [m.targets[0], m.targets_positions[0].position.text]).sort();
+    assert.deepEqual(moved, [["so:B1-C2", "Block 1, column 2"], ["so:B2-C1", "Block 2, column 1"], ["so:Block 2", "Block 2"]], "a reused object keeps the place it has");
   });
 });
 
@@ -326,7 +421,7 @@ test("POST /api/import/run that fails before the experiment says the vocabulary 
     mockPhisForRun([], NAME);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const { error } = JSON.parse((await res.text()).trim().split("\n").at(-1));
-    assert.match(error, /Only 2 vocabulary terms, 10 variable parts, 5 variables and 1 variable group were added to PHIS \(kept, and reused next time\)\.$/);
+    assert.match(error, /Only 10 variable parts, 5 variables and 1 variable group were added to PHIS \(kept, and reused next time\)\.$/);
   });
 });
 
@@ -348,7 +443,7 @@ test("POST /api/import/plan: messy values are left out and reported — empty ce
 });
 
 // An experiment of the same name already in PHIS: Block 1, B1-C1 (nothing set) and B1-C2 (another
-// variety, column 3) are there; factor Treatment has only level 15C; the variables exist, and B1-C1
+// variety, and the old custom column 3 from before places were Moves) are there; factor Treatment has only level 15C; the variables exist, and B1-C1
 // already has two values on 2025-10-29 (one equal to the file, one not).
 function mockExistingExperiment(writes: { method: string; path: string; body: any }[], existingName: string = NAME) {
   const exp = "exp:old";
@@ -418,8 +513,8 @@ test("POST /api/import/plan into an existing experiment is a fill: what PHIS lac
     assert.deepEqual(plan.variableGroups, [{ name: "Hue distribution", variables: 2, exists: true, newMembers: 1 }]);
     assert.equal(plan.objects.count, 2, "Block 2 and B2-C1 are new");
     assert.equal(plan.objects.existing, 3);
-    assert.deepEqual(plan.objects.fills, { count: 2, what: { block: 2, position: 1, germplasm: 1, levels: 2 } }, "B1-C2 keeps its variety and column; Block 1 has nothing to add");
-    assert.deepEqual(plan.objects.conflicts, { count: 2, examples: ["B1-C2: PHIS has Annika, the file Tiril", "B1-C2: PHIS has position 3, the file position 2"] });
+    assert.deepEqual(plan.objects.fills, { count: 2, what: { block: 2, germplasm: 1, levels: 2 } }, "B1-C2 keeps its variety; Block 1 has nothing to add");
+    assert.deepEqual(plan.objects.conflicts, { count: 1, examples: ["B1-C2: PHIS has Annika, the file Tiril"] });
     assert.equal(plan.measurements.count, 13, "15 in the file, 1 already in PHIS, 1 different in PHIS");
     assert.equal(plan.measurements.alreadyInPhis, 1, "PHIS's +0100 on 2025-10-29 is 13:19:34 Oslo time, as in the file");
     assert.deepEqual(plan.measurements.differ, { count: 1, examples: ["B1-C1, NDVI Average, 2025-10-29 13:19:34: PHIS has 0.9, the file 0.5"] });
@@ -433,7 +528,7 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
     mockExistingExperiment(writes);
     const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", body: EXPORT() });
     const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
-    assert.deepEqual(lines.at(-1).result.created, { species: 0, germplasm: 1, codes: 0, factors: 0, objects: 2, filled: 2, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
+    assert.deepEqual(lines.at(-1).result.created, { species: 0, germplasm: 1, codes: 0, factors: 0, objects: 2, reused: 0, filled: 2, placed: 0, levels: 1, vocabulary: 0, variables: 0, variableGroups: 1, values: 13 });
     assert.deepEqual(writes.filter((w) => w.path !== "/core/data").map((w) => `${w.method} ${w.path} ${w.body.name ?? w.body.uri}`.replace(/ import \d{4}.*$/, " import")), [
       "PUT /core/variables_group Hue distribution",
       "POST /core/germplasm Tiril",
@@ -450,14 +545,13 @@ test("POST /api/import/run into an existing experiment creates only what's new, 
       { property: "vocabulary:hasGermplasm", value: "g:olve", inverse: false },
       { property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false },
       { property: "vocabulary:isPartOf", value: "so:block1", inverse: false },
-      { property: "https://phis.pheno.no/vocabulary#positionInBlock", value: "1", inverse: false },
     ]);
     assert.deepEqual(put("so:old2").relations, [
       { property: "vocabulary:hasGermplasm", value: "g:annika", inverse: false },
       { property: "https://phis.pheno.no/vocabulary#positionInBlock", value: "3", inverse: false },
       { property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false },
       { property: "vocabulary:isPartOf", value: "so:block1", inverse: false },
-    ], "Annika and column 3 stay; only what was missing is added");
+    ], "Annika and the old column 3 stay; only what was missing is added");
     const data = writes.find((w) => w.path === "/core/data")!.body;
     assert.equal(data.length, 13);
     assert.ok(!data.some((d: any) => d.target === "so:old1" && d.date === "2025-10-29T13:19:34" && ["var:Height", "var:NDVI Average"].includes(d.variable)), "neither the equal nor the differing value is written");

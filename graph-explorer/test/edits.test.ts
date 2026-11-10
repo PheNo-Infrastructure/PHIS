@@ -7,8 +7,8 @@ const trial = (): TrialData => ({
   experiment: { name: "UiT trial", startDate: "2025-11-25" },
   objects: [
     { name: "B1", rdfType: "Block", factors: {} },
-    { name: "B1-C1", rdfType: "Plant", germplasm: "Bean", factors: { Treatment: "15C" }, parent: "B1", position: 1 },
-    { name: "B1-C2", rdfType: "Plant", germplasm: "Olve", factors: { Treatment: "18C" }, parent: "B1", position: 2 },
+    { name: "B1-C1", rdfType: "Plant", germplasm: "Bean", factors: { Treatment: "15C" }, parent: "B1", place: "Block 1, column 1" },
+    { name: "B1-C2", rdfType: "Plant", germplasm: "Olve", factors: { Treatment: "18C" }, parent: "B1", place: "Block 1, column 2" },
   ],
   germplasmCodes: { Bean: "G1", Olve: "G5" },
   variables: [

@@ -1885,7 +1885,7 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
         speciesOptions: [{ id: "agrovoc:barley", label: "barley" }],
         factors: [{ name: "Replicate", levels: ["1", "2"] }],
         vocabulary: [{ uri: "x#Tray", label: "the object type Tray" }, { uri: "x#pos", label: "the plant property Position in tray" }],
-        objects: { count: 4, kinds: [{ type: "tray", count: 1 }, { type: "plant", count: 3 }], sample: [{ name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1" }, parent: "Tray 31", position: 1 }] },
+        objects: { count: 4, kinds: [{ type: "tray", count: 1 }, { type: "plant", count: 3 }], sample: [{ name: "PB001", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Replicate: "1" }, parent: "Tray 31", place: "Tray 31, position 1" }] }, places: { count: 3 },
         variables: { existing: ["Plant Height Max"], missing: ["NDVI Average", "Leaf inclination", "A", "B"], parts: [
           { kind: "entities", name: "Plant" }, { kind: "characteristics", name: "c1" }, { kind: "characteristics", name: "c2" }, { kind: "characteristics", name: "c3" }, { kind: "characteristics", name: "c4" },
           { kind: "units", name: "Unitless" }, { kind: "units", name: "SquareMillimeterPerSquareMillimeter", symbol: "mm²/mm²" },
@@ -1906,7 +1906,8 @@ test("e2e: 'Import from an instrument…' uploads the ZIP as-is and shows the pl
     assert.match(text, /Codes set: 1 \(Olve = G5\)/);
     assert.match(text, /Already in PHIS, reused: 1 \(Olve\) New: 2 \(Tiril, <b>Bad<\/b>\)/, "names from the file are shown as text");
     assert.match(text, /Replicate: 2 levels \(1, 2\)/);
-    assert.match(text, /Scientific objects.* New: 4 \(1 tray and 3 plants\) \(e\.g\. PB001: Olve, Replicate 1, in Tray 31, position 1\)/);
+    assert.match(text, /Scientific objects.* New: 4 \(1 tray and 3 plants\) \(e\.g\. PB001: Olve, Replicate 1, at Tray 31, position 1\)/);
+    assert.match(text, /Where they stand won't be recorded: no device is chosen/);
     assert.match(text, /Variables.* Already in PHIS, reused: 1 \(Plant Height Max\) New: 4 \(NDVI Average, Leaf inclination, A, B\) Also adds what they're made of: the entity Plant, 4 characteristics and the units Unitless and SquareMillimeterPerSquareMillimeter \(mm²\/mm²\)\./);
     assert.match(text, /Nothing has been written to PHIS yet\./);
     assert.match(text, /Variable groups \(a histogram's bins together\): New: 1 \(NDVI distribution\) Existing groups that get more variables: 1 \(Hue distribution\)/);
@@ -2096,7 +2097,7 @@ test("e2e: the review of an import into an existing experiment names what it fil
       instrument: "TraitFinder (HortControl export)", experiment: { name: "Trial", startDate: "2025-11-25", exists: true },
       germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [], vocabulary: [],
       variables: { existing: [], missing: [], parts: [] },
-      objects: { count: 0, existing: 3, kinds: [], sample: [], fills: { count: 2, what: { block: 2, position: 1, germplasm: 1, levels: 2 } }, conflicts: { count: 0, examples: [] } },
+      objects: { count: 0, existing: 3, kinds: [], sample: [], fills: { count: 2, what: { block: 2, germplasm: 1, levels: 2 } }, conflicts: { count: 0, examples: [] } },
       warnings: [],
     }) }));
     await page.goto(base);
@@ -2105,7 +2106,74 @@ test("e2e: the review of an import into an existing experiment names what it fil
     await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("unit\n") });
     await page.locator(".import-section").first().waitFor();
     const text = (await page.locator("#importPlan").innerText()).replace(/\s+/g, " ");
-    assert.match(text, /fills in what 2 of them lack: block \(2\), column in the block \(1\), germplasm \(1\) and factor levels \(2\)/);
+    assert.match(text, /fills in what 2 of them lack: block \(2\), germplasm \(1\) and factor levels \(2\)/);
+  });
+});
+
+test("e2e: import review — where the objects stand follows the device: recorded in the facility the picked device stands in, and a plain reason when it can't be", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/import/plan", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      instrument: "TraitFinder (HortControl export)", experiment: { name: "Trial", startDate: "2025-11-25", exists: false },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [], vocabulary: [],
+      variables: { existing: [], missing: [], parts: [] },
+      objects: { count: 5, kinds: [{ type: "plot", count: 2 }, { type: "plant", count: 3 }], sample: [] }, places: { count: 3 },
+      options: { devices: [{ id: "d1", label: "UiT-TraitFinder", facility: { id: "f1", name: "HOLT_PT_G" } }, { id: "d2", label: "Nikon Z6III" }], persons: [], groups: [], matchedDevice: "d1", matchedBecause: "TraitFinder" },
+      warnings: [],
+    }) }));
+    await page.goto(base);
+    await idle(page);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("unit\n") });
+    await page.locator("#importPlaces p").waitFor();
+    const places = async () => (await page.locator("#importPlaces").innerText()).replace(/\s+/g, " ");
+    assert.match(await places(), /Where they stand: 3 objects are recorded in HOLT_PT_G, the facility the device stands in/);
+    await page.locator("#importDevice .import-chip button").click();
+    assert.match(await places(), /won't be recorded: no device is chosen/);
+    await page.locator("#importDeviceAdd").fill("Nikon Z6III");
+    await page.locator("#importDeviceAdd").evaluate((el) => el.dispatchEvent(new Event("change")));
+    assert.match(await places(), /won't be recorded: none of the chosen devices stands in a facility in PHIS/);
+  });
+});
+
+test("e2e: import review — objects that already stand in the same place are reused by default and say so; unchecking asks for a new plan (reuseObjects: false), and changing the device asks for one too (devices)", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const seen: any[] = [];
+    const planFor = (edits: any) => ({
+      instrument: "TraitFinder (HortControl export)", experiment: { name: "Trial", startDate: "2025-11-25", exists: false },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [], factors: [], vocabulary: [],
+      variables: { existing: [], missing: [], parts: [] },
+      objects: edits.reuseObjects === false
+        ? { count: 5, kinds: [{ type: "plot", count: 2 }, { type: "plant", count: 3 }], sample: [], reuse: { count: 0, kinds: [], ambiguous: [], off: true } }
+        : { count: 3, kinds: [{ type: "plot", count: 1 }, { type: "plant", count: 2 }], sample: [], reuse: { count: 2, kinds: [{ type: "plot", count: 1 }, { type: "plant", count: 1 }], ambiguous: ["B2-C2"], off: false } },
+      places: { count: 3, facility: { id: "f1", name: "HOLT_PT_G" } },
+      options: { devices: [{ id: "d1", label: "UiT-TraitFinder", facility: { id: "f1", name: "HOLT_PT_G" } }, { id: "d2", label: "Nikon Z6III" }], persons: [], groups: [], matchedDevice: "d1", matchedBecause: "TraitFinder" },
+      edits, warnings: [],
+    });
+    await page.route("**/api/import/plan", (route) => {
+      const header = route.request().headers()["x-import-edits"];
+      const edits = header ? JSON.parse(decodeURIComponent(header)) : {};
+      seen.push(edits);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(planFor(edits)) });
+    });
+    await page.goto(base);
+    await idle(page);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "x.csv", mimeType: "text/csv", buffer: Buffer.from("unit\n") });
+    await page.locator("#importReuseBox").waitFor();
+    const box = async () => (await page.locator("#importReuseBox").innerText()).replace(/\s+/g, " ");
+    assert.match(await box(), /Already in PHIS, standing in the same place: 2 \(1 plot and 1 plant\)\. They join this experiment as the same objects/);
+    assert.match(await box(), /1 place holds more than one matching object \(B2-C2\); new ones are made\./);
+    assert.equal(await page.locator("#importReuse").isChecked(), true);
+    await page.locator("#importReuse").uncheck();
+    await page.locator("#importReuse:not(:checked)").waitFor();
+    await idle(page);
+    assert.deepEqual(seen.at(-1), { reuseObjects: false });
+    assert.match(await page.locator('[data-section="objects"]').innerText(), /New: 5/);
+    assert.equal(await page.locator("#importReuse").isChecked(), false, "still offered, so it can be switched back on");
+    await page.locator("#importDevice .import-chip button").click();
+    await page.waitForFunction(() => document.querySelector("#importPlaces")?.textContent?.includes("no device is chosen"));
+    await idle(page);
+    assert.deepEqual(seen.at(-1), { reuseObjects: false, devices: [] }, "the picked devices travel with the plan request");
   });
 });
 

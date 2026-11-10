@@ -6,17 +6,18 @@ import { personName } from "../node-types.ts";
 import { instrumentPlugins, type Files } from "./plugins.ts";
 import { applyEdits, namesIn, type Edits, type FactorReuse } from "./edits.ts";
 import { chooseFactors } from "./factors.ts";
-import { POSITION_IN_BLOCK, missingTerms } from "./ontology.ts";
+import { missingTerms } from "./ontology.ts";
+import { deviceFacilities, findStanding } from "./places.ts";
 import { resolveVariables } from "./variables.ts";
 import { groupSummary, resolveGroups } from "./variable-groups.ts";
 import { checkMeasurements } from "./measurements.ts";
 import { compareObjects, newValues, readExperiment, valuesIn, type Experiment } from "./existing.ts";
 
 const enc = encodeURIComponent;
-// How many existing objects get each kind of detail added: "block", "position", "germplasm", "factor level".
+// How many existing objects get each kind of detail added: "block", "germplasm", "factor level".
 function fillWhat(fills: Awaited<ReturnType<typeof compareObjects>>["fills"]) {
   return {
-    block: fills.filter((f) => f.parent).length, position: fills.filter((f) => f.position !== undefined).length,
+    block: fills.filter((f) => f.parent).length,
     germplasm: fills.filter((f) => f.germplasm).length, levels: fills.filter((f) => f.levels.length).length,
   };
 }
@@ -81,14 +82,30 @@ export async function prepare(files: Files, edits?: Edits) {
   setCodes.sort((a, b) => a.name.localeCompare(b.name));
   const warnings = [...trial.warnings, ...keptCodes.map((k) => `${k.name} already has the code ${k.inPhis} in PHIS; the file's ${k.code} isn't used.`)];
 
-  // Vocabulary the objects need that this PHIS lacks (a Block type, a plant's column) — added first.
+  // The devices that made the data, and the facility one of them stands in: that is where the objects are recorded (places.ts) and
+  // what already stands there can be reused. The page sends its picked devices as an edit; until it does, the one the instrument's
+  // own name matches is the pick (the review pre-selects it the same way).
+  const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
+  const devices = (await authedGet("/core/devices?page_size=500")).result.map((d) => ({ id: String(d.uri), label: String(d.name ?? d.uri) })).sort(byLabel);
+  const source = (trial.source ?? "").trim().toLowerCase();
+  const matched = source ? devices.filter((d) => d.label.toLowerCase().includes(source)) : [];
+  const hasPlaces = trial.objects.some((o) => o.place);
+  const facilityOf = hasPlaces ? await deviceFacilities(devices) : new Map();
+  const facility = (edits?.devices ?? (matched.length === 1 ? [matched[0].id] : [])).map((id) => facilityOf.get(id)).find(Boolean) ?? null;
+
+  // Vocabulary the objects need that this PHIS lacks — added first.
   const needed = new Set(trial.objects.map((o) => o.rdfType));
-  if (trial.objects.some((o) => o.position !== undefined)) needed.add(POSITION_IN_BLOCK);
   const vocabulary = await missingTerms(needed);
   const parents = new Set(trial.objects.map((o) => o.parent).filter(Boolean)); // the sample shows what is measured, not blocks
-  const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
-  const kinds = new Map<string, number>();
-  for (const o of newObjects) kinds.set(o.rdfType, (kinds.get(o.rdfType) ?? 0) + 1);
+  const notThere = trial.objects.filter((o) => !experiment?.objects.has(o.name));
+  // Objects already in PHIS that stand in the same place join this experiment instead of being made again.
+  const standing = facility && edits?.reuseObjects !== false ? await findStanding(notThere, facility.id) : { found: new Map<string, string>(), ambiguous: new Set<string>() };
+  const newObjects = notThere.filter((o) => !standing.found.has(o.name));
+  const kindsOf = (objs: typeof newObjects) => {
+    const k = new Map<string, number>();
+    for (const o of objs) k.set(o.rdfType, (k.get(o.rdfType) ?? 0) + 1);
+    return [...k].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count }));
+  };
   const germplasmIds = new Map(existing.map((g) => [g.name, g.id]));
   const compared = experiment ? await compareObjects(trial.objects, experiment, germplasmIds) : { fills: [], conflicts: [] };
 
@@ -104,14 +121,11 @@ export async function prepare(files: Files, edits?: Edits) {
   const levels = new Map<string, Set<string>>();
   for (const o of trial.objects) for (const [f, l] of Object.entries(o.factors)) (levels.get(f) ?? levels.set(f, new Set()).get(f)!).add(l);
 
-  // What the review lets the user decide besides the data: who made it (the device is matched from the instrument's own name
-  // and only pre-selected; the person is never guessed) and who can see a NEW experiment.
-  const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
-  const devices = (await authedGet("/core/devices?page_size=500")).result.map((d) => ({ id: String(d.uri), label: String(d.name ?? d.uri) })).sort(byLabel);
+  // What the review lets the user decide besides the data: who made it (the device is only pre-selected; the person is never guessed)
+  // and who can see a NEW experiment.
+  const placed = newObjects.filter((o) => o.place).length; // each is recorded as a Move to the facility its device stands in (places.ts)
   const persons = (await authedGet("/security/persons?page_size=500")).result.map((p) => ({ id: String(p.uri), label: personName(p) })).sort(byLabel);
   const groups = (await authedGet("/security/groups?page_size=500")).result.map((g) => ({ id: String(g.uri), label: String(g.name ?? g.uri) })).sort(byLabel);
-  const source = (trial.source ?? "").trim().toLowerCase();
-  const matched = source ? devices.filter((d) => d.label.toLowerCase().includes(source)) : [];
 
   const plan = {
     instrument: plugin.label,
@@ -153,7 +167,9 @@ export async function prepare(files: Files, edits?: Edits) {
     // ponytail: the type's name is the end of its uri (vocabulary:Plant, …#Block) — fine for these two.
     objects: {
       count: newObjects.length,
-      kinds: [...kinds].map(([type, count]) => ({ type: type.split(/[#:]/).pop()!.toLowerCase(), count })),
+      kinds: kindsOf(newObjects),
+      // Objects that already stand in the same place: they join this experiment under their own uri. Present when the facility is known.
+      ...(facility ? { reuse: { count: standing.found.size, kinds: kindsOf(notThere.filter((o) => standing.found.has(o.name))), ambiguous: [...standing.ambiguous], off: edits?.reuseObjects === false } } : {}),
       sample: newObjects.filter((o) => !parents.has(o.name)).slice(0, 5),
       ...(experiment ? {
         existing: trial.objects.length - newObjects.length,
@@ -161,7 +177,9 @@ export async function prepare(files: Files, edits?: Edits) {
         conflicts: { count: compared.conflicts.length, examples: compared.conflicts.slice(0, 3) },
       } : {}),
     },
-    options: { devices, persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
+    // Where the objects stand: recorded only when a chosen device stands in a facility in PHIS (its facility is on the device).
+    places: { count: placed, facility },
+    options: { devices: devices.map((d) => (facilityOf.has(d.id) ? { ...d, facility: facilityOf.get(d.id) } : d)), persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
     // What the file itself called things (the page keys its edits by these) and the edits applied.
     original: { experiment: original.experiment, ...namesIn(original), codes: original.germplasmCodes ?? {} },
     edits: edits ?? {},
@@ -169,7 +187,7 @@ export async function prepare(files: Files, edits?: Edits) {
     factorChoices: factorChoices.map((c) => ({ file: c.file, parsed: c.parsed, ...(c.reuse ? { reuse: c.reuse.uri, auto: c.reuse.auto } : {}), ...(c.matches ? { ambiguous: true } : {}) })),
     warnings,
   };
-  return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills };
+  return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills, reused: standing.found };
 }
 
 export async function buildPlan(files: Files, edits?: Edits) {

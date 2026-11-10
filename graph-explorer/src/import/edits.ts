@@ -11,6 +11,10 @@ export type Edits = {
   // read as numbers when it has a unit), `unit` = the unit's uri for a NEW factor, `fresh` = make a new one even if the name exists
   factors?: Record<string, { name?: string; levels?: Record<string, string>; use?: string; unit?: string; fresh?: boolean }>;
   variables?: Record<string, string>; // file's variable name -> new name
+  // The devices that made the data: the facility one of them stands in is where the objects are recorded (places.ts), and what already
+  // stands there can be reused. `reuseObjects: false` = make new objects even where one stands in the same place.
+  devices?: string[];
+  reuseObjects?: boolean;
 };
 
 // A message meant for the person editing: the route answers it as a 400.
@@ -29,6 +33,7 @@ export function parseEdits(raw: string | undefined): Edits {
   const factors = e.factors ?? {};
   if ((e.germplasm !== undefined && !isStringMap(e.germplasm)) || (e.germplasmCodes !== undefined && !isStringMap(e.germplasmCodes)) || (e.variables !== undefined && !isStringMap(e.variables))
     || (e.experiment !== undefined && (typeof e.experiment !== "object" || Object.values(e.experiment).some((v) => typeof v !== "string")))
+    || (e.devices !== undefined && (!Array.isArray(e.devices) || e.devices.some((d: unknown) => typeof d !== "string"))) || (e.reuseObjects !== undefined && typeof e.reuseObjects !== "boolean")
     || typeof factors !== "object" || Object.values(factors).some((f: any) => !f || typeof f !== "object" || (f.name !== undefined && typeof f.name !== "string") || (f.levels !== undefined && !isStringMap(f.levels)) || (f.use !== undefined && typeof f.use !== "string") || (f.unit !== undefined && typeof f.unit !== "string") || (f.fresh !== undefined && typeof f.fresh !== "boolean"))) throw unreadable();
   return e;
 }

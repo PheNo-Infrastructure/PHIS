@@ -1,12 +1,13 @@
 // The shared import engine, step 3: write what the plan showed, in dependency order —
 // vocabulary -> variables (+ their parts) -> experiment -> germplasm (+ codes) -> factors (+ levels) -> scientific objects,
 // containers (blocks) before what is part of them, each with its germplasm, factor levels, parent
-// and position (all live on the object's copy in the experiment, so they're sent on creation)
-// -> the measured values. Into an experiment that exists, the same order fills in only what PHIS
+// (all live on the object's copy in the experiment, so they're sent on creation) -> where the new objects stand (a Move to the
+// facility the device stands in, places.ts) -> the measured values. Into an experiment that exists, the same order fills in only what PHIS
 // lacks (existing.ts): new factors/levels/objects are created, existing objects get what they miss.
 import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "../opensilex.ts";
 import { NODE_TYPES, saveLevels, updateNode, updatePayloadFromDto } from "../node-types.ts";
-import { POSITION_IN_BLOCK, addTerm } from "./ontology.ts";
+import { addTerm } from "./ontology.ts";
+import { placeBatches, recordPlaces, type Facility } from "./places.ts";
 import { prepare } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
 import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts";
@@ -32,7 +33,9 @@ export type Progress = { step: string; done: number; total: number };
 export type Choices = { species?: string; newSpecies?: string; devices?: string[]; person?: string; share?: string; note?: boolean; edits?: Edits };
 const MOTIVATION_DESCRIBING = "http://www.w3.org/ns/oa#describing";
 export async function runImport(files: Files, choices: Choices, progress: (p: Progress) => void = () => {}) {
-  const { trial, plan, variables, variableGroupPlans, values, experiment, fills } = await prepare(files, choices.edits);
+  // The devices picked in the dialog are also the ones whose facility places the objects (the page sends them as an edit once they change).
+  const edits = choices.devices && !choices.edits?.devices ? { ...choices.edits, devices: choices.devices } : choices.edits;
+  const { trial, plan, variables, variableGroupPlans, values, experiment, fills, reused } = await prepare(files, edits);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];
@@ -52,14 +55,19 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   if (!experiment && !["public", "private"].includes(share) && !plan.options.groups.some((g) => g.id === share)) blockers.push("That group isn't in PHIS.");
   if (blockers.length) throw new OpenSilexError(409, blockers.join(" "));
 
-  const done = { vocabulary: 0, parts: 0, variables: 0, groups: 0, species: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, filled: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
-  const newObjects = trial.objects.filter((o) => !experiment?.objects.has(o.name));
+  const done = { vocabulary: 0, parts: 0, variables: 0, groups: 0, species: 0, experiment: experiment?.id ?? "", germplasm: 0, codes: 0, factors: 0, levels: 0, objects: 0, reused: 0, filled: 0, placed: 0, provenance: "", values: 0, note: undefined as boolean | undefined };
+  const notThere = trial.objects.filter((o) => !experiment?.objects.has(o.name));
+  const newObjects = notThere.filter((o) => !reused.has(o.name));
+  const joining = notThere.filter((o) => reused.has(o.name)); // already in PHIS, in the same place: they join this experiment under their own uri
+  // Where the new objects stand: a Move to the facility the picked device stands in, if it stands in one in PHIS.
+  const facility = plan.places.facility as Facility | null;
+  const placeItems = facility ? newObjects.filter((o) => o.place).map((o) => ({ name: o.name, text: o.place! })) : [];
   const newFactors = plan.factors.filter((f) => !f.exists);
   const grownFactors = plan.factors.filter((f) => f.newLevels?.length || (f.reuse && !f.reuse.linked));
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
   const total = plan.vocabulary.length + variables.create.length + variables.missing.length + plan.variableGroups.filter((g) => !g.exists || g.newMembers).length + (experiment ? 0 : 1) + (newSpecies && plan.germplasm.missing.length ? 1 : 0) + plan.germplasm.missing.length + existingCodes.length
-    + newFactors.length + grownFactors.length + newObjects.length + fills.length
+    + newFactors.length + grownFactors.length + newObjects.length + joining.length + fills.length + placeBatches(placeItems.length)
     + (values.length ? 1 + Math.ceil(values.length / VALUES_AT_ONCE) : 0);
   let steps = 0;
   const tick = (step: string) => progress({ step, done: ++steps, total });
@@ -162,13 +170,20 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
         ...(o.germplasm ? [{ property: "vocabulary:hasGermplasm", value: germplasm.get(o.germplasm), inverse: false }] : []),
         ...Object.entries(o.factors).map(([f, l]) => ({ property: "vocabulary:hasFactorLevel", value: levels.get(`${f}|${l}`), inverse: false })),
         ...(o.parent ? [{ property: "vocabulary:isPartOf", value: objectUri.get(o.parent), inverse: false }] : []),
-        ...(o.position !== undefined ? [{ property: POSITION_IN_BLOCK, value: String(o.position), inverse: false }] : []),
       ];
+      const existing = reused.get(o.name);
+      if (existing) {
+        await authedPost("/core/scientific_objects", { uri: existing, name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations });
+        objectUri.set(o.name, existing);
+        done.reused++;
+        tick(`Adding objects that already stand there: ${done.reused} of ${joining.length}`);
+        return;
+      }
       objectUri.set(o.name, firstUri(await authedPost("/core/scientific_objects", { name: o.name, rdf_type: o.rdfType, experiment: done.experiment, relations })));
       done.objects++;
       tick(`Creating scientific objects: ${done.objects} of ${newObjects.length}`);
     };
-    for (const pass of [newObjects.filter((o) => !o.parent), newObjects.filter((o) => o.parent)]) {
+    for (const pass of [[...newObjects, ...joining].filter((o) => !o.parent), [...newObjects, ...joining].filter((o) => o.parent)]) {
       for (let i = 0; i < pass.length; i += OBJECTS_AT_ONCE) await Promise.all(pass.slice(i, i + OBJECTS_AT_ONCE).map(write));
     }
     // Existing objects get what they lack (their block now has a uri), one PUT each.
@@ -178,6 +193,12 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
         done.filled++;
         tick(`Filling in existing objects: ${done.filled} of ${fills.length}`);
       }));
+    }
+
+    if (placeItems.length) {
+      const day = (plan.measurements.first ?? new Date().toISOString()).slice(0, 10);
+      await recordPlaces(placeItems.map((p) => ({ uri: objectUri.get(p.name)!, text: p.text })), facility!.id, day, () => tick(`Recording where the objects stand in ${facility!.name}`));
+      done.placed = placeItems.length;
     }
 
     // The measured values, under one provenance for this import, one batch at a time.
@@ -234,7 +255,9 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
       done.factors && `created ${plural(done.factors, "factor")}`,
       done.levels && `added ${plural(done.levels, "factor level")}`,
       done.objects && `created ${done.objects} of ${newObjects.length} scientific objects`,
+      done.reused && `added ${done.reused} of ${joining.length} objects that already stand there`,
       done.filled && `filled in ${done.filled} of ${fills.length} existing ones`,
+      done.placed && `recorded where ${done.placed} objects stand`,
       done.values && `written ${done.values} of ${values.length} measured values`,
     ];
     const what = done.experiment && wrote.some(Boolean)
@@ -246,6 +269,6 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   }
   return {
     experiment: { id: done.experiment, type: "experiment", label: plan.experiment.name },
-    created: { species: done.species, germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, filled: done.filled, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, variableGroups: done.groups, values: done.values, ...(done.note !== undefined ? { note: done.note } : {}) },
+    created: { species: done.species, germplasm: done.germplasm, codes: done.codes, factors: done.factors, objects: done.objects, reused: done.reused, filled: done.filled, placed: done.placed, levels: done.levels, vocabulary: done.vocabulary, variables: done.variables, variableGroups: done.groups, values: done.values, ...(done.note !== undefined ? { note: done.note } : {}) },
   };
 }

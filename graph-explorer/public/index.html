@@ -5438,7 +5438,17 @@ function wireImportPage(opts) {
     if (opts.inSetup) paintSetupPlan(out, plan, opts.into); else out.innerHTML = importPlanHtml(plan);
     for (const id of CHOICE_IDS) { const el = document.getElementById(id); if (el && kept[id] !== undefined && [...(el.options ?? [{ value: kept[id] }])].some((o) => o.value === kept[id])) el.value = kept[id]; }
     if (note !== undefined && document.getElementById("importNote")) document.getElementById("importNote").checked = note;
-    wireImportRun(f, plan, close);
+    // A change that decides what the plan finds in PHIS (the device -> its facility -> what already stands there, or the reuse switch) asks for a new plan.
+    const replan = async (patch) => {
+      const candidate = { ...importEdits, ...patch };
+      for (const k of Object.keys(candidate)) if (candidate[k] === undefined) delete candidate[k];
+      const r = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f, candidate), body: f });
+      if (!r.ok) return; // what is shown stays
+      importEdits = candidate;
+      render(f, await r.json());
+    };
+    wireImportRun(f, plan, close, (ids) => replan({ devices: ids }));
+    document.getElementById("importReuse")?.addEventListener("change", (e) => replan({ reuseObjects: e.target.checked ? undefined : false }));
     wireImportEditing(plan, async (candidate) => {
       const r = await fetch("api/import/plan", { method: "POST", headers: importHeaders(f, candidate), body: f });
       const body = await r.json();
@@ -5674,7 +5684,9 @@ function importPlanHtml(p) {
     </div>
     <div data-section="objects" class="import-section${p.objects.count ? " is-new" : ""}">
       <h3><span class="h-title">${escapeHtml(typeName("scientific_object", 2)[0].toUpperCase() + typeName("scientific_object", 2).slice(1))}<small>what you measure: plants, plots, pots, samples</small></span></h3>
-      <p>New: ${p.objects.count}${p.objects.kinds.length ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.parent && `in ${sample.parent}${sample.position ? `, position ${sample.position}` : ""}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
+      <p>New: ${p.objects.count}${p.objects.kinds.length ? ` (${escapeHtml(andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`)))})` : ""}${sample ? ` <span class="import-names">(e.g. ${escapeHtml(sample.name)}: ${[sample.germplasm, ...Object.entries(sample.factors).map(([k, v]) => `${k} ${v}`), sample.place ? `at ${sample.place}` : sample.parent && `in ${sample.parent}`].filter(Boolean).map(escapeHtml).join(", ")})</span>` : ""}</p>
+      <div id="importPlaces">${placesHtml(p, importPickedDevices ?? (p.options?.matchedDevice ? [p.options.matchedDevice] : []))}</div>
+      ${reuseHtml(p)}
       ${p.objects.existing ? `<p>Already in PHIS: ${p.objects.existing}${p.objects.fills.count ? `; fills in what ${p.objects.fills.count} of them lack: ${escapeHtml(andList(fillsText(p.objects.fills.what)))}` : ", nothing to fill in"}.</p>` : ""}
       ${p.objects.conflicts?.count ? `<div class="import-warning">PHIS and the file disagree in ${p.objects.conflicts.count} ${p.objects.conflicts.count === 1 ? "place" : "places"}; PHIS is kept (e.g. ${escapeHtml(p.objects.conflicts.examples.join("; "))}).</div>` : ""}
     </div>
@@ -5724,9 +5736,30 @@ function importChoicesHtml(p) {
   </div>`;
 }
 
-// What existing objects get filled in: "their block (100), column in the block (100)".
+// Objects that already stand in the same place (same type, name, facility and position) join this experiment as the same objects.
+function reuseHtml(p) {
+  const r = p.objects.reuse;
+  if (!r || (!r.count && !r.off && !r.ambiguous.length)) return "";
+  const kinds = andList(r.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`));
+  return `<div id="importReuseBox">
+    ${r.count ? `<p><b>Already in PHIS, standing in the same place: ${r.count}</b> (${escapeHtml(kinds)}). They join this experiment as the same objects, so their data and links stay together; this experiment keeps its own germplasm, levels and block for them.</p>` : ""}
+    ${r.ambiguous.length ? `<p class="import-warning">${r.ambiguous.length} ${r.ambiguous.length === 1 ? "place holds" : "places hold"} more than one matching object (${escapeHtml(andList(r.ambiguous.slice(0, 4)))}${r.ambiguous.length > 4 ? ", …" : ""}); new ones are made.</p>` : ""}
+    <label class="import-check"><input type="checkbox" id="importReuse"${r.off ? "" : " checked"}> <span>Reuse objects that already stand in the same place (uncheck to make new ones)</span></label>
+  </div>`;
+}
+
+// Where the new objects stand: PHIS keeps it as a Move to the facility the measuring device stands in, so it depends on the device picked.
+function placesHtml(p, deviceIds) {
+  if (!p.places?.count) return "";
+  const at = deviceIds.map(id => p.options?.devices?.find(d => d.id === id)?.facility).find(Boolean);
+  return at
+    ? `<p>Where they stand: ${p.places.count} ${p.places.count === 1 ? "object is" : "objects are"} recorded in <b>${escapeHtml(at.name)}</b>, the facility the device stands in (a move in PHIS, with the position as text).</p>`
+    : `<p class="import-warning">Where they stand won't be recorded: ${deviceIds.length ? "none of the chosen devices stands in a facility in PHIS" : "no device is chosen, and the device's facility is where they are recorded"}. Pick a device that has been moved to a facility (a device's page in Browse).</p>`;
+}
+
+// What existing objects get filled in: "their block (100), germplasm (100)".
 function fillsText(what) {
-  return [["block", what.block], ["column in the block", what.position], ["germplasm", what.germplasm], ["factor levels", what.levels]]
+  return [["block", what.block], ["germplasm", what.germplasm], ["factor levels", what.levels]]
     .filter(([, k]) => k).map(([label, k]) => `${label} (${k})`);
 }
 
@@ -5766,7 +5799,7 @@ function importFooterHtml(p) {
   return `<span>Nothing has been written to PHIS yet.${p.experiment.exists ? "" : " A new experiment is public unless you choose otherwise above."}</span><button class="btn primary" id="importRunBtn">${escapeHtml(text[0].toUpperCase() + text.slice(1))}</button>`;
 }
 
-function wireImportRun(file, plan, close) {
+function wireImportRun(file, plan, close, onDevices) {
   const btn = document.getElementById("importRunBtn");
   if (!btn) return;
   const species = document.getElementById("importSpecies");
@@ -5776,8 +5809,16 @@ function wireImportRun(file, plan, close) {
     const d = plan.options.devices.find(x => x.label === deviceAdd.value.trim() && !deviceBox.querySelector(`[data-id="${CSS.escape(x.id)}"]`));
     if (d) deviceAdd.insertAdjacentHTML("beforebegin", deviceChipHtml(d.id, plan.options.devices));
     if (d || !deviceAdd.value.trim()) deviceAdd.value = "";
+    refreshPlaces();
   });
-  deviceBox?.addEventListener("click", (e) => e.target.closest(".import-chip button")?.parentElement.remove());
+  const refreshPlaces = () => {
+    const el = document.getElementById("importPlaces");
+    if (!el || !deviceBox) return;
+    const ids = [...deviceBox.querySelectorAll("[data-id]")].map(c => c.dataset.id);
+    el.innerHTML = placesHtml(plan, ids);
+    if (plan.places?.count) onDevices?.(ids); // the facility decides what already stands there
+  };
+  deviceBox?.addEventListener("click", (e) => { e.target.closest(".import-chip button")?.parentElement.remove(); refreshPlaces(); });
   const sync = () => {
     const adding = !!species && species.value === "__new__";
     if (newSpecies) newSpecies.hidden = !adding;

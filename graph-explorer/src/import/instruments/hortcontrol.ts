@@ -7,7 +7,6 @@
 // bins sum to 100 % and become one variable each, grouped per index.
 import { parseCsv } from "../files.ts";
 import type { Files, InstrumentPlugin, TrialData } from "../plugins.ts";
-import { BLOCK } from "../ontology.ts";
 
 const IDENTIFYING = new Set(["unit", "timestamp", "sensor", "genotype", "g_alias", "treatment"]);
 const UNIT = /\s+(mm²\/mm²|mm³|mm²|mm|%|°)$/;
@@ -55,7 +54,6 @@ const plugin: InstrumentPlugin = {
 
     const units = rows.map((r) => ({ r, ...parseUnit(r.unit) }));
     const multiRow = units.some((u) => u.row > 1);
-    if (multiRow) warnings.push("Some units have a row above 1. How rows lie in a block isn't known yet, so a plant's place in its block records only its column; the row is in the plant's name.");
     const plantName = (u: { block: number; column: number; row: number }) => `B${u.block}-C${u.column}${multiRow ? `-R${u.row}` : ""}`;
 
     // What one block or plant says about itself must agree across all its rows.
@@ -75,14 +73,14 @@ const plugin: InstrumentPlugin = {
     const byPlant = Map.groupBy(units, plantName);
     const blocks = [...byBlock].sort((a, b) => a[0] - b[0]).map(([block]) => ({
       // A block carries no factor level: the portal lists a level's members as plants, and the plants have it.
-      name: `Block ${block}`, rdfType: BLOCK, factors: {},
+      name: `Block ${block}`, rdfType: "vocabulary:Plot", factors: {}, place: `Block ${block}`, // a Plot is PHIS's own type for a defined area of plants
     }));
     const plants = [...byPlant].map(([name, us]) => {
       const germplasm = agreed(us.map((u) => u.r), "genotype");
       return {
         name, rdfType: "vocabulary:Plant", ...(germplasm ? { germplasm } : {}),
         factors: factorsOf(us.map((u) => u.r), `Plant ${name}`),
-        parent: `Block ${us[0].block}`, position: us[0].column,
+        parent: `Block ${us[0].block}`, place: `Block ${us[0].block}, column ${us[0].column}${multiRow ? `, row ${us[0].row}` : ""}`,
       };
     });
 

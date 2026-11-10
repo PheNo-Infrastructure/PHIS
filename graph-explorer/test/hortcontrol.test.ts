@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import plugin from "../src/import/instruments/hortcontrol.ts";
-import { BLOCK } from "../src/import/ontology.ts";
 
 // Two blocks (1 = 15C, 3 = 18C) x two scan days, rows copied unchanged from a raw HortControl export:
 // 20 rows, 5 plants per block, 63 trait columns.
@@ -16,14 +15,14 @@ test("detect: a raw HortControl export is recognised, other files are not", () =
   assert.equal(plugin.detect(new Map([["notes.txt", Buffer.from("hello")]])), false);
 });
 
-test("parse: plants carry the treatment and are parts of their block with their column and germplasm; blocks carry no factor level (the portal lists a level's members as plants)", () => {
+test("parse: plants carry the treatment and are parts of their block (a PHIS Plot) with their place as words and their germplasm; blocks carry no factor level (the portal lists a level's members as plants)", () => {
   const t = plugin.parse(files());
-  const blocks = t.objects.filter((o) => o.rdfType === BLOCK);
+  const blocks = t.objects.filter((o) => o.rdfType === "vocabulary:Plot");
   assert.deepEqual(blocks.map((b) => [b.name, b.factors]), [["Block 1", {}], ["Block 3", {}]]);
   const plants = t.objects.filter((o) => o.rdfType === "vocabulary:Plant");
   assert.equal(plants.length, 10);
   assert.deepEqual(plants.find((p) => p.name === "B3-C2"), {
-    name: "B3-C2", rdfType: "vocabulary:Plant", germplasm: "Bean", factors: { Treatment: "18C" }, parent: "Block 3", position: 2,
+    name: "B3-C2", rdfType: "vocabulary:Plant", germplasm: "Bean", factors: { Treatment: "18C" }, parent: "Block 3", place: "Block 3, column 2",
   });
   assert.deepEqual(t.germplasmCodes, { Bean: "Bean" });
   assert.deepEqual(t.warnings, []);
@@ -75,13 +74,13 @@ test("parse: a time that is not ISO (e.g. US style from an edited file) is refus
   assert.throws(() => plugin.parse(files(edited)), /11\/25\/2025 08:42:23 AM[\s\S]*HortControl/);
 });
 
-test("parse: unit is block:column:row read as numbers (padding doesn't matter); a row above 1 is named and warned about, not guessed", () => {
+test("parse: unit is block:column:row read as numbers (padding doesn't matter); a row above 1 is named and part of the place, not guessed", () => {
   const padded = sample.toString().replaceAll("\n1:1:1,", "\n01:01:01,");
   assert.ok(plugin.parse(files(padded)).objects.some((o) => o.name === "B1-C1"));
   const rowed = sample.toString().replaceAll("\n1:2:1,", "\n1:2:2,");
   const t = plugin.parse(files(rowed));
   assert.ok(t.objects.some((o) => o.name === "B1-C2-R2"));
-  assert.ok(t.warnings.some((w) => /row/i.test(w)));
+  assert.equal(t.objects.find((o) => o.name === "B1-C2-R2")!.place, "Block 1, column 2, row 2");
   assert.throws(() => plugin.parse(files(sample.toString().replace("\n1:1:1,", "\n1-1-1,"))), /1-1-1/);
 });
 

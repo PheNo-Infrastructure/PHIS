@@ -341,7 +341,7 @@ const refuseTakenGermplasmName = (name: string, rdfType: string, self?: string) 
 // A device's place is the `to` of its latest move (probed 2026-10-01: OpenSILEX's own
 // /devices?facility= answers the same way). Newest first.
 const dateOf = (iso: unknown) => String(iso ?? "").slice(0, 10);
-async function movesOf(deviceId: string) {
+export async function movesOf(deviceId: string) {
   const evs = (await authedGet(`/core/events?target=${encodeURIComponent(deviceId)}&page_size=500`)).result
     .filter((e) => /move/i.test(String(e.rdf_type_name ?? e.rdf_type)));
   const full = await Promise.all(evs.map(async (e) => (await authedGetOne(`/core/events/moves/${encodeURIComponent(e.uri)}`)).result as Record<string, any>));

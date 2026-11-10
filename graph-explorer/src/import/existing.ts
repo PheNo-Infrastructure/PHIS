@@ -4,7 +4,6 @@
 // it's listed in the plan and PHIS is kept. Fewer orphans: an old import gets its blocks and values.
 import { authedGet, authedGetOne, authedPost, authedPut, compactUri } from "../opensilex.ts";
 import { factorsOf } from "../experiment-factors.ts";
-import { POSITION_IN_BLOCK } from "./ontology.ts";
 import type { TrialData } from "./plugins.ts";
 import type { Value } from "./measurements.ts";
 
@@ -15,7 +14,7 @@ type Obj = TrialData["objects"][number];
 type Relation = { property: string; value: string };
 export type Factor = { uri: string; name: string; experiment: string; levels: { uri: string; name: string; description?: string | null }[] };
 // What one existing object lacks, by name — turned into uris when it's written.
-export type Fill = { name: string; uri: string; germplasm?: string; levels: [string, string][]; parent?: string; position?: number };
+export type Fill = { name: string; uri: string; germplasm?: string; levels: [string, string][]; parent?: string };
 export type Experiment = Awaited<ReturnType<typeof readExperiment>>;
 
 async function inBatches<T>(items: T[], fn: (item: T) => Promise<void>) {
@@ -66,12 +65,7 @@ export async function compareObjects(objects: Obj[], exp: Experiment, germplasmI
         if (!names.includes(o.parent)) differ(`it in ${names.join(", ")}`, `in ${o.parent}`);
       }
     }
-    if (o.position !== undefined) {
-      const pos = of(localName(POSITION_IN_BLOCK));
-      if (!pos.length) fill.position = o.position;
-      else if (Number(pos[0].v) !== o.position) differ(`position ${pos[0].v}`, `position ${o.position}`);
-    }
-    if (fill.germplasm || fill.levels.length || fill.parent || fill.position !== undefined) fills.push(fill);
+    if (fill.germplasm || fill.levels.length || fill.parent) fills.push(fill);
   });
   fills.sort((a, b) => a.name.localeCompare(b.name));
   conflicts.sort();
@@ -87,7 +81,6 @@ export async function writeFill(fill: Fill, expId: string, ids: { germplasm: Map
   if (fill.germplasm) add("vocabulary:hasGermplasm", ids.germplasm.get(fill.germplasm));
   for (const [f, l] of fill.levels) add("vocabulary:hasFactorLevel", ids.levels.get(`${f}|${l}`));
   if (fill.parent) add("vocabulary:isPartOf", ids.objects.get(fill.parent));
-  if (fill.position !== undefined) add(POSITION_IN_BLOCK, String(fill.position));
   await authedPut("/core/scientific_objects", { uri: fill.uri, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
 }
 
