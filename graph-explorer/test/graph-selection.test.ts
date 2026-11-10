@@ -185,7 +185,7 @@ test("e2e: graph selection: the selection view arranges the grids, Esc and the b
   });
 });
 
-test("e2e: graph selection: in the selection view a click toggles a node, Select all and Clear act on a section, and a name search narrows the grids", async () => {
+test("e2e: graph selection: in the selection view a click toggles a node, Select all and Clear act on a section", async () => {
   await withGraph(async (page) => {
     await page.evaluate(() => (window as any).__graph.setSelection(["organization-0"], "replace")); await settled(page);
     await page.locator("#selview").click(); await settled(page);
@@ -204,14 +204,6 @@ test("e2e: graph selection: in the selection view a click toggles a node, Select
     assert.deepEqual(await selected(page), ["organization-0"], "Clear takes the whole section out");
     const empty = await emptyNear(page, 700, 500); await page.mouse.click(empty.x, empty.y); await settled(page);
     assert.deepEqual(await selected(page), ["organization-0"], "a click on empty space does not clear what you built");
-    await page.locator("#selsearch").fill("Device 1");
-    await page.waitForFunction(() => /Select \d+ match/.test(document.getElementById("selmatch")!.textContent!)); await settled(page);
-    const n = Number((await page.locator("#selmatch").innerText()).match(/\d+/)![0]);
-    assert.equal(n, 9, "Device 1 and Device 10-17 match");
-    await page.locator("#selmatch").click(); await settled(page);
-    assert.equal((await selected(page)).length, 1 + n, "Select matches adds them");
-    await page.locator("#selview").click(); await settled(page);
-    assert.equal(await page.locator("#selsearch").inputValue(), "", "leaving clears the search");
   });
 });
 

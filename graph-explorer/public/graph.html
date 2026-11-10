@@ -28,7 +28,6 @@
   ul { padding-left:16px; margin:6px 0; } li a { color:var(--accent); cursor:pointer; }
   #keys { position:absolute; left:10px; bottom:8px; z-index:2; max-width:calc(100% - 20px); font-size:12px; line-height:1.5; color:var(--ink); background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:8px; padding:4px 10px; pointer-events:none; }
   #keys b { font-weight:600; }
-  #selsearch { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px; width:150px; background:var(--card); color:var(--ink); }
   #bar { position:absolute; left:10px; top:10px; display:flex; gap:6px; z-index:2; }
   .banner { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; }
   #crumbs { position:absolute; top:54px; left:10px; max-width:calc(100% - 20px); z-index:3; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:99px; padding:5px 14px; font-size:13px; display:flex; gap:8px; align-items:center; }
@@ -47,7 +46,7 @@
 </style>
 </head>
 <body>
-<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="keys"></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="selview" hidden title="Arrange the selection, what it links to and everything else as grids">Selection view</button><button id="focusbtn" hidden title="Gather what is selected and what it links to, and zoom on it">Focus selection</button><input id="selsearch" type="search" placeholder="Search names" hidden><button id="selmatch" hidden>Select matches</button></div></div>
+<div id="graph"><canvas id="terr"></canvas><canvas id="halo"></canvas><canvas id="links"></canvas><div id="crumbs" hidden></div><div id="keys"></div><div id="marquee"></div><div id="bar"><label class="chk" title="Group the graph into clusters. Set by the size and structure of the graph; switch it either way"><input type="checkbox" id="compact"> Clusters</label><label class="chk"><input type="checkbox" id="live"> ForceAtlas</label><button id="reset">Reset layout</button><button id="fit">Fit</button><button id="selview" hidden title="Arrange the selection, what it links to and everything else as grids">Selection view</button><button id="focusbtn" hidden title="Gather what is selected and what it links to, and zoom on it">Focus selection</button></div></div>
 <aside id="side"><h1>Graph</h1><div id="stats" class="muted">Loading...</div><div id="legend"></div><div id="sel"></div></aside>
 <script src="vendor/graphology.umd.min.js"></script>
 <script src="vendor/graphology-library.min.js"></script>
@@ -123,7 +122,6 @@ async function openInPortal(n) {
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const stash = new Map(); let stashOwn = false; // stash: what hiding a type took out of the selection, given back when it is shown again (until the selection is changed some other way)
-  let nameQ = ""; // the selection view's name search; selected nodes stay shown
   const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
@@ -229,7 +227,7 @@ async function openInPortal(n) {
       frontier = next;
     }
   }
-  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) && (!nameQ || sel.has(id) || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)) &&
+  const inLayout = id => !hiddenKinds.has(filterKind(g.getNodeAttributes(id))) && (!soloKinds.size || soloKinds.has(filterKind(g.getNodeAttributes(id))) || sel.has(id)) &&
     (!focusSet || focusSet.has(id));
   let catView = null; // { key, kind, set, saved } while one category of one cluster is shown on its own
   const hiddenByArea = id => compactBox.checked && collapsed.has(clusterOf.get(id)); // Compact (the box) is the switch for painted areas: off shows every node
@@ -972,7 +970,7 @@ async function openInPortal(n) {
     if (!sel.size && soloKinds.size) { soloKinds.clear(); renderChips(); }
     refresh(); stats(); renderPanel(); tellPortal();
     if (!leaving && sel.size && !catView) { if (selView && focusSec) refreshSection(); else connected(mode !== "replace" || inPlace); } // an opened section stays open: a node taken out of the selection leaves it, one put in joins it (leaving it arranges the selection again)
-    if (!sel.size) { selView = false; backToGrid = null; marking = false; if (nameQ) resetSearch(); }
+    if (!sel.size) { selView = false; backToGrid = null; marking = false; }
     selBtn();
     if (!sel.size && zoomedToSelection && !catView) { zoomedToSelection = false; releasePulled(); labelSlot.clear(); stopGathering(); fitView(); } // back from the connected view: the whole graph again, everything gliding home
   }
@@ -1457,24 +1455,17 @@ async function openInPortal(n) {
     if (catView) { backToGrid = [...catView.kinds]; selView = true; exitCat(false, selBtn); return; } // the grid is left (its nodes glide home), and the selection is arranged in its place
     selView = true; releasePulled(); gather(); selBtn();
   }
-  function leaveSelView() { if (!selView) return; selView = false; resetSearch(); arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); stopGathering(); snapHome(); connected(); selBtn(); if (backToGrid) { const k = backToGrid; backToGrid = null; setKinds(k); } } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
+  function leaveSelView() { if (!selView) return; selView = false; arr = null; focusSec = null; faState(); crumbs.dataset.h = ""; crumbs.hidden = true; labelSlot.clear(); stopGathering(); snapHome(); connected(); selBtn(); if (backToGrid) { const k = backToGrid; backToGrid = null; setKinds(k); } } // every node goes back to its first place first: the connected view is measured from there (and the way home after a clear stays right)
   const KEYS = {
     graph: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Drag</b> a box to select &middot; <b>Ctrl+drag</b> add &middot; <b>Alt+drag</b> remove &middot; <b>Right-drag</b> move the view",
-    selection: "<b>Click</b> a node to add or remove it &middot; <b>Select all</b> / <b>Clear</b> on a section &middot; <b>Search</b> names &middot; <b>Drag</b> a box (<b>Ctrl</b> add, <b>Alt</b> remove) &middot; <b>Scroll</b> to move &middot; <b>Esc</b> leave",
+    selection: "<b>Click</b> a node to add or remove it &middot; <b>Select all</b> / <b>Clear</b> on a section &middot; <b>Drag</b> a box (<b>Ctrl</b> add, <b>Alt</b> remove) &middot; <b>Scroll</b> to move &middot; <b>Esc</b> leave",
     grid: "<b>Click</b> inspect &middot; <b>Ctrl+click</b> add or remove &middot; <b>Ctrl+click a type</b> add it to the grid &middot; click empty space to leave" };
   const selBtn = () => {
     faState(); const b = document.getElementById("selview"), f = document.getElementById("focusbtn");
     b.hidden = !sel.size; b.textContent = selView ? (backToGrid ? "Back to the grid" : "Leave selection view") : "Selection view"; f.hidden = !(sel.size && !catView && !selView); f.textContent = marking ? "Focus selection" : "Show in place"; f.title = marking ? "Gather what is selected and what it links to, and zoom on it" : "Put everything back where it was, with the selection marked in place"; // one button, both ways
-    document.getElementById("selsearch").hidden = document.getElementById("selmatch").hidden = !selView;
     document.getElementById("keys").innerHTML = catView ? KEYS.grid : selView ? KEYS.selection : KEYS.graph;
   };
   document.getElementById("focusbtn").onclick = () => marking ? focusSel() : markInPlace();
-  const searchBox = document.getElementById("selsearch"), matchBtn = document.getElementById("selmatch"); let searchT = 0;
-  const matches = () => g.nodes().filter(id => inLayout(id) && !sel.has(id) && (!nameQ || String(g.getNodeAttribute(id, "label")).toLowerCase().includes(nameQ)));
-  const markMatches = () => { const n = nameQ ? matches().length : 0; matchBtn.textContent = nameQ ? `Select ${n} match${n === 1 ? "" : "es"}` : "Select matches"; matchBtn.disabled = !n; };
-  const resetSearch = () => { nameQ = ""; searchBox.value = ""; markMatches(); };
-  searchBox.oninput = () => { clearTimeout(searchT); searchT = setTimeout(() => { nameQ = searchBox.value.trim().toLowerCase(); computeFocus(); refresh(); stats(); markMatches(); if (selView) gather(); }, 200); };
-  matchBtn.onclick = () => { const ids = matches(); if (ids.length) setSelection(ids, "add", true); markMatches(); };
   selBtn();
   document.getElementById("selview").onclick = () => selView ? leaveSelView() : enterSelView();
   addEventListener("keydown", ev => { if (ev.key === "Escape" && selView && !catView && !/INPUT|TEXTAREA/.test(ev.target.tagName)) leaveSelView(); });
