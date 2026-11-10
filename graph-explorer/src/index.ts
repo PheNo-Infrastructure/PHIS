@@ -7,6 +7,7 @@ import { handleCreate } from "./routes/create.ts";
 import { handleNodeDetail, handleNodeMutation } from "./routes/node.ts";
 import { handleLink } from "./routes/link.ts";
 import { handleParent } from "./routes/parent.ts";
+import { handleMakePlant } from "./routes/make-plant.ts";
 import { handleUnlink } from "./routes/unlink.ts";
 import { handleImport } from "./routes/import.ts";
 import { handleElsewhere } from "./routes/elsewhere.ts";
@@ -38,6 +39,7 @@ const routeHandlers: RouteHandler[] = [
   handleNodeMutation,
   handleLink,
   handleParent,
+  handleMakePlant,
   handleUnlink,
   handleImport,
   handleElsewhere,

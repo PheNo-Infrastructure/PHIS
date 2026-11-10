@@ -566,6 +566,20 @@ const SO_EXPERIMENTS_DETAIL: QueryRelation = {
   itemGroups: soRowsIn,
   emptyText: "Not in any experiment. Germplasm and parent can only be set inside an experiment.",
 };
+// Where an object stands: the facility of its newest Move, with the position text ("HOLT_PT_G · Block 1, column 3"). Read-only here;
+// a Move is how PHIS keeps a place (the import writes them, places.ts).
+const SO_STANDS_IN: QueryRelation = {
+  label: "Stands in",
+  type: "facility",
+  url: () => "",
+  load: async (id) => {
+    const at = (await movesOf(id).catch(() => []))[0]?.location;
+    if (!at?.to) return [];
+    const to = String(at.to);
+    const name = String((await authedGetOne(`/core/facilities/${encodeURIComponent(to)}`).catch(() => null))?.result.name ?? to);
+    return [{ id: to, label: at.text ? `${name} · ${at.text}` : name }];
+  },
+};
 
 const EXPERIMENT_SOS: QueryRelation = {
   label: "Scientific objects",
@@ -981,7 +995,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       (await queryItems(SO_EXPERIMENTS, id)).map(
         (e) => `/core/scientific_objects/${encodeURIComponent(id)}?experiment=${encodeURIComponent(e.id)}`
       ),
-    queryRelations: [SO_EXPERIMENTS_DETAIL],
+    queryRelations: [SO_EXPERIMENTS_DETAIL, SO_STANDS_IN],
     // An object given a position gets a Move event, and OpenSILEX refuses deleting it while one
     // exists ("object has associated moves" — probed). Decided with the user: the app doesn't
     // delete location history; it explains and points to PHIS.

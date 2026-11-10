@@ -150,9 +150,9 @@ test("POST /api/import/plan: HortControl export -> the plan (exact-name germplas
     assert.deepEqual(plan.speciesOptions, [{ id: "agrovoc:barley", label: "barley" }]);
     assert.deepEqual(plan.factors, [{ name: "Treatment", levels: ["15C", "18C"] }]);
     assert.equal(plan.objects.count, 5, "3 plants + their 2 blocks");
-    assert.deepEqual(plan.objects.kinds, [{ type: "plot", count: 2 }, { type: "plant", count: 3 }]);
+    assert.deepEqual(plan.objects.kinds, [{ type: "plot", count: 2 }, { type: "subplot", count: 3 }]);
     assert.deepEqual(plan.places, { count: 5, facility: null }, "every object has a place (blocks and plants); no facility is known without a device that stands in one");
-    assert.deepEqual(plan.objects.sample[0], { name: "B1-C1", rdfType: "vocabulary:Plant", germplasm: "Olve", factors: { Treatment: "15C" }, parent: "Block 1", place: "Block 1, column 1" }, "the sample shows plants, not blocks");
+    assert.deepEqual(plan.objects.sample[0], { name: "B1-C1", rdfType: "vocabulary:SubPlot", germplasm: "Olve", factors: { Treatment: "15C" }, parent: "Block 1", place: "Block 1, column 1" }, "the sample shows positions, not blocks");
     assert.deepEqual(plan.warnings, []);
     assert.ok(calls.every((c) => c.startsWith("GET ") || c.includes("/security/authenticate")), "the plan writes nothing");
   });
@@ -294,7 +294,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
       relations: [],
     }, "a block carries no treatment; its plants do");
     assert.deepEqual(w("B1-C2"), {
-      name: "B1-C2", rdf_type: "vocabulary:Plant", experiment: "exp:new",
+      name: "B1-C2", rdf_type: "vocabulary:SubPlot", experiment: "exp:new",
       relations: [
         { property: "vocabulary:hasGermplasm", value: "g:Tiril", inverse: false },
         { property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false },
@@ -353,7 +353,7 @@ function mockStanding(writes: { method: string; path: string; body: any }[]) {
     const path = url.replace(/^.*\/rest/, "");
     if ((init?.method ?? "GET") === "GET") {
       if (path.startsWith("/core/scientific_objects?name=")) return jsonResponse(200, { result: [
-        { uri: "so:old-b1", name: "Block 1", rdf_type: "vocabulary:Plot" }, { uri: "so:old-b1c1", name: "B1-C1", rdf_type: "vocabulary:Plant" }, { uri: "so:other-b1c1", name: "B1-C1", rdf_type: "vocabulary:Plant" },
+        { uri: "so:old-b1", name: "Block 1", rdf_type: "vocabulary:Plot" }, { uri: "so:old-b1c1", name: "B1-C1", rdf_type: "vocabulary:SubPlot" }, { uri: "so:other-b1c1", name: "B1-C1", rdf_type: "vocabulary:SubPlot" },
       ] });
       const ev = path.match(/^\/core\/events\?target=(so%3A[^&]+)/);
       if (ev && moves[ev[1]]) return jsonResponse(200, { result: [{ uri: `ev:${ev[1]}`, rdf_type_name: "Move" }] });
@@ -371,7 +371,7 @@ test("POST /api/import/plan: objects that already stand in the same place (same 
     const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
     assert.deepEqual(plan.places, { count: 3, facility: { id: "fac-1", name: "HOLT_PT_G" } }, "the three new objects are recorded; the two reused already have a place");
     assert.equal(plan.objects.count, 3, "Block 2, B1-C2 and B2-C1 are new");
-    assert.deepEqual(plan.objects.reuse, { count: 2, kinds: [{ type: "plot", count: 1 }, { type: "plant", count: 1 }], ambiguous: [], off: false }, "Block 1 and B1-C1; the other B1-C1 stands somewhere else");
+    assert.deepEqual(plan.objects.reuse, { count: 2, kinds: [{ type: "plot", count: 1 }, { type: "subplot", count: 1 }], ambiguous: [], off: false }, "Block 1 and B1-C1; the other B1-C1 stands somewhere else");
     const off = await (await realFetch(`${base}/api/import/plan`, { method: "POST", headers: { "X-Import-Edits": encodeURIComponent(JSON.stringify({ reuseObjects: false })) }, body: EXPORT() })).json();
     assert.equal(off.objects.count, 5);
     assert.deepEqual(off.objects.reuse, { count: 0, kinds: [], ambiguous: [], off: true });
@@ -391,7 +391,7 @@ test("POST /api/import/run: a reused object joins the new experiment under ITS O
     assert.deepEqual({ objects: lines.at(-1).result.created.objects, reused: lines.at(-1).result.created.reused, placed: lines.at(-1).result.created.placed }, { objects: 3, reused: 2, placed: 3 });
     const objects = writes.filter((w) => w.path === "/core/scientific_objects").map((w) => w.body);
     const joined = objects.filter((b) => b.uri);
-    assert.deepEqual(joined.map((b) => [b.uri, b.name, b.rdf_type, b.experiment]), [["so:old-b1", "Block 1", "vocabulary:Plot", "exp:new"], ["so:old-b1c1", "B1-C1", "vocabulary:Plant", "exp:new"]]);
+    assert.deepEqual(joined.map((b) => [b.uri, b.name, b.rdf_type, b.experiment]), [["so:old-b1", "Block 1", "vocabulary:Plot", "exp:new"], ["so:old-b1c1", "B1-C1", "vocabulary:SubPlot", "exp:new"]]);
     assert.deepEqual(joined[1].relations, [
       { property: "vocabulary:hasGermplasm", value: "g:olve", inverse: false },
       { property: "vocabulary:hasFactorLevel", value: "lvl:Treatment.15C", inverse: false },
@@ -401,6 +401,31 @@ test("POST /api/import/run: a reused object joins the new experiment under ITS O
     assert.equal(objects.find((b) => b.name === "B2-C1").relations.find((r: any) => r.property === "vocabulary:isPartOf").value, "so:Block 2", "a new plant in a new block");
     const moved = writes.filter((w) => w.path === "/core/events/moves").flatMap((w) => w.body).map((m: any) => [m.targets[0], m.targets_positions[0].position.text]).sort();
     assert.deepEqual(moved, [["so:B1-C2", "Block 1, column 2"], ["so:B2-C1", "Block 2, column 1"], ["so:Block 2", "Block 2"]], "a reused object keeps the place it has");
+  });
+});
+
+test("POST /api/import into an existing experiment: its objects that were never moved get the file's place too (an object with any move is left alone), beside the new objects' places", async () => {
+  await withServer(async (base) => {
+    const writes: { method: string; path: string; body: any }[] = [];
+    mockExistingExperiment(writes);
+    mockDeviceInFacility(writes);
+    const base2 = globalThis.fetch;
+    // B1-C2 (so:old2) was moved before: its history is kept; Block 1 (so:block1) and B1-C1 (so:old1) never were.
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = url.replace(/^.*\/rest/, "");
+      if ((init?.method ?? "GET") === "GET") {
+        if (path.startsWith("/core/events?target=so%3Aold2")) return jsonResponse(200, { result: [{ uri: "ev:b", rdf_type_name: "Move" }] });
+      }
+      return base2(url, init);
+    }) as typeof fetch;
+    const edits = { "X-Import-Edits": encodeURIComponent(JSON.stringify({ devices: ["dev-tf"] })) };
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", headers: edits, body: EXPORT() })).json();
+    assert.deepEqual(plan.places, { count: 4, facility: { id: "fac-1", name: "HOLT_PT_G" }, existing: 2 }, "Block 2 and B2-C1 are new; Block 1 and B1-C1 were never moved");
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}&device=dev-tf`, { method: "POST", headers: edits, body: EXPORT() });
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    assert.equal(lines.at(-1).result.created.placed, 4);
+    const moved = writes.filter((w) => w.path === "/core/events/moves").flatMap((w) => w.body).map((m: any) => [m.targets[0], m.targets_positions[0].position.text]).sort();
+    assert.deepEqual(moved, [["so:B2-C1", "Block 2, column 1"], ["so:Block 2", "Block 2"], ["so:block1", "Block 1"], ["so:old1", "Block 1, column 1"]]);
   });
 });
 

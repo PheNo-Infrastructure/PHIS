@@ -4011,3 +4011,60 @@ test("link factor into an experiment that has one of that name: refused with the
     assert.deepEqual(ops, []);
   });
 });
+
+// ---------- where an object stands, and making a plant at a position ----------
+test("scientific object detail: 'Stands in' is the facility of its newest Move with the position text (read-only chip); an object that never moved shows none", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 });
+      if (url.includes("&parent=")) return jsonResponse(200, { result: [] });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (url.includes("/experiments")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/events?target=so-moved")) return jsonResponse(200, { result: [{ uri: "ev:old", rdf_type_name: "Move" }, { uri: "ev:new", rdf_type_name: "Move" }] });
+      if (url.includes("/core/events?target=")) return jsonResponse(200, { result: [] });
+      if (url.includes("/core/events/moves/ev%3Aold")) return jsonResponse(200, { result: { uri: "ev:old", end: "2025-01-01T10:00:00Z", location: { to: "fac-old", text: "somewhere" } } });
+      if (url.includes("/core/events/moves/ev%3Anew")) return jsonResponse(200, { result: { uri: "ev:new", end: "2025-03-25T10:00:00Z", location: { to: "fac-1", text: "Block 1, column 3" } } });
+      if (url.includes("/core/facilities/fac-1")) return jsonResponse(200, { result: { uri: "fac-1", name: "HOLT_PT_G" } });
+      if (url.includes("/core/scientific_objects/so-")) return jsonResponse(200, { result: { uri: "so", name: "B1-C3", relations: [] } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const stands = async (id: string) => (await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=${id}`)).json()).relations.find((r: any) => r.label === "Stands in");
+    const moved = await stands("so-moved");
+    assert.deepEqual(moved.items.map((i: any) => [i.id, i.type, i.label]), [["fac-1", "facility", "HOLT_PT_G · Block 1, column 3"]], "the newest move, not the older one");
+    assert.equal(moved.field, undefined, "read-only: no Unlink");
+    assert.equal(await stands("so-still"), undefined);
+  });
+});
+
+test("POST /api/make-plant: a new Plant in ONE experiment, part of the position there and nothing else (the position keeps its data); refuses a plant, a taken name and missing input", async () => {
+  await withServer(async (base) => {
+    const posts: any[] = [];
+    let type = "http://www.opensilex.org/vocabulary/oeso#SubPlot";
+    let taken = false;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+      if (method === "POST") { posts.push(JSON.parse(String(init!.body))); return jsonResponse(201, { result: "so-new" }); }
+      if (url.includes("/core/scientific_objects/pos-1?experiment=exp-1")) return jsonResponse(200, { result: { uri: "pos-1", name: "B1-C1", rdf_type: type, relations: [{ property: "vocabulary:hasGermplasm", value: "g:bean" }] } });
+      if (url.includes("/core/scientific_objects?experiment=exp-1&name=")) return jsonResponse(200, { result: taken ? [{ uri: "x", name: "plant 7" }] : [] });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const make = (body: object) => realFetch(`${base}/api/make-plant`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const ok = await make({ position: "pos-1", experiment: "exp-1", name: "  Plant 7 " });
+    assert.equal(ok.status, 200);
+    assert.deepEqual((await ok.json()).plant, { id: "so-new", type: "scientific_object", label: "Plant 7" });
+    assert.deepEqual(posts, [{ name: "Plant 7", rdf_type: "vocabulary:Plant", experiment: "exp-1", relations: [{ property: "vocabulary:isPartOf", value: "pos-1", inverse: false }] }], "only its place in the hierarchy; germplasm, levels and values stay on the position");
+    taken = true;
+    const clash = await make({ position: "pos-1", experiment: "exp-1", name: "Plant 7" });
+    assert.equal(clash.status, 400);
+    assert.match((await clash.json()).error, /already a scientific object named "Plant 7" in this experiment/);
+    taken = false; type = "http://www.opensilex.org/vocabulary/oeso#Plant";
+    const plant = await make({ position: "pos-1", experiment: "exp-1", name: "Plant 8" });
+    assert.equal(plant.status, 400);
+    assert.match((await plant.json()).error, /B1-C1 is a plant already/);
+    assert.equal((await make({ position: "pos-1", experiment: "exp-1", name: " " })).status, 400);
+    assert.equal(posts.length, 1, "nothing else was written");
+  });
+});

@@ -503,6 +503,40 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
   });
 });
 
+test("e2e: a position's experiment box offers 'Make a plant here': it asks for a name, makes the plant in THAT experiment under this position, says the position keeps its data, and shows where the object stands", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const made: any[] = [];
+    const box = (id: string, label: string) => ({ id, type: "experiment", label, name: "B1-C1", groups: [] });
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      uri: "so-1", actions: ["rename", "delete", "link"], deleteRemovesLinks: true,
+      relations: [
+        { label: "In experiments", field: "experiment", items: [box("exp-a", "Trial A"), box("exp-b", "Trial B")] },
+        { label: "Stands in", items: [{ id: "fac-1", type: "facility", label: "HOLT_PT_G · Block 1, column 1" }] },
+      ],
+    }) }));
+    await page.route("**/api/make-plant", (r) => {
+      made.push(r.request().postDataJSON());
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, plant: { id: "so-new", type: "scientific_object", label: "Plant 7" }, position: "so-1" }) });
+    });
+    await page.goto(base + "/#browse");
+    await idle(page);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "B1-C1" }));
+    await idle(page);
+    assert.match(await page.locator("#detailBody").innerText(), /stands in[\s\S]*HOLT_PT_G · Block 1, column 1/i);
+    let asked = "";
+    page.once("dialog", (d) => { asked = d.message(); d.accept("Plant 7"); });
+    await page.locator(".item-box", { hasText: "Trial B" }).locator("[data-make-plant]").click();
+    await idle(page);
+    assert.equal(asked, "Name of the plant made at B1-C1 in Trial B?");
+    assert.deepEqual(made, [{ position: "so-1", experiment: "exp-b", name: "Plant 7" }], "one experiment, the position it is made at");
+    assert.match(await page.locator("#toast").textContent() ?? "", /Made the plant Plant 7 at B1-C1 in Trial B\. The position keeps its data\./);
+    page.once("dialog", (d) => d.dismiss());
+    await page.locator(".item-box", { hasText: "Trial A" }).locator("[data-make-plant]").click();
+    await idle(page);
+    assert.equal(made.length, 1, "a cancelled prompt makes nothing");
+  });
+});
+
 test("e2e: a plant's experiment box shows its measurements as a trend line per variable; hover gives a value, click gives all of them; empty experiments show none; a variable's name opens its page", async () => {
   await withServerAndBrowser(async (base, page) => {
     const box = (id: string, label: string) => ({ id, type: "experiment", label, name: "P1", groups: [] });

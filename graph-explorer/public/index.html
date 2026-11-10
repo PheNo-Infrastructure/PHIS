@@ -2575,7 +2575,7 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, withMe
       h += `<div class="item-box"><div class="chip-row">${chip(it)}</div><div class="item-box-rows">`;
       // A scientific object's name in this experiment (each copy has its own), renamed here only.
       if (typeof it.name === "string") {
-        h += `<span class="item-box-key">Name</span><div class="chip-row"><span>${escapeHtml(it.name)}</span>${unlinking ? "" : ` <button class="btn ghost small" data-rename-in="${escapeHtml(it.id)}">Rename</button>`}</div>`;
+        h += `<span class="item-box-key">Name</span><div class="chip-row"><span>${escapeHtml(it.name)}</span>${unlinking ? "" : ` <button class="btn ghost small" data-rename-in="${escapeHtml(it.id)}">Rename</button> <button class="btn ghost small" data-make-plant="${escapeHtml(it.id)}" title="A real plant, part of this position in this experiment. The position keeps its data.">Make a plant here</button>`}</div>`;
       }
       (it.groups || []).forEach(g => {
         const chips = g.items.map(x => chipHtml(x, unlinking && g.field ? g.field : null, it.id)).join("");
@@ -3488,6 +3488,24 @@ function renderNodeDetail(focusNode, { local } = { local: false }) {
   els.detailBody.querySelectorAll("[data-rename-in]").forEach(btn => btn.addEventListener("click", () => {
     const box = (node?.relations ?? []).flatMap(rel => rel.items).find(it => it.id === btn.dataset.renameIn && typeof it.name === "string");
     if (box) renameNode(focusNode, box);
+  }));
+  // A position is what an import gives an object; a real plant is made on request, in one experiment, part of the position there.
+  els.detailBody.querySelectorAll("[data-make-plant]").forEach(btn => btn.addEventListener("click", async () => {
+    const box = (node?.relations ?? []).flatMap(rel => rel.items).find(it => it.id === btn.dataset.makePlant && typeof it.name === "string");
+    if (!box) return;
+    const here = box.name || focusNode.label;
+    const name = prompt(`Name of the plant made at ${here} in ${box.label}?`, `Plant ${here}`);
+    if (!name || !name.trim()) return;
+    try {
+      const res = await fetch("api/make-plant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position: focusNode.id, experiment: box.id, name: name.trim() }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(`Couldn't make the plant: ${body.error || res.status}`, 6000); return; }
+      delete NODE_DETAIL[focusNode.id]; delete NODE_DETAIL[box.id];
+      await reloadCategories(["cat-scientificobjects"]);
+      await loadNodeDetail(focusNode);
+      render();
+      showToast(`Made the plant ${name.trim()} at ${here} in ${box.label}. The position keeps its data.`, 5000);
+    } catch (err) { showToast(`Couldn't make the plant: ${err}`, 6000); }
   }));
   document.getElementById("deleteBlockedOkBtn")?.addEventListener("click", () => { deleteBlockedShown = null; renderDetail(); });
   // The way past the block: counted again right now (values may have been added since the page

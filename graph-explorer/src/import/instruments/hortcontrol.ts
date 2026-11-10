@@ -78,7 +78,9 @@ const plugin: InstrumentPlugin = {
     const plants = [...byPlant].map(([name, us]) => {
       const germplasm = agreed(us.map((u) => u.r), "genotype");
       return {
-        name, rdfType: "vocabulary:Plant", ...(germplasm ? { germplasm } : {}),
+        // A unit is a position in a block, not a plant: PHIS's own hierarchy is Plot > SubPlot > Plant, so a position is a SubPlot and a
+        // real Plant (which only its scientists can name) is made on top of it when wanted.
+        name, rdfType: "vocabulary:SubPlot", ...(germplasm ? { germplasm } : {}),
         factors: factorsOf(us.map((u) => u.r), `Plant ${name}`),
         parent: `Block ${us[0].block}`, place: `Block ${us[0].block}, column ${us[0].column}${multiRow ? `, row ${us[0].row}` : ""}`,
       };

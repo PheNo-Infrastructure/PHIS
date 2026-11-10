@@ -61,6 +61,18 @@ export async function findStanding(objects: { name: string; rdfType: string; pla
   return { found, ambiguous };
 }
 
+// Of objects an experiment already holds, those that have never been moved: the fill gives them the place the file says. An object
+// that was moved somewhere (even elsewhere) is left alone — PHIS keeps its history.
+export async function withoutPlace<T extends { uri: string }>(items: T[]): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < items.length; i += 4) {
+    const batch = items.slice(i, i + 4);
+    const moved = await Promise.all(batch.map((o) => movesOf(o.uri).then((m) => m.length > 0).catch(() => true))); // unreadable = not touched
+    batch.forEach((o, j) => { if (!moved[j]) out.push(o); });
+  }
+  return out;
+}
+
 // One Move per object, all to `facility` on `day`. A move needs targets_positions (probed), here the text.
 export async function recordPlaces(items: { uri: string; text: string }[], facility: string, day: string, tick: () => void) {
   const end = `${day}T12:00:00Z`;

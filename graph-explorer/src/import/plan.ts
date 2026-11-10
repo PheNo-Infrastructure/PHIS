@@ -7,7 +7,7 @@ import { instrumentPlugins, type Files } from "./plugins.ts";
 import { applyEdits, namesIn, type Edits, type FactorReuse } from "./edits.ts";
 import { chooseFactors } from "./factors.ts";
 import { missingTerms } from "./ontology.ts";
-import { deviceFacilities, findStanding } from "./places.ts";
+import { deviceFacilities, findStanding, withoutPlace } from "./places.ts";
 import { resolveVariables } from "./variables.ts";
 import { groupSummary, resolveGroups } from "./variable-groups.ts";
 import { checkMeasurements } from "./measurements.ts";
@@ -124,6 +124,10 @@ export async function prepare(files: Files, edits?: Edits) {
   // What the review lets the user decide besides the data: who made it (the device is only pre-selected; the person is never guessed)
   // and who can see a NEW experiment.
   const placed = newObjects.filter((o) => o.place).length; // each is recorded as a Move to the facility its device stands in (places.ts)
+  // Filling an existing experiment: its objects that were never moved get their place too.
+  const unplaced = facility && experiment
+    ? await withoutPlace(trial.objects.filter((o) => o.place && experiment.objects.has(o.name)).map((o) => ({ uri: experiment.objects.get(o.name)!, name: o.name, text: o.place! })))
+    : [];
   const persons = (await authedGet("/security/persons?page_size=500")).result.map((p) => ({ id: String(p.uri), label: personName(p) })).sort(byLabel);
   const groups = (await authedGet("/security/groups?page_size=500")).result.map((g) => ({ id: String(g.uri), label: String(g.name ?? g.uri) })).sort(byLabel);
 
@@ -178,7 +182,7 @@ export async function prepare(files: Files, edits?: Edits) {
       } : {}),
     },
     // Where the objects stand: recorded only when a chosen device stands in a facility in PHIS (its facility is on the device).
-    places: { count: placed, facility },
+    places: { count: placed + unplaced.length, facility, ...(unplaced.length ? { existing: unplaced.length } : {}) },
     options: { devices: devices.map((d) => (facilityOf.has(d.id) ? { ...d, facility: facilityOf.get(d.id) } : d)), persons, groups, ...(matched.length === 1 ? { matchedDevice: matched[0].id, matchedBecause: trial.source } : {}) },
     // What the file itself called things (the page keys its edits by these) and the edits applied.
     original: { experiment: original.experiment, ...namesIn(original), codes: original.germplasmCodes ?? {} },
@@ -187,7 +191,7 @@ export async function prepare(files: Files, edits?: Edits) {
     factorChoices: factorChoices.map((c) => ({ file: c.file, parsed: c.parsed, ...(c.reuse ? { reuse: c.reuse.uri, auto: c.reuse.auto } : {}), ...(c.matches ? { ambiguous: true } : {}) })),
     warnings,
   };
-  return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills, reused: standing.found };
+  return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills, reused: standing.found, unplaced };
 }
 
 export async function buildPlan(files: Files, edits?: Edits) {

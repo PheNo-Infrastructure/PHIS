@@ -15,14 +15,14 @@ test("detect: a raw HortControl export is recognised, other files are not", () =
   assert.equal(plugin.detect(new Map([["notes.txt", Buffer.from("hello")]])), false);
 });
 
-test("parse: plants carry the treatment and are parts of their block (a PHIS Plot) with their place as words and their germplasm; blocks carry no factor level (the portal lists a level's members as plants)", () => {
+test("parse: plants carry the treatment and are SubPlots (positions) in their block (a PHIS Plot) with their place as words and their germplasm; blocks carry no factor level (the portal lists a level's members as plants)", () => {
   const t = plugin.parse(files());
   const blocks = t.objects.filter((o) => o.rdfType === "vocabulary:Plot");
   assert.deepEqual(blocks.map((b) => [b.name, b.factors]), [["Block 1", {}], ["Block 3", {}]]);
-  const plants = t.objects.filter((o) => o.rdfType === "vocabulary:Plant");
+  const plants = t.objects.filter((o) => o.rdfType === "vocabulary:SubPlot");
   assert.equal(plants.length, 10);
   assert.deepEqual(plants.find((p) => p.name === "B3-C2"), {
-    name: "B3-C2", rdfType: "vocabulary:Plant", germplasm: "Bean", factors: { Treatment: "18C" }, parent: "Block 3", place: "Block 3, column 2",
+    name: "B3-C2", rdfType: "vocabulary:SubPlot", germplasm: "Bean", factors: { Treatment: "18C" }, parent: "Block 3", place: "Block 3, column 2",
   });
   assert.deepEqual(t.germplasmCodes, { Bean: "Bean" });
   assert.deepEqual(t.warnings, []);

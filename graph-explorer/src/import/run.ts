@@ -35,7 +35,7 @@ const MOTIVATION_DESCRIBING = "http://www.w3.org/ns/oa#describing";
 export async function runImport(files: Files, choices: Choices, progress: (p: Progress) => void = () => {}) {
   // The devices picked in the dialog are also the ones whose facility places the objects (the page sends them as an edit once they change).
   const edits = choices.devices && !choices.edits?.devices ? { ...choices.edits, devices: choices.devices } : choices.edits;
-  const { trial, plan, variables, variableGroupPlans, values, experiment, fills, reused } = await prepare(files, edits);
+  const { trial, plan, variables, variableGroupPlans, values, experiment, fills, reused, unplaced } = await prepare(files, edits);
 
   // Everything that would stop the import is checked before the first write.
   const blockers: string[] = [];
@@ -62,12 +62,13 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
   // Where the new objects stand: a Move to the facility the picked device stands in, if it stands in one in PHIS.
   const facility = plan.places.facility as Facility | null;
   const placeItems = facility ? newObjects.filter((o) => o.place).map((o) => ({ name: o.name, text: o.place! })) : [];
+  const placeCount = placeItems.length + (facility ? unplaced.length : 0); // new objects, and objects of the filled experiment that were never moved
   const newFactors = plan.factors.filter((f) => !f.exists);
   const grownFactors = plan.factors.filter((f) => f.newLevels?.length || (f.reuse && !f.reuse.linked));
   const codeOf = new Map(plan.germplasm.codes.map((c) => [c.name, c.code]));
   const existingCodes = plan.germplasm.existing.filter((g) => codeOf.has(g.name));
   const total = plan.vocabulary.length + variables.create.length + variables.missing.length + plan.variableGroups.filter((g) => !g.exists || g.newMembers).length + (experiment ? 0 : 1) + (newSpecies && plan.germplasm.missing.length ? 1 : 0) + plan.germplasm.missing.length + existingCodes.length
-    + newFactors.length + grownFactors.length + newObjects.length + joining.length + fills.length + placeBatches(placeItems.length)
+    + newFactors.length + grownFactors.length + newObjects.length + joining.length + fills.length + placeBatches(placeCount)
     + (values.length ? 1 + Math.ceil(values.length / VALUES_AT_ONCE) : 0);
   let steps = 0;
   const tick = (step: string) => progress({ step, done: ++steps, total });
@@ -195,10 +196,11 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
       }));
     }
 
-    if (placeItems.length) {
+    if (placeCount) {
       const day = (plan.measurements.first ?? new Date().toISOString()).slice(0, 10);
-      await recordPlaces(placeItems.map((p) => ({ uri: objectUri.get(p.name)!, text: p.text })), facility!.id, day, () => tick(`Recording where the objects stand in ${facility!.name}`));
-      done.placed = placeItems.length;
+      const list = [...placeItems.map((p) => ({ uri: objectUri.get(p.name)!, text: p.text })), ...(facility ? unplaced.map((u) => ({ uri: u.uri, text: u.text })) : [])];
+      await recordPlaces(list, facility!.id, day, () => tick(`Recording where the objects stand in ${facility!.name}`));
+      done.placed = placeCount;
     }
 
     // The measured values, under one provenance for this import, one batch at a time.
