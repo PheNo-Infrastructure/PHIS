@@ -4286,6 +4286,12 @@ async function linkItems(items, experiments, extra = {}) {
       renderActionbar();
       return;
     }
+    // An experiment that already has a factor of that name: swapping it for the one linked needs the user's yes (the old one is deleted).
+    if (body.needsReplace) {
+      const text = body.needsReplace.map(n => `${n.experiment.label} already has a factor named ${n.old.name}. Swap it for the one you are linking: ${n.plants} scientific object${n.plants === 1 ? "" : "s"} keep their level (${n.levels.map(([a, b]) => a === b ? a : `${a} → ${b}`).join(", ")}), then the old ${n.old.name} is deleted.`).join("\n\n");
+      if (!confirm(`${text}\n\nThis cannot be undone.`)) return;
+      return linkItems(items, experiments, { ...extra, confirmReplace: true });
+    }
     experimentChoice = null;
     (body.touched || []).forEach(id => invalidateNodeDetail(id));
     // A germplasm's species decides where it sits in the Germplasm list.
@@ -4308,7 +4314,8 @@ async function linkItems(items, experiments, extra = {}) {
       const also = (body.alsoHolds || []).length ? `. ${andList(body.alsoHolds.map(x => labelOf(x.id)))} also ${body.alsoHolds.length === 1 ? "holds" : "hold"} ${andList([...new Set(body.alsoHolds.flatMap(x => x.levels))])} — unlink ${body.alsoHolds.some(x => x.levels.length > 1) || body.alsoHolds.length > 1 ? "those" : "it"} to replace` : "";
       showToast(`${andList(w.flatMap(x => x.values).map(labelOf))} set on ${andList(w.map(x => labelOf(x.id)))} in ${where}${why}${already}${also}`);
     } else {
-      showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}`);
+      const swapped = (body.replaced || []).map(r => `. ${r.experiment}: its own ${r.old} was swapped, ${r.plants} scientific object${r.plants === 1 ? "" : "s"} kept their level`).join("");
+      showToast(`Linked ${body.linkedPairs} relation${body.linkedPairs === 1 ? "" : "s"}${already}${swapped}`);
     }
     return true;
   } catch (err) {

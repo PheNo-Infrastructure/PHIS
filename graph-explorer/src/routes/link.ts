@@ -2,6 +2,7 @@ import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.t
 import { readJsonBody, type RouteHandler } from "../http.ts";
 import { NODE_TYPES, addGroupMembers, applyLink, moveDevices, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
 import { PERSON_ROLES } from "../adjacency.js";
+import { planReplace, runReplace, type Replace } from "../factor-replace.ts";
 
 // Links a whole selection of EXISTING nodes directly (no third node created) — the counterpart
 // to the unlink flow in routes/node.ts, and to /api/create's `links` (which links a NEW node to
@@ -17,7 +18,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   // `role`: the field a person goes into (an experiment's supervisors, a project's contacts).
   // `profile`: the profile an account gets in a group (never defaulted).
   // `position`: where in the facility a moved device is put (free text, optional).
-  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; position?: string; role?: string; profile?: string };
+  const body = (await readJsonBody(req)) as { items?: { type: string; id: string }[]; experiments?: string[]; date?: string; position?: string; role?: string; profile?: string; confirmReplace?: boolean };
   const items = (body.items ?? []).filter((it) => it?.type && it?.id);
   if (items.length < 2) {
     res.writeHead(400, { "Content-Type": "application/json" });
@@ -149,6 +150,15 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
   }
 
   await respondOpenSilexErrors(res, async () => {
+    // A factor linked into an experiment that already has one of that name is swapped for it when the levels fit one to one
+    // (factor-replace.ts). Nothing is written until the page has asked the user: the answer is `needsReplace`, sent again with `confirmReplace`.
+    const swaps: Replace[] = [];
+    for (const op of ops) if (op.r.ownerType === "experiment" && op.r.field === "factors") for (const exp of op.ownerIds) for (const f of op.otherIds) { const p = await planReplace(exp, f); if (p) swaps.push(p); }
+    if (swaps.length && !body.confirmReplace) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ needsReplace: swaps.map(({ levels, ...rest }) => ({ ...rest, levels: levels.map((l) => [l.from, l.to]) })) }));
+      return;
+    }
     // In-experiment pairs are checked BEFORE anything is written: an object in no experiment
     // can't hold the link at all, and one in several needs the user's pick (nothing ticked by
     // default) — either way the answer is `needsExperiment` and nothing changes yet.
@@ -241,6 +251,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       alreadyLinked += r.already;
       carryOver.push(...r.carryOver);
     }
+    for (const p of swaps) { await runReplace(p); touched.add(p.experiment.id); } // the new factor is linked in now: the plants take its levels, the old one goes
     // Labels the new links left behind (e.g. an object's germplasm from its other experiments) —
     // the page offers them, nothing ticked; only a pick writes anything.
     const out = JSON.stringify({
@@ -250,6 +261,7 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       ...(childOffer.length ? { childOffer } : {}),
       ...(written.length ? { written } : {}),
       ...(alsoHolds.length ? { alsoHolds } : {}),
+      ...(swaps.length ? { replaced: swaps.map((p) => ({ experiment: p.experiment.label, old: p.old.name, plants: p.plants })) } : {}),
       // Experiments whose derived data (Species) changed, and objects not in any picked one.
       ...(touched.size ? { touched: [...touched] } : {}),
       ...(skipped ? { skipped } : {}),

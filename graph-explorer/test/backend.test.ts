@@ -3948,3 +3948,66 @@ test("a level's page lists every experiment holding its factor and the objects t
     assert.deepEqual(group("Scientific objects"), ["In PBar1x4", "In Other"]);
   });
 });
+
+// ---------- linking a factor into an experiment that already has one of that name: swapped when the levels fit ----------
+const EXP = "https://phis.pheno.no/id/experiment/e1";
+const NEWF = { uri: "https://phis.pheno.no/id/factor/shared.temp", name: "Temperature", experiment: "https://phis.pheno.no/id/experiment/home", levels: [{ uri: "https://phis.pheno.no/id/factor/shared.temp.15C", name: "15C" }, { uri: "https://phis.pheno.no/id/factor/shared.temp.18C", name: "18C" }, { uri: "https://phis.pheno.no/id/factor/shared.temp.20C", name: "20C" }] };
+const OLDF = { uri: "https://phis.pheno.no/id/factor/e1.temp", name: "temperature", experiment: EXP, levels: [{ uri: "https://phis.pheno.no/id/factor/e1.temp.15C", name: "15C" }, { uri: "https://phis.pheno.no/id/factor/e1.temp.18C", name: "18C" }] };
+function swapStub(ops: string[], oldFactor: any = OLDF, usedBy: { uri: string; name: string }[] = [{ uri: EXP, name: "E1" }]) {
+  const held = new Map<string, string[]>([[OLDF.levels[0].uri, ["so-1", "so-2"]], [OLDF.levels[1].uri, ["so-3"]]]); // plants by level, as PHIS lists them
+  return (async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    if (method === "DELETE") { ops.push(`DELETE ${path}`); return jsonResponse(200, { result: "ok" }); }
+    if (method === "PUT") {
+      const b = JSON.parse(String(init!.body));
+      ops.push(`PUT ${path}${path.endsWith("scientific_objects") ? ` ${b.uri} ${b.relations.map((r: any) => r.value.split("/").pop()).join("+")}` : path.endsWith("/experiments") ? ` factors=${b.factors.map((f: string) => f.split("/").pop()).join("+")}` : ""}`);
+      if (path.endsWith("scientific_objects")) for (const r of b.relations) { const l = held.get(r.value) ?? held.set(r.value, []).get(r.value)!; if (!l.includes(b.uri)) l.push(b.uri); }
+      return jsonResponse(200, { result: "ok" });
+    }
+    if (path.startsWith("/core/scientific_objects?")) { const lvl = decodeURIComponent(path.match(/factor_levels=([^&]+)/)![1]); return jsonResponse(200, { result: (held.get(lvl) ?? []).map((u) => ({ uri: u })) }); }
+    if (path.startsWith("/core/scientific_objects/")) return jsonResponse(200, { result: { uri: path.split("/")[3].split("?")[0], name: "p", rdf_type: "vocabulary:Plant", relations: [] } });
+    if (path === `/core/experiments/${EXP}/factors`) return jsonResponse(200, { result: [oldFactor] });
+    if (path === `/core/experiments/${EXP}`) return jsonResponse(200, { result: { uri: EXP, name: "E1", objective: "x", start_date: "2026-01-01", is_public: true, organisations: [], facilities: [], projects: [], scientific_supervisors: [], technical_supervisors: [], groups: [], factors: [] } });
+    if (path === `/core/experiments/factors/${NEWF.uri}`) return jsonResponse(200, { result: NEWF });
+    if (path === `/core/experiments/factors/${OLDF.uri}/experiments`) return jsonResponse(200, { result: usedBy });
+    throw new Error(`unexpected fetch: ${method} ${path}`);
+  }) as typeof fetch;
+}
+const swapPost = (base: string, confirmReplace?: boolean) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: [{ type: "experiment", id: EXP }, { type: "factor", id: NEWF.uri }], ...(confirmReplace ? { confirmReplace } : {}) }) });
+
+test("link factor into an experiment that has one of that name: asks first (nothing written), then every plant takes the same-named level of the new factor and the old factor is deleted", async () => {
+  await withServer(async (base) => {
+    const ops: string[] = [];
+    globalThis.fetch = swapStub(ops);
+    const ask = await (await swapPost(base)).json();
+    assert.equal(ask.needsReplace[0].old.name, "temperature");
+    assert.equal(ask.needsReplace[0].plants, 3);
+    assert.deepEqual(ask.needsReplace[0].levels, [["15C", "15C"], ["18C", "18C"]]);
+    assert.deepEqual(ops, [], "nothing is written before the yes");
+    const res = await swapPost(base, true);
+    assert.equal(res.status, 200, await res.clone().text());
+    const done = await res.json();
+    assert.deepEqual(done.replaced, [{ experiment: "E1", old: "temperature", plants: 3 }]);
+    assert.equal(ops[0], "PUT /core/experiments factors=shared.temp", "the new factor is linked first");
+    assert.deepEqual(ops.filter((o) => o.includes("scientific_objects")).map((o) => o.split(" ").slice(2).join(" ").replace(/https:\/\/phis\.pheno\.no\/id\/factor\//g, "")).sort(), ["so-1 shared.temp.15C", "so-2 shared.temp.15C", "so-3 shared.temp.18C"].sort());
+    assert.equal(ops.at(-1), `DELETE /core/experiments/factors/${OLDF.uri}`, "the old factor goes last, once every plant holds its new level");
+  });
+});
+
+test("link factor into an experiment that has one of that name: refused with the reason when a level doesn't fit or the old factor is used elsewhere; nothing is written", async () => {
+  await withServer(async (base) => {
+    const ops: string[] = [];
+    globalThis.fetch = swapStub(ops, { ...OLDF, levels: [...OLDF.levels, { uri: "https://phis.pheno.no/id/factor/e1.temp.25C", name: "25C" }] });
+    const miss = await swapPost(base, true);
+    assert.equal(miss.status, 409);
+    assert.match((await miss.json()).error, /already has a factor named temperature.*level 25C isn't in the factor you are linking.*Nothing was changed/);
+    globalThis.fetch = swapStub(ops, OLDF, [{ uri: EXP, name: "E1" }, { uri: "https://phis.pheno.no/id/experiment/other", name: "Other trial" }]);
+    const shared = await swapPost(base, true);
+    assert.equal(shared.status, 409);
+    assert.match((await shared.json()).error, /also used by Other trial/);
+    assert.deepEqual(ops, []);
+  });
+});
