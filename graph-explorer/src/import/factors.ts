@@ -86,11 +86,12 @@ export async function chooseFactors(original: TrialData, edits: Edits | undefine
 export async function factorCatalogue() {
   const units = await unitsByUri();
   const all = (await authedGet("/core/experiments/factors?page_size=500")).result;
-  const out: { id: string; label: string; unit: Unit | null; levels: string[] }[] = [];
+  const out: { id: string; label: string; unit: Unit | null; levels: string[]; usedBy: string[] }[] = [];
   for (let i = 0; i < all.length; i += 8) {
     out.push(...(await Promise.all(all.slice(i, i + 8).map(async (r) => {
       const f = (await authedGetOne(`/core/experiments/factors/${enc(String(r.uri))}`)).result as unknown as PhisFactor;
-      return { id: String(f.uri), label: f.name, unit: await unitOf(f, units), levels: (f.levels ?? []).map((l) => l.name) };
+      const used = await experimentsOfFactor(String(f.uri)).catch(() => []); // the experiments, so two factors of one name can be told apart
+      return { id: String(f.uri), label: f.name, unit: await unitOf(f, units), levels: (f.levels ?? []).map((l) => l.name), usedBy: used.map((x) => x.name) };
     }))));
   }
   return out.sort((a, b) => a.label.localeCompare(b.label));

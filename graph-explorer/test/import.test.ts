@@ -763,8 +763,8 @@ test("GET /api/import/factors lists every factor in PHIS with its unit and level
     }) as typeof fetch;
     const factors = await (await realFetch(`${base}/api/import/factors`)).json();
     assert.deepEqual(factors, [
-      { id: "f:aaa", label: "Block design", unit: null, levels: ["A"] },
-      { id: "f:temp", label: "Treatment", unit: { id: CEL.uri, name: "DegreeCelsius" }, levels: ["10", "15"] },
+      { id: "f:aaa", label: "Block design", unit: null, levels: ["A"], usedBy: ["Other trial"] },
+      { id: "f:temp", label: "Treatment", unit: { id: CEL.uri, name: "DegreeCelsius" }, levels: ["10", "15"], usedBy: ["Other trial"] },
     ], "sorted by name; a foreign ontology term is not a unit");
     const units = await (await realFetch(`${base}/api/import/units`)).json();
     assert.ok(units.some((u: any) => u.name === "DegreeCelsius"));

@@ -5483,15 +5483,15 @@ function editableVariables(p) {
 // when several are named alike; "New factor" on an exact name makes a second one on purpose.
 async function fillFactorPickers(editor, had) {
   const e = escapeHtml;
-  let factors = [], units = [];
+  let factors = [], units = [], failed = false;
   try {
-    [factors, units] = await Promise.all([fetch("api/import/factors"), fetch("api/import/units")].map((r) => r.then((x) => x.ok ? x.json() : [])));
-  } catch { /* no suggestions: the box still names a factor */ }
+    [factors, units] = await Promise.all([fetch("api/import/factors"), fetch("api/import/units")].map((r) => r.then((x) => { if (!x.ok) throw new Error(String(x.status)); return x.json(); })));
+  } catch { failed = true; } // said in the box's hint: the import still works, but the names can't be checked against PHIS here
   editor._units = units;
   if (!document.getElementById("importUnits")) document.body.insertAdjacentHTML("beforeend", `<datalist id="importUnits"></datalist>`);
   document.getElementById("importUnits").innerHTML = units.map((u) => `<option value="${e(u.name)}">`).join("");
   const levelsOf = (x) => x.levels.slice(0, 4).join(", ") + (x.levels.length > 4 ? ", …" : "");
-  const describe = (x) => `${x.label} — ${x.unit ? x.unit.name : "no unit"} (${levelsOf(x)})`;
+  const describe = (x) => `${x.label} — ${x.unit ? x.unit.name : "no unit"} (${levelsOf(x)})${x.usedBy?.length ? `, used by ${x.usedBy.slice(0, 2).join(", ")}${x.usedBy.length > 2 ? ", …" : ""}` : ""}`;
   editor.querySelectorAll("input[data-factor]:not([data-level])").forEach((inp) => {
     const f = inp.dataset.factor, h = had.factors?.[f] ?? {};
     const box = inp.parentElement, sug = box.querySelector(".import-suggest"), hint = box.querySelector(".import-hint"), unit = box.querySelector("[data-unit-of]");
@@ -5502,13 +5502,14 @@ async function fillFactorPickers(editor, had) {
     const status = () => {
       const m = named(), picked = inp.dataset.use && factors.find((x) => x.id === inp.dataset.use);
       let text, isNew = false;
-      if (picked) text = `Uses the factor in PHIS: ${describe(picked)}.`;
+      if (failed) text = "Couldn't read PHIS's factors, so this name isn't checked here (a name PHIS already has is still reused when the import runs). Reload the page, or restart the portal if it was just updated.";
+      else if (picked) text = `Uses the factor in PHIS: ${describe(picked)}.`;
       else if (inp.dataset.fresh) { text = "Makes a new factor, even though PHIS has one of this name."; isNew = true; }
       else if (m.length === 1) text = `PHIS has this factor, so it is used: ${describe(m[0])}.`;
       else if (m.length > 1) text = `${m.length} factors in PHIS have this name: pick one from the list.`;
       else { text = inp.value.trim() ? "A new factor." : ""; isNew = !!inp.value.trim(); }
       hint.textContent = text;
-      unit.hidden = !isNew;
+      unit.hidden = !isNew || failed;
     };
     const suggest = () => {
       const q = inp.value.trim().toLowerCase(), exact = named();
