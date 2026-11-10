@@ -1396,6 +1396,7 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
           method: { uri: "m-1", name: "PlantEye 3D scan" }, unit: { uri: "u-1", name: "Millimeter", symbol: "mm" }, entity_of_interest: null,
         } });
       }
+      if (url.includes("/core/experiments/factors?")) return jsonResponse(200, { result: [] }); // the unit page also looks for factors that use it
       if (url.includes("/core/data/count")) return jsonResponse(200, { result: 0 });
       if (url.includes("/core/variables_group?")) return jsonResponse(200, { result: [] });
       if (url.includes("/core/units/u-1")) return jsonResponse(200, { result: { uri: "u-1", name: "Millimeter", symbol: "mm", description: null } });
@@ -1961,6 +1962,59 @@ function levelLinkStub(calls: string[], puts: any[], soExps: Record<string, { ex
 }
 const linkPost = (base: string, items: any[]) => realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
 const inPbar = [{ experiment: facDto.experiment, experiment_name: "PBar1x4" }, { experiment: "https://phis.pheno.no/id/experiment/other", experiment_name: "Other" }];
+
+// ---------- a factor's unit: the unit's uri in the factor's exact_match (the pseudo-link) ----------
+const UNIT = "https://phis.pheno.no/id/variable/unit.degreecelsius";
+function unitStub(puts: any[], exactMatch: string[]) {
+  return (async (url: string, init?: RequestInit) => {
+    if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "t" } });
+    if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: { phis: "https://phis.pheno.no/" } });
+    if (init?.method === "PUT") { puts.push(JSON.parse(String(init.body))); return jsonResponse(200, { result: FAC }); }
+    if (url.includes("/core/scientific_objects?")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: 0 } } });
+    if (url.includes("/core/units?")) return jsonResponse(200, { result: [{ uri: UNIT, name: "DegreeCelsius" }] });
+    if (url.includes("/core/units/")) return jsonResponse(200, { result: { uri: UNIT, name: "DegreeCelsius", symbol: "°C" } });
+    if (url.includes("/core/variables?")) return jsonResponse(200, { result: [] });
+    if (url.endsWith("/factors/other-factor")) return jsonResponse(200, { result: { ...facDto, uri: "other-factor", name: "Other", exact_match: ["http://example.org/ontology/term"] } });
+    if (url.includes("/core/experiments/factors?")) return jsonResponse(200, { result: [{ uri: FAC, name: "Replicate" }, { uri: "other-factor", name: "Other" }] });
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}/experiments`)) return jsonResponse(200, { result: [{ uri: facDto.experiment, name: "PBar1x4" }] });
+    if (url.includes(`/core/experiments/factors/${encodeURIComponent(FAC)}`)) return jsonResponse(200, { result: { ...facDto, exact_match: exactMatch } });
+    if (url.includes(`/core/experiments/${encodeURIComponent(facDto.experiment)}`)) return jsonResponse(200, { result: { uri: facDto.experiment, name: "PBar1x4" } });
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as typeof fetch;
+}
+const groupOf = (d: any, label: string) => d.relations.find((g: any) => g.label === label);
+
+test("factor unit: the factor's page shows the unit named, other ontology terms in exact_match are not shown as units, and the unit's page lists the factors that use it", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = unitStub([], [UNIT, "http://example.org/ontology/term"]);
+    const f = await (await realFetch(`${base}/api/node-detail?type=factor&id=${encodeURIComponent(FAC)}`)).json();
+    assert.ok(f.relations, JSON.stringify(f));
+    assert.deepEqual(groupOf(f, "Unit").items, [{ id: UNIT, type: "unit", label: "DegreeCelsius" }]);
+    assert.equal(groupOf(f, "Unit").field, "exact_match", "unlinkable");
+    const u = await (await realFetch(`${base}/api/node-detail?type=unit&id=${encodeURIComponent(UNIT)}`)).json();
+    assert.deepEqual(groupOf(u, "Factors").items, [{ id: FAC, type: "factor", label: "Replicate" }], "the factor with a foreign term only is not listed");
+    globalThis.fetch = unitStub([], ["http://example.org/ontology/term"]);
+    const none = await (await realFetch(`${base}/api/node-detail?type=factor&id=${encodeURIComponent(FAC)}`)).json();
+    assert.equal(groupOf(none, "Unit"), undefined, "no unit, no empty group");
+  });
+});
+
+test("factor unit: linking a unit adds its uri to exact_match (keeping other terms and the levels), unlinking takes only that uri out", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    globalThis.fetch = unitStub(puts, ["http://example.org/ontology/term"]);
+    const res = await linkPost(base, [{ type: "factor", id: FAC }, { type: "unit", id: UNIT }]);
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(puts.length, 1);
+    assert.deepEqual(puts[0].exact_match, ["http://example.org/ontology/term", UNIT]);
+    assert.deepEqual(puts[0].levels.map((l: any) => l.name), ["1", "2"]);
+    const puts2: any[] = [];
+    globalThis.fetch = unitStub(puts2, ["http://example.org/ontology/term", UNIT]);
+    const un = await realFetch(`${base}/api/node`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "factor", id: FAC, unlink: { field: "exact_match", uri: UNIT } }) });
+    assert.equal(un.status, 200, await un.clone().text());
+    assert.deepEqual(puts2[0].exact_match, ["http://example.org/ontology/term"]);
+  });
+});
 
 test("link object + level: written on the level's own experiment (no question, even when the object is in two), adding beside the same factor's old level (PHIS allows several) and saying so", async () => {
   await withServer(async (base) => {

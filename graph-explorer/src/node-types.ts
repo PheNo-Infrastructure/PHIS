@@ -47,7 +47,7 @@ export type NodeConfig = {
   deleteFirst?: (id: string) => Promise<string[]>;
   // The whole UpdateDTO, when copying the GetDTO back would mangle it (a factor's levels are
   // {uri, name} objects that must go back as objects — probed).
-  putPayload?: (dto: Record<string, unknown>, name: string) => Record<string, unknown>;
+  putPayload?: (dto: Record<string, unknown>, name: string, mod?: { unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] } }) => Record<string, unknown>;
   // A sentence for the delete confirm when OpenSILEX's delete cascades somewhere the relations
   // don't show (a factor's levels vanish from the objects using them — probed). Counted, never guessed.
   deleteWarning?: (id: string, dto: Record<string, unknown>) => Promise<string>;
@@ -234,6 +234,29 @@ async function levelUsers(f: FactorDto, levelUris: string[]) {
   return { n, expName: names.join(" and ") };
 }
 // The names of the experiments holding a factor, other than `except` (compared compacted: uris come back full or prefixed).
+// A factor's match list with one uri added or dropped (the unit pseudo-link lives in exact_match).
+function matchWith(current: unknown, mod?: { unlink?: { field: string; uri: string }; link?: { field: string; uris: string[] } }) {
+  let list = ((Array.isArray(current) ? current : []) as string[]).map(String);
+  if (mod?.unlink?.field === "exact_match") list = list.filter((u) => u !== mod.unlink!.uri);
+  if (mod?.link?.field === "exact_match") for (const u of mod.link.uris) if (!list.includes(u)) list.push(u);
+  return list;
+}
+// The factors whose exact_match holds this unit. Neither the factor search nor by_uris returns the match fields (probed 2026-11-10), so each
+// factor is read, a few at a time.
+async function factorsWithUnit(unitId: string) {
+  const all = (await authedGet("/core/experiments/factors?page_size=500")).result;
+  const full: { uri: string; name?: string; exact_match?: string[] }[] = [];
+  for (let i = 0; i < all.length; i += 8) {
+    full.push(...(await Promise.all(all.slice(i, i + 8).map(async (f) => (await authedGetOne(`/core/experiments/factors/${encodeURIComponent(String(f.uri))}`)).result as unknown as { uri: string; name?: string; exact_match?: string[] }))));
+  }
+  const want = await compactUri(unitId);
+  const out: { id: string; label: string }[] = [];
+  for (const f of full) {
+    const hit = await Promise.all((f.exact_match ?? []).map(async (u) => (await compactUri(String(u))) === want));
+    if (hit.some(Boolean)) out.push({ id: String(f.uri), label: String(f.name ?? f.uri) });
+  }
+  return out;
+}
 async function otherExperiments(factorId: string, except: string) {
   const skip = await compactUri(except);
   const out: string[] = [];
@@ -709,7 +732,7 @@ const DATATYPES: Record<string, string> = {
   "http://www.w3.org/2001/XMLSchema#date": "dates", "http://www.w3.org/2001/XMLSchema#dateTime": "dates and times",
 };
 // An entity, characteristic, method or unit: its page lists the variables made with it.
-function variablePart(field: string, path: string, more: (dto: Record<string, unknown>) => [string, unknown][] = () => []): NodeConfig {
+function variablePart(field: string, path: string, more: (dto: Record<string, unknown>) => [string, unknown][] = () => [], extraQuery: QueryRelation[] = []): NodeConfig {
   return {
     getUrl: (id) => `/core/${path}/${encodeURIComponent(id)}`,
     putUrl: "",
@@ -718,7 +741,7 @@ function variablePart(field: string, path: string, more: (dto: Record<string, un
     updateLinkFields: [],
     actions: [],
     facts: (dto) => factsOf([...more(dto), ["Description", dto.description]]),
-    queryRelations: [{ label: "Variables", type: "variable", url: (id) => `/core/variables?${field}=${encodeURIComponent(id)}&page_size=500` }],
+    queryRelations: [{ label: "Variables", type: "variable", url: (id) => `/core/variables?${field}=${encodeURIComponent(id)}&page_size=500` }, ...extraQuery],
   };
 }
 
@@ -1079,14 +1102,15 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     getUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
     putUrl: "/core/experiments/factors",
     deleteUrl: (id) => `/core/experiments/factors/${encodeURIComponent(id)}`,
-    relationGroups: [],
-    updateLinkFields: [],
+    // The unit: its uri sits in `exact_match` (other ontology terms there stay as they are and are not shown as units).
+    relationGroups: [{ label: "Unit", field: "exact_match", type: "unit" }],
+    updateLinkFields: ["exact_match"],
     actions: ["rename", "delete", "link"],
     // The PUT replaces the whole factor (FactorUpdateDTO), so everything it holds goes back.
-    putPayload: (dto, name) => ({
+    putPayload: (dto, name, mod) => ({
       uri: dto.uri, name, experiment: dto.experiment,
       category: dto.category, description: dto.description,
-      exact_match: dto.exact_match, close_match: dto.close_match, broad_match: dto.broad_match, narrow_match: dto.narrow_match,
+      exact_match: matchWith(dto.exact_match, mod), close_match: dto.close_match, broad_match: dto.broad_match, narrow_match: dto.narrow_match,
       levels: ((dto.levels as FactorDto["levels"] | undefined) ?? []).map((l) => ({ uri: l.uri, name: l.name, description: l.description ?? null })),
     }),
     deleteRemovesLinks: true,
@@ -1420,7 +1444,10 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
   entity: variablePart("entity", "entities"),
   characteristic: variablePart("characteristic", "characteristics"),
   method: variablePart("method", "methods"),
-  unit: variablePart("unit", "units", (u) => [["Symbol", u.symbol]]),
+  unit: variablePart("unit", "units", (u) => [["Symbol", u.symbol]], [
+    // A factor points at its unit through the unit's uri in `exact_match` (PHIS has no unit field on a factor; probed 2026-11-10).
+    { label: "Factors", type: "factor", url: () => "", load: factorsWithUnit },
+  ]),
   account: {
     getUrl: (id) => `/security/accounts/${encodeURIComponent(id)}`,
     putUrl: "",
@@ -1739,6 +1766,13 @@ async function groupLabels() {
   } catch { /* the uri stays */ }
   return names;
 }
+async function unitLabels() {
+  const names = new Map<string, string>();
+  try {
+    for (const u of (await authedGet("/core/units?page_size=500")).result) names.set(await compactUri(String(u.uri)), String(u.name ?? u.uri));
+  } catch { /* the uri stays */ }
+  return names;
+}
 async function factorLabels() {
   const names = new Map<string, string>();
   try {
@@ -1755,12 +1789,14 @@ export async function relationsFor(id: string, dto: Record<string, unknown>, con
       groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
     }
   }
-  for (const [type, labels] of [["person", personLabels], ["group", groupLabels], ["factor", factorLabels]] as const) {
+  for (const [type, labels] of [["person", personLabels], ["group", groupLabels], ["factor", factorLabels], ["unit", unitLabels]] as const) {
     if (!groups.some((g) => g.items.some((it) => it.type === type && it.label === it.id))) continue;
     const names = await labels();
     for (const g of groups) for (const it of g.items) if (it.type === type && it.label === it.id) it.label = names.get(await compactUri(it.id)) ?? it.label;
   }
-  return groups;
+  // A factor's exact_match can hold any ontology term: only the ones that are PHIS units are units.
+  for (const g of groups) if (g.field === "exact_match") g.items = g.items.filter((it) => it.type !== "unit" || it.label !== it.id);
+  return groups.filter((g) => g.field !== "exact_match" || g.items.length);
 }
 
 // Builds the full-DTO PUT payload from the CURRENT dto, optionally adding one or more uris to
@@ -1820,7 +1856,7 @@ export async function updateNode(
 ) {
   const current = (await authedGetOne(config.getUrl(id))).result;
   const name = mod.name ?? String(current.name ?? "");
-  await authedPut(config.putUrl, config.putPayload ? config.putPayload(current, name) : updatePayloadFromDto(id, name, current, config, mod));
+  await authedPut(config.putUrl, config.putPayload ? config.putPayload(current, name, mod) : updatePayloadFromDto(id, name, current, config, mod));
   return current;
 }
 

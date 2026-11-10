@@ -56,7 +56,7 @@ export const ADJACENT = {
   variable: ["entity", "entity_of_interest", "characteristic", "method", "unit", "variable_group", "annotation"],
   variable_group: ["variable", "facility", "annotation"],
   germplasm_group: ["germplasm"],
-  factor: ["experiment", "factor_level"],
+  factor: ["experiment", "factor_level", "unit"], // a factor's unit is a pseudo-link: the unit's uri in the factor's exact_match
   device: ["facility", "person", "event", "annotation"],
   provenance: ["device", "person", "annotation"],
   // A signed-up account has no person until one is made for it (+ New person), or linked (Link selection).
