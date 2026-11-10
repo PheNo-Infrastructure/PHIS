@@ -801,7 +801,7 @@ test("e2e: Browse lists the parts of a variable (entities, characteristics, meth
   });
 });
 
-test("e2e: import review — the factor row says what is reused and which levels are read as numbers; its pencil lists PHIS's factors with their units, a pick re-plans with `use`, and 'new' can carry a unit", async () => {
+test("e2e: import review — the factor row says what is reused and which levels are read as numbers; its pencil is a name box with suggestions from PHIS (an existing name is reused, a new one is new and can take a unit, a picked row sends `use`)", async () => {
   await withServerAndBrowser(async (base, page) => {
     const seen: (string | undefined)[] = [];
     const planFor = (edits: any) => {
@@ -836,18 +836,32 @@ test("e2e: import review — the factor row says what is reused and which levels
     await page.locator("#importRunBtn").waitFor();
 
     await page.locator('.import-edit[data-edit="factors"]').click();
-    const pick = page.locator('select[data-pick="Treatment"]');
-    await pick.locator('option[value="use:f:temp"]').waitFor({ state: "attached" });
-    assert.match(await pick.locator("optgroup").innerText(), /Temperature — DegreeCelsius \(10, 15\)/);
-    assert.match(await pick.locator("optgroup").innerText(), /Treatment — no unit/);
-    assert.equal(await page.locator('select[data-unit="Treatment"]').isDisabled(), true, "the unit is for a new factor only");
-    await pick.selectOption("fresh");
-    assert.equal(await page.locator('select[data-unit="Treatment"]').isDisabled(), false);
-    await page.locator('select[data-unit="Treatment"]').selectOption("u:c");
-    await pick.selectOption("use:f:temp");
+    await page.locator('.import-editor[data-ready]').waitFor({ state: "attached" });
+    const box = page.locator('input[data-factor="Treatment"]:not([data-level])');
+    await box.focus();
+    await page.locator(".import-suggest div").first().waitFor();
+    const suggestions = await page.locator(".import-suggest").innerText();
+    assert.match(suggestions, /Treatment — no unit/, "the suggestions follow what is typed");
+    assert.doesNotMatch(suggestions, /Temperature/);
+    assert.match(suggestions, /New factor “Treatment” \(don't reuse\)/, "an exact name can still make a second factor on purpose");
+    assert.match(await page.locator(".import-hint").innerText(), /PHIS has this factor, so it is used: Treatment — no unit/, "an existing name is reused");
+    assert.equal(await page.locator('[data-unit-of="Treatment"]').isHidden(), true, "no unit box for a reused factor");
+    await box.fill("Temp");
+    assert.match(await page.locator(".import-suggest").innerText(), /Temperature — DegreeCelsius \(10, 15\)/);
+    await box.fill("Brand new");
+    assert.match(await page.locator(".import-hint").innerText(), /A new factor\./);
+    await page.locator('[data-unit-of="Treatment"]').fill("DegreeCelsius");
     await page.locator('[data-act="save"]').click();
     await page.locator(".import-edited").waitFor();
-    assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1)!)), { factors: { Treatment: { use: "f:temp" } } }, "a picked factor is sent as `use`; the unit only goes with 'new'");
+    assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1)!)), { factors: { Treatment: { name: "Brand new", unit: "u:c" } } }, "a new name with a unit");
+    await page.locator('.import-edit[data-edit="factors"]').click();
+    await page.locator('.import-editor[data-ready]').waitFor({ state: "attached" });
+    await page.locator('input[data-factor="Treatment"]:not([data-level])').fill("Temp");
+    await page.locator('.import-suggest div:has-text("Temperature — DegreeCelsius")').click();
+    assert.match(await page.locator(".import-hint").innerText(), /Uses the factor in PHIS: Temperature — DegreeCelsius/);
+    await page.locator('[data-act="save"]').click();
+    await page.waitForFunction(() => /reusing the factor already in PHIS/.test(document.querySelector('[data-section="factors"]')!.textContent!));
+    assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1)!)), { factors: { Treatment: { use: "f:temp" } } }, "a picked factor is sent as `use`");
     const text = (await page.locator('[data-section="factors"]').innerText()).replace(/\s+/g, " ");
     assert.match(text, /Temperature: reusing the factor already in PHIS \(unit DegreeCelsius\), used by Trial A; adds level 18 to it, which everyone using it will see/);
     assert.match(text, /read as numbers: 15C → 15, 18C → 18/);

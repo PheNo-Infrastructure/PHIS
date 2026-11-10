@@ -220,6 +220,11 @@ body:not([data-view="browse"]) #graphPane { display: none; }
 .import-form > label, .import-form > .import-field-name { font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
 .import-form select, .import-form input[type="text"], .import-form input[type="date"] { width: 100%; max-width: 380px; box-sizing: border-box; font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg); color: var(--ink); }
 .import-form .import-note, .import-form .import-check { grid-column: 2; }
+.import-combo { display: flex; flex-direction: column; gap: 4px; max-width: 380px; }
+.import-suggest { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-2); max-height: 170px; overflow-y: auto; }
+.import-suggest div { padding: 4px 8px; font-size: 12.5px; cursor: pointer; }
+.import-suggest div:hover { background: var(--accent); color: #fff; }
+.import-hint { font-size: 12px; color: var(--ink-soft, var(--ink)); min-height: 1em; }
 .import-form .import-devices { display: flex; flex-wrap: wrap; gap: 4px; max-width: 380px; }
 .import-form .import-devices input { flex: 1 1 140px; }
 .import-form .import-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; padding: 2px 4px 2px 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--type-device-soft); }
@@ -5473,23 +5478,63 @@ function editableVariables(p) {
   return (p.original?.variables ?? []).filter((o) => missing.has(ev[o] ?? o) || o in ev);
 }
 
-// The factor chooser in the review: every factor in PHIS (name, unit, levels) and every unit, read when the editor opens.
+// The factor name box in the review: suggestions come from the factors in PHIS (name, unit, levels), read when the editor opens.
+// Typing an existing name reuses that factor, a new name makes a new one, and the box says which. Picking a row also settles WHICH one
+// when several are named alike; "New factor" on an exact name makes a second one on purpose.
 async function fillFactorPickers(editor, had) {
+  const e = escapeHtml;
+  let factors = [], units = [];
   try {
-    const [factors, units] = await Promise.all([fetch("api/import/factors"), fetch("api/import/units")].map((r) => r.then((x) => x.ok ? x.json() : [])));
-    const e = escapeHtml;
-    editor.querySelectorAll("select[data-pick]").forEach((sel) => {
-      const f = sel.dataset.pick, h = had.factors?.[f] ?? {};
-      sel.insertAdjacentHTML("beforeend", `<optgroup label="Use a factor already in PHIS">${factors.map((x) => `<option value="use:${e(x.id)}">${e(x.label)} — ${x.unit ? e(x.unit.name) : "no unit"} (${e(x.levels.slice(0, 4).join(", ") + (x.levels.length > 4 ? ", …" : ""))})</option>`).join("")}</optgroup>`);
-      sel.value = h.use ? `use:${h.use}` : h.fresh ? "fresh" : "";
-      if (sel.value !== (h.use ? `use:${h.use}` : h.fresh ? "fresh" : "")) sel.value = "";
-      const u = editor.querySelector(`select[data-unit="${CSS.escape(f)}"]`);
-      u.insertAdjacentHTML("beforeend", units.map((x) => `<option value="${e(x.id)}">${e(x.name)}</option>`).join(""));
-      u.value = h.unit ?? "";
-      const sync = () => { u.disabled = sel.value !== "fresh"; };
-      sel.addEventListener("change", sync); sync();
+    [factors, units] = await Promise.all([fetch("api/import/factors"), fetch("api/import/units")].map((r) => r.then((x) => x.ok ? x.json() : [])));
+  } catch { /* no suggestions: the box still names a factor */ }
+  editor._units = units;
+  if (!document.getElementById("importUnits")) document.body.insertAdjacentHTML("beforeend", `<datalist id="importUnits"></datalist>`);
+  document.getElementById("importUnits").innerHTML = units.map((u) => `<option value="${e(u.name)}">`).join("");
+  const levelsOf = (x) => x.levels.slice(0, 4).join(", ") + (x.levels.length > 4 ? ", …" : "");
+  const describe = (x) => `${x.label} — ${x.unit ? x.unit.name : "no unit"} (${levelsOf(x)})`;
+  editor.querySelectorAll("input[data-factor]:not([data-level])").forEach((inp) => {
+    const f = inp.dataset.factor, h = had.factors?.[f] ?? {};
+    const box = inp.parentElement, sug = box.querySelector(".import-suggest"), hint = box.querySelector(".import-hint"), unit = box.querySelector("[data-unit-of]");
+    const named = () => factors.filter((x) => x.label.trim().toLowerCase() === inp.value.trim().toLowerCase());
+    if (h.use) { const x = factors.find((y) => y.id === h.use); if (x) { inp.value = x.label; inp.dataset.use = x.id; } }
+    if (h.fresh) inp.dataset.fresh = "1";
+    if (h.unit) { const u = units.find((y) => y.id === h.unit); if (u) unit.value = u.name; }
+    const status = () => {
+      const m = named(), picked = inp.dataset.use && factors.find((x) => x.id === inp.dataset.use);
+      let text, isNew = false;
+      if (picked) text = `Uses the factor in PHIS: ${describe(picked)}.`;
+      else if (inp.dataset.fresh) { text = "Makes a new factor, even though PHIS has one of this name."; isNew = true; }
+      else if (m.length === 1) text = `PHIS has this factor, so it is used: ${describe(m[0])}.`;
+      else if (m.length > 1) text = `${m.length} factors in PHIS have this name: pick one from the list.`;
+      else { text = inp.value.trim() ? "A new factor." : ""; isNew = !!inp.value.trim(); }
+      hint.textContent = text;
+      unit.hidden = !isNew;
+    };
+    const suggest = () => {
+      const q = inp.value.trim().toLowerCase(), exact = named();
+      const rows = factors.filter((x) => !q || x.label.toLowerCase().includes(q)).slice(0, 8);
+      const items = rows.map((x) => `<div data-id="${e(x.id)}">${e(describe(x))}</div>`);
+      if (exact.length) items.push(`<div data-new="1">New factor “${e(inp.value.trim())}” (don't reuse)</div>`);
+      sug.innerHTML = items.join(""); sug.hidden = !items.length;
+    };
+    inp.addEventListener("input", () => { delete inp.dataset.use; delete inp.dataset.fresh; suggest(); status(); });
+    inp.addEventListener("focus", () => { suggest(); status(); });
+    inp.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !sug.hidden) { ev.stopPropagation(); sug.hidden = true; } });
+    sug.addEventListener("mousedown", (ev) => {
+      const row = ev.target.closest("div[data-id], div[data-new]");
+      if (!row) return;
+      ev.preventDefault();
+      delete inp.dataset.use; delete inp.dataset.fresh;
+      if (row.dataset.new) inp.dataset.fresh = "1";
+      else { const x = factors.find((y) => y.id === row.dataset.id); inp.value = x.label; inp.dataset.use = x.id; }
+      sug.hidden = true; status();
     });
-  } catch { /* the chooser stays on Automatic / Make a new factor */ }
+    inp.addEventListener("blur", () => { sug.hidden = true; });
+    status();
+  });
+  editor.dataset.ready = "1";
+  const active = document.activeElement; // the box was focused before the lists arrived: show its suggestions now
+  if (active?.matches?.("input[data-factor]:not([data-level])") && editor.contains(active)) active.dispatchEvent(new Event("focus"));
 }
 
 // The pencil on a review row turns its values into fields. Save asks the server for a new plan with the edit applied (apply
@@ -5503,9 +5548,9 @@ function wireImportEditing(plan, apply) {
     germplasm: () => plan.original.germplasm.map((o) => field(o, `data-orig="${e(o)}"`, had.germplasm?.[o] ?? o)
       + field(`${o}: code`, `data-code="${e(o)}" placeholder="none"`, had.germplasmCodes?.[o] ?? plan.original.codes?.[o] ?? "")).join("")
       + `<p class="import-note">A code is the variety's short name (TraitFinder's G_alias). A variety that already has a different code in PHIS keeps that one.</p>`,
-    factors: () => plan.original.factors.map((f) => `<label>${e(f.name)}: which factor</label><span class="import-pick"><select data-pick="${e(f.name)}"><option value="">Automatic (same name in PHIS, else new)</option><option value="fresh">Make a new factor</option></select>`
-      + ` <select data-unit="${e(f.name)}" title="The unit of a new factor: its levels are then read as numbers"><option value="">No unit</option></select></span>`
-      + field(`${f.name} (factor)`, `data-factor="${e(f.name)}"`, had.factors?.[f.name]?.name ?? f.name)
+    // The factor's name is a box with suggestions: typing a name PHIS already has uses that factor, a new name makes a new one.
+    factors: () => plan.original.factors.map((f) => `<label>${e(f.name)}: factor</label><div class="import-combo"><input type="text" data-factor="${e(f.name)}" autocomplete="off" value="${e(had.factors?.[f.name]?.name ?? f.name)}"><div class="import-suggest" hidden></div><div class="import-hint"></div>`
+      + `<input type="text" data-unit-of="${e(f.name)}" list="importUnits" placeholder="Unit of the new factor (optional): its levels are then read as numbers" hidden></div>`
       + f.levels.map((l) => field(`${f.name}: ${l}`, `data-factor="${e(f.name)}" data-level="${e(l)}"`, had.factors?.[f.name]?.levels?.[l] ?? l)).join("")).join(""),
     variables: () => editableVariables(plan).map((o) => field(o, `data-orig="${e(o)}"`, had.variables?.[o] ?? o)).join("")
       + `<p class="import-note">Variables already in PHIS keep their names. Give a new one the name of an existing variable to use that one instead.</p>`,
@@ -5532,16 +5577,13 @@ function wireImportEditing(plan, apply) {
       const x = {};
       for (const inp of editor.querySelectorAll("input[data-factor]")) {
         const f = inp.dataset.factor, l = inp.dataset.level;
-        if (l === undefined ? val(inp) !== f : val(inp) !== l) {
-          x[f] ??= {};
-          if (l === undefined) x[f].name = val(inp); else (x[f].levels ??= {})[l] = val(inp);
-        }
-      }
-      // Which PHIS factor each one becomes: a picked factor replaces the name (its own is used); "new" can carry a unit.
-      for (const sel of editor.querySelectorAll("select[data-pick]")) {
-        const f = sel.dataset.pick, pick = sel.value, unit = editor.querySelector(`select[data-unit="${CSS.escape(f)}"]`)?.value;
-        if (pick.startsWith("use:")) { x[f] ??= {}; x[f].use = pick.slice(4); delete x[f].name; }
-        else if (pick === "fresh") { x[f] ??= {}; x[f].fresh = true; if (unit) x[f].unit = unit; }
+        if (l !== undefined) { if (val(inp) !== l) (x[f] ??= {}).levels = { ...x[f]?.levels, [l]: val(inp) }; continue; }
+        if (inp.dataset.use) { (x[f] ??= {}).use = inp.dataset.use; continue; } // a picked PHIS factor: its own name is used
+        if (val(inp) !== f) (x[f] ??= {}).name = val(inp);
+        if (inp.dataset.fresh) (x[f] ??= {}).fresh = true;
+        // A unit goes with a NEW factor only (the box is hidden otherwise): its levels are then read as numbers.
+        const unitBox = editor.querySelector(`[data-unit-of="${CSS.escape(f)}"]`), u = (editor._units ?? []).find((y) => y.name.toLowerCase() === (unitBox?.value ?? "").trim().toLowerCase());
+        if (unitBox && !unitBox.hidden && u) (x[f] ??= {}).unit = u.id;
       }
       set("factors", x);
     }
