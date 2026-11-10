@@ -1232,6 +1232,26 @@ test("e2e: '+ New' → scientific object from ONE selected experiment: form has 
   });
 });
 
+test("e2e: the selection pane's '+ New' menu stays inside the window: when the pane is tall it opens upward, so every item can be reached", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(base + "/#browse");
+    await idle(page);
+    await openRow(page, "Scientific Organization");
+    await openRow(page, "Experiments");
+    await page.locator("#rowlist .row").first().click();
+    await idle(page);
+    // The pane is sticky, so a menu hanging below its button can't be scrolled into view; a long selection list pushes the button down (as 20+ picks do).
+    await page.evaluate(() => { (document.querySelector("#selectionPane .sel-list") as HTMLElement).style.minHeight = "330px"; });
+    await page.locator("#newBtn").click();
+    await page.locator("#newMenu.open").waitFor();
+    const fit = await page.evaluate(() => [...document.querySelectorAll("#newList .newmenu-item")].map((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
+    assert.ok(fit.length > 1 && fit.every(Boolean), `every menu item is inside the window: ${fit}`);
+    await page.locator("#newList .newmenu-item", { hasText: "scientific object" }).click(); // reachable by a real click
+    await page.locator("dialog.create-dialog").waitFor({ state: "visible" });
+  });
+});
+
 test("e2e: '+ New' → scientific object with TWO experiments selected creates it in both (one form, both links posted)", async () => {
   await withServerAndBrowser(async (base, page) => {
     let capturedBody: any = null;
@@ -4936,6 +4956,7 @@ test("e2e: graph: a plain click opens the resource and leaves the selection alon
     await ctrlClick(page, box.x + v.x, box.y + v.y);
     await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
     await settled(frame);
+    await page.waitForTimeout(350); // the ctrl-click above and this click are under 300 ms apart when everything is fast: Sigma then drops this one as the second click of a double click
     v = await nodeXY(frame, "t:exp-1");
     await page.mouse.click(box.x + v.x, box.y + v.y);
     await page.waitForFunction(() => (window as any).__opened.length === 1);

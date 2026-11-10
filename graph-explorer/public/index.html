@@ -1079,6 +1079,8 @@ label[data-tip]:hover::after { content: attr(data-tip); position: absolute; left
 #selectionPane .selection-summary { flex-basis: 100%; }
 /* …and open downward, so the list and the question they answer stay readable above them. */
 #selectionPane .newmenu-list { z-index: 30; bottom: auto; top: calc(100% + 6px); }
+/* …unless the window has no room below (flipIfCramped), so no item sits off-screen. */
+#selectionPane .newmenu.up .newmenu-list { top: auto; bottom: calc(100% + 6px); }
 #treePane .rowlist { max-height: 360px; overflow: auto; }
 #treePane[hidden] { display: none; }
 </style>
@@ -4931,7 +4933,7 @@ function renderActionbar() {
   document.getElementById("showGridBtn")?.addEventListener("click", openChartGrid);
   const visMenu = document.getElementById("visMenu");
   if (visMenu) {
-    document.getElementById("visBtn").addEventListener("click", (e) => { e.stopPropagation(); visMenu.classList.toggle("open"); });
+    document.getElementById("visBtn").addEventListener("click", (e) => { e.stopPropagation(); visMenu.classList.toggle("open"); flipIfCramped(visMenu); });
     visMenu.querySelectorAll("[data-public]").forEach(b => b.addEventListener("click", () => {
       visMenu.classList.remove("open");
       setVisibility([...selection.values()], b.dataset.public === "true");
@@ -5000,6 +5002,7 @@ function renderActionbar() {
   document.getElementById("newBtn").addEventListener("click", (e) => {
     e.stopPropagation();
     menu.classList.toggle("open");
+    flipIfCramped(menu);
   });
   document.addEventListener("click", () => menu.classList.remove("open"), { once: true });
 }
@@ -5442,6 +5445,16 @@ async function afterImport(body) {
   const id = body?.experiment?.id;
   if (id) { delete NODE_DETAIL[id]; if (setupTrial && setupTrial.id === id) loadNodeDetail(setupTrial); }
   if (PAGE_VIEWS.has(view)) renderPage();
+}
+// The selection pane's menus open downward (the question they answer stays readable above them). With no room below the window, they open
+// upward instead, so no item is off-screen and out of reach.
+function flipIfCramped(menu) {
+  menu.classList.remove("up");
+  if (!menu.classList.contains("open")) return;
+  const list = menu.querySelector(".newmenu-list");
+  const r = list.getBoundingClientRect();
+  if (r.bottom <= innerHeight) return;
+  if (menu.getBoundingClientRect().top - 6 >= r.height) menu.classList.add("up");
 }
 function openImport(opts = {}) { importSession = opts; if (view === "import") renderPage(); else showView("import"); }
 function wireImportPage(opts) {
