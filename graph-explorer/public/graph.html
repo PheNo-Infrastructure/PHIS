@@ -54,7 +54,7 @@
 <script>
 // Nodes and the painted regions around them are the brand greens (Forest, Leaf dark, Leaf light, between Leaf light and Straw, Straw dark), told apart by lightness and,
 // on the discs, by the icon inside.
-const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a", scientific_object:"#d9a441", variable:"#8c5aa0", variable_group:"#6f4585", entity:"#c9a8d6", characteristic:"#b57fa6", method:"#7e6bb0", unit:"#d4b3c9", entity_of_interest:"#a58ccf", event:"#b1513e", annotation:"#c98a7a", account:"#7a8a99", factor_level:"#a8b86a", germplasm:"#6fae8a" };
+const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a", scientific_object:"#d9a441", variable:"#8c5aa0", variable_group:"#6f4585", entity:"#c9a8d6", characteristic:"#b57fa6", method:"#7e6bb0", unit:"#d4b3c9", entity_of_interest:"#a58ccf", event:"#b1513e", annotation:"#c98a7a", account:"#7a8a99", factor_level:"#a8b86a", germplasm:"#6fae8a", profile:"#5d6f7a", document:"#9a8f6a" };
 // Minimal line icons (24 x 24), drawn over the discs in the style of the PheNo icon set.
 const ICON_PATHS = {
   organization: "M5 21V5l7-2 7 2v16M3 21h18M9 9h2M13 9h2M9 13h2M13 13h2M10 21v-4h4v4",
@@ -80,9 +80,11 @@ const ICON_PATHS = {
   account: "M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5 20c0-3.9 3.1-7 7-7s7 3.1 7 7M16 15l2 2 3-3",
   factor_level: "M5 8h14M5 16h14M9 4v8M15 12v8",
   germplasm: "M12 21c-3-3-5-6-5-9a5 5 0 0 1 10 0c0 3-2 6-5 9zM12 8v6",
+  profile: "M6 3h12v18H6zM9 8h6M9 12h6M9 16h3",
+  document: "M7 3h7l4 4v14H7zM14 3v4h4M9 12h6M9 16h6",
 };
-const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", scientific_object:"Object", variable:"Variable", variable_group:"Variable group", entity:"Entity", characteristic:"Characteristic", method:"Method", unit:"Unit", entity_of_interest:"Entity of interest", event:"Event", annotation:"Annotation", account:"Account", factor_level:"Factor level", germplasm:"Germplasm", species:"Species" };
-const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species", "scientific_object", "variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest", "event", "annotation", "account", "factor_level", "germplasm"];
+const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", scientific_object:"Object", variable:"Variable", variable_group:"Variable group", entity:"Entity", characteristic:"Characteristic", method:"Method", unit:"Unit", entity_of_interest:"Entity of interest", event:"Event", annotation:"Annotation", account:"Account", factor_level:"Factor level", germplasm:"Germplasm", profile:"Profile", document:"Document", species:"Species" };
+const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species", "scientific_object", "variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest", "event", "annotation", "account", "factor_level", "germplasm", "profile", "document"];
 const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -138,7 +140,7 @@ async function openInPortal(n) {
   const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
-  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", variable:"variables", variable_group:"variable groups", entity:"entities", characteristic:"characteristics", method:"methods", unit:"units", entity_of_interest:"entities of interest", event:"events", annotation:"annotations", account:"accounts", factor_level:"factor levels", germplasm:"germplasm", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
+  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", variable:"variables", variable_group:"variable groups", entity:"entities", characteristic:"characteristics", method:"methods", unit:"units", entity_of_interest:"entities of interest", event:"events", annotation:"annotations", account:"accounts", factor_level:"factor levels", germplasm:"germplasm", profile:"profiles", document:"documents", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
   // A cluster shows its nodes once it nearly fills the view and they have room (average gap between neighbours in px), and is painted again when it shrinks below the lower share.
   // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.

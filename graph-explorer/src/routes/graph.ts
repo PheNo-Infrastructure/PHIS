@@ -29,6 +29,9 @@ const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean
   { type: "annotation", url: "/core/annotations?page_size=5000", fields: ["targets"], optional: true, label: (it) => short(String(it.description ?? "").replace(/\s+/g, " ").trim() || "(empty annotation)") },
   { type: "account", url: "/security/accounts?page_size=5000", fields: ["linked_person"], optional: true, label: (it) => String(it.email ?? it.uri) },
   { type: "germplasm", url: "/core/germplasm?page_size=5000", fields: ["species"], optional: true },
+  // The rights a group gives its members, and the documents (imported datasets) with what they are about.
+  { type: "profile", url: "/security/profiles?page_size=5000", fields: [], optional: true },
+  { type: "document", url: "/core/documents?pageSize=5000", fields: ["targets"], optional: true, label: (it) => short(String(it.title ?? it.uri)) },
 ];
 const short = (t: string) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
 
@@ -113,6 +116,11 @@ async function build(): Promise<string> {
     const person = up.user_uri ? personOfAccount.get(up.user_uri) : undefined;
     const key = person ? [gr.uri, person].sort().join(" ") : "";
     if (person && !seen.has(key)) { seen.add(key); edges.push({ source: gr.uri, target: person }); }
+  }
+  // A group's members each have a profile there: the profile is linked to the group.
+  for (const gr of at("group")) for (const up of (gr.user_profiles as { profile_uri?: string }[] | undefined) ?? []) {
+    const key = up.profile_uri && nodes.has(up.profile_uri) ? [gr.uri, up.profile_uri].sort().join(" ") : "";
+    if (key && !seen.has(key)) { seen.add(key); edges.push({ source: gr.uri, target: up.profile_uri! }); }
   }
   // A group's members are accounts too: the account is the node, and the person it belongs to is linked above.
   for (const gr of at("group")) for (const up of (gr.user_profiles as { user_uri?: string }[] | undefined) ?? []) {

@@ -1506,6 +1506,16 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     ...variablePart("unit", "units", (u) => [["Symbol", u.symbol]], [{ label: "Factors", type: "factor", url: () => "", load: factorsWithUnit }], "unit"),
     actions: ["rename", "delete", "link"],
   },
+  // A document (what an import leaves: an imported dataset) is read here, not edited: what it is about is in PHIS's own data.
+  document: {
+    getUrl: (id) => `/core/documents/${encodeURIComponent(id)}`,
+    putUrl: "",
+    deleteUrl: () => "",
+    relationGroups: [],
+    updateLinkFields: [],
+    actions: [],
+    facts: (d) => factsOf([["Type", d.rdf_type_name], ["Title", d.title], ["Date", d.date], ["Format", d.format], ["Description", d.description], ["Source", d.source]]),
+  },
   account: {
     getUrl: (id) => `/security/accounts/${encodeURIComponent(id)}`,
     putUrl: "",

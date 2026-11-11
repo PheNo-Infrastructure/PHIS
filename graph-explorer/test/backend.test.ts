@@ -3767,7 +3767,9 @@ test("graph: people, groups and factors are nodes, linked through device, experi
     globalThis.fetch = (async (url: string) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
       if (url.includes("/security/persons")) return page([{ uri: "p:1", first_name: "Ada", last_name: "Lovelace", account: "acc:1" }, { uri: "p:2", first_name: "Solo", last_name: "Person" }]);
-      if (url.includes("/security/groups")) return page([{ uri: "g:1", name: "Researchers", user_profiles: [{ user_uri: "acc:1" }, { user_uri: "acc:unknown" }] }]);
+      if (url.includes("/security/groups")) return page([{ uri: "g:1", name: "Researchers", user_profiles: [{ user_uri: "acc:1", profile_uri: "pr:1" }, { user_uri: "acc:unknown" }] }]);
+      if (url.includes("/security/profiles")) return page([{ uri: "pr:1", name: "Researcher profile" }]);
+      if (url.includes("/core/documents")) return page([{ uri: "doc:1", title: "Imported dataset", targets: ["e:1", "batch:mongo"] }]);
       if (url.includes("/core/experiments/factors/")) return jsonResponse(200, { result: { uri: "f:1", name: "Temperature", exact_match: ["u:1", "http://example.org/not-a-unit"], levels: [{ uri: "lv:1", name: "Dry" }] } });
       if (url.includes("/core/experiments/factors")) return page([{ uri: "f:1", name: "Temperature" }]);
       if (url.includes("/core/species")) return page([{ uri: "s:1", name: "barley" }, { uri: "s:unused", name: "banana" }]);
@@ -3791,13 +3793,13 @@ test("graph: people, groups and factors are nodes, linked through device, experi
     await realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); // empty cache
     const body = await (await realFetch(`${base}/api/graph`)).json();
     const types = Object.fromEntries(body.nodes.map((n: any) => [n.id, n.type]));
-    assert.deepEqual(types, { "e:1": "experiment", "d:1": "device", "d:2": "device", "p:1": "person", "p:2": "person", "g:1": "group", "f:1": "factor", "s:1": "species", "so:1": "scientific_object", "so:2": "scientific_object", "v:1": "variable", "en:1": "entity", "u:1": "unit", "vg:1": "variable_group", "gm:1": "germplasm", "gm:2": "germplasm", "ev:1": "event", "an:1": "annotation", "acc:1": "account", "lv:1": "factor_level" });
+    assert.deepEqual(types, { "e:1": "experiment", "d:1": "device", "d:2": "device", "p:1": "person", "p:2": "person", "g:1": "group", "f:1": "factor", "s:1": "species", "so:1": "scientific_object", "so:2": "scientific_object", "v:1": "variable", "en:1": "entity", "u:1": "unit", "vg:1": "variable_group", "gm:1": "germplasm", "gm:2": "germplasm", "ev:1": "event", "an:1": "annotation", "acc:1": "account", "lv:1": "factor_level", "pr:1": "profile", "doc:1": "document" });
     assert.equal(body.nodes.find((n: any) => n.id === "ev:1").label, "Move · 2026-07-12 · to the lab", "an event is named by its kind, its date and what it says");
     assert.equal(body.nodes.find((n: any) => n.id === "e:1").count, 1, "an experiment says how many objects it holds");
     assert.equal(body.nodes.find((n: any) => n.id === "s:1").count, 2, "a species says how many germplasm it has; one nobody uses is not a node");
     assert.equal(body.nodes.find((n: any) => n.id === "p:1").label, "Ada Lovelace");
     const links = body.edges.map((e: any) => [e.source, e.target].sort().join(" ")).sort();
-    assert.deepEqual(links, ["acc:1 g:1", "acc:1 p:1", "an:1 e:1", "d:1 d:2", "d:1 ev:1", "d:1 p:1", "d:1 v:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "en:1 v:1", "ev:1 so:1", "f:1 lv:1", "f:1 u:1", "g:1 p:1", "gm:1 s:1", "gm:1 so:1", "gm:2 s:1", "lv:1 so:1", "so:1 so:2", "u:1 v:1", "v:1 vg:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
+    assert.deepEqual(links, ["acc:1 g:1", "acc:1 p:1", "an:1 e:1", "d:1 d:2", "d:1 ev:1", "d:1 p:1", "d:1 v:1", "doc:1 e:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "en:1 v:1", "ev:1 so:1", "f:1 lv:1", "f:1 u:1", "g:1 p:1", "g:1 pr:1", "gm:1 s:1", "gm:1 so:1", "gm:2 s:1", "lv:1 so:1", "so:1 so:2", "u:1 v:1", "v:1 vg:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
   });
 });
 
@@ -4220,5 +4222,19 @@ test("a camera and its lens: two devices are linked (the lens is read from the t
     assert.equal((await post("/api/unlink", { items: [dev("lens-1"), dev("cam-1")], confirm: true })).status, 200);
     assert.deepEqual(puts[0].relations, [{ property: "vocabulary:measures", value: "var-1", inverse: false }], "only the lens goes");
     assert.deepEqual((await (await post("/api/unlink", { items: [dev("lens-2"), dev("cam-1")] })).json()).links, []);
+  });
+});
+
+test("a document (an imported dataset) has a read-only page: what it is, its date and format", async () => {
+  await withServer(async (base) => {
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (url.includes("/core/documents/doc-1")) return jsonResponse(200, { result: { uri: "doc-1", rdf_type_name: "imported dataset", title: "imported_data_1bae", date: "Fri Oct 30 12:21:54 UTC 2026", format: "zip", description: null } });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const d = await (await realFetch(`${base}/api/node-detail?type=document&id=doc-1`)).json();
+    assert.deepEqual(d.actions, [], "read-only");
+    assert.deepEqual(d.facts, [{ label: "Type", value: "imported dataset" }, { label: "Title", value: "imported_data_1bae" }, { label: "Date", value: "Fri Oct 30 12:21:54 UTC 2026" }, { label: "Format", value: "zip" }]);
   });
 });
