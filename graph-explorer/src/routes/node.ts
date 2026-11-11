@@ -42,6 +42,25 @@ export const handleNodeDetail: RouteHandler = async (req, res, { pathname, searc
   return true;
 };
 
+// One box of an object's "In experiments" list (its germplasm, levels, parent in that experiment), read when the box is opened.
+export const handleNodeBoxes: RouteHandler = async (req, res, { pathname, searchParams }) => {
+  if (pathname !== "/api/node-detail/boxes" || req.method !== "GET") return false;
+  const config = NODE_TYPES[searchParams.get("type") ?? ""];
+  const id = searchParams.get("id"), item = searchParams.get("item");
+  const q = config?.queryRelations?.find((r) => r.itemGroups);
+  if (!q || !id || !item) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "no boxes for this type" }));
+    return true;
+  }
+  await respondOpenSilexErrors(res, async () => {
+    const body = JSON.stringify({ groups: await q.itemGroups!(id, item) });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(body);
+  });
+  return true;
+};
+
 export const handleNodeMutation: RouteHandler = async (req, res, { pathname, searchParams }) => {
   // The way past a blocked delete (deleteBlockFix), taken only on its own confirmed request. A DELETE,
   // not a POST: a browser preflights it, so another site can't make a logged-in browser send it (CSRF).

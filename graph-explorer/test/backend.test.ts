@@ -777,16 +777,21 @@ test("scientific object: germplasm and parent are read from EACH experiment copy
 
     const detail = await (await realFetch(`${base}/api/node-detail?type=scientific_object&id=so-1`)).json();
     const g = (id: string, label: string) => ({ id, type: "germplasm", label });
-    assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", items: [
+    assert.deepEqual(detail.relations, [{ label: "In experiments", field: "experiment", lazyBoxes: true, items: [
       { id: "exp-a", type: "experiment", label: "Barley 2025", groups: [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/annika", "Annika")] }, { label: "Part of", field: "isPartOf", type: "scientific_object", items: [] }, { label: "Contains", field: "contains", type: "scientific_object", items: [] }, { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] }] },
-      { id: "exp-b", type: "experiment", label: "Barley 2026", groups: [
-        { label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
-        { label: "Part of", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
-        { label: "Contains", field: "contains", type: "scientific_object", items: [] },
-        { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] },
-      ] },
+      { id: "exp-b", type: "experiment", label: "Barley 2026" }, // several experiments: only the first box is read with the page
     ] }]);
+    assert.deepEqual(named.sort(), ["germplasm:phis:id/annika"], "the other experiment's boxes cost nothing yet");
+    // Opening it reads its box.
+    const boxes = await (await realFetch(`${base}/api/node-detail/boxes?type=scientific_object&id=so-1&item=exp-b`)).json();
+    assert.deepEqual(boxes.groups, [
+      { label: "Germplasm", field: "hasGermplasm", type: "germplasm", addable: true, items: [g("phis:id/arild", "Arild"), g("phis:id/annika", "Annika")] },
+      { label: "Part of", field: "isPartOf", type: "scientific_object", items: [{ id: "phis:id/block-a", type: "scientific_object", label: "Block A" }] },
+      { label: "Contains", field: "contains", type: "scientific_object", items: [] },
+      { label: "Factor levels", field: "hasFactorLevel", type: "factor_level", items: [] },
+    ]);
     assert.deepEqual(named.sort(), ["germplasm:phis:id/annika", "germplasm:phis:id/arild,phis:id/annika", "so:phis:id/block-a"]);
+    assert.equal((await realFetch(`${base}/api/node-detail/boxes?type=factor&id=x&item=y`)).status, 400, "only a type with boxes has them");
   });
 });
 

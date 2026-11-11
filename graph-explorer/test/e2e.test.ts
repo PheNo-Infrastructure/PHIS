@@ -489,7 +489,7 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await idle(page);
-    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
+    await page.locator(".box-row", { hasText: "Trial B" }).click(); // several experiments: a list, the picked one's box under it
     const boxB = page.locator(".item-box", { hasText: "Trial B" });
     assert.match(await boxB.innerText(), /Name\s+P1/);
 
@@ -500,6 +500,7 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
     assert.equal(asked, "New name for P1 in Trial B?");
     assert.deepEqual(puts, [{ type: "scientific_object", id: "so-1", name: "P2", experiment: "exp-b" }]);
     assert.match(await page.locator(".item-box", { hasText: "Trial B" }).innerText(), /Name\s+P2/, "page fetched again");
+    await page.locator(".box-row", { hasText: "Trial A" }).click(); // several experiments: a list, the picked one's box under it
     assert.match(await page.locator(".item-box", { hasText: "Trial A" }).innerText(), /Name\s+P1/);
     assert.match(await page.locator("#renameNodeBtn").innerText(), /Rename/, "the title's Rename is there too");
   });
@@ -524,7 +525,7 @@ test("e2e: a position's experiment box offers 'Make a plant here': it asks for a
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "B1-C1" }));
     await idle(page);
-    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
+    await page.locator(".box-row", { hasText: "Trial B" }).click(); // several experiments: a list, the picked one's box under it
     assert.match(await page.locator("#detailBody").innerText(), /stands in[\s\S]*HOLT_PT_G · Block 1, column 1/i);
     let asked = "";
     page.once("dialog", (d) => { asked = d.message(); d.accept("Plant 7"); });
@@ -534,6 +535,7 @@ test("e2e: a position's experiment box offers 'Make a plant here': it asks for a
     assert.deepEqual(made, [{ position: "so-1", experiment: "exp-b", name: "Plant 7" }], "one experiment, the position it is made at");
     assert.match(await page.locator("#toast").textContent() ?? "", /Made the plant Plant 7 at B1-C1 in Trial B\. The position keeps its data\./);
     page.once("dialog", (d) => d.dismiss());
+    await page.locator(".box-row", { hasText: "Trial A" }).click(); // several experiments: a list, the picked one's box under it
     await page.locator(".item-box", { hasText: "Trial A" }).locator("[data-make-plant]").click();
     await idle(page);
     assert.equal(made.length, 1, "a cancelled prompt makes nothing");
@@ -561,14 +563,18 @@ test("e2e: a plant's experiment box shows its measurements as a trend line per v
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await idle(page);
-    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
     const boxA = page.locator(".item-box", { hasText: "Trial A" });
+    await boxA.locator(".meas-row").first().waitFor();
     assert.equal(await boxA.locator(".meas-row").count(), 2, "one row per variable");
     const text = await boxA.locator(".meas-list").innerText();
     assert.match(text, /Plant heights*mm/);
     assert.match(text, /Leaf areas*mm²/);
+    await page.locator(".box-row", { hasText: "Trial B" }).click(); // several experiments: a list, the picked one's box under it
+    await idle(page);
     assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator(".meas-list").count(), 0, "nothing to show -> no list");
     assert.equal(await page.locator(".item-box", { hasText: "Trial B" }).locator("[data-meas-exp]").count(), 0, "and no leftover box");
+    await page.locator(".box-row", { hasText: "Trial A" }).click(); // several experiments: a list, the picked one's box under it
+    await boxA.locator(".meas-row").first().waitFor();
 
     const chart = boxA.locator(".meas-row", { hasText: "Plant height" }).locator(".meas-chart");
     const r = (await chart.boundingBox())!;
@@ -684,17 +690,18 @@ test("e2e: a scientific object shows one box per experiment with its germplasm/p
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await idle(page);
-    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
 
     const boxes = page.locator("#detailBody .item-box");
-    assert.equal(await boxes.count(), 2);
-    assert.match(await boxes.nth(0).innerText(), /Barley 2025[\s\S]*Germplasm[\s\S]*Annika[\s\S]*Part of[\s\S]*none/);
-    assert.match(await boxes.nth(1).innerText(), /Barley 2026[\s\S]*Germplasm[\s\S]*none/);
+    assert.equal(await page.locator("#detailBody .box-row").count(), 2, "a row per experiment");
+    assert.equal(await boxes.count(), 1, "the picked one's box");
+    assert.match(await boxes.innerText(), /Barley 2025[\s\S]*Germplasm[\s\S]*Annika[\s\S]*Part of[\s\S]*none/);
+    await page.locator(".box-row", { hasText: "Barley 2026" }).click(); // several experiments: a list, the picked one's box under it
+    assert.match(await boxes.innerText(), /Barley 2026[\s\S]*Germplasm[\s\S]*none/);
     assert.equal(await page.locator("#detailBody .chip-unlink").count(), 0, "no × outside unlink mode");
 
     await page.locator("#unlinkModeBtn").click();
     await idle(page);
-    assert.deepEqual(await page.locator("#detailBody .chip-unlink").evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.uri)), ["exp-a", "exp-b"], "only the experiments get ×, not the chips inside");
+    assert.deepEqual(await page.locator("#detailBody .chip-unlink").evaluateAll((b) => b.map((x) => (x as HTMLElement).dataset.uri)), ["exp-b"], "the picked experiment gets ×, not the chips inside");
 
     await page.evaluate(() => openNode({ id: "so-lone", type: "scientific_object", label: "Lone" }));
     await idle(page);
@@ -5041,30 +5048,59 @@ test("e2e: graph: deleting a resource takes its node out of the graph (an unlink
   });
 });
 
-test("e2e: an object in several experiments shows its boxes folded to one summary line each; a caret, Expand/Collapse all and a find box (many) open, close and filter them", async () => {
+test("e2e: an object in several experiments is a list of rows with the picked one's box under it; each box is read when picked; a long list keeps its height and gains a find box and a count; one experiment shows its box directly", async () => {
   await withServerAndBrowser(async (base, page) => {
     await setupStubs(page);
-    const exps = Array.from({ length: 7 }, (_, i) => ({ id: `exp-${i}`, label: `Trial ${i}`, type: "experiment", groups: [{ label: "Germplasm", field: "germplasm", items: [{ id: `g-${i}`, label: `Variety ${i}`, type: "germplasm" }] }] }));
-    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "so-1", actions: [], relations: [{ label: "In experiments", field: "experiment", items: exps }] }) }));
+    const reads: string[] = [];
+    let experiments = 150;
+    const groups = (i: number) => [{ label: "Germplasm", field: "hasGermplasm", type: "germplasm", items: [{ id: `g-${i}`, label: `Variety ${i}`, type: "germplasm" }] }];
+    await page.route("**/api/node-detail/boxes*", (r) => {
+      const item = new URL(r.request().url()).searchParams.get("item")!;
+      reads.push(item);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ groups: groups(Number(item.replace("exp-", ""))) }) });
+    });
+    await page.route("**/api/node-detail*", (r) => {
+      if (r.request().url().includes("/boxes")) return r.fallback();
+      const items = Array.from({ length: experiments }, (_, i) => ({ id: `exp-${i}`, label: `Trial ${i}`, type: "experiment", name: `P${i}`, ...(i === 0 || experiments === 1 ? { groups: groups(i) } : {}) }));
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "so-1", actions: [], relations: [{ label: "In experiments", field: "experiment", ...(experiments > 1 ? { lazyBoxes: true } : {}), items }] }) });
+    });
     await page.goto(base + "/#browse");
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await idle(page);
-    const boxes = page.locator("#detailBody .item-box");
-    assert.equal(await boxes.count(), 7);
-    assert.equal(await page.locator("#detailBody .item-box.open").count(), 0, "all folded");
-    assert.equal(await boxes.first().locator(".item-box-rows").isVisible(), false);
-    assert.match(await boxes.nth(3).locator(".item-box-sum").innerText(), /Variety 3/, "the summary names what is inside");
-    await boxes.nth(2).locator("[data-box-toggle]").click();
-    assert.equal(await boxes.nth(2).locator(".item-box-rows").isVisible(), true, "the caret opens one");
-    await page.locator('[data-boxes="open"]').click();
-    assert.equal(await page.locator("#detailBody .item-box.open").count(), 7);
-    await page.locator('[data-boxes="close"]').click();
-    assert.equal(await page.locator("#detailBody .item-box.open").count(), 0);
-    await page.locator(".box-filter").fill("variety 5");
-    assert.equal(await page.locator("#detailBody .item-box:visible").count(), 1, "the find box keeps the match");
-    await page.locator(".box-filter").fill("");
-    assert.equal(await page.locator("#detailBody .item-box:visible").count(), 7);
+    assert.equal(await page.locator("#detailBody .box-row").count(), 150);
+    assert.deepEqual(reads, [], "the first box came with the page; nothing else was read");
+    assert.equal(await page.locator("#detailBody .item-box").count(), 1, "one box under the list");
+    const list = page.locator("#detailBody .box-list");
+    assert.ok((await list.boundingBox())!.height <= 6 * 36 + 4, "the list keeps a fixed height");
+    assert.match(await page.locator(".box-count").innerText(), /150 of 150/);
+
+    await page.locator(".box-row", { hasText: "Trial 42" }).scrollIntoViewIfNeeded();
+    await page.locator(".box-row", { hasText: "Trial 42" }).click();
+    await page.locator('.item-box[data-box="exp-42"] .item-box-rows').waitFor();
+    assert.deepEqual(reads, ["exp-42"], "only the picked experiment was read");
+    assert.match(await page.locator(".item-box").innerText(), /Trial 42[\s\S]*Variety 42/);
+
+    await page.locator(".box-filter").fill("trial 14");
+    assert.match(await page.locator(".box-count").innerText(), /^11 of 150$/, "Trial 14 and Trial 140 to 149");
+    assert.equal(await page.locator(".box-row:not([hidden])").count(), 11);
+    await page.locator(".box-row:not([hidden])", { hasText: "Trial 140" }).click();
+    await page.locator('.item-box[data-box="exp-140"] .item-box-rows').waitFor();
+    assert.equal(await page.locator(".box-filter").inputValue(), "trial 14", "picking a row keeps the filter");
+    assert.equal(await page.locator(".box-row:not([hidden])").count(), 11);
+
+    experiments = 3;
+    await page.evaluate(() => { delete NODE_DETAIL["so-1"]; return openNode({ id: "so-1", type: "scientific_object", label: "P1" }); });
+    await idle(page);
+    assert.equal(await page.locator("#detailBody .box-row").count(), 3);
+    assert.equal(await page.locator(".box-filter").count(), 0, "a few experiments: plain rows, no find box");
+    assert.equal(await page.locator(".box-count").count(), 0);
+
+    experiments = 1;
+    await page.evaluate(() => { delete NODE_DETAIL["so-1"]; return openNode({ id: "so-1", type: "scientific_object", label: "P1" }); });
+    await idle(page);
+    assert.equal(await page.locator("#detailBody .box-row").count(), 0, "one experiment: no list");
+    assert.equal(await page.locator("#detailBody .item-box").count(), 1);
   });
 });
 

@@ -1797,12 +1797,18 @@ async function factorLabels() {
   return names;
 }
 export async function relationsFor(id: string, dto: Record<string, unknown>, config: NodeConfig) {
-  const groups: { label: string; field?: string; blocksDelete?: true; emptyText?: string; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
+  const groups: { label: string; field?: string; lazyBoxes?: true; blocksDelete?: true; emptyText?: string; items: { id: string; type: string; label: string }[] }[] = relationsFromDto(dto, config);
   for (const q of config.queryRelations ?? []) {
     let items: { id: string; type: string; label: string; groups?: unknown[] }[] = await queryItems(q, id);
-    if (q.itemGroups) items = await Promise.all(items.map(async (it) => ({ ...it, groups: await q.itemGroups!(id, it.id) })));
+    // One box (an object in one experiment) is read whole. With several, only the first is: each box costs a few requests to PHIS,
+    // so the others are read when opened (GET /api/node-detail/boxes) and the page stays light however many experiments there are.
+    let lazy = false;
+    if (q.itemGroups) {
+      lazy = items.length > 1;
+      items = await Promise.all(items.map(async (it, n) => (lazy && n > 0 ? it : { ...it, groups: await q.itemGroups!(id, it.id) })));
+    }
     if (items.length || q.emptyText) {
-      groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
+      groups.push({ label: q.label, ...(q.field ? { field: q.field } : {}), ...(lazy ? { lazyBoxes: true } : {}), items, ...(q.blocksDelete ? { blocksDelete: true } : {}), ...(items.length ? {} : { emptyText: q.emptyText }) });
     }
   }
   for (const [type, labels] of [["person", personLabels], ["group", groupLabels], ["factor", factorLabels], ["unit", unitLabels]] as const) {

@@ -4,7 +4,7 @@ import type { RouteHandler } from "./http.ts";
 import { handleStatic } from "./routes/static.ts";
 import { handleList } from "./routes/list.ts";
 import { handleCreate } from "./routes/create.ts";
-import { handleNodeDetail, handleNodeMutation } from "./routes/node.ts";
+import { handleNodeDetail, handleNodeBoxes, handleNodeMutation } from "./routes/node.ts";
 import { handleLink } from "./routes/link.ts";
 import { handleParent } from "./routes/parent.ts";
 import { handleMakePlant } from "./routes/make-plant.ts";
@@ -36,6 +36,7 @@ const routeHandlers: RouteHandler[] = [
   handleGraph,
   handleCreate,
   handleNodeDetail,
+  handleNodeBoxes,
   handleNodeMutation,
   handleLink,
   handleParent,
