@@ -1,4 +1,4 @@
-import { authedGet, authedGetOne, type RawItem } from "../opensilex.ts";
+import { authedGet, authedGetOne, compactUri, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 
 // The structure layer as nodes + edges, built from the link fields the list endpoints already return. The rule is "what GraphDB holds is in the graph, what MongoDB holds (measured values) is not".
@@ -22,7 +22,15 @@ const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean
   { type: "unit", url: "/core/units?page_size=5000", fields: [], optional: true },
   { type: "entity_of_interest", url: "/core/entities_of_interest?page_size=5000", fields: [], optional: true },
   { type: "variable_group", url: "/core/variables_group?page_size=5000", fields: ["variables"], optional: true },
+  // Every scientific object is a node (read before the links below, so events and notes can point at them).
+  { type: "scientific_object", url: "/core/scientific_objects?page_size=100000", fields: [] },
+  // The logbook, the notes on things, who can log in, and the varieties (species are their own nodes above).
+  { type: "event", url: "/core/events?page_size=5000", fields: ["targets"], optional: true, label: (it) => short(`${it.rdf_type_name ?? "Event"}${(it.end ?? it.start) ? " · " + String(it.end ?? it.start).slice(0, 10) : ""}${it.description ? " · " + it.description : ""}`) },
+  { type: "annotation", url: "/core/annotations?page_size=5000", fields: ["targets"], optional: true, label: (it) => short(String(it.description ?? "").replace(/\s+/g, " ").trim() || "(empty annotation)") },
+  { type: "account", url: "/security/accounts?page_size=5000", fields: ["linked_person"], optional: true, label: (it) => String(it.email ?? it.uri) },
+  { type: "germplasm", url: "/core/germplasm?page_size=5000", fields: ["species"], optional: true },
 ];
+const short = (t: string) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
 
 const refUri = (r: unknown) => (typeof r === "string" ? r : (r as { uri?: string } | null)?.uri);
 
@@ -53,6 +61,9 @@ let inflight: { gen: number; p: Promise<string> } | null = null; // a rebuild th
 
 async function build(): Promise<string> {
   const pages = await Promise.all(SOURCES.map((s) => authedGet(s.url).catch((e) => { if (s.optional) return { result: [], metadata: {} } as unknown as Awaited<ReturnType<typeof authedGet>>; throw e; })));
+  // Germplasm: the varieties and accessions are nodes (a species is the species node), under the same ids the portal lists them by.
+  const germAt = SOURCES.findIndex((s) => s.type === "germplasm");
+  pages[germAt].result = await Promise.all(pages[germAt].result.filter((g) => !String(g.rdf_type ?? "").endsWith("Species")).map(async (g) => ({ ...g, uri: await compactUri(String(g.uri)) })));
   // PHIS leaves the organizations and projects of an experiment out of its list, so each experiment is read in full (a few small requests, kept by the cache below).
   const expAt = SOURCES.findIndex((s) => s.type === "experiment");
   const full = await mapLimit(pages[expAt].result, (x) => authedGetOne(`/core/experiments/${encodeURIComponent(x.uri)}`).then((r) => r.result).catch(() => ({})));
@@ -86,6 +97,11 @@ async function build(): Promise<string> {
     const key = person ? [gr.uri, person].sort().join(" ") : "";
     if (person && !seen.has(key)) { seen.add(key); edges.push({ source: gr.uri, target: person }); }
   }
+  // A group's members are accounts too: the account is the node, and the person it belongs to is linked above.
+  for (const gr of at("group")) for (const up of (gr.user_profiles as { user_uri?: string }[] | undefined) ?? []) {
+    const key = up.user_uri && nodes.has(up.user_uri) ? [gr.uri, up.user_uri].sort().join(" ") : "";
+    if (key && !seen.has(key)) { seen.add(key); edges.push({ source: gr.uri, target: up.user_uri! }); }
+  }
   // A device's facility is not on the device in the lists; PHIS answers it per facility (a device sits where its last move put it).
   const facilities = pages[SOURCES.findIndex((s) => s.type === "facility")].result;
   if (!deviceLinks || Date.now() - deviceLinks.at > DEVICE_MS) {
@@ -97,6 +113,12 @@ async function build(): Promise<string> {
   const factors = at("factor");
   const matches = await mapLimit(factors, (f) => authedGetOne(`/core/experiments/factors/${encodeURIComponent(f.uri)}`).then((r) => r.result).catch(() => ({})));
   factors.forEach((f, i) => {
+    // The levels of a factor are nodes too.
+    for (const lv of ((matches[i] as RawItem).levels as { uri?: string; name?: string }[] | undefined) ?? []) {
+      if (!lv.uri) continue;
+      nodes.set(lv.uri, { id: lv.uri, type: "factor_level", label: String(lv.name ?? lv.uri) });
+      edges.push({ source: lv.uri, target: f.uri });
+    }
     const m = (matches[i] as RawItem).exact_match;
     for (const r of Array.isArray(m) ? m : m ? [m] : []) {
       const to = refUri(r);
@@ -105,8 +127,6 @@ async function build(): Promise<string> {
   });
   // The scientific objects: every one is a node, joined to each experiment it is in (one request per experiment). An experiment also shows how many it holds.
   const experiments = pages[SOURCES.findIndex((s) => s.type === "experiment")].result;
-  const objects = await authedGet("/core/scientific_objects?page_size=100000");
-  for (const o of objects.result) nodes.set(o.uri, { id: o.uri, type: "scientific_object", label: String(o.name || o.uri) });
   const held = await mapLimit(experiments, (x) => authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(x.uri)}&page_size=100000`));
   experiments.forEach((x, i) => {
     Object.assign(nodes.get(x.uri)!, { count: held[i].metadata?.pagination?.totalCount ?? held[i].result.length });
