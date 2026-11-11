@@ -126,6 +126,18 @@ async function build(): Promise<string> {
     deviceLinks = { at: Date.now(), pairs: located.flatMap((r, i) => r.result.map((d: RawItem) => [facilities[i].uri, d.uri] as [string, string])) };
   }
   for (const [f, d] of deviceLinks.pairs) if (nodes.has(d) && nodes.has(f)) edges.push({ source: f, target: d });
+  // A device's own relations (the variables it measures, its lens) are not in the list, so each device is read (a handful).
+  // ponytail: one read per device; needs a server-side filter past a few hundred devices.
+  const deviceList = at("device");
+  const read = await mapLimit(deviceList, (d) => authedGetOne(`/core/devices/${encodeURIComponent(d.uri)}`).then((r) => r.result).catch(() => ({})));
+  deviceList.forEach((d, i) => {
+    for (const r of ((read[i] as RawItem).relations as { property?: string; value?: string }[] | undefined) ?? []) {
+      const kind = String(r.property ?? "").split(/[:#/]/).pop();
+      const to = r.value ? String(r.value) : "";
+      const key = [d.uri, to].sort().join(" ");
+      if ((kind === "measures" || kind === "hasLens") && nodes.has(to) && !seen.has(key)) { seen.add(key); edges.push({ source: d.uri, target: to }); }
+    }
+  });
   // A factor can point at its unit (exact_match); the lists do not carry it, so each factor is read (a handful).
   const factors = at("factor");
   const matches = await mapLimit(factors, (f) => authedGetOne(`/core/experiments/factors/${encodeURIComponent(f.uri)}`).then((r) => r.result).catch(() => ({})));

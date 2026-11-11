@@ -813,6 +813,13 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         link: async (id, facilityId) => { await moveDevices([id], [facilityId]); },
         unlink: async () => { throw new OpenSilexError(400, "A device leaves a facility by moving to another one — select it with the new facility and Link selection."); },
       },
+      // The variables a device measures (many): a relation on the device itself.
+      measures: {
+        otherType: "variable",
+        current: (id) => deviceRelationIds(id, "measures"),
+        link: (id, variableId) => setDeviceRelation(id, "measures", variableId, true),
+        unlink: (id, variableId) => setDeviceRelation(id, "measures", variableId, false),
+      },
       // One person in charge: setting another replaces it; clearing is leaving the field out of the update (probed 2026-10-07).
       person_in_charge: {
         otherType: "person",
@@ -832,6 +839,12 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
         const loc = (await movesOf(id))[0]?.location;
         const where = positionText(loc);
         return loc?.to ? [{ id: String(loc.to), label: `${await facilityName(loc.to)}${where ? ` · ${where}` : ""}` }] : [];
+      } },
+      { label: "Measures", field: "measures", type: "variable", url: () => "", load: async (id) => {
+        const ids = await deviceRelationIds(id, "measures");
+        if (!ids.length) return [];
+        const names = new Map(((await authedGet("/core/variables?page_size=5000")).result as { uri: string; name?: string }[]).map((v) => [v.uri, String(v.name ?? v.uri)]));
+        return ids.map((v) => ({ id: v, label: names.get(v) ?? v }));
       } },
       { label: "Person in charge", type: "person", url: () => "", load: async (id) => {
         const p = (await authedGetOne(`/core/devices/${encodeURIComponent(id)}`)).result.person_in_charge;
@@ -1300,6 +1313,16 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
     facts: (v) => factsOf([["Values", DATATYPES[String(v.datatype)] ?? v.datatype], ["Description", v.description]]),
     queryRelations: [
       { label: "In variable groups", type: "variable_group", url: (id) => `/core/variables_group?variableUri=${encodeURIComponent(id)}&page_size=200`, emptyText: "In no variable group." },
+      // The device holds the link (a "measures" relation on itself), so the devices are found by reading each one.
+      // ponytail: one read per device; needs a server-side filter past a few hundred devices.
+      { label: "Measured by", field: "measures", type: "device", url: () => "", emptyText: "Measured by no device.", load: async (id) => {
+        const out: { id: string; label: string }[] = [];
+        try { // a failed scan leaves the group empty, it never breaks the variable page
+          const devices = (await authedGet("/core/devices?page_size=5000")).result as { uri: string; name?: string }[];
+          for (const d of devices) if ((await deviceRelationIds(d.uri, "measures")).includes(id)) out.push({ id: d.uri, label: String(d.name ?? d.uri) });
+        } catch (err) { console.error(`devices measuring ${id} failed:`, err); }
+        return out;
+      } },
     ],
   },
   // Made by the import (one per import). Probed 2026-10-07: renaming keeps the uri and the values; PHIS refuses
@@ -1658,6 +1681,19 @@ export async function queryItems(q: QueryRelation, id: string) {
 
 // relationsFromDto plus any queryRelations groups — what node-detail (and an unlink response,
 // which replaces the frontend's cached relations wholesale) returns.
+// A device's own relations (the variables it measures): read the device, add or drop one, and send it back whole.
+async function deviceRelationIds(deviceId: string, property: string): Promise<string[]> {
+  const dto = (await authedGetOne(`/core/devices/${encodeURIComponent(deviceId)}`)).result;
+  return ((Array.isArray(dto.relations) ? dto.relations : []) as { property: string; value: string }[]).filter((r) => localName(r.property) === property).map((r) => String(r.value));
+}
+async function setDeviceRelation(deviceId: string, property: string, value: string, add: boolean) {
+  const dto = (await authedGetOne(`/core/devices/${encodeURIComponent(deviceId)}`)).result;
+  const body = updatePayloadFromDto(deviceId, String(dto.name ?? ""), dto, NODE_TYPES.device, {});
+  const rels = (Array.isArray(dto.relations) ? dto.relations : []) as { property: string; value: string; inverse?: boolean }[];
+  const same = (r: { property: string; value: string }) => localName(r.property) === property && String(r.value) === value;
+  const next = add ? (rels.some(same) ? rels : [...rels, { property: `vocabulary:${property}`, value, inverse: false }]) : rels.filter((r) => !same(r));
+  await authedPut("/core/devices", { ...body, relations: next });
+}
 async function setPersonInCharge(deviceId: string, personId: string | null) {
   const dto = (await authedGetOne(`/core/devices/${encodeURIComponent(deviceId)}`)).result;
   const body = updatePayloadFromDto(deviceId, String(dto.name ?? ""), dto, NODE_TYPES.device, {});

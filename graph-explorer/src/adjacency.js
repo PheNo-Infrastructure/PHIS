@@ -53,11 +53,11 @@ export const ADJACENT = {
   // An object takes a factor's LEVEL (factor_level), never the factor itself: "factor" here would offer a link that cannot resolve.
   scientific_object: ["experiment", "scientific_object", "germplasm", "event", "annotation"],
   germplasm: ["scientific_object", "germplasm", "group", "germplasm_group", "annotation"],
-  variable: ["entity", "entity_of_interest", "characteristic", "method", "unit", "variable_group", "annotation"],
+  variable: ["entity", "entity_of_interest", "characteristic", "method", "unit", "variable_group", "device", "annotation"],
   variable_group: ["variable", "facility", "annotation"],
   germplasm_group: ["germplasm"],
   factor: ["experiment", "factor_level", "unit"], // a factor's unit is a pseudo-link: the unit's uri in the factor's exact_match
-  device: ["facility", "person", "event", "annotation"],
+  device: ["facility", "person", "event", "variable", "annotation"],
   provenance: ["device", "person", "annotation"],
   // A signed-up account has no person until one is made for it (+ New person), or linked (Link selection).
   account: ["person", "group"],

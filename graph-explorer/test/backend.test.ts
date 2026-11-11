@@ -1418,6 +1418,7 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
         { label: "Method", items: [{ id: "m-1", type: "method", label: "PlantEye 3D scan" }] },
         { label: "Unit", items: [{ id: "u-1", type: "unit", label: "Millimeter" }] },
         { label: "In variable groups", items: [], emptyText: "In no variable group." },
+        { label: "Measured by", field: "measures", items: [], emptyText: "Measured by no device." },
       ],
     });
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=unit&id=u-1`)).json(), {
@@ -3773,6 +3774,7 @@ test("graph: people, groups and factors are nodes, linked through device, experi
       if (url.includes("/core/germplasm")) return page([{ uri: "gm:1", name: "Golden", species: "s:1" }, { uri: "gm:2", name: "Plumage", species: "s:1" }]);
       if (url.includes("/core/experiments/e%3A1")) return jsonResponse(200, { result: { uri: "e:1", name: "Exp", scientific_supervisors: ["p:1"], technical_supervisors: [], groups: ["g:1"], factors: ["f:1"], species: ["s:1"] } });
       if (url.includes("/core/experiments?")) return page([{ uri: "e:1", name: "Exp" }]);
+      if (url.includes("/core/devices/d%3A1")) return jsonResponse(200, { result: { uri: "d:1", name: "Camera", relations: [{ property: "vocabulary:measures", value: "v:1", inverse: false }, { property: "vocabulary:hasLens", value: "d:2", inverse: false }] } });
       if (url.includes("/core/devices?page_size=500")) return page([{ uri: "d:1", name: "Camera", person_in_charge: "p:1" }, { uri: "d:2", name: "No owner", person_in_charge: null }]);
       if (url.includes("/core/events")) return page([{ uri: "ev:1", rdf_type_name: "Move", end: "2026-07-12T22:00Z", description: "to the lab", targets: ["d:1", "so:1", "not-a-node"] }]);
       if (url.includes("/core/annotations")) return page([{ uri: "an:1", description: "A note", targets: ["e:1"] }]);
@@ -3795,7 +3797,7 @@ test("graph: people, groups and factors are nodes, linked through device, experi
     assert.equal(body.nodes.find((n: any) => n.id === "s:1").count, 2, "a species says how many germplasm it has; one nobody uses is not a node");
     assert.equal(body.nodes.find((n: any) => n.id === "p:1").label, "Ada Lovelace");
     const links = body.edges.map((e: any) => [e.source, e.target].sort().join(" ")).sort();
-    assert.deepEqual(links, ["acc:1 g:1", "acc:1 p:1", "an:1 e:1", "d:1 ev:1", "d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "en:1 v:1", "ev:1 so:1", "f:1 lv:1", "f:1 u:1", "g:1 p:1", "gm:1 s:1", "gm:1 so:1", "gm:2 s:1", "lv:1 so:1", "so:1 so:2", "u:1 v:1", "v:1 vg:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
+    assert.deepEqual(links, ["acc:1 g:1", "acc:1 p:1", "an:1 e:1", "d:1 d:2", "d:1 ev:1", "d:1 p:1", "d:1 v:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "en:1 v:1", "ev:1 so:1", "f:1 lv:1", "f:1 u:1", "g:1 p:1", "gm:1 s:1", "gm:1 so:1", "gm:2 s:1", "lv:1 so:1", "so:1 so:2", "u:1 v:1", "v:1 vg:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
   });
 });
 
@@ -4084,5 +4086,52 @@ test("POST /api/make-plant: a new Plant in ONE experiment, part of the position 
     assert.match((await plant.json()).error, /B1-C1 is a plant already/);
     assert.equal((await make({ position: "pos-1", experiment: "exp-1", name: " " })).status, 400);
     assert.equal(posts.length, 1, "nothing else was written");
+  });
+});
+
+test("a device measures variables: linked from a selection (it goes into the device's own relations, the rest of the record and its other relations kept), counted when already there, listed and removed by Unlink selection; the device page and the variable page both list it", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    const devices: Record<string, any> = {
+      "dev-1": { uri: "dev-1", name: "Cam A", rdf_type: "vocabulary:RGBCamera", brand: "Nikon", relations: [{ property: "vocabulary:hasLens", value: "dev-lens", inverse: false }] },
+      "dev-2": { uri: "dev-2", name: "Cam B", rdf_type: "vocabulary:RGBCamera", relations: [{ property: "vocabulary:measures", value: "var-1", inverse: false }] },
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = url.replace(/^.*\/rest/, "");
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "PUT") { const b = JSON.parse(String(init?.body)); puts.push(b); devices[b.uri] = { ...devices[b.uri], ...b }; return jsonResponse(200, { result: "ok" }); }
+      let m: RegExpMatchArray | null;
+      if (path.startsWith("/core/devices?")) return jsonResponse(200, { result: Object.values(devices) });
+      if ((m = path.match(/^\/core\/devices\/(.+)$/))) return jsonResponse(200, { result: devices[decodeURIComponent(m[1])] });
+      if (path.startsWith("/core/variables?")) return jsonResponse(200, { result: [{ uri: "var-1", name: "Height" }, { uri: "var-2", name: "Area" }] });
+      if ((m = path.match(/^\/core\/variables\/(.+)$/))) return jsonResponse(200, { result: { uri: decodeURIComponent(m[1]), name: decodeURIComponent(m[1]) === "var-1" ? "Height" : "Area" } });
+      if (path.startsWith("/core/variables_group")) return jsonResponse(200, { result: [] });
+      if (path.startsWith("/core/data/count")) return jsonResponse(200, { result: 0 });
+      if (path.startsWith("/core/events") || path.startsWith("/core/annotations")) return jsonResponse(200, { result: [] });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+    const post = (p: string, body: unknown) => realFetch(`${base}${p}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const dev = (id: string) => ({ type: "device", id }), vr = (id: string) => ({ type: "variable", id });
+
+    const set = await post("/api/link", { items: [dev("dev-1"), dev("dev-2"), vr("var-1")] });
+    assert.deepEqual(await set.json(), { ok: true, linkedPairs: 1, alreadyLinked: 1 }, "dev-2 already measures it");
+    assert.equal(puts.length, 1);
+    assert.deepEqual(puts[0].relations, [{ property: "vocabulary:hasLens", value: "dev-lens", inverse: false }, { property: "vocabulary:measures", value: "var-1", inverse: false }], "added beside the lens");
+    assert.equal(puts[0].brand, "Nikon", "the rest of the record goes back");
+
+    const device = await (await realFetch(`${base}/api/node-detail?type=device&id=dev-1`)).json();
+    assert.deepEqual(device.relations.find((r: any) => r.label === "Measures"), { label: "Measures", field: "measures", items: [{ id: "var-1", type: "variable", label: "Height" }] });
+    const variable = await (await realFetch(`${base}/api/node-detail?type=variable&id=var-1`)).json();
+    assert.deepEqual(variable.relations.find((r: any) => r.label === "Measured by").items.map((i: any) => i.label), ["Cam A", "Cam B"]);
+
+    puts.length = 0;
+    const preview = await (await post("/api/unlink", { items: [dev("dev-1"), vr("var-1")] })).json();
+    assert.deepEqual(preview.links, ["Cam A — variable: Height"]);
+    assert.equal(puts.length, 0, "the preview writes nothing");
+    assert.equal((await post("/api/unlink", { items: [dev("dev-1"), vr("var-1")], confirm: true })).status, 200);
+    assert.deepEqual(puts[0].relations, [{ property: "vocabulary:hasLens", value: "dev-lens", inverse: false }], "only the measures relation goes");
+    assert.deepEqual((await (await post("/api/unlink", { items: [dev("dev-1"), vr("var-2")] })).json()).links, [], "a variable it does not measure is not listed");
   });
 });
