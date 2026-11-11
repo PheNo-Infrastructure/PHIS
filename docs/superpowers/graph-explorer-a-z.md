@@ -135,3 +135,8 @@ The A–Z coverage is far along; the portal's *clarity* is not. In the user's wo
 - **Intuition.** "I am fairly familiar with this UI, and still find a lot of friction" — a new user would find it impossible. Next step: stop adding features, run a first-click test with someone who has never seen it, then fix what fails.
 Do this with the user (brainstorm first), before more A–Z items.
 
+
+
+## 2026-11-11: the whole GraphDB in the graph
+
+The graph now holds every kind GraphDB holds (MongoDB stays out) and the portal gaps found by that inventory are closed. Rule, numbers, how to re-read both databases, what is left: `docs/superpowers/specs/2026-11-11-whole-graphdb-in-the-graph.md`.
