@@ -488,6 +488,7 @@ test("e2e: a scientific object's experiment box shows its name there; Rename in 
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await idle(page);
+    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
     const boxB = page.locator(".item-box", { hasText: "Trial B" });
     assert.match(await boxB.innerText(), /Name\s+P1/);
 
@@ -522,6 +523,7 @@ test("e2e: a position's experiment box offers 'Make a plant here': it asks for a
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "B1-C1" }));
     await idle(page);
+    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
     assert.match(await page.locator("#detailBody").innerText(), /stands in[\s\S]*HOLT_PT_G · Block 1, column 1/i);
     let asked = "";
     page.once("dialog", (d) => { asked = d.message(); d.accept("Plant 7"); });
@@ -558,6 +560,7 @@ test("e2e: a plant's experiment box shows its measurements as a trend line per v
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
     await idle(page);
+    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
     const boxA = page.locator(".item-box", { hasText: "Trial A" });
     assert.equal(await boxA.locator(".meas-row").count(), 2, "one row per variable");
     const text = await boxA.locator(".meas-list").innerText();
@@ -680,6 +683,7 @@ test("e2e: a scientific object shows one box per experiment with its germplasm/p
     await idle(page);
     await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "Plot 1" }));
     await idle(page);
+    await page.locator('[data-boxes="open"]').click(); // several experiments: the boxes start folded
 
     const boxes = page.locator("#detailBody .item-box");
     assert.equal(await boxes.count(), 2);
@@ -5032,5 +5036,32 @@ test("e2e: graph: deleting a resource takes its node out of the graph (an unlink
       await page.waitForTimeout(100);
     }
     assert.fail("the deleted node is still drawn");
+  });
+});
+
+test("e2e: an object in several experiments shows its boxes folded to one summary line each; a caret, Expand/Collapse all and a find box (many) open, close and filter them", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await setupStubs(page);
+    const exps = Array.from({ length: 7 }, (_, i) => ({ id: `exp-${i}`, label: `Trial ${i}`, type: "experiment", groups: [{ label: "Germplasm", field: "germplasm", items: [{ id: `g-${i}`, label: `Variety ${i}`, type: "germplasm" }] }] }));
+    await page.route("**/api/node-detail*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uri: "so-1", actions: [], relations: [{ label: "In experiments", field: "experiment", items: exps }] }) }));
+    await page.goto(base + "/#browse");
+    await idle(page);
+    await page.evaluate(() => openNode({ id: "so-1", type: "scientific_object", label: "P1" }));
+    await idle(page);
+    const boxes = page.locator("#detailBody .item-box");
+    assert.equal(await boxes.count(), 7);
+    assert.equal(await page.locator("#detailBody .item-box.open").count(), 0, "all folded");
+    assert.equal(await boxes.first().locator(".item-box-rows").isVisible(), false);
+    assert.match(await boxes.nth(3).locator(".item-box-sum").innerText(), /Variety 3/, "the summary names what is inside");
+    await boxes.nth(2).locator("[data-box-toggle]").click();
+    assert.equal(await boxes.nth(2).locator(".item-box-rows").isVisible(), true, "the caret opens one");
+    await page.locator('[data-boxes="open"]').click();
+    assert.equal(await page.locator("#detailBody .item-box.open").count(), 7);
+    await page.locator('[data-boxes="close"]').click();
+    assert.equal(await page.locator("#detailBody .item-box.open").count(), 0);
+    await page.locator(".box-filter").fill("variety 5");
+    assert.equal(await page.locator("#detailBody .item-box:visible").count(), 1, "the find box keeps the match");
+    await page.locator(".box-filter").fill("");
+    assert.equal(await page.locator("#detailBody .item-box:visible").count(), 7);
   });
 });

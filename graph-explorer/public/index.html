@@ -555,6 +555,15 @@ body:not([data-view="browse"]) #graphPane { display: none; }
 /* One box per item whose rows only hold within it — a scientific object's germplasm/parent
    per experiment (relationsFor's itemGroups). */
 .item-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.item-box[hidden] { display: none; }
+.item-box-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.item-box-sum { color: var(--ink-faint); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.item-box.foldable:not(.open) > .item-box-rows, .item-box.foldable:not(.open) > [data-meas-exp] { display: none; }
+.item-box.foldable { gap: 4px; }
+.box-caret { border: 0; background: none; cursor: pointer; font-size: 16px; line-height: 1; color: var(--ink-faint); padding: 2px 4px; transition: transform .12s; }
+.item-box.open > .item-box-head > .box-caret { transform: rotate(90deg); }
+.box-tools { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.box-filter { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; }
 .item-box-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: center; }
 .item-box-key { font-size: 12px; color: var(--ink-faint); }
 .hx-fac { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 8px 10px 10px; margin-bottom: 8px; }
@@ -2573,8 +2582,13 @@ function relGroupHtml(rel, { unlinkable = () => false, unlinking = false, withMe
   if (!rel.items.length) return h + `<span class="rel-empty">${rel.emptyText || "None."}</span></div>`;
   const chip = it => chipHtml(it, rel.field && unlinkable(it) ? rel.field : null);
   if (rel.items.some(it => it.groups)) {
+    // Several boxes (an object in several experiments) fold to one line each, so none has to be scrolled to: a summary line, a click opens one.
+    const many = rel.items.length > 1, e = escapeHtml;
+    if (many) h += `<div class="box-tools">${rel.items.length > 5 ? `<input type="search" class="box-filter" placeholder="Find among ${rel.items.length} ${e(rel.label.toLowerCase())}…" aria-label="Find">` : ""}<button type="button" class="btn ghost small" data-boxes="open">Expand all</button><button type="button" class="btn ghost small" data-boxes="close">Collapse all</button></div>`;
     rel.items.forEach(it => {
-      h += `<div class="item-box"><div class="chip-row">${chip(it)}</div><div class="item-box-rows">`;
+      const sum = [...(typeof it.name === "string" ? [it.name] : []), ...(it.groups || []).filter(g => g.items.length).map(g => g.items.map(x => x.label).join(", "))].join(" · ");
+      const open = !many || unlinking || openBoxes.has(it.id);
+      h += `<div class="item-box${many ? " foldable" : ""}${open ? " open" : ""}" data-box="${e(it.id)}" data-find="${e((it.label + " " + sum).toLowerCase())}"><div class="item-box-head">${many ? `<button type="button" class="box-caret" data-box-toggle aria-label="Show or hide the details" aria-expanded="${open}">›</button>` : ""}<div class="chip-row">${chip(it)}</div>${many ? `<span class="item-box-sum">${e(sum)}</span>` : ""}</div><div class="item-box-rows">`;
       // A scientific object's name in this experiment (each copy has its own), renamed here only.
       if (typeof it.name === "string") {
         h += `<span class="item-box-key">Name</span><div class="chip-row"><span>${escapeHtml(it.name)}</span>${unlinking ? "" : ` <button class="btn ghost small" data-rename-in="${escapeHtml(it.id)}">Rename</button> <button class="btn ghost small" data-make-plant="${escapeHtml(it.id)}" title="A real plant, part of this position in this experiment. The position keeps its data.">Make a plant here</button>`}</div>`;
@@ -2613,6 +2627,7 @@ function hxPlants(list, via, fac) {
 
 // Per node (by id): which factor the Plants tab groups by ("none" = A-Z) and what is typed in its filter.
 const plantsView = {}, varFilter = {};
+const openBoxes = new Set(); // experiment boxes unfolded on an object's page
 let chipAnchor = null; // the grid chip last picked (an Overview level or a variable), for shift ranges within its group
 let plantsFocus = null; // a level to scroll to and flash once, after the next render
 const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true });
@@ -2787,6 +2802,22 @@ function chartAllObjects() {
   openChartGrid();
 }
 document.addEventListener("click", ev => { if (ev.target.closest("#chartAllBtn, .go-all")) chartAllObjects(); });
+// An object's experiment boxes: the caret folds one, Expand/Collapse all fold every one, the box filters them by name and summary.
+{
+  const fold = (box, open) => { box.classList.toggle("open", open); box.querySelector("[data-box-toggle]")?.setAttribute("aria-expanded", String(open)); open ? openBoxes.add(box.dataset.box) : openBoxes.delete(box.dataset.box); };
+  document.addEventListener("click", ev => {
+    const t = ev.target.closest("[data-box-toggle]");
+    if (t) { const box = t.closest(".item-box"); fold(box, !box.classList.contains("open")); return; }
+    const all = ev.target.closest("[data-boxes]");
+    if (all) all.closest(".rel-group").querySelectorAll(".item-box.foldable:not([hidden])").forEach(b => fold(b, all.dataset.boxes === "open"));
+  });
+  document.addEventListener("input", ev => {
+    const f = ev.target.closest(".box-filter");
+    if (!f) return;
+    const q = f.value.trim().toLowerCase();
+    f.closest(".rel-group").querySelectorAll(".item-box.foldable").forEach(b => { b.hidden = !!q && !b.dataset.find.includes(q); });
+  });
+}
 
 function gridButtonHtml(grid) {
   if (!grid || (!grid.plan.variables.length && !grid.plan.rows.length)) return "";
