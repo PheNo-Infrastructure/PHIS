@@ -157,6 +157,8 @@ body[data-view="browse"] #pagePane { display: none; }
 .graph-info .muted { color: var(--ink-faint); font-size: 12px; }
 .graph-info h1 { font-size: 14px; margin: 6px 0 2px; }
 .graph-info #legend, .graph-info [data-gid="legend"] { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+.graph-info #legend .chip, .graph-info [data-gid="legend"] .chip { padding: 1px 6px; font-size: 11px; gap: 4px; } /* 24 kinds of thing: compact, so the legend does not push the actions off the pane */
+.graph-info #legend, .graph-info [data-gid="legend"] { gap: 3px; }
 .graph-info .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; font-size: 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--bg); color: var(--ink); cursor: pointer; font-family: inherit; }
 .graph-info .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .graph-info .chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
