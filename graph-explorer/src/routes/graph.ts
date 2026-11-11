@@ -1,7 +1,7 @@
 import { authedGet, authedGetOne, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 
-// The structure layer as nodes + edges, built from the link fields the list endpoints already return (plants and data values are not nodes: there are too many).
+// The structure layer as nodes + edges, built from the link fields the list endpoints already return. The rule is "what GraphDB holds is in the graph, what MongoDB holds (measured values) is not".
 // People and groups come from the security endpoints; where an instance lacks one (optional), the graph is simply built without it.
 const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean; label?: (it: RawItem) => string }[] = [
   { type: "organization", url: "/core/organisations", fields: ["parents", "facilities", "sites"] },
@@ -85,10 +85,18 @@ async function build(): Promise<string> {
     deviceLinks = { at: Date.now(), pairs: located.flatMap((r, i) => r.result.map((d: RawItem) => [facilities[i].uri, d.uri] as [string, string])) };
   }
   for (const [f, d] of deviceLinks.pairs) if (nodes.has(d) && nodes.has(f)) edges.push({ source: f, target: d });
-  // How many objects an experiment holds, shown as a figure: plants are too many to be nodes.
+  // The scientific objects: every one is a node, joined to each experiment it is in (one request per experiment). An experiment also shows how many it holds.
   const experiments = pages[SOURCES.findIndex((s) => s.type === "experiment")].result;
-  const counts = await mapLimit(experiments, (x) => authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(x.uri)}&page_size=1`));
-  experiments.forEach((x, i) => Object.assign(nodes.get(x.uri)!, { count: counts[i].metadata?.pagination?.totalCount ?? 0 }));
+  const objects = await authedGet("/core/scientific_objects?page_size=100000");
+  for (const o of objects.result) nodes.set(o.uri, { id: o.uri, type: "scientific_object", label: String(o.name || o.uri) });
+  const held = await mapLimit(experiments, (x) => authedGet(`/core/scientific_objects?experiment=${encodeURIComponent(x.uri)}&page_size=100000`));
+  experiments.forEach((x, i) => {
+    Object.assign(nodes.get(x.uri)!, { count: held[i].metadata?.pagination?.totalCount ?? held[i].result.length });
+    for (const o of held[i].result) {
+      if (!nodes.has(o.uri)) nodes.set(o.uri, { id: o.uri, type: "scientific_object", label: String(o.name || o.uri) });
+      edges.push({ source: o.uri, target: x.uri });
+    }
+  });
   return JSON.stringify({ nodes: [...nodes.values()], edges });
 }
 

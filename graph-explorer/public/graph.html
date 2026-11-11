@@ -54,7 +54,7 @@
 <script>
 // Nodes and the painted regions around them are the brand greens (Forest, Leaf dark, Leaf light, between Leaf light and Straw, Straw dark), told apart by lightness and,
 // on the discs, by the icon inside.
-const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a" };
+const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a", scientific_object:"#d9a441" };
 // Minimal line icons (24 x 24), drawn over the discs in the style of the PheNo icon set.
 const ICON_PATHS = {
   organization: "M5 21V5l7-2 7 2v16M3 21h18M9 9h2M13 9h2M9 13h2M13 13h2M10 21v-4h4v4",
@@ -67,9 +67,10 @@ const ICON_PATHS = {
   group: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 11a2.5 2.5 0 1 0 0-5M17 14.2c2.4.4 4 2.4 4 5.8",
   factor: "M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4",
   species: "M5 19c0-8 5-14 14-14 0 9-6 14-14 14zM5 19c3-5 6-8 10-10",
+  scientific_object: "M12 21V9M12 13c-4 0-6-2-6-6 4 0 6 2 6 6zM12 15c4 0 6-2 6-6-4 0-6 2-6 6z",
 };
-const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", species:"Species" };
-const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species"];
+const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", scientific_object:"Object", species:"Species" };
+const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species", "scientific_object"];
 const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));

@@ -3773,16 +3773,18 @@ test("graph: people, groups and factors are nodes, linked through device, experi
       if (url.includes("/core/experiments/e%3A1")) return jsonResponse(200, { result: { uri: "e:1", name: "Exp", scientific_supervisors: ["p:1"], technical_supervisors: [], groups: ["g:1"], factors: ["f:1"], species: ["s:1"] } });
       if (url.includes("/core/experiments?")) return page([{ uri: "e:1", name: "Exp" }]);
       if (url.includes("/core/devices?page_size=500")) return page([{ uri: "d:1", name: "Camera", person_in_charge: "p:1" }, { uri: "d:2", name: "No owner", person_in_charge: null }]);
+      if (url.includes("/core/scientific_objects")) return page(url.includes("experiment=") ? [{ uri: "so:1", name: "Plant 1" }] : [{ uri: "so:1", name: "Plant 1" }, { uri: "so:2", name: "Loose plot" }]);
       return page([]);
     }) as typeof fetch;
     await realFetch(`${base}/api/link`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); // empty cache
     const body = await (await realFetch(`${base}/api/graph`)).json();
     const types = Object.fromEntries(body.nodes.map((n: any) => [n.id, n.type]));
-    assert.deepEqual(types, { "e:1": "experiment", "d:1": "device", "d:2": "device", "p:1": "person", "p:2": "person", "g:1": "group", "f:1": "factor", "s:1": "species" });
+    assert.deepEqual(types, { "e:1": "experiment", "d:1": "device", "d:2": "device", "p:1": "person", "p:2": "person", "g:1": "group", "f:1": "factor", "s:1": "species", "so:1": "scientific_object", "so:2": "scientific_object" });
+    assert.equal(body.nodes.find((n: any) => n.id === "e:1").count, 1, "an experiment says how many objects it holds");
     assert.equal(body.nodes.find((n: any) => n.id === "s:1").count, 2, "a species says how many germplasm it has; one nobody uses is not a node");
     assert.equal(body.nodes.find((n: any) => n.id === "p:1").label, "Ada Lovelace");
     const links = body.edges.map((e: any) => [e.source, e.target].sort().join(" ")).sort();
-    assert.deepEqual(links, ["d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "g:1 p:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
+    assert.deepEqual(links, ["d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "g:1 p:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
   });
 });
 

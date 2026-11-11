@@ -4987,14 +4987,14 @@ test("e2e: graph: what is selected in Browse is shown selected in the graph; thi
     const frame = await openGraph(page, base);
     await page.evaluate(() => {
       selection.set("t:org-b", { id: "t:org-b", type: "organization", label: "Org B" });
-      selection.set("plant-1", { id: "plant-1", type: "scientific_object", label: "Plant 1" });
+      selection.set("gm-1", { id: "gm-1", type: "germplasm", label: "Golden" });
       refreshLeftPane(); renderActionbar();
     });
     await frame.waitForFunction(() => [...(window as any).__graph.sel].join() === "t:org-b");
-    // picking in the graph replaces only the graph's kinds: the plant stays selected (the connected view has moved Site 1 out of frame, so it is added through the graph's own call)
+    // picking in the graph replaces only the graph's kinds: the germplasm stays selected (the connected view has moved Site 1 out of frame, so it is added through the graph's own call)
     await frame.evaluate(() => (window as any).__graph.select("t:site-1", true));
     await page.waitForFunction(() => selection.has("t:site-1"));
-    assert.deepEqual(await page.evaluate(() => [...selection.keys()].sort()), ["plant-1", "t:org-b", "t:site-1"]);
+    assert.deepEqual(await page.evaluate(() => [...selection.keys()].sort()), ["gm-1", "t:org-b", "t:site-1"]);
   });
 });
 
