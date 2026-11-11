@@ -82,7 +82,7 @@ const WIRED_CATEGORIES: Array<{ branch: string; hub?: string; label: string; fak
   { branch: "Scientific Organization", label: "Sites", fakeIdPrefix: "site-" },
   { branch: "Scientific Organization", label: "Persons", fakeIdPrefix: "person-" },
   { branch: "Scientific Information", label: "Scientific Objects", fakeIdPrefix: "so-" },
-  { branch: "Scientific Information", hub: "Variables", label: "All variables", fakeIdPrefix: "var-" },
+  { branch: "Scientific Information", hub: "Variables", label: "Variables", fakeIdPrefix: "var-" },
   { branch: "Scientific Information", label: "Germplasm", fakeIdPrefix: "germ-" },
   { branch: "Data", label: "Data files", fakeIdPrefix: "datafile-" },
   { branch: "Data", label: "Provenances", fakeIdPrefix: "prov-" },
@@ -2903,7 +2903,7 @@ test("e2e: + New variable from Data > Variables asks name and the four parts (en
     await idle(page);
     await openRow(page, "Scientific Information");
     await openRow(page, "Variables");
-    await openRow(page, "All variables");
+    await openRow(page, "Variables");
     await page.locator("#newStandaloneBtn").click();
     await idle(page);
     await page.locator("dialog input[name=name]").fill("ZZ var");
@@ -5075,7 +5075,7 @@ test("e2e: Variables is one place in Browse with PHIS's own tabs under it (varia
     await openRow(page, "Scientific Information");
     assert.equal(await page.locator("#rowlist .row-label", { hasText: "Entities" }).count(), 0, "the parts are not loose in Scientific Information any more");
     await openRow(page, "Variables");
-    assert.deepEqual(await page.locator("#rowlist .row .row-label").allInnerTexts(), ["All variables", "Entities", "Characteristics", "Methods", "Units", "Variable groups"]);
+    assert.deepEqual(await page.locator("#rowlist .row .row-label").allInnerTexts(), ["Variables", "Entities", "Characteristics", "Methods", "Units", "Variable groups"]);
     await openRow(page, "Units");
     assert.equal(await page.locator("#crumbs").innerText().then((t) => t.replace(/\s+/g, " ")), "Graph › Scientific Information › Variables › Units");
   });
