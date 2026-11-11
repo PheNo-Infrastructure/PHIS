@@ -905,6 +905,7 @@ async function openInPortal(n) {
   }
   async function reconcile(animate = false) { // what PHIS says now, compared with the picture; differences are applied quietly
     const fresh = await (await fetch("api/graph", { cache: "no-store" })).json();
+    if (fresh.nodes.length !== g.order || fresh.nodes.some(n => !g.hasNode(n.id))) { setTimeout(reloadFresh, 300); return; } // a node was deleted or made (one with no links shows in no edge): draw the picture again
     const now = new Set(fresh.edges.map(ed => edgeKey(ed.source, ed.target)));
     const added = [...now].filter(k => !known.has(k)).map(k => k.split(" ")), gone = [...known].filter(k => !now.has(k)).map(k => k.split(" "));
     if ([...added, ...gone].some(([a, b]) => !g.hasNode(a) || !g.hasNode(b))) { setTimeout(reloadFresh, 300); return; }

@@ -5016,3 +5016,21 @@ test("e2e: graph: after the portal unlinks something, the graph drops that link"
     await frame.waitForFunction(() => !(window as any).__graph.g.hasEdge("t:exp-1", "t:org-a") && !(window as any).__graph.g.hasEdge("t:org-a", "t:exp-1"));
   });
 });
+
+test("e2e: graph: deleting a resource takes its node out of the graph (an unlinked one too), without a page refresh", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    let gone = false;
+    const stub = () => ({ nodes: GRAPH_STUB.nodes.filter((n) => !(gone && n.id === "t:site-1")), edges: GRAPH_STUB.edges });
+    const frame = await openGraph(page, base, stub);
+    assert.equal(await frame.evaluate(() => (window as any).__graph.g.hasNode("t:site-1")), true);
+    await page.route("**/api/node?**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+    gone = true;
+    await page.evaluate(() => fetch("api/node?type=site&id=t:site-1", { method: "DELETE" }));
+    for (let i = 0; i < 60; i++) {
+      const f = page.frames().find((x) => x.url().includes("/graph"));
+      if (f && await f.evaluate(() => (window as any).__graph?.g.order > 0 && !(window as any).__graph.g.hasNode("t:site-1")).catch(() => false)) return;
+      await page.waitForTimeout(100);
+    }
+    assert.fail("the deleted node is still drawn");
+  });
+});

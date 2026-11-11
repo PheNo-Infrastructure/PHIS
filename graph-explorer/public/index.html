@@ -5699,6 +5699,7 @@ function importPlanHtml(p) {
         : `<p>New: <b>${escapeHtml(p.experiment.name)}</b>, starting ${escapeHtml(p.experiment.startDate)}.</p>`}
       ${p.experiment.sameName ? `<div class="import-warning">${p.experiment.sameName} experiments in PHIS have this name, so it isn't clear which one to fill in.</div>` : ""}
     </div>
+    ${importChoicesHtml(p)}
     <div data-section="germplasm" class="import-section${newCount ? " is-new" : ""}">
       <h3><span class="h-title">Germplasm<small>plant material: species, varieties, lines</small></span>${editBtn("germplasm")}</h3>
       ${g.existing.length ? `<p>Already in PHIS, reused: ${g.existing.length} <span class="import-names">(${list(g.existing.map(x => x.name))})</span></p>` : ""}
@@ -5739,7 +5740,6 @@ function importPlanHtml(p) {
       ${m.skipped.notNumbers.count ? `<div class="import-warning">Left out: ${m.skipped.notNumbers.count} ${m.skipped.notNumbers.count === 1 ? "value that isn't a number" : "values that aren't numbers"} (e.g. ${escapeHtml(m.skipped.notNumbers.examples.join("; "))}).</div>` : ""}
       ${m.skipped.contradictions.count ? `<div class="import-warning">Left out: ${m.skipped.contradictions.count} ${m.skipped.contradictions.count === 1 ? "place where" : "places where"} the file gives two different values for the same plant, variable and time (e.g. ${escapeHtml(m.skipped.contradictions.examples.join("; "))}). Fix the file and import again to include them.</div>` : ""}
     </div>` : ""}
-    ${importChoicesHtml(p)}
     <div class="import-footer" id="importFooter">${importFooterHtml(p)}</div>`;
 }
 
