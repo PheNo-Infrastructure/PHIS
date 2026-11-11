@@ -5111,7 +5111,7 @@ test("e2e: Variables is one place in Browse with PHIS's own tabs under it (varia
     await openRow(page, "Scientific Information");
     assert.equal(await page.locator("#rowlist .row-label", { hasText: "Entities" }).count(), 0, "the parts are not loose in Scientific Information any more");
     await openRow(page, "Variables");
-    assert.deepEqual(await page.locator("#rowlist .row .row-label").allInnerTexts(), ["Variables", "Entities", "Characteristics", "Methods", "Units", "Variable groups"]);
+    assert.deepEqual(await page.locator("#rowlist .row .row-label").allInnerTexts(), ["Variables", "Entities", "Entities of interest", "Characteristics", "Methods", "Units", "Variable groups"]);
     await openRow(page, "Units");
     assert.equal(await page.locator("#crumbs").innerText().then((t) => t.replace(/\s+/g, " ")), "Graph › Scientific Information › Variables › Units");
   });

@@ -146,6 +146,12 @@ export const CREATABLE = {
     linkFields: {},
     fields: [{ key: "description", label: "Description", required: true }],
   },
+  // The parts a variable is made of: a name and a description (a unit also a symbol), made on their own; which one a variable has is fixed when it is made.
+  entity: { url: "/core/entities", linkFields: {}, fromOnly: [], fromOnlyWhy: "A variable's parts are made on their own (Browse > Variables), then chosen when a variable is made.", fields: [{ key: "description", label: "Description" }] },
+  characteristic: { url: "/core/characteristics", linkFields: {}, fromOnly: [], fromOnlyWhy: "A variable's parts are made on their own (Browse > Variables), then chosen when a variable is made.", fields: [{ key: "description", label: "Description" }] },
+  method: { url: "/core/methods", linkFields: {}, fromOnly: [], fromOnlyWhy: "A variable's parts are made on their own (Browse > Variables), then chosen when a variable is made.", fields: [{ key: "description", label: "Description" }] },
+  entity_of_interest: { url: "/core/entities_of_interest", linkFields: {}, fromOnly: [], fromOnlyWhy: "A variable's parts are made on their own (Browse > Variables), then chosen when a variable is made.", fields: [{ key: "description", label: "Description" }] },
+  unit: { url: "/core/units", linkFields: {}, fromOnly: [], fromOnlyWhy: "A variable's parts are made on their own (Browse > Variables), then chosen when a variable is made.", fields: [{ key: "symbol", label: "Symbol, e.g. mm" }, { key: "description", label: "Description" }] },
   // A named set of variables / of germplasm: a name and a description, created alone or from a selection of its members.
   variable_group: {
     url: "/core/variables_group",

@@ -1422,7 +1422,7 @@ test("GET /api/node-detail: a variable shows its four parts and what its values 
       ],
     });
     assert.deepEqual(await (await realFetch(`${base}/api/node-detail?type=unit&id=u-1`)).json(), {
-      uri: "u-1", actions: ["link"],
+      uri: "u-1", actions: ["rename", "delete", "link"],
       facts: [{ label: "Symbol", value: "mm" }],
       relations: [{ label: "Variables", items: [{ id: "var-1", type: "variable", label: "Plant Height Max" }] }],
     });
@@ -4133,5 +4133,50 @@ test("a device measures variables: linked from a selection (it goes into the dev
     assert.equal((await post("/api/unlink", { items: [dev("dev-1"), vr("var-1")], confirm: true })).status, 200);
     assert.deepEqual(puts[0].relations, [{ property: "vocabulary:hasLens", value: "dev-lens", inverse: false }], "only the measures relation goes");
     assert.deepEqual((await (await post("/api/unlink", { items: [dev("dev-1"), vr("var-2")] })).json()).links, [], "a variable it does not measure is not listed");
+  });
+});
+
+test("the parts of a variable (entity, characteristic, method, unit, entity of interest) can be made, renamed and deleted; PHIS keeps one a variable is made with, and that is said first", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [], posts: any[] = [], deletes: string[] = [];
+    let used = 2;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = decodeURIComponent(url.replace(/^.*\/rest/, ""));
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "PUT") { puts.push({ path, ...JSON.parse(String(init?.body)) }); return jsonResponse(200, { result: "ok" }); }
+      if (method === "POST") { posts.push({ path, ...JSON.parse(String(init?.body)) }); return jsonResponse(201, { result: "https://x/id/new" }); }
+      if (method === "DELETE") { deletes.push(path); return jsonResponse(200, { result: "ok" }); }
+      if (path.startsWith("/core/variables?")) return jsonResponse(200, { result: [], metadata: { pagination: { totalCount: used } } });
+      if (path.startsWith("/core/entities_of_interest/eoi-1")) return jsonResponse(200, { result: { uri: "eoi-1", name: "Chamber", description: "d" } });
+      if (path.startsWith("/core/entities/ent-1")) return jsonResponse(200, { result: { uri: "ent-1", name: "Plant", description: "the plant", publisher: { uri: "acc" } } });
+      if (path.startsWith("/core/entities?") || path.startsWith("/core/units?") || path.startsWith("/core/entities_of_interest?")) return jsonResponse(200, { result: [] });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+    const send = (method: string, p: string, body?: unknown) => realFetch(`${base}${p}`, { method, headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+
+    const detail = await (await realFetch(`${base}/api/node-detail?type=entity&id=ent-1`)).json();
+    assert.deepEqual(detail.actions, ["rename", "delete"], "an entity is renamed and deleted, not linked from here");
+    assert.match(detail.deleteBlocked, /used by 2 variables/, "said before the delete is tried");
+    assert.equal((await send("DELETE", "/api/node?type=entity&id=ent-1")).status >= 400, true, "and refused");
+    assert.deepEqual(deletes, []);
+
+    used = 0;
+    assert.equal((await send("DELETE", "/api/node?type=entity&id=ent-1")).status, 200);
+    assert.deepEqual(deletes, ["/core/entities/ent-1"]);
+
+    const renamed = await send("PUT", "/api/node", { type: "entity", id: "ent-1", name: " Leaf " });
+    assert.equal(renamed.status, 200, await renamed.clone().text());
+    assert.equal(puts[0].path, "/core/entities");
+    assert.deepEqual([puts[0].uri, puts[0].name, puts[0].description], ["ent-1", "Leaf", "the plant"], "the description goes back with the new name");
+
+    const made = await send("POST", "/api/create", { type: "unit", name: "Gram", links: [], fields: { symbol: "g" } });
+    assert.equal(made.status, 201, await made.clone().text());
+    assert.deepEqual([posts[0].path, posts[0].name, posts[0].symbol], ["/core/units", "Gram", "g"]);
+
+    const eoi = await (await realFetch(`${base}/api/node-detail?type=entity_of_interest&id=eoi-1`)).json();
+    assert.equal(eoi.uri, "eoi-1");
+    assert.equal((await (await realFetch(`${base}/api/entities-of-interest`)).json()).length, 0, "its own list");
   });
 });

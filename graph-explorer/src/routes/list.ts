@@ -52,6 +52,7 @@ export const listRoutes: Record<string, ListRoute> = {
   "/api/variables": { url: "/core/variables?page_size=500", type: "variable", label: byName },
   // What a variable is made of: read-only lists (each one's page lists the variables made with it).
   "/api/entities": { url: "/core/entities?page_size=500", type: "entity", label: byName },
+  "/api/entities-of-interest": { url: "/core/entities_of_interest?page_size=500", type: "entity_of_interest", label: byName },
   "/api/characteristics": { url: "/core/characteristics?page_size=500", type: "characteristic", label: byName },
   "/api/methods": { url: "/core/methods?page_size=500", type: "method", label: byName },
   "/api/units": { url: "/core/units?page_size=500", type: "unit", label: byName },

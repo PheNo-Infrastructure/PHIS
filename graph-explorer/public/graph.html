@@ -111,7 +111,7 @@ async function openInPortal(n) {
   // Small graphs keep a compact layout (gravity 1, repulsion 6); as a graph grows it spreads (gravity .1, repulsion 80) so its clusters separate instead of forming a hairball.
   const settingsFor = gr => { const t = Math.min(1, Math.max(0, (gr.order - 60) / 240)); return { ...FA2.inferSettings(gr), gravity: 1 - .9 * t, scalingRatio: 6 + 74 * t, slowDown:4, barnesHutOptimize: gr.order > 500 }; };
   const kindOf = id => g.getNodeAttribute(id, "kind");
-  const hasPage = k => k !== "species" && k !== "entity_of_interest"; // a species has no resource page to open
+  const hasPage = k => k !== "species"; // a species has no resource page to open
   const filterKind = a => a.kind;
   // Size follows the number of links on a log scale, relative to the most linked node of this graph: the biggest hub is always the largest (22), a node with one link the smallest (about 8),
   // whatever the data looks like. The log keeps one huge hub from shrinking everything else to the same size.

@@ -745,18 +745,36 @@ const DATATYPES: Record<string, string> = {
   "http://www.w3.org/2001/XMLSchema#string": "text", "http://www.w3.org/2001/XMLSchema#boolean": "yes/no",
   "http://www.w3.org/2001/XMLSchema#date": "dates", "http://www.w3.org/2001/XMLSchema#dateTime": "dates and times",
 };
-// An entity, characteristic, method or unit: its page lists the variables made with it.
-function variablePart(field: string, path: string, more: (dto: Record<string, unknown>) => [string, unknown][] = () => [], extraQuery: QueryRelation[] = []): NodeConfig {
-  return {
-    getUrl: (id) => `/core/${path}/${encodeURIComponent(id)}`,
-    putUrl: "",
-    deleteUrl: () => "",
+// An entity, characteristic, method, unit or entity of interest: its page lists the variables made with it. It can be made, renamed and
+// deleted (PHIS refuses a delete while a variable uses it, so that is said first); which one a variable has is fixed when the variable is made.
+function variablePart(field: string, path: string, more: (dto: Record<string, unknown>) => [string, unknown][] = () => [], extraQuery: QueryRelation[] = [], what = "part"): NodeConfig {
+  const list = `/core/${path}`;
+  const cfg: NodeConfig = {
+    getUrl: (id) => `${list}/${encodeURIComponent(id)}`,
+    putUrl: list,
+    deleteUrl: (id) => `${list}/${encodeURIComponent(id)}`,
     relationGroups: [],
     updateLinkFields: [],
-    actions: [],
+    actions: ["rename", "delete"],
     facts: (dto) => factsOf([...more(dto), ["Description", dto.description]]),
     queryRelations: [{ label: "Variables", type: "variable", url: (id) => `/core/variables?${field}=${encodeURIComponent(id)}&page_size=500` }, ...extraQuery],
+    deleteBlockedBy: async (_dto, id) => {
+      const n = (await authedGet(`/core/variables?${field}=${encodeURIComponent(id)}&page_size=1`)).metadata?.pagination?.totalCount ?? 0;
+      return n ? `is used by ${plural(n, "variable")}. PHIS keeps a ${what} that a variable is made with: delete those variables first.` : null;
+    },
+    rename: async (id, name) => {
+      await refuseTakenName(list, name, what, id);
+      await updateNode(cfg, id, { name: name.trim() });
+      return name.trim();
+    },
+    create: async (p) => {
+      const name = String(p.name ?? "").trim();
+      await refuseTakenName(list, name, what);
+      const made = (await authedPost(list, { ...p, name })).result as unknown;
+      return { id: String(Array.isArray(made) ? made[0] : made), label: name };
+    },
   };
+  return cfg;
 }
 
 export const NODE_TYPES: Record<string, NodeConfig> = {
@@ -1478,14 +1496,15 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
       })),
     ],
   },
-  entity: variablePart("entity", "entities"),
-  characteristic: variablePart("characteristic", "characteristics"),
-  method: variablePart("method", "methods"),
-  // A unit is read-only itself, but a factor can point at it (the unit's uri in the factor's `exact_match`; PHIS has no unit field on a
+  entity: variablePart("entity", "entities", undefined, undefined, "entity"),
+  characteristic: variablePart("characteristic", "characteristics", undefined, undefined, "characteristic"),
+  method: variablePart("method", "methods", undefined, undefined, "method"),
+  entity_of_interest: variablePart("entity_of_interest", "entities_of_interest", undefined, undefined, "entity of interest"),
+  // A factor can point at a unit (the unit's uri in the factor's `exact_match`; PHIS has no unit field on a
   // factor, probed 2026-11-10), so it can be linked to a factor: the link is written on the factor.
   unit: {
-    ...variablePart("unit", "units", (u) => [["Symbol", u.symbol]], [{ label: "Factors", type: "factor", url: () => "", load: factorsWithUnit }]),
-    actions: ["link"],
+    ...variablePart("unit", "units", (u) => [["Symbol", u.symbol]], [{ label: "Factors", type: "factor", url: () => "", load: factorsWithUnit }], "unit"),
+    actions: ["rename", "delete", "link"],
   },
   account: {
     getUrl: (id) => `/security/accounts/${encodeURIComponent(id)}`,

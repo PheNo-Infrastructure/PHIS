@@ -1193,6 +1193,7 @@ const TYPES = {
   germplasm:  { color: "var(--type-bio)", soft: "var(--type-bio-soft)", name: "germplasm", plural: "germplasm" },
   variable:   { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "variable" },
   entity:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "entity", plural: "entities" },
+  entity_of_interest: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "entity of interest", plural: "entities of interest" },
   characteristic: { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "characteristic" },
   method:     { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "method" },
   unit:       { color: "var(--type-data)", soft: "var(--type-data-soft)", name: "unit" },
@@ -1251,6 +1252,7 @@ const CATEGORY_ITEMS = {
   "cat-variablehub": [
     { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
     { id: "cat-entities", type: "category", label: "Entities", hint: "what a variable is measured on, e.g. plant, leaf" },
+    { id: "cat-entitiesofinterest", type: "category", label: "Entities of interest", hint: "what a variable is measured on in a trial, e.g. a chamber, a growth stage" },
     { id: "cat-characteristics", type: "category", label: "Characteristics", hint: "what is measured, e.g. height, NDVI" },
     { id: "cat-methods", type: "category", label: "Methods", hint: "how it is measured, e.g. a 3D scan" },
     { id: "cat-units", type: "category", label: "Units", hint: "e.g. millimeter, degree Celsius. A factor can point at its unit" },
@@ -1286,6 +1288,7 @@ const CATEGORY_ITEMS = {
   "cat-scientificobjects": [],
   "cat-variables": [],
   "cat-entities": [],
+  "cat-entitiesofinterest": [],
   "cat-characteristics": [],
   "cat-methods": [],
   "cat-units": [],
@@ -1676,7 +1679,7 @@ function openNode(item) {
 // onto whatever ad-hoc trail got you there (like openNode does for real drill-down) would grow
 // the breadcrumb into a nonsensical, looping trail (A -> X -> A -> X...). Jump to the target's
 // canonical path instead — same destination as if you'd browsed there directly.
-const VARIABLE_PARTS = new Set(["entity", "characteristic", "method", "unit"]);
+const VARIABLE_PARTS = new Set(["entity", "entity_of_interest", "characteristic", "method", "unit"]);
 function openRelatedNode(item) {
   navigateTo(canonicalPathFor(item));
 }
@@ -5085,7 +5088,7 @@ function render() {
    Selection pane, where the action bar works on it. Things the graph does not draw (plants, factors, ...) are left alone by what it sends. */
 var graphSig; // var: refreshLeftPane can run before this point is reached
 const GRAPH_TYPES = new Set(["organization", "facility", "site", "project", "experiment", "device", "person", "group", "factor", "scientific_object", "variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest", "event", "annotation", "account", "factor_level", "germplasm"]);
-const BROWSE_KIND = { "cat-organizations": "organization", "cat-projects": "project", "cat-experiments": "experiment", "cat-facilities": "facility", "cat-devices": "device", "cat-sites": "site", "cat-persons": "person", "cat-factors": "factor", "cat-scientificobjects": "scientific_object", "cat-variables": "variable", "cat-variablegroups": "variable_group", "cat-entities": "entity", "cat-characteristics": "characteristic", "cat-methods": "method", "cat-units": "unit", "cat-events": "event", "cat-annotations": "annotation", "cat-accounts": "account", "cat-germplasm": "germplasm", "cat-groups": "group" }; // a type's list in Browse = that type in the graph's grid
+const BROWSE_KIND = { "cat-organizations": "organization", "cat-projects": "project", "cat-experiments": "experiment", "cat-facilities": "facility", "cat-devices": "device", "cat-sites": "site", "cat-persons": "person", "cat-factors": "factor", "cat-scientificobjects": "scientific_object", "cat-variables": "variable", "cat-variablegroups": "variable_group", "cat-entities": "entity", "cat-entitiesofinterest": "entity_of_interest", "cat-characteristics": "characteristic", "cat-methods": "method", "cat-units": "unit", "cat-events": "event", "cat-annotations": "annotation", "cat-accounts": "account", "cat-germplasm": "germplasm", "cat-groups": "group" }; // a type's list in Browse = that type in the graph's grid
 const graphWin =() => document.querySelector("#graphPane iframe")?.contentWindow;
 function tellGraph(msg) { try { graphWin()?.postMessage(msg, location.origin); } catch {} }
 function syncGraph() {
@@ -5441,6 +5444,7 @@ const CATEGORY_FOR_TYPE = {
   scientific_object: "cat-scientificobjects",
   variable: "cat-variables",
   entity: "cat-entities",
+  entity_of_interest: "cat-entitiesofinterest",
   characteristic: "cat-characteristics",
   method: "cat-methods",
   unit: "cat-units",
@@ -5474,6 +5478,7 @@ const BACKED_CATEGORIES = {
   "cat-scientificobjects": "api/scientific-objects",
   "cat-variables": "api/variables",
   "cat-entities": "api/entities",
+  "cat-entitiesofinterest": "api/entities-of-interest",
   "cat-characteristics": "api/characteristics",
   "cat-methods": "api/methods",
   "cat-units": "api/units",
