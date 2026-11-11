@@ -4230,7 +4230,7 @@ test("a document (an imported dataset) has a read-only page: what it is, its dat
     globalThis.fetch = (async (url: string) => {
       if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
       if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
-      if (url.includes("/core/documents/doc-1")) return jsonResponse(200, { result: { uri: "doc-1", rdf_type_name: "imported dataset", title: "imported_data_1bae", date: "Fri Oct 30 12:21:54 UTC 2026", format: "zip", description: null } });
+      if (url.includes("/core/documents/doc-1/description")) return jsonResponse(200, { result: { uri: "doc-1", rdf_type_name: "imported dataset", title: "imported_data_1bae", date: "Fri Oct 30 12:21:54 UTC 2026", format: "zip", description: null } });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
     const d = await (await realFetch(`${base}/api/node-detail?type=document&id=doc-1`)).json();

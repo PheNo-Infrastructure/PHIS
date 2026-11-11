@@ -1508,7 +1508,7 @@ export const NODE_TYPES: Record<string, NodeConfig> = {
   },
   // A document (what an import leaves: an imported dataset) is read here, not edited: what it is about is in PHIS's own data.
   document: {
-    getUrl: (id) => `/core/documents/${encodeURIComponent(id)}`,
+    getUrl: (id) => `/core/documents/${encodeURIComponent(id)}/description`, // the bare uri is the file itself
     putUrl: "",
     deleteUrl: () => "",
     relationGroups: [],
