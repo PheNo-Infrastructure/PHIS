@@ -54,7 +54,7 @@
 <script>
 // Nodes and the painted regions around them are the brand greens (Forest, Leaf dark, Leaf light, between Leaf light and Straw, Straw dark), told apart by lightness and,
 // on the discs, by the icon inside.
-const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a", scientific_object:"#d9a441" };
+const COLORS = { organization:"#264030", facility:"#3d8526", experiment:"#87cf82", site:"#b5dd92", project:"#e3eba1", device:"#8b9788", person:"#6aa86a", group:"#5d7a68", factor:"#c3cf8a", species:"#9fc07a", scientific_object:"#d9a441", variable:"#8c5aa0", variable_group:"#6f4585", entity:"#c9a8d6", characteristic:"#b57fa6", method:"#7e6bb0", unit:"#d4b3c9", entity_of_interest:"#a58ccf" };
 // Minimal line icons (24 x 24), drawn over the discs in the style of the PheNo icon set.
 const ICON_PATHS = {
   organization: "M5 21V5l7-2 7 2v16M3 21h18M9 9h2M13 9h2M9 13h2M13 13h2M10 21v-4h4v4",
@@ -68,9 +68,16 @@ const ICON_PATHS = {
   factor: "M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4",
   species: "M5 19c0-8 5-14 14-14 0 9-6 14-14 14zM5 19c3-5 6-8 10-10",
   scientific_object: "M12 21V9M12 13c-4 0-6-2-6-6 4 0 6 2 6 6zM12 15c4 0 6-2 6-6-4 0-6 2-6 6z",
+  variable: "M4 18l5-12 3 7 3-7 5 12",
+  variable_group: "M4 6h16M4 12h16M4 18h16",
+  entity: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 3v2M12 19v2M3 12h2M19 12h2",
+  characteristic: "M5 19l7-14 7 14zM8.5 14h7",
+  method: "M4 6h16M4 12h10M4 18h6",
+  unit: "M4 20h16M7 20V10M12 20V5M17 20v-7",
+  entity_of_interest: "M12 3l9 9-9 9-9-9z",
 };
-const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", scientific_object:"Object", species:"Species" };
-const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species", "scientific_object"];
+const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", scientific_object:"Object", variable:"Variable", variable_group:"Variable group", entity:"Entity", characteristic:"Characteristic", method:"Method", unit:"Unit", entity_of_interest:"Entity of interest", species:"Species" };
+const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species", "scientific_object", "variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest"];
 const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -99,7 +106,7 @@ async function openInPortal(n) {
   // Small graphs keep a compact layout (gravity 1, repulsion 6); as a graph grows it spreads (gravity .1, repulsion 80) so its clusters separate instead of forming a hairball.
   const settingsFor = gr => { const t = Math.min(1, Math.max(0, (gr.order - 60) / 240)); return { ...FA2.inferSettings(gr), gravity: 1 - .9 * t, scalingRatio: 6 + 74 * t, slowDown:4, barnesHutOptimize: gr.order > 500 }; };
   const kindOf = id => g.getNodeAttribute(id, "kind");
-  const hasPage = k => k !== "species"; // a species has no resource page to open
+  const hasPage = k => k !== "species" && k !== "entity_of_interest"; // a species has no resource page to open
   const filterKind = a => a.kind;
   // Size follows the number of links on a log scale, relative to the most linked node of this graph: the biggest hub is always the largest (22), a node with one link the smallest (about 8),
   // whatever the data looks like. The log keeps one huge hub from shrinking everything else to the same size.
@@ -126,7 +133,7 @@ async function openInPortal(n) {
   const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
-  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
+  const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", variable:"variables", variable_group:"variable groups", entity:"entities", characteristic:"characteristics", method:"methods", unit:"units", entity_of_interest:"entities of interest", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
   const CLOSED_R = .27, OPEN_R = .25; // how far a cluster's nodes paint, as a share of BLOB: small, so a cluster's area follows its own outline
   // A cluster shows its nodes once it nearly fills the view and they have room (average gap between neighbours in px), and is painted again when it shrinks below the lower share.
   // It depends on the zoom and on how many nodes the cluster holds, not on the size of the whole graph, so it adapts to any amount of data.

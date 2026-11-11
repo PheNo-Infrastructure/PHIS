@@ -5084,8 +5084,8 @@ function render() {
    The graph (an iframe on this origin) shows and edits the same selection: what is selected here is tinted there, and what is picked there lands in the
    Selection pane, where the action bar works on it. Things the graph does not draw (plants, factors, ...) are left alone by what it sends. */
 var graphSig; // var: refreshLeftPane can run before this point is reached
-const GRAPH_TYPES = new Set(["organization", "facility", "site", "project", "experiment", "device", "person", "group", "factor", "scientific_object"]);
-const BROWSE_KIND = { "cat-organizations": "organization", "cat-projects": "project", "cat-experiments": "experiment", "cat-facilities": "facility", "cat-devices": "device", "cat-sites": "site", "cat-persons": "person", "cat-factors": "factor", "cat-scientificobjects": "scientific_object", "cat-groups": "group" }; // a type's list in Browse = that type in the graph's grid
+const GRAPH_TYPES = new Set(["organization", "facility", "site", "project", "experiment", "device", "person", "group", "factor", "scientific_object", "variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest"]);
+const BROWSE_KIND = { "cat-organizations": "organization", "cat-projects": "project", "cat-experiments": "experiment", "cat-facilities": "facility", "cat-devices": "device", "cat-sites": "site", "cat-persons": "person", "cat-factors": "factor", "cat-scientificobjects": "scientific_object", "cat-variables": "variable", "cat-variablegroups": "variable_group", "cat-entities": "entity", "cat-characteristics": "characteristic", "cat-methods": "method", "cat-units": "unit", "cat-groups": "group" }; // a type's list in Browse = that type in the graph's grid
 const graphWin =() => document.querySelector("#graphPane iframe")?.contentWindow;
 function tellGraph(msg) { try { graphWin()?.postMessage(msg, location.origin); } catch {} }
 function syncGraph() {

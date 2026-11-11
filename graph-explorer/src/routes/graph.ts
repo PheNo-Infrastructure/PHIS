@@ -14,6 +14,14 @@ const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean
   { type: "group", url: "/security/groups?page_size=500", fields: [], optional: true },
   { type: "factor", url: "/core/experiments/factors?page_size=500", fields: [], optional: true },
   { type: "species", url: "/core/species", fields: [], optional: true }, // only the ones an experiment or some germplasm uses become nodes
+  // What is measured: a variable is made of an entity, a characteristic, a method and a unit (and sometimes an entity of interest); a group holds variables.
+  { type: "variable", url: "/core/variables?page_size=5000", fields: ["entity", "characteristic", "method", "unit", "entity_of_interest"], optional: true },
+  { type: "entity", url: "/core/entities?page_size=5000", fields: [], optional: true },
+  { type: "characteristic", url: "/core/characteristics?page_size=5000", fields: [], optional: true },
+  { type: "method", url: "/core/methods?page_size=5000", fields: [], optional: true },
+  { type: "unit", url: "/core/units?page_size=5000", fields: [], optional: true },
+  { type: "entity_of_interest", url: "/core/entities_of_interest?page_size=5000", fields: [], optional: true },
+  { type: "variable_group", url: "/core/variables_group?page_size=5000", fields: ["variables"], optional: true },
 ];
 
 const refUri = (r: unknown) => (typeof r === "string" ? r : (r as { uri?: string } | null)?.uri);
@@ -85,6 +93,16 @@ async function build(): Promise<string> {
     deviceLinks = { at: Date.now(), pairs: located.flatMap((r, i) => r.result.map((d: RawItem) => [facilities[i].uri, d.uri] as [string, string])) };
   }
   for (const [f, d] of deviceLinks.pairs) if (nodes.has(d) && nodes.has(f)) edges.push({ source: f, target: d });
+  // A factor can point at its unit (exact_match); the lists do not carry it, so each factor is read (a handful).
+  const factors = at("factor");
+  const matches = await mapLimit(factors, (f) => authedGetOne(`/core/experiments/factors/${encodeURIComponent(f.uri)}`).then((r) => r.result).catch(() => ({})));
+  factors.forEach((f, i) => {
+    const m = (matches[i] as RawItem).exact_match;
+    for (const r of Array.isArray(m) ? m : m ? [m] : []) {
+      const to = refUri(r);
+      if (to && nodes.has(to) && nodes.get(to)!.type === "unit") edges.push({ source: f.uri, target: to });
+    }
+  });
   // The scientific objects: every one is a node, joined to each experiment it is in (one request per experiment). An experiment also shows how many it holds.
   const experiments = pages[SOURCES.findIndex((s) => s.type === "experiment")].result;
   const objects = await authedGet("/core/scientific_objects?page_size=100000");
