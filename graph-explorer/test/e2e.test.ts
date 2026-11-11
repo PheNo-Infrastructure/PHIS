@@ -72,7 +72,7 @@ async function openRow(page: import("playwright").Page, text: string) {
   await idle(page);
 }
 
-const WIRED_CATEGORIES: Array<{ branch: string; label: string; fakeIdPrefix: string }> = [
+const WIRED_CATEGORIES: Array<{ branch: string; hub?: string; label: string; fakeIdPrefix: string }> = [
   { branch: "Scientific Organization", label: "Organizations", fakeIdPrefix: "org-" },
   { branch: "Scientific Organization", label: "Experiments", fakeIdPrefix: "exp-" },
   { branch: "Scientific Information", label: "Factors", fakeIdPrefix: "fac-irrigation" },
@@ -82,7 +82,7 @@ const WIRED_CATEGORIES: Array<{ branch: string; label: string; fakeIdPrefix: str
   { branch: "Scientific Organization", label: "Sites", fakeIdPrefix: "site-" },
   { branch: "Scientific Organization", label: "Persons", fakeIdPrefix: "person-" },
   { branch: "Scientific Information", label: "Scientific Objects", fakeIdPrefix: "so-" },
-  { branch: "Scientific Information", label: "Variables", fakeIdPrefix: "var-" },
+  { branch: "Scientific Information", hub: "Variables", label: "All variables", fakeIdPrefix: "var-" },
   { branch: "Scientific Information", label: "Germplasm", fakeIdPrefix: "germ-" },
   { branch: "Data", label: "Data files", fakeIdPrefix: "datafile-" },
   { branch: "Data", label: "Provenances", fakeIdPrefix: "prov-" },
@@ -90,12 +90,13 @@ const WIRED_CATEGORIES: Array<{ branch: string; label: string; fakeIdPrefix: str
   { branch: "Data", label: "Documents", fakeIdPrefix: "doc-" },
 ];
 
-for (const { branch, label, fakeIdPrefix } of WIRED_CATEGORIES) {
+for (const { branch, hub, label, fakeIdPrefix } of WIRED_CATEGORIES) {
   test(`e2e: ${label} category loads without fake ids or console errors`, async () => {
     await withServerAndBrowser(async (base, page) => {
       await page.goto(base + "/#browse");
       await idle(page);
       await openRow(page, branch);
+      if (hub) await openRow(page, hub);
       await openRow(page, label);
 
       const rowIds = await page.locator("#rowlist .row").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.id));
@@ -2902,6 +2903,7 @@ test("e2e: + New variable from Data > Variables asks name and the four parts (en
     await idle(page);
     await openRow(page, "Scientific Information");
     await openRow(page, "Variables");
+    await openRow(page, "All variables");
     await page.locator("#newStandaloneBtn").click();
     await idle(page);
     await page.locator("dialog input[name=name]").fill("ZZ var");
@@ -5063,5 +5065,18 @@ test("e2e: an object in several experiments shows its boxes folded to one summar
     assert.equal(await page.locator("#detailBody .item-box:visible").count(), 1, "the find box keeps the match");
     await page.locator(".box-filter").fill("");
     assert.equal(await page.locator("#detailBody .item-box:visible").count(), 7);
+  });
+});
+
+test("e2e: Variables is one place in Browse with PHIS's own tabs under it (variables, entities, characteristics, methods, units, groups), and the breadcrumb says which", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    await idle(page);
+    await openRow(page, "Scientific Information");
+    assert.equal(await page.locator("#rowlist .row-label", { hasText: "Entities" }).count(), 0, "the parts are not loose in Scientific Information any more");
+    await openRow(page, "Variables");
+    assert.deepEqual(await page.locator("#rowlist .row .row-label").allInnerTexts(), ["All variables", "Entities", "Characteristics", "Methods", "Units", "Variable groups"]);
+    await openRow(page, "Units");
+    assert.equal(await page.locator("#crumbs").innerText().then((t) => t.replace(/\s+/g, " ")), "Graph › Scientific Information › Variables › Units");
   });
 });

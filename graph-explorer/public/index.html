@@ -1240,14 +1240,18 @@ const CATEGORY_ITEMS = {
   ],
   "cat-info": [
     { id: "cat-scientificobjects", type: "category", label: "Scientific Objects", hint: "what you measure: plants, plots, pots, samples" },
-    { id: "cat-variables", type: "category", label: "Variables", hint: "traits: what is measured, e.g. plant height" },
+    { id: "cat-variablehub", type: "category", label: "Variables", hint: "what is measured: variables, and the entities, characteristics, methods and units they are made of" },
+    { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
+    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought. Made in one experiment, shareable with others" },
+    { id: "cat-germplasmgroups", type: "category", label: "Germplasm groups", hint: "named sets of germplasm, e.g. a panel" },
+  ],
+  // PHIS's own tabs for variables, one level down so the breadcrumb says where you are: Scientific Information › Variables › Entities.
+  "cat-variablehub": [
+    { id: "cat-variables", type: "category", label: "All variables", hint: "traits: what is measured, e.g. plant height" },
     { id: "cat-entities", type: "category", label: "Entities", hint: "what a variable is measured on, e.g. plant, leaf" },
     { id: "cat-characteristics", type: "category", label: "Characteristics", hint: "what is measured, e.g. height, NDVI" },
     { id: "cat-methods", type: "category", label: "Methods", hint: "how it is measured, e.g. a 3D scan" },
     { id: "cat-units", type: "category", label: "Units", hint: "e.g. millimeter, degree Celsius. A factor can point at its unit" },
-    { id: "cat-germplasm", type: "category", label: "Germplasm", hint: "plant material: species, varieties, lines" },
-    { id: "cat-factors", type: "category", label: "Factors", hint: "treatments and design, e.g. drought. Made in one experiment, shareable with others" },
-    { id: "cat-germplasmgroups", type: "category", label: "Germplasm groups", hint: "named sets of germplasm, e.g. a panel" },
     { id: "cat-variablegroups", type: "category", label: "Variable groups", hint: "named sets of variables, e.g. all drone traits" },
   ],
   "cat-data": [
@@ -2194,7 +2198,6 @@ function canonicalPathFor(item) {
     return [...canonicalPathFor(factor), item];
   }
   // A variable's parts are shared by many variables, so they sit beside them: Data › Variables › Millimeter.
-  if (VARIABLE_PARTS.has(item.type)) return [...canonicalPathFor({ type: "variable", id: "" }).slice(0, -1), item];
   const categoryId = CATEGORY_FOR_TYPE[item.type];
   // Its parents too (an accession's species), outermost first; the length cap guards a cycle.
   const ancestors = [];
@@ -2204,11 +2207,10 @@ function canonicalPathFor(item) {
     ancestors.unshift(row);
     p = row.parent;
   }
-  for (const topCat of ROOT) {
-    if (categoryId && topCat.id === categoryId) return [path[0], topCat, ...ancestors, item];
-    const leafCat = (CATEGORY_ITEMS[topCat.id] || []).find(c => c.id === categoryId);
-    if (leafCat) return [path[0], topCat, leafCat, ...ancestors, item];
-  }
+  // The categories from the top down to the one holding this type (two or three deep: Scientific Information › Variables › Entities).
+  const chain = (cats, upto) => { for (const c of cats) { if (c.id === categoryId) return [...upto, c]; const inner = chain((CATEGORY_ITEMS[c.id] || []).filter(x => x.type === "category"), [...upto, c]); if (inner) return inner; } return null; };
+  const cats = categoryId && chain(ROOT, []);
+  if (cats) return [path[0], ...cats, ...ancestors, item];
   // Type not wired into the category tree at all (shouldn't happen for anything with its own
   // relations) — fall back to appending, same as before this existed.
   return [...path, item];
