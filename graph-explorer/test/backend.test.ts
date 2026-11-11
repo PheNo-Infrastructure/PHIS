@@ -4180,3 +4180,45 @@ test("the parts of a variable (entity, characteristic, method, unit, entity of i
     assert.equal((await (await realFetch(`${base}/api/entities-of-interest`)).json()).length, 0, "its own list");
   });
 });
+
+test("a camera and its lens: two devices are linked (the lens is read from the types, either order), counted when already linked, refused when neither or both are lenses, and removed by Unlink selection", async () => {
+  await withServer(async (base) => {
+    const puts: any[] = [];
+    const devices: Record<string, any> = {
+      "cam-1": { uri: "cam-1", name: "Z6III", rdf_type: "vocabulary:RGBCamera", brand: "Nikon", relations: [{ property: "vocabulary:measures", value: "var-1", inverse: false }] },
+      "lens-1": { uri: "lens-1", name: "24-120", rdf_type: "vocabulary:Lens", relations: [] },
+      "lens-2": { uri: "lens-2", name: "50mm", rdf_type: "vocabulary:Lens", relations: [] },
+      "cam-2": { uri: "cam-2", name: "Z8", rdf_type: "vocabulary:RGBCamera", relations: [] },
+    };
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const path = url.replace(/^.*\/rest/, "");
+      const method = init?.method ?? "GET";
+      if (url.includes("/security/authenticate")) return jsonResponse(200, { result: { token: "tok" } });
+      if (url.includes("/ontology/name_space")) return jsonResponse(200, { result: {} });
+      if (method === "PUT") { const b = JSON.parse(String(init?.body)); puts.push(b); devices[b.uri] = { ...devices[b.uri], ...b }; return jsonResponse(200, { result: "ok" }); }
+      const m = path.match(/^\/core\/devices\/(.+)$/);
+      if (m) return jsonResponse(200, { result: devices[decodeURIComponent(m[1])] });
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }) as typeof fetch;
+    const post = (p: string, body: unknown) => realFetch(`${base}${p}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Graph-Explorer": "1" }, body: JSON.stringify(body) });
+    const dev = (id: string) => ({ type: "device", id });
+
+    const first = await post("/api/link", { items: [dev("lens-1"), dev("cam-1")] }); // the lens listed first: still the camera that gets it
+    assert.deepEqual(await first.json(), { ok: true, linkedPairs: 1, alreadyLinked: 0 });
+    assert.equal(puts[0].uri, "cam-1");
+    assert.deepEqual(puts[0].relations, [{ property: "vocabulary:measures", value: "var-1", inverse: false }, { property: "vocabulary:hasLens", value: "lens-1", inverse: false }], "beside what it already measures");
+
+    puts.length = 0;
+    assert.deepEqual(await (await post("/api/link", { items: [dev("cam-1"), dev("lens-1")] })).json(), { ok: true, linkedPairs: 0, alreadyLinked: 1 });
+    assert.equal(puts.length, 0);
+    assert.match((await (await post("/api/link", { items: [dev("cam-1"), dev("cam-2")] })).json()).error, /Neither is a lens/);
+    assert.match((await (await post("/api/link", { items: [dev("lens-1"), dev("lens-2")] })).json()).error, /Both are lenses/);
+    assert.equal((await post("/api/link", { items: [dev("cam-1"), dev("lens-1"), dev("lens-2")] })).status, 400);
+
+    const preview = await (await post("/api/unlink", { items: [dev("lens-1"), dev("cam-1")] })).json();
+    assert.deepEqual(preview.links, ["Z6III — lens: 24-120"]);
+    assert.equal((await post("/api/unlink", { items: [dev("lens-1"), dev("cam-1")], confirm: true })).status, 200);
+    assert.deepEqual(puts[0].relations, [{ property: "vocabulary:measures", value: "var-1", inverse: false }], "only the lens goes");
+    assert.deepEqual((await (await post("/api/unlink", { items: [dev("lens-2"), dev("cam-1")] })).json()).links, []);
+  });
+});

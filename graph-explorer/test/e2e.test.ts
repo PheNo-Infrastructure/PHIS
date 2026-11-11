@@ -5116,3 +5116,18 @@ test("e2e: Variables is one place in Browse with PHIS's own tabs under it (varia
     assert.equal(await page.locator("#crumbs").innerText().then((t) => t.replace(/\s+/g, " ")), "Graph › Scientific Information › Variables › Units");
   });
 });
+
+test("e2e: two devices can be linked as a camera and its lens (the page leaves telling them apart to the server); three or one cannot", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.goto(base + "/#browse");
+    await idle(page);
+    const plan = (n: number) => page.evaluate((count) => {
+      selection.clear();
+      for (let i = 0; i < count; i++) selection.set(`dev-${i}`, { id: `dev-${i}`, type: "device", label: `Device ${i}` });
+      return linkPlan();
+    }, n);
+    assert.deepEqual(await plan(2), { kind: "link", label: "Link the lens to its camera" });
+    assert.equal((await plan(3)).kind, "none");
+    assert.match((await plan(3)).why, /camera and its lens/);
+  });
+});

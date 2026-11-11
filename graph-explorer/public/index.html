@@ -4260,6 +4260,8 @@ function linkPlan() {
   const nice = t => typeName(t);
   if (types.length === 1 && types[0] === "germplasm") return germplasmPlan(items);
   if (types.length === 2 && types.includes("device") && types.includes("facility")) return movePlan(items);
+  // Two devices: a camera and its lens (the page cannot tell which is which; the server reads their types and says so if it cannot).
+  if (types.length === 1 && types[0] === "device") return items.length === 2 ? { kind: "link", label: "Link the lens to its camera" } : { kind: "none", why: "A camera and its lens: select exactly two devices." };
   if (types.length === 1) {
     return RANKED_TYPES.has(types[0]) ? { kind: "rank" } : { kind: "none", why: `Two ${typeName(types[0], 2)} can't be linked to each other.` };
   }

@@ -1,6 +1,6 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, accountItem, personName, refUri, resolveLink, updateNode } from "../node-types.ts";
+import { NODE_TYPES, accountItem, deviceRelationIds, personName, refUri, resolveLink, setDeviceRelation, updateNode } from "../node-types.ts";
 import { PERSON_ROLES } from "../adjacency.js";
 
 // "Unlink selection" (selection-first design): every link that exists BETWEEN the selected
@@ -53,6 +53,16 @@ async function findLinks(items: Item[]): Promise<Found[]> {
         }
       }
       const [a, b] = [items[i], items[j]];
+      // A camera and its lens: whichever of the two is the lens, the camera's `hasLens` goes.
+      if (a.type === "device" && b.type === "device") {
+        const kind = async (it: Item) => String((await authedGetOne(NODE_TYPES.device.getUrl(it.id))).result.rdf_type ?? "").endsWith("Lens");
+        const [aLens, bLens] = [await kind(a), await kind(b)];
+        if (aLens !== bLens) {
+          const [camera, lens] = aLens ? [b, a] : [a, b];
+          if (await has(await deviceRelationIds(camera.id, "hasLens"), lens.id)) out.push({ text: `${await name(camera)} — lens: ${await name(lens)}`, run: () => setDeviceRelation(camera.id, "hasLens", lens.id, false) });
+        }
+        continue;
+      }
       if (a.type === b.type) continue;
       // An account in a group: every (account, profile) pair it has there goes, and the profiles are named.
       if ((a.type === "group" && b.type === "account") || (a.type === "account" && b.type === "group")) {

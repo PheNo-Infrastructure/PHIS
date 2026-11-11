@@ -1,6 +1,6 @@
 import { authedGetOne, compactUri, respondOpenSilexErrors } from "../opensilex.ts";
 import { readJsonBody, type RouteHandler } from "../http.ts";
-import { NODE_TYPES, addGroupMembers, applyLink, moveDevices, resolveLink, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
+import { NODE_TYPES, addGroupMembers, applyLink, deviceRelationIds, moveDevices, resolveLink, setDeviceRelation, setGermplasmParent, type CarryOver, type ResolvedLink } from "../node-types.ts";
 import { PERSON_ROLES } from "../adjacency.js";
 import { planReplace, runReplace, type Replace } from "../factor-replace.ts";
 
@@ -40,6 +40,27 @@ export const handleLink: RouteHandler = async (req, res, { pathname }) => {
       const r = await moveDevices(idsByType.get("device")!, idsByType.get("facility")!, body.date, typeof body.position === "string" ? body.position.trim().slice(0, 200) || undefined : undefined);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, linkedPairs: r.linked, alreadyLinked: r.already }));
+    });
+    return true;
+  }
+
+  // Two devices: a camera and its lens (the camera's own `hasLens`). Which one is the lens is read from their types, never guessed.
+  if (types.length === 1 && types[0] === "device") {
+    const ids = idsByType.get("device")!;
+    const bad = (error: string) => { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error })); return true; };
+    if (ids.length !== 2) return bad("Two devices can be linked as a camera and its lens: select exactly two.");
+    await respondOpenSilexErrors(res, async () => {
+      const isLens = await Promise.all(ids.map(async (id) => String((await authedGetOne(`/core/devices/${encodeURIComponent(id)}`)).result.rdf_type ?? "").endsWith("Lens")));
+      if (isLens[0] === isLens[1]) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: isLens[0] ? "Both are lenses: a lens belongs to a camera." : "Neither is a lens: select a camera and its lens." }));
+        return;
+      }
+      const [camera, lens] = isLens[0] ? [ids[1], ids[0]] : [ids[0], ids[1]];
+      const already = (await deviceRelationIds(camera, "hasLens")).includes(lens);
+      if (!already) await setDeviceRelation(camera, "hasLens", lens, true);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, linkedPairs: already ? 0 : 1, alreadyLinked: already ? 1 : 0 }));
     });
     return true;
   }

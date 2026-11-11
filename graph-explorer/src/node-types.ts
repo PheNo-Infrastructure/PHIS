@@ -1701,11 +1701,11 @@ export async function queryItems(q: QueryRelation, id: string) {
 // relationsFromDto plus any queryRelations groups — what node-detail (and an unlink response,
 // which replaces the frontend's cached relations wholesale) returns.
 // A device's own relations (the variables it measures): read the device, add or drop one, and send it back whole.
-async function deviceRelationIds(deviceId: string, property: string): Promise<string[]> {
+export async function deviceRelationIds(deviceId: string, property: string): Promise<string[]> {
   const dto = (await authedGetOne(`/core/devices/${encodeURIComponent(deviceId)}`)).result;
   return ((Array.isArray(dto.relations) ? dto.relations : []) as { property: string; value: string }[]).filter((r) => localName(r.property) === property).map((r) => String(r.value));
 }
-async function setDeviceRelation(deviceId: string, property: string, value: string, add: boolean) {
+export async function setDeviceRelation(deviceId: string, property: string, value: string, add: boolean) {
   const dto = (await authedGetOne(`/core/devices/${encodeURIComponent(deviceId)}`)).result;
   const body = updatePayloadFromDto(deviceId, String(dto.name ?? ""), dto, NODE_TYPES.device, {});
   const rels = (Array.isArray(dto.relations) ? dto.relations : []) as { property: string; value: string; inverse?: boolean }[];
