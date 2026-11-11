@@ -46,7 +46,7 @@ export class OpenSilexError extends Error {
 
 // Shared by every verb below: token cache + retry-once-on-401 is identical regardless of
 // method, so GET/POST/PUT/DELETE all funnel through this instead of each reimplementing it.
-async function authedFetch(urlPath: string, init?: RequestInit): Promise<unknown> {
+async function authedFetch(urlPath: string, init?: RequestInit, asText = false): Promise<unknown> {
   if (!token) token = await authenticate();
 
   const fetchOnce = () =>
@@ -72,6 +72,7 @@ async function authedFetch(urlPath: string, init?: RequestInit): Promise<unknown
     throw new OpenSilexError(res.status, message);
   }
   const text = await res.text();
+  if (asText) return text;
   return text ? JSON.parse(text) : null;
 }
 
@@ -79,6 +80,11 @@ async function authedFetch(urlPath: string, init?: RequestInit): Promise<unknown
 export type ListPage = { result: RawItem[]; metadata?: { pagination?: { totalCount?: number } } };
 export async function authedGet(urlPath: string): Promise<ListPage> {
   return authedFetch(urlPath) as Promise<ListPage>;
+}
+
+// A POST whose answer is text, not JSON (the objects export is a CSV).
+export async function authedPostText(urlPath: string, body: unknown): Promise<string> {
+  return (await authedFetch(urlPath, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, true)) as string;
 }
 
 export async function authedGetOne(urlPath: string): Promise<{ result: Record<string, unknown> }> {

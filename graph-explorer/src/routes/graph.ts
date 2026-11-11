@@ -1,4 +1,4 @@
-import { authedGet, authedGetOne, compactUri, type RawItem } from "../opensilex.ts";
+import { authedGet, authedGetOne, authedPostText, compactUri, type RawItem } from "../opensilex.ts";
 import type { RouteHandler } from "../http.ts";
 
 // The structure layer as nodes + edges, built from the link fields the list endpoints already return. The rule is "what GraphDB holds is in the graph, what MongoDB holds (measured values) is not".
@@ -33,6 +33,23 @@ const SOURCES: { type: string; url: string; fields: string[]; optional?: boolean
 const short = (t: string) => (t.length > 48 ? `${t.slice(0, 47)}…` : t);
 
 const refUri = (r: unknown) => (typeof r === "string" ? r : (r as { uri?: string } | null)?.uri);
+
+// A CSV answer as rows of cells (quoted cells may hold commas and line breaks).
+function csvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; } else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); cell = ""; if (row.length > 1 || row[0] !== "") rows.push(row); row = []; }
+    else cell += c;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
 
 // The picture is read-only and the device lookup below costs one request per facility, so a recent answer is reused.
 let cached: { at: number; body: string } | null = null;
@@ -135,6 +152,28 @@ async function build(): Promise<string> {
       edges.push({ source: o.uri, target: x.uri });
     }
   });
+  // What each object has inside its experiment (germplasm, factor level, parent object): one export per experiment gives them all.
+  const exported = await mapLimit(experiments.map((x, i) => ({ x, objects: held[i].result })), ({ x, objects }) => objects.length
+    ? authedPostText("/core/scientific_objects/export", { experiment: x.uri, uris: objects.map((o: RawItem) => o.uri) }).catch(() => "")
+    : Promise.resolve(""));
+  const inside = new Set<string>();
+  for (const text of exported) {
+    const rows = csvRows(text);
+    if (rows.length < 3) continue;
+    const col = (name: string) => rows[0].indexOf(name);
+    const [cGerm, cLevel, cParent] = [col("vocabulary:hasGermplasm"), col("vocabulary:hasFactorLevel"), col("vocabulary:isPartOf")];
+    for (const r of rows.slice(2)) {
+      const from = r[0];
+      if (!nodes.has(from)) continue;
+      for (const [c, resolve] of [[cGerm, async (u: string) => nodes.has(u) ? u : await compactUri(u)], [cLevel, async (u: string) => u], [cParent, async (u: string) => u]] as const) {
+        if (c < 0 || !r[c]) continue;
+        for (const v of r[c].split(",").map((u) => u.trim()).filter(Boolean)) {
+          const to = await resolve(v), key = [from, to].sort().join(" ");
+          if (nodes.has(to) && to !== from && !inside.has(key)) { inside.add(key); edges.push({ source: from, target: to }); }
+        }
+      }
+    }
+  }
   return JSON.stringify({ nodes: [...nodes.values()], edges });
 }
 

@@ -3781,6 +3781,8 @@ test("graph: people, groups and factors are nodes, linked through device, experi
       if (url.includes("/core/variables?")) return page([{ uri: "v:1", name: "Height", entity: { uri: "en:1", name: "Plant" }, unit: { uri: "u:1", name: "mm" }, entity_of_interest: null }]);
       if (url.includes("/core/entities?")) return page([{ uri: "en:1", name: "Plant" }]);
       if (url.includes("/core/units")) return page([{ uri: "u:1", name: "mm" }]);
+      // The export of an experiment's objects is a CSV: two header lines (property, label), then a row per object with the uris of its factor level, germplasm and parent.
+      if (url.includes("/core/scientific_objects/export")) return new Response('"uri","type","vocabulary:hasFactorLevel","vocabulary:hasGermplasm","vocabulary:isPartOf"\n"uri","type","Factor level","Germplasm","is part of"\n"so:1","vocabulary:Plant","lv:1","gm:1","so:2"\n', { status: 200 });
       if (url.includes("/core/scientific_objects")) return page(url.includes("experiment=") ? [{ uri: "so:1", name: "Plant 1" }] : [{ uri: "so:1", name: "Plant 1" }, { uri: "so:2", name: "Loose plot" }]);
       return page([]);
     }) as typeof fetch;
@@ -3793,7 +3795,7 @@ test("graph: people, groups and factors are nodes, linked through device, experi
     assert.equal(body.nodes.find((n: any) => n.id === "s:1").count, 2, "a species says how many germplasm it has; one nobody uses is not a node");
     assert.equal(body.nodes.find((n: any) => n.id === "p:1").label, "Ada Lovelace");
     const links = body.edges.map((e: any) => [e.source, e.target].sort().join(" ")).sort();
-    assert.deepEqual(links, ["acc:1 g:1", "acc:1 p:1", "an:1 e:1", "d:1 ev:1", "d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "en:1 v:1", "ev:1 so:1", "f:1 lv:1", "f:1 u:1", "g:1 p:1", "gm:1 s:1", "gm:2 s:1", "u:1 v:1", "v:1 vg:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
+    assert.deepEqual(links, ["acc:1 g:1", "acc:1 p:1", "an:1 e:1", "d:1 ev:1", "d:1 p:1", "e:1 f:1", "e:1 g:1", "e:1 p:1", "e:1 s:1", "e:1 so:1", "en:1 v:1", "ev:1 so:1", "f:1 lv:1", "f:1 u:1", "g:1 p:1", "gm:1 s:1", "gm:1 so:1", "gm:2 s:1", "lv:1 so:1", "so:1 so:2", "u:1 v:1", "v:1 vg:1"], "device owner, supervisor, group, factor, and a group's member through the account; the unknown account and the unowned device add nothing");
   });
 });
 
