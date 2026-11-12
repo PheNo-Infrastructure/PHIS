@@ -212,6 +212,22 @@ test("e2e: graph legend: shown nodes linked to nothing shown are set apart in on
   });
 });
 
+test("e2e: graph legend: dragging a node while a small group is shown does not zoom the view out to the hidden nodes", async () => {
+  await withGraph(async (page) => {
+    const big = stubGraph();
+    for (let i = 0; i < 300; i++) { big.nodes.push({ id: `scientific_object-${i}`, type: "scientific_object", label: `Obj ${i}` }); big.edges.push({ source: `scientific_object-${i}`, target: `experiment-${i % 9}` }); }
+    await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(big) }));
+    await page.reload(); await page.waitForFunction(() => (window as any).__graph?.g.order > 0); await settled(page);
+    await page.locator('#legend button[data-g="Material"]').click(); await settled(page); // hidden objects now have places far from a small group
+    await page.locator('#legend button[data-g="Places and devices"]').click({ button: "right" }); await settled(page);
+    const box = () => page.evaluate(() => JSON.stringify((window as any).__graph.sigma.customBBox));
+    const before = await box(), p = await xy(page, "facility-0");
+    await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.mouse.move(p.x + 40, p.y + 25, { steps: 6 });
+    assert.equal(await box(), before, "the view box is the shown nodes' own, unchanged by the press");
+    await page.mouse.up(); await settled(page);
+  });
+});
+
 test("e2e: graph legend: turning a hidden group on and then Clusters off lays out only what is shown, nodes do not pile up", async () => {
   await withGraph(async (page) => {
     const big = stubGraph();

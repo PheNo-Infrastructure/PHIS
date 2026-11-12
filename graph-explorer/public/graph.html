@@ -22,7 +22,7 @@
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
   #legend .grp { display:flex; flex-wrap:wrap; gap:3px; width:100%; align-items:center; margin-bottom:8px; }
-  #legend .lghint { width:100%; font-size:10px; opacity:.7; line-height:1.4; margin-top:2px; }
+  #legend .lghelp { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border:1px solid currentColor; border-radius:50%; font-size:10px; font-weight:700; opacity:.6; cursor:help; align-self:center; } #legend .lghelp:hover, #legend .lghelp:focus { opacity:1; }
   #legend .gtoggle.sel { background:var(--accent); color:#fff; border-color:var(--accent); }
   #legend .gtoggle { border-radius:4px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:10px; padding:3px 7px; min-width:132px; justify-content:space-between; background:#e3eba1; border-color:#6aa86a; color:#222; }
   #legend .gtoggle.part { border-style:dashed; } #legend .gtoggle[aria-pressed="false"] { background:none; border-color:currentColor; }
@@ -676,8 +676,15 @@ async function openInPortal(n) {
     for (const c of clusters) { const by = new Map(); for (const id of c.members) if (sub.hasNode(id)) { const k = kindOf(id); (by.get(k) ?? by.set(k, []).get(k)).push(id); }
       for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: c.typeKind ? TYPE_PULL * .4 : TYPE_PULL }); } }
     // once the two-level layout has set the scale (small, dense), the live step must not use the global strong repulsion: it would blow the clusters apart
+    // A live step (a few iterations per frame) restarts ForceAtlas at full speed every frame, and a dense clump is kicked hard: a node may move only about a node radius per step.
+    const cap = iterations <= 5 && K ? K * 1.2 : Infinity, from = new Map(); if (cap < Infinity) sub.forEachNode((id, a) => from.set(id, [a.x, a.y]));
     FA2.assign(sub, { iterations, settings: K && clusters.length ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : settingsFor(sub) }); // a plain graph was laid out with settingsFor: the live step must not change the physics under it
-    sub.forEachNode((id, a) => g.hasNode(id) && g.mergeNodeAttributes(id, { x:a.x, y:a.y }));
+    sub.forEachNode((id, a) => {
+      if (!g.hasNode(id)) return;
+      let { x, y } = a; const p = from.get(id), d = p ? Math.hypot(x - p[0], y - p[1]) : 0;
+      if (d > cap) { x = p[0] + (x - p[0]) * cap / d; y = p[1] + (y - p[1]) * cap / d; }
+      g.mergeNodeAttributes(id, { x, y });
+    });
     spreadClusters(3); collide(2);
   }
 
@@ -754,7 +761,15 @@ async function openInPortal(n) {
   // Sigma maps the screen onto the bounding box of ALL nodes. Dragging a node outward grows that box, which squeezes everything else and shifts the node away from the
   // cursor (a feedback loop). So a drag freezes the box as it was; Fit, Reset and the type chips set a new one.
   let bboxFrozen = false;
-  function freezeBBox() { if (!bboxFrozen) { sigma.setCustomBBox(sigma.getBBox()); bboxFrozen = true; } }
+  function freezeBBox() { // keep the box Fit set (what is shown); sigma.getBBox() would measure every node, hidden ones too, and zoom far out when a small group is shown
+    if (bboxFrozen) return;
+    if (!sigma.customBBox) {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      g.forEachNode((id, a) => { if (inLayout(id)) { x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); } });
+      sigma.setCustomBBox(x0 === Infinity ? sigma.getBBox() : { x:[x0, Math.max(x1, x0 + 1)], y:[y0, Math.max(y1, y0 + 1)] });
+    }
+    bboxFrozen = true;
+  }
   // Fit the camera to what is visible, not to the whole graph (Sigma frames hidden nodes too unless told the box).
   function fitView() {
     if (catView) return catView.fitCam && sigma.getCamera().animate(catView.fitCam, { duration: 400 }); // in a grid, Fit shows the grid
@@ -867,7 +882,7 @@ async function openInPortal(n) {
       return `<div class="grp"><button class="chip gtoggle${on && on < x.kinds.length ? " part" : ""}${isSel ? " sel" : ""}" data-g="${x.name}" aria-pressed="${on > 0}" title="Click hides or shows every type in ${x.name}. Ctrl+click puts them in a grid (inside a selection: shows only them)">${x.name}${grids && n ? ` <span class="n">${n}</span>` : ""}</button>${x.kinds.map(kindChip).join("")}</div>`;
     }).join("")
       + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "")
-      + `<div class="lghint"><b>Click</b> hides or shows · <b>Right-click</b> shows only it (again: back) · <b>Ctrl+click</b> a grid · <b>Alt+←/→</b> earlier legend states</div>`;
+      + `<span class="lghelp" tabindex="0" title="Click: hide or show a type, or a whole group (the bold chip).&#10;Right-click: show only it; right-click it again to go back to what was shown before.&#10;Ctrl+click: put it in a grid.&#10;Shift+click: a range of types.&#10;Alt+Left / Alt+Right: step through earlier legend states.">?</span>`;
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
     legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = ev => legendGroup(b.dataset.g, ev));
     legend.querySelectorAll("button[data-t]").forEach(b => b.oncontextmenu = ev => { ev.preventDefault(); if (b.dataset.t !== "*") legendOnly([b.dataset.t]); });
