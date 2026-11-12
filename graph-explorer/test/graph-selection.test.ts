@@ -147,6 +147,25 @@ test("e2e: graph selection: legend chips mean what was clicked, keep the selecti
   });
 });
 
+test("e2e: graph legend: types come in groups, the first three are on at open, a group toggles all its types and a type still toggles alone", async () => {
+  await withGraph(async (page) => {
+    const group = (n: string) => page.locator(`#legend button[data-g="${n}"]`), chip = (t: string) => page.locator(`#legend button[data-t="${t}"]`);
+    const pressed = (l: ReturnType<typeof chip>) => l.getAttribute("aria-pressed");
+    assert.deepEqual(await page.locator("#legend button[data-g]").evaluateAll((l) => l.map((e) => `${(e as HTMLElement).dataset.g}:${e.getAttribute("aria-pressed")}`)),
+      ["People:true", "Places and devices:true", "Trials:true", "Material:false", "Measurement:false", "Records:false"], "three groups are on when the page opens");
+    assert.equal(await pressed(chip("scientific_object")), "false", "a type of a group that is off is off");
+    await group("People").click(); await settled(page);
+    assert.equal(await pressed(chip("person")), "false"); assert.equal(await pressed(chip("organization")), "false");
+    assert.equal((await shown(page)).organization, undefined, "the group's nodes are gone");
+    await chip("person").click(); await settled(page);
+    assert.equal(await pressed(group("People")), "true", "one type back on: the group is partly on");
+    assert.equal(await group("People").evaluate((e) => e.classList.contains("part")), true);
+    assert.equal((await shown(page)).person, 6); assert.equal((await shown(page)).organization, undefined, "a type toggles alone");
+    await group("Material").click(); await settled(page);
+    assert.equal(await pressed(chip("germplasm")), "true", "an off group turns all its types on");
+  });
+});
+
 test("e2e: graph selection: in a legend grid Ctrl+click on a node adds to the selection and the grid stays; a plain click leaves it", async () => {
   await withGraph(async (page) => {
     await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await settled(page);

@@ -21,6 +21,8 @@
   .chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; font-size:12px; border-radius:99px; }
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
+  #legend .grp { display:flex; flex-wrap:wrap; gap:3px; width:100%; align-items:center; }
+  #legend .gtoggle { font-weight:600; min-width:150px; justify-content:space-between; } #legend .gtoggle.part { border-style:dashed; }
   .chip.static { cursor:default; border-color:transparent; background:none; }
   .chip { user-select:none; } .chip .n { opacity:.6; } .chip.sel { background:var(--accent); color:#fff; border-color:var(--accent); } /* sel: the type is a section of the open grid */
   button, .chk { font:inherit; padding:5px 10px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:6px; cursor:pointer; }
@@ -85,7 +87,16 @@ const ICON_PATHS = {
   document: "M7 3h7l4 4v14H7zM14 3v4h4M9 12h6M9 16h6",
 };
 const NAMES = { organization:"Organization", facility:"Facility", site:"Site", project:"Project", experiment:"Experiment", device:"Device", person:"Person", group:"Group", factor:"Factor", scientific_object:"Object", variable:"Variable", variable_group:"Variable group", entity:"Entity", characteristic:"Characteristic", method:"Method", unit:"Unit", entity_of_interest:"Entity of interest", event:"Event", annotation:"Annotation", account:"Account", factor_level:"Factor level", germplasm:"Germplasm", profile:"Profile", document:"Document", species:"Species" };
-const FILTERS = ["organization", "site", "project", "experiment", "facility", "device", "person", "group", "factor", "species", "scientific_object", "variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest", "event", "annotation", "account", "factor_level", "germplasm", "profile", "document"];
+// The legend's groups (one toggle each, the types stay individually clickable). The first three are on when the page opens; the rest are one click away.
+const GROUPS = [
+  { name: "People", on: true, kinds: ["organization", "person", "group"] },
+  { name: "Places and devices", on: true, kinds: ["site", "facility", "device"] },
+  { name: "Trials", on: true, kinds: ["project", "experiment", "factor"] },
+  { name: "Material", on: false, kinds: ["factor_level", "species", "germplasm", "scientific_object"] },
+  { name: "Measurement", on: false, kinds: ["variable", "variable_group", "entity", "characteristic", "method", "unit", "entity_of_interest"] },
+  { name: "Records", on: false, kinds: ["event", "annotation", "document", "account", "profile"] },
+];
+const FILTERS = GROUPS.flatMap(g => g.kinds);
 const HINT = document.documentElement.classList.contains("embed") ? '' : '<p class="muted">Click a node to see what it is linked to; Ctrl+click adds or removes nodes, and dragging a box on empty space selects everything inside it. Right-drag moves the view. Double-click opens a page. Drag a node and the graph follows; ForceAtlas (top left) keeps the layout running when on, and leaves things where you put them when off. Click a type above to hide it.</p>';
 const embedded = document.documentElement.classList.contains("embed");
 const e = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -138,7 +149,7 @@ async function openInPortal(n) {
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const stash = new Map(); let stashOwn = false; // stash: what hiding a type took out of the selection, given back when it is shown again (until the selection is changed some other way)
-  const hiddenKinds = new Set(), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
+  const hiddenKinds = new Set(GROUPS.filter(x => !x.on).flatMap(x => x.kinds)), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
   const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", variable:"variables", variable_group:"variable groups", entity:"entities", characteristic:"characteristics", method:"methods", unit:"units", entity_of_interest:"entities of interest", event:"events", annotation:"annotations", account:"accounts", factor_level:"factor levels", germplasm:"germplasm", profile:"profiles", document:"documents", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
@@ -779,11 +790,20 @@ async function openInPortal(n) {
     if (t === "*") return grids && setKinds(cur.length === shown.length ? [] : shown);
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
-    hiddenKinds.has(t) ? hiddenKinds.delete(t) : hiddenKinds.add(t);
+    setHidden([t], !hiddenKinds.has(t));
+  }
+  function legendGroup(name) { // a group's toggle: any type of it shown -> hide them all, none shown -> show them all
+    const kinds = GROUPS.find(x => x.name === name).kinds;
+    setHidden(kinds, kinds.some(k => !hiddenKinds.has(k)));
+  }
+  function setHidden(ts, hide) {
+    ts.forEach(t => hide ? hiddenKinds.add(t) : hiddenKinds.delete(t));
     if (!catView) restyle();
-    const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
-    if (hiddenKinds.has(t) && mine.length) { stashOwn = true; setSelection([...sel].filter(id => !mine.includes(id)), "replace"); stashOwn = false; stash.set(t, mine); } // a hidden type is not selected, but it is remembered
-    else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
+    for (const t of ts) {
+      const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
+      if (hiddenKinds.has(t) && mine.length) { stashOwn = true; setSelection([...sel].filter(id => !mine.includes(id)), "replace"); stashOwn = false; stash.set(t, mine); } // a hidden type is not selected, but it is remembered
+      else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
+    }
     if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
     if (!catView) { refreshView(); burst(); return; } // hiding or showing a type: ForceAtlas runs briefly so the graph settles
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
@@ -799,9 +819,14 @@ async function openInPortal(n) {
     const legend = document.getElementById("legend");
     kindCount = {}; g.forEachNode((id, a) => { const k = filterKind(a); kindCount[k] = (kindCount[k] || 0) + 1; });
     const grids = plain();
-    legend.innerHTML = FILTERS.map(t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`).join("")
+    const kindChip = t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`;
+    legend.innerHTML = GROUPS.map(x => { // one row per group: its toggle first (dimmed when none is shown, outlined when only some are), then its types
+      const on = x.kinds.filter(k => !hiddenKinds.has(k)).length, n = x.kinds.reduce((s, k) => s + (kindCount[k] || 0), 0);
+      return `<div class="grp"><button class="chip gtoggle${on && on < x.kinds.length ? " part" : ""}" data-g="${x.name}" aria-pressed="${on > 0}" title="Hides or shows every type in ${x.name}">${x.name}${grids && n ? ` <span class="n">${n}</span>` : ""}</button>${x.kinds.map(kindChip).join("")}</div>`;
+    }).join("")
       + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "");
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
+    legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = () => legendGroup(b.dataset.g));
   }
   function stats() {
     selBtn(); // buttons, hint line and ForceAtlas follow the view
