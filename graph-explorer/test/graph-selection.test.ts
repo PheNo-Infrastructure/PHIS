@@ -163,6 +163,11 @@ test("e2e: graph legend: types come in groups, the first three are on at open, a
     assert.equal((await shown(page)).person, 6); assert.equal((await shown(page)).organization, undefined, "a type toggles alone");
     await group("Material").click(); await settled(page);
     assert.equal(await pressed(chip("germplasm")), "true", "an off group turns all its types on");
+    await chip("experiment").click({ modifiers: ["Control"] }); await settled(page);
+    assert.deepEqual(await page.evaluate(() => (window as any).__graph.cat()?.kinds), ["experiment"], "Ctrl+click opens a grid");
+    await chip("person").click(); await settled(page);
+    assert.equal(await page.evaluate(() => (window as any).__graph.cat()), null, "a plain click on another type leaves grid mode");
+    assert.equal(await pressed(chip("person")), "false", "and does what a plain click does");
     await page.locator('#legend button[data-t="*"]').click(); await settled(page);
     assert.deepEqual(await page.locator("#legend button[data-t]:not([data-t='*'])").evaluateAll((l) => [...new Set(l.map((e) => e.getAttribute("aria-pressed")))]), ["true"], "a click on All shows every type");
     await group("Places and devices").click({ modifiers: ["Control"] }); await settled(page);

@@ -710,7 +710,7 @@ async function openInPortal(n) {
       g.forEachNode((id, a) => { if (!inLayout(id) || skip?.has(id)) return; const q = places?.get(id) ?? home.get(id) ?? a; n++; sz += a.size; x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }); }; // a node that is pulled in or pushed aside counts where it belongs (its first place), so a selection does not change the scale
     measure(new Set(looseIds())); // the scale comes from what is linked: the loose block is spaced by it, not the other way round
     if (n < 2) measure();
-    if (n > 1) K = Math.min(.35, .35 * Math.pow(n / 500, .3)) * Math.sqrt(Math.max(1e-12, (x1 - x0) * (y1 - y0)) / n) / (sz / n);
+    if (n > 1) K = Math.min(.22, .35 * Math.pow(n / 500, .3)) * Math.sqrt(Math.max(1e-12, (x1 - x0) * (y1 - y0)) / n) / (sz / n);
   };
   // Pixels per graph unit at zoom 1 only changes when the view is refitted or resized, so it is measured after a frame is drawn (never while one is being set up, which was a frame late) and the
   // zoom is applied on top: the size follows the zoom in the same frame.
@@ -864,20 +864,19 @@ async function openInPortal(n) {
     const prev = soloFrom ? new Set(soloFrom) : new Set(); // no earlier state known (it was reached by hand): everything comes back
     setHidden(FILTERS.filter(k => prev.has(k)), FILTERS.filter(k => !prev.has(k)));
   }
-  function setHidden(hide, show = [], { from = null, silent = false } = {}) {
-    const ts = [...hide, ...show];
+  function setHidden(hide, show = [], opts = {}) {
+    if (catView) return exitCat(false, () => setHidden(hide, show, opts)); // a plain click, a group or a right-click takes the legend out of grid mode first (Ctrl+click is what builds a grid)
+    const { from = null, silent = false } = opts, ts = [...hide, ...show];
     hide.forEach(t => hiddenKinds.add(t)); show.forEach(t => hiddenKinds.delete(t)); soloFrom = from;
     if (!silent) { history.pushState({ lg: ++legendN }, "", location.href); legendHist.set(legendN, legendSnap()); }
-    if (!catView) restyle();
+    restyle();
     for (const t of ts) {
       const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
       if (hiddenKinds.has(t) && mine.length) { stashOwn = true; setSelection([...sel].filter(id => !mine.includes(id)), "replace"); stashOwn = false; stash.set(t, mine); } // a hidden type is not selected, but it is remembered
       else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
     }
-    if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
-    if (!catView) { reflow(); refreshView(); burst(); return; } // hiding or showing a type: clusters and layout are made again on what is shown, then ForceAtlas runs briefly
-    const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
-    if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
+    if (sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
+    reflow(); refreshView(); burst(); // hiding or showing a type: clusters and layout are made again on what is shown, then ForceAtlas runs briefly
   }
   history.replaceState({ lg: 0 }, "", location.href); legendHist.set(0, legendSnap());
   addEventListener("popstate", e => { // Back / Forward: the legend as it was
@@ -1787,7 +1786,7 @@ async function openInPortal(n) {
   window.addEventListener("mouseup", () => { pan = null; });
 
   function relayout() { // the first layout of the current mode: clusters laid out and placed, or the plain graph as it is
-    findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); placeLoose(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+    findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .28 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); placeLoose(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   }
   // The graph is laid out from scratch on what the legend shows: clusters found among the shown nodes, then ForceAtlas (or the two-level layout) on them. Done at open and after every type toggle.
   let clusterForced = false; // the Clusters box was set by hand: it stays as set

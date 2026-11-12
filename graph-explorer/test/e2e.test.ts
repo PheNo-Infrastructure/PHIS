@@ -4835,8 +4835,7 @@ test("e2e: graph: Ctrl+click on a type in the legend puts it in a grid, Ctrl+cli
     await chip.click({ modifiers: ["Control"] });
     await frame.waitForFunction(() => (window as any).__graph.cat()?.kind === "organization");
     await chip.click(); // hiding the only type of the grid leaves the grid: no empty area
-    await frame.waitForFunction(() => (window as any).__graph.cat() === null);
-    assert.equal(await frame.evaluate(() => (window as any).__graph.hiddenKinds.has("organization")), true);
+    await frame.waitForFunction(() => (window as any).__graph.cat() === null && (window as any).__graph.hiddenKinds.has("organization")); // it leaves the grid first, then hides
   });
 });
 
