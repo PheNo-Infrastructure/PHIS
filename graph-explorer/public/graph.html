@@ -806,13 +806,20 @@ async function openInPortal(n) {
     }
     kinds.some(k => !hiddenKinds.has(k)) ? setHidden(kinds) : setHidden([], kinds);
   }
-  function legendOnly(kinds) { // right-click: only these types stay shown; right-click again (they are all that is shown) brings everything back
+  // Right-click: only these types stay shown. soloFrom remembers what was shown before the first right-click, so right-clicking another type keeps it,
+  // and right-clicking the one that is alone (or Back) returns to it. Every legend state is a history entry too: Alt+Left / Alt+Right (or the mouse buttons) step through them.
+  let soloFrom = null, legendN = 0; const legendHist = new Map();
+  const legendSnap = () => ({ hidden: [...hiddenKinds], from: soloFrom });
+  function legendOnly(kinds) {
     const shownNow = FILTERS.filter(k => !hiddenKinds.has(k)), already = shownNow.length === kinds.length && kinds.every(k => shownNow.includes(k));
-    already ? setHidden([], FILTERS) : setHidden(FILTERS.filter(k => !kinds.includes(k)), kinds);
+    if (!already) return setHidden(FILTERS.filter(k => !kinds.includes(k)), kinds, { from: soloFrom ?? [...hiddenKinds] });
+    const prev = soloFrom ? new Set(soloFrom) : new Set(); // no earlier state known (it was reached by hand): everything comes back
+    setHidden(FILTERS.filter(k => prev.has(k)), FILTERS.filter(k => !prev.has(k)));
   }
-  function setHidden(hide, show = []) {
+  function setHidden(hide, show = [], { from = null, silent = false } = {}) {
     const ts = [...hide, ...show];
-    hide.forEach(t => hiddenKinds.add(t)); show.forEach(t => hiddenKinds.delete(t));
+    hide.forEach(t => hiddenKinds.add(t)); show.forEach(t => hiddenKinds.delete(t)); soloFrom = from;
+    if (!silent) { history.pushState({ lg: ++legendN }, "", location.href); legendHist.set(legendN, legendSnap()); }
     if (!catView) restyle();
     for (const t of ts) {
       const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
@@ -820,10 +827,16 @@ async function openInPortal(n) {
       else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
     }
     if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
-    if (!catView) { reflow(); refreshView(); return; } // hiding or showing a type: clusters and layout are made again on what is shown
+    if (!catView) { reflow(); refreshView(); burst(); return; } // hiding or showing a type: clusters and layout are made again on what is shown, then ForceAtlas runs briefly
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
+  history.replaceState({ lg: 0 }, "", location.href); legendHist.set(0, legendSnap());
+  addEventListener("popstate", e => { // Back / Forward: the legend as it was
+    const s = legendHist.get(e.state?.lg); if (!s) return;
+    const was = new Set(s.hidden);
+    setHidden(FILTERS.filter(k => was.has(k)), FILTERS.filter(k => !was.has(k)), { from: s.from, silent: true });
+  });
   function soloKind(t, ev, shown) { // a selection is kept: Ctrl adds or removes a type from what is shown, Shift a range, All shows every type again; the chips mean only what was clicked, and selected nodes stay shown whatever their type
     if (t === "*") soloKinds.clear();
     else if (ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? [...soloKinds][0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; soloKinds.clear(); FILTERS.slice(x, y + 1).filter(k => shown.includes(k)).forEach(k => soloKinds.add(k)); }

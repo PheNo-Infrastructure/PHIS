@@ -171,6 +171,27 @@ test("e2e: graph legend: types come in groups, the first three are on at open, a
   });
 });
 
+test("e2e: graph legend: right-click shows only that type, another right-click moves on, the same one again returns to before the first; Alt+Left/Right step through the states", async () => {
+  await withGraph(async (page) => {
+    const chip = (t: string) => page.locator(`#legend button[data-t="${t}"]`), kinds = async () => Object.keys(await shown(page)).sort();
+    const all = await kinds(); assert.ok(all.length >= 5);
+    await chip("experiment").click({ button: "right" }); await settled(page);
+    assert.deepEqual(await kinds(), ["experiment"]);
+    await chip("person").click({ button: "right" }); await settled(page);
+    assert.deepEqual(await kinds(), ["person"], "another right-click moves the single type");
+    await chip("person").click({ button: "right" }); await settled(page);
+    assert.deepEqual(await kinds(), all, "the same one again: the state from before the first right-click");
+    await page.goBack(); await settled(page);
+    assert.deepEqual(await kinds(), ["person"], "Back: the state before");
+    await page.goBack(); await settled(page);
+    assert.deepEqual(await kinds(), ["experiment"]);
+    await page.goForward(); await settled(page);
+    assert.deepEqual(await kinds(), ["person"], "Forward again");
+    await chip("person").click({ button: "right" }); await settled(page);
+    assert.deepEqual(await kinds(), all, "the way back to the first state is still known after stepping through history");
+  });
+});
+
 test("e2e: graph legend: turning a hidden group on and then Clusters off lays out only what is shown, nodes do not pile up", async () => {
   await withGraph(async (page) => {
     const big = stubGraph();
