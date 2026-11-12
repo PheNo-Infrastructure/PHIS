@@ -667,7 +667,7 @@ async function openInPortal(n) {
     if (sup.order < 2) return;
     g.forEachEdge((e, a, s2, t2) => { const u = uOf.get(s2), v = uOf.get(t2); if (u === undefined || v === undefined || u === v) return; if (sup.hasEdge(u, v)) sup.updateEdgeAttribute(sup.edge(u, v), "weight", w => w + 1); else sup.addEdge(u, v, { weight: 1 }); });
     sup.forEachEdge((e, a) => sup.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
-    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: iterations <= 5 ? Math.min(6, 1 + linked / 100) : 6, adjustSizes: true, barnesHutOptimize: sup.order > 500 } });
+    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: iterations <= 5 ? Math.min(6, 1 + linked / 100) : 6, barnesHutOptimize: sup.order > 500 } });
     sup.forEachNode((k, a) => { const dx = a.x - start[+k][0], dy = a.y - start[+k][1]; for (const id of units[+k]) { const q = g.getNodeAttributes(id); if (!q.fixed) g.mergeNodeAttributes(id, { x: q.x + dx, y: q.y + dy }); } });
     spreadClusters(3); collide(2);
   }
@@ -822,7 +822,7 @@ async function openInPortal(n) {
     clearTimeout(burstTimer);
     burstTimer = setTimeout(endBurst, 4000); // at most this long (it usually ends sooner, when nothing moves any more)
   }
-  function endBurst() { clearTimeout(burstTimer); if (!live.checked && !dragRun) stopLive(); if (!clusters.length && outOfView(g.nodes().filter(isVisible))) easeFit(); } // the view then eases out only if something has drifted off it
+  function endBurst() { clearTimeout(burstTimer); if (!live.checked && !dragRun) stopLive(); if (outOfView(g.nodes().filter(isVisible))) easeFit(); } // the view then eases out only if something has drifted off it
   document.getElementById("reset").onclick = () => {
     if (arr || catView) return; // a grid or the selection view is arranged by its own rules: resetting would scatter the nodes over it
     const wasLive = liveOn; stopLive();
