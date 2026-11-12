@@ -658,16 +658,18 @@ async function openInPortal(n) {
   function relaxClusters(iterations, pinned) {
     const loose = looseIds(), L = new Set(loose);
     const units = clusters.map(c => c.members.filter(id => g.hasNode(id) && inLayout(id) && !L.has(id))).filter(l => l.length);
-    g.forEachNode(id => { if (inLayout(id) && !clusterOf.has(id) && !L.has(id)) units.push([id]); });
+    g.forEachNode(id => { if (inLayout(id) && (!clusterOf.has(id) || L.has(id))) units.push([id]); }); // loose nodes take part one by one, like any node outside a cluster
+    const linked = units.reduce((t, l) => t + l.length, 0) - loose.length; // the speed follows how many linked nodes are shown: more of them, slower steps (no vibration)
     const sup = new Graph({ type:"undirected" }), uOf = new Map(), start = [];
     units.forEach((list, i) => { let sx = 0, sy = 0, fixed = false; for (const id of list) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; uOf.set(id, String(i)); if (a.fixed || pinned?.(id)) fixed = true; }
-      start.push([sx / list.length, sy / list.length]); sup.addNode(String(i), { x: sx / list.length, y: sy / list.length, size: 1 + Math.sqrt(list.length), fixed }); });
+      const cx = sx / list.length, cy = sy / list.length, ds = list.map(id => { const a = g.getNodeAttributes(id); return Math.hypot(a.x - cx, a.y - cy); }).sort((p, q) => p - q);
+      start.push([cx, cy]); sup.addNode(String(i), { x: cx, y: cy, size: list.length > 1 ? Math.max(.5, ds[Math.floor(ds.length * .9)]) : Math.max(.05, (K || .1) * g.getNodeAttribute(list[0], "size")), fixed }); }); // size = the radius it takes up, so ForceAtlas keeps units apart
     if (sup.order < 2) return;
     g.forEachEdge((e, a, s2, t2) => { const u = uOf.get(s2), v = uOf.get(t2); if (u === undefined || v === undefined || u === v) return; if (sup.hasEdge(u, v)) sup.updateEdgeAttribute(sup.edge(u, v), "weight", w => w + 1); else sup.addEdge(u, v, { weight: 1 }); });
     sup.forEachEdge((e, a) => sup.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
-    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: iterations <= 5 ? 2 : 6, barnesHutOptimize: sup.order > 500 } });
+    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: iterations <= 5 ? Math.min(6, 1 + linked / 100) : 6, adjustSizes: true, barnesHutOptimize: sup.order > 500 } });
     sup.forEachNode((k, a) => { const dx = a.x - start[+k][0], dy = a.y - start[+k][1]; for (const id of units[+k]) { const q = g.getNodeAttributes(id); if (!q.fixed) g.mergeNodeAttributes(id, { x: q.x + dx, y: q.y + dy }); } });
-    spreadClusters(3); if (!drag) placeLoose(); collide(2); // the loose block follows the clusters: it is kept beside them, never pulled into them
+    spreadClusters(3); collide(2);
   }
   let lastMove = Infinity; // the biggest move of the last live step (graph units): a short run ends when it falls under a small share of a node's size
   function relax(iterations, pinned, plain) {
@@ -686,7 +688,7 @@ async function openInPortal(n) {
     // A live step (a few iterations per frame) restarts ForceAtlas at full speed every frame, and a dense clump is kicked hard: a node may move only about a node radius per step.
     // slowDown divides every move (Gephi's tolerance/speed): a live step runs it lower than the full solve, and the cap above keeps that safe.
     const step = iterations <= 5, cap = step && K ? K * 1 * iterations : Infinity, from = new Map(); if (cap < Infinity) sub.forEachNode((id, a) => from.set(id, [a.x, a.y]));
-    FA2.assign(sub, { iterations, settings: K && clusters.length ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : step ? { ...settingsFor(sub), slowDown: 1 } : settingsFor(sub) }); // a plain graph was laid out with settingsFor: the live step must not change the physics under it
+    FA2.assign(sub, { iterations, settings: K && clusters.length ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : step ? { ...settingsFor(sub), slowDown: Math.min(6, 1 + sub.order / 100) } : settingsFor(sub) }); // a plain graph was laid out with settingsFor: the live step must not change the physics under it
     let moved = 0;
     sub.forEachNode((id, a) => {
       if (!g.hasNode(id)) return;
@@ -754,7 +756,7 @@ async function openInPortal(n) {
   }
   function collide(iterations, sizeOf) { // sizeOf: the size a node is drawn at (the connected view draws them larger than their own size)
     const ids = g.nodes().filter(inLayout); if (ids.length < 2 || !K) return;
-    const r = new Map(ids.map(id => [id, (sizeOf ? sizeOf(id) : g.getNodeAttribute(id, "size")) * K * 1.05])), cell = 2 * Math.max(...r.values());
+    const r = new Map(ids.map(id => [id, (sizeOf ? sizeOf(id) : g.getNodeAttribute(id, "size")) * K * 1.05])), LINK = 1.9, cell = 2 * LINK * Math.max(...r.values()); // LINK: two linked nodes keep LINK times their radii apart, so the edge between them is seen
     for (let it = 0; it < iterations; it++) {
       const grid = new Map(); let moved = false;
       for (const id of ids) { const a = g.getNodeAttributes(id), k = Math.floor(a.x / cell) + "," + Math.floor(a.y / cell); (grid.get(k) ?? grid.set(k, []).get(k)).push(id); }
@@ -763,7 +765,7 @@ async function openInPortal(n) {
         for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const jd of grid.get((cx + dx) + "," + (cy + dy)) ?? []) {
           if (jd <= id) continue;
           const b = g.getNodeAttributes(jd); let vx = b.x - a.x, vy = b.y - a.y, d = Math.hypot(vx, vy);
-          const need = r.get(id) + r.get(jd); if (d >= need) continue;
+          const need = (r.get(id) + r.get(jd)) * (g.hasEdge(id, jd) ? LINK : 1); if (d >= need) continue;
           if (d < 1e-9) { vx = Math.random() - .5; vy = Math.random() - .5; d = Math.hypot(vx, vy); }
           const push = (need - d) / 2 + 1e-9, fa = a.fixed, fb = b.fixed, wa = fa ? 0 : fb ? 2 : 1, wb = fb ? 0 : fa ? 2 : 1;
           g.mergeNodeAttributes(id, { x: a.x - vx / d * push * wa, y: a.y - vy / d * push * wa }); g.mergeNodeAttributes(jd, { x: b.x + vx / d * push * wb, y: b.y + vy / d * push * wb }); moved = true;
@@ -835,7 +837,7 @@ async function openInPortal(n) {
   const leaveSelection = () => { if (sel.size) setSelection([], "replace"); }; // a grid and a selection do not live together: opening a grid from the legend clears the selection, here and in the portal
   function legendClick(t, ev) {
     const cur = catView?.kinds ?? [], shown = FILTERS.filter(k => !hiddenKinds.has(k) && kindCount[k]);
-    const grids = plain(); // Ctrl, Shift and All build grids from the legend: plain graphs only
+    const grids = true; // Ctrl, Shift and All build grids from the legend (clustered graphs too: a grid takes every node of its types, whatever its cluster)
     if (!catView && sel.size && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) return soloKind(t, ev, shown); // inside the selection view they filter its three grids instead
     if (t === "*") { // All: a click shows every type; Ctrl+click puts every shown type in a grid
       if (ev.ctrlKey || ev.metaKey) return grids && setKinds(cur.length === shown.length ? [] : shown);
@@ -850,7 +852,7 @@ async function openInPortal(n) {
     if (ctrl && present.length) {
       present.forEach(k => hiddenKinds.delete(k)); kindAnchor = present[0];
       if (!catView && sel.size) { const all = present.every(k => soloKinds.has(k)); present.forEach(k => all ? soloKinds.delete(k) : soloKinds.add(k)); computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); }
-      if (plain()) { const cur = catView?.kinds ?? []; return setKinds(present.every(k => cur.includes(k)) ? cur.filter(k => !kinds.includes(k)) : [...cur, ...present.filter(k => !cur.includes(k))]); }
+      { const cur = catView?.kinds ?? []; return setKinds(present.every(k => cur.includes(k)) ? cur.filter(k => !kinds.includes(k)) : [...cur, ...present.filter(k => !cur.includes(k))]); }
     }
     kinds.some(k => !hiddenKinds.has(k)) ? setHidden(kinds) : setHidden([], kinds);
   }
@@ -893,7 +895,7 @@ async function openInPortal(n) {
   function renderChips() {
     const legend = document.getElementById("legend");
     kindCount = {}; g.forEachNode((id, a) => { const k = filterKind(a); kindCount[k] = (kindCount[k] || 0) + 1; });
-    const grids = plain();
+    const grids = true;
     const kindChip = t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Right-click shows only it. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows. Right-click shows only it"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`;
     legend.innerHTML = GROUPS.map(x => { // one row per group: its toggle first (dimmed when none is shown, outlined when only some are), then its types
       const on = x.kinds.filter(k => !hiddenKinds.has(k)).length, n = x.kinds.reduce((s, k) => s + (kindCount[k] || 0), 0);
@@ -1109,7 +1111,7 @@ async function openInPortal(n) {
       if (ev.origin !== location.origin || ev.source !== parent || !m) return;
       if (m.kind === "selection") { told = m.ids.join("\n"); fromPortal = true; const before = cur; cur = m.current && g.hasNode(m.current) ? m.current : null; setSelection(m.ids, "replace"); fromPortal = false; if (cur && cur !== before) reveal(cur); }
       else if (m.kind === "changed") reconcile(true);
-      else if (m.kind === "kinds" && plain()) { leaveSelection(); const cur = catView?.kinds ?? [], pick = m.kinds.filter(k => !hiddenKinds.has(k) && kindCount[k]); kindAnchor = pick[0] ?? kindAnchor; setKinds(m.add ? [...cur, ...pick] : pick); } // a box dragged over the portal's copy of the legend
+      else if (m.kind === "kinds") { leaveSelection(); const cur = catView?.kinds ?? [], pick = m.kinds.filter(k => !hiddenKinds.has(k) && kindCount[k]); kindAnchor = pick[0] ?? kindAnchor; setKinds(m.add ? [...cur, ...pick] : pick); } // a box dragged over the portal's copy of the legend
       else if (m.kind === "category") showCategory(m.type);
       else if (m.kind === "click") { try { document.querySelector(m.selector)?.dispatchEvent(new MouseEvent(m.right ? "contextmenu" : "click", { bubbles: true, ctrlKey: !!m.ctrl, shiftKey: !!m.shift })); } catch {} } // a click on the mirrored panel
     });
@@ -1129,7 +1131,7 @@ async function openInPortal(n) {
   function reveal(id) {
     if (!g.hasNode(id) || catView || selView || performance.now() - lastGather < 120) return;
     const k = filterKind(g.getNodeAttributes(id));
-    if (hiddenKinds.has(k)) { hiddenKinds.delete(k); restyle(); computeFocus(); refresh(); stats(); renderChips(); }
+    if (hiddenKinds.has(k) && k !== "scientific_object") { hiddenKinds.delete(k); restyle(); computeFocus(); refresh(); stats(); renderChips(); } // objects are hundreds: opening one in Browse does not switch the whole kind on
     sigma.refresh();
     const a = g.getNodeAttributes(id), v = sigma.graphToViewport({ x: a.x, y: a.y }), box = terr.getBoundingClientRect(), st = sigma.getCamera().getState();
     const inside = v.x > 50 && v.y > 70 && v.x < box.width - 50 && v.y < box.height - 50, small = sigma.scaleSize(a.size) < 7; // too small to find (a node inside a painted cluster at the overview zoom)

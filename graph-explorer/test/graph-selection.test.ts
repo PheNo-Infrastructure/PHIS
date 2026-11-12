@@ -235,6 +235,20 @@ test("e2e: graph legend: dragging a node while a small group is shown does not z
   });
 });
 
+test("e2e: graph legend: Ctrl+click puts a type in a grid in clustered mode too", async () => {
+  await withGraph(async (page) => {
+    const big = stubGraph();
+    for (let i = 0; i < 300; i++) { big.nodes.push({ id: `scientific_object-${i}`, type: "scientific_object", label: `Obj ${i}` }); big.edges.push({ source: `scientific_object-${i}`, target: `experiment-${i % 9}` }); }
+    await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(big) }));
+    await page.reload(); await page.waitForFunction(() => (window as any).__graph?.g.order > 0); await settled(page);
+    await page.locator('#legend button[data-g="Material"]').click(); await settled(page);
+    await page.locator("#compact").evaluate((e) => { const c = e as HTMLInputElement; if (!c.checked) c.click(); }); await settled(page);
+    assert.ok(await page.evaluate(() => (window as any).__graph.mode().clustered), "clustered");
+    await page.locator('#legend button[data-t="experiment"]').click({ modifiers: ["Control"] });
+    await page.waitForFunction(() => (window as any).__graph.cat()?.kinds.join() === "experiment");
+  });
+});
+
 test("e2e: graph legend: turning a hidden group on and then Clusters off lays out only what is shown, nodes do not pile up", async () => {
   await withGraph(async (page) => {
     const big = stubGraph();
