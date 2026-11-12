@@ -22,7 +22,8 @@
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
   #legend .grp { display:flex; flex-wrap:wrap; gap:3px; width:100%; align-items:center; }
-  #legend .gtoggle { font-weight:600; min-width:150px; justify-content:space-between; } #legend .gtoggle.part { border-style:dashed; }
+  #legend .gtoggle { border-radius:4px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:10px; padding:3px 7px; min-width:132px; justify-content:space-between; background:#e3eba1; border-color:#6aa86a; color:#222; }
+  #legend .gtoggle.part { border-style:dashed; } #legend .gtoggle[aria-pressed="false"] { background:none; border-color:currentColor; }
   .chip.static { cursor:default; border-color:transparent; background:none; }
   .chip { user-select:none; } .chip .n { opacity:.6; } .chip.sel { background:var(--accent); color:#fff; border-color:var(--accent); } /* sel: the type is a section of the open grid */
   button, .chk { font:inherit; padding:5px 10px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:6px; cursor:pointer; }
@@ -130,7 +131,8 @@ async function openInPortal(n) {
   // Size follows the number of links on a log scale, relative to the most linked node of this graph: the biggest hub is always the largest (22), a node with one link the smallest (about 8),
   // whatever the data looks like. The log keeps one huge hub from shrinking everything else to the same size.
   // With types hidden in the legend it counts only the links to nodes that are shown (restyle), so what is left scales among itself.
-  let maxDeg = 1, byVisible = false;
+  const hiddenKinds = new Set(GROUPS.filter(x => !x.on).flatMap(x => x.kinds));
+  let maxDeg = 1, byVisible = true; // sizes count only links to what is shown, from the first draw
   const visDeg = id => { if (!byVisible) return g.degree(id); let d = 0; g.forEachNeighbor(id, nb => { if (!hiddenKinds.has(filterKind(g.getNodeAttributes(nb)))) d++; }); return d; };
   const setMaxDeg = () => { maxDeg = 1; g.forEachNode(id => { if (!byVisible || !hiddenKinds.has(filterKind(g.getNodeAttributes(id)))) maxDeg = Math.max(maxDeg, visDeg(id)); }); };
   const styleOf = (id) => {
@@ -144,12 +146,11 @@ async function openInPortal(n) {
 
   // Nothing is grouped by type: facilities, devices and everything else are ordinary nodes. Structure comes from the clusters below, found from the links.
   setMaxDeg();
-  g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id)));
-  FA2.assign(g, { iterations:200, settings: settingsFor(g) });
+  g.forEachNode(id => g.mergeNodeAttributes(id, styleOf(id))); // the first layout is made by reflow() below, on what is shown
 
   // ---- what is shown: type filters and an optional neighbourhood (everything within N links of one node; the walk stops at the members of an opened group) ----
   const stash = new Map(); let stashOwn = false; // stash: what hiding a type took out of the selection, given back when it is shown again (until the selection is changed some other way)
-  const hiddenKinds = new Set(GROUPS.filter(x => !x.on).flatMap(x => x.kinds)), soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
+  const soloKinds = new Set(); // soloKinds: in the selection view, the types the three grids show (none = all); the selection itself is untouched
   // ---- clusters: Louvain groups the graph. On a big graph a cluster is painted (named after its biggest organisation) until you zoom in far enough to read its nodes. ----
   const TERR = ["#87cf82", "#b5dd92", "#e3eba1", "#9fc07a", "#6aa86a"];
   const PLURAL = { facility:"facilities", organization:"organizations", species:"species", scientific_object:"objects", variable:"variables", variable_group:"variable groups", entity:"entities", characteristic:"characteristics", method:"methods", unit:"units", entity_of_interest:"entities of interest", event:"events", annotation:"annotations", account:"accounts", factor_level:"factor levels", germplasm:"germplasm", profile:"profiles", document:"documents", experiment:"experiments", device:"devices", person:"people", project:"projects", site:"sites", group:"groups", factor:"factors" };
@@ -181,25 +182,28 @@ async function openInPortal(n) {
   // Clustered or plain by default: enough nodes to need it, and groups that are real. A group is real when most of its links stay inside it (conductance), and when different runs of the community detection
   // find the same groups (stability); modularity alone is not used, because a sparse random graph scores high on it too. A very large graph is clustered whatever its structure.
   let clusterMode = null, modeStats = null; // null until decided; the Clusters switch sets it
-  const louvainRun = seed => { let x = seed; const rng = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296; return graphologyLibrary.communitiesLouvain(g, { rng }); }; // the same graph always clusters the same way
-  const agreement = (A, B) => { const tab = new Map(), ra = new Map(), rb = new Map(), c2 = n => n * (n - 1) / 2; let n = 0;
-    g.forEachNode(id => { n++; const k = A[id] + "|" + B[id]; tab.set(k, (tab.get(k) || 0) + 1); ra.set(A[id], (ra.get(A[id]) || 0) + 1); rb.set(B[id], (rb.get(B[id]) || 0) + 1); });
+  // Clusters are found among what the legend shows: a copy of the graph without the hidden types, so hiding or showing a type regroups what is left.
+  const shownGraph = () => { const v = new Graph({ type:"undirected" }); g.forEachNode((id, a) => { if (!hiddenKinds.has(a.kind)) v.addNode(id); }); g.forEachEdge((e, a, s2, t2) => { if (v.hasNode(s2) && v.hasNode(t2)) v.addEdge(s2, t2); }); return v; };
+  const louvainRun = (seed, G) => { let x = seed; const rng = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296; return graphologyLibrary.communitiesLouvain(G, { rng }); }; // the same graph always clusters the same way
+  const agreement = (A, B, G) => { const tab = new Map(), ra = new Map(), rb = new Map(), c2 = n => n * (n - 1) / 2; let n = 0;
+    G.forEachNode(id => { n++; const k = A[id] + "|" + B[id]; tab.set(k, (tab.get(k) || 0) + 1); ra.set(A[id], (ra.get(A[id]) || 0) + 1); rb.set(B[id], (rb.get(B[id]) || 0) + 1); });
     let sum = 0, sa = 0, sb = 0; for (const v of tab.values()) sum += c2(v); for (const v of ra.values()) sa += c2(v); for (const v of rb.values()) sb += c2(v);
     const exp = sa * sb / c2(n), max = (sa + sb) / 2; return max === exp ? 1 : (sum - exp) / (max - exp); }; // adjusted Rand index: 1 = the same grouping
-  function decideClusters() {
-    modeStats = { nodes: g.order };
-    if (g.order < MIN_NODES) return false;
-    if (g.order >= MAX_PLAIN) return true;
-    const A = louvainRun(7), size = {}, vol = {}, cut = {}; let m = 0;
-    g.forEachNode(id => { size[A[id]] = (size[A[id]] || 0) + 1; vol[A[id]] = (vol[A[id]] || 0) + g.degree(id); });
-    g.forEachEdge((e, a, s2, t2) => { m++; if (A[s2] !== A[t2]) { cut[A[s2]] = (cut[A[s2]] || 0) + 1; cut[A[t2]] = (cut[A[t2]] || 0) + 1; } });
+  function decideClusters(G) {
+    modeStats = { nodes: G.order };
+    if (G.order < MIN_NODES) return false;
+    if (G.order >= MAX_PLAIN) return true;
+    const A = louvainRun(7, G), size = {}, vol = {}, cut = {}; let m = 0;
+    G.forEachNode(id => { size[A[id]] = (size[A[id]] || 0) + 1; vol[A[id]] = (vol[A[id]] || 0) + G.degree(id); });
+    G.forEachEdge((e, a, s2, t2) => { m++; if (A[s2] !== A[t2]) { cut[A[s2]] = (cut[A[s2]] || 0) + 1; cut[A[t2]] = (cut[A[t2]] || 0) + 1; } });
     const groups = Object.keys(size).filter(c => size[c] >= MIN_CLUSTER), conductance = groups.length ? groups.reduce((t, c) => t + (cut[c] || 0) / Math.min(vol[c], 2 * m - vol[c]), 0) / groups.length : 1;
-    const B = louvainRun(101), C = louvainRun(202), stability = (agreement(A, B) + agreement(A, C) + agreement(B, C)) / 3;
-    modeStats = { nodes: g.order, groups: groups.length, conductance: +conductance.toFixed(2), stability: +stability.toFixed(2) };
+    const B = louvainRun(101, G), C = louvainRun(202, G), stability = (agreement(A, B, G) + agreement(A, C, G) + agreement(B, C, G)) / 3;
+    modeStats = { nodes: G.order, groups: groups.length, conductance: +conductance.toFixed(2), stability: +stability.toFixed(2) };
     return groups.length >= MIN_GROUPS && conductance <= MAX_CONDUCTANCE && stability >= MIN_STABLE;
   }
   function findClusters() {
-    if (clusterMode === null) { clusterMode = decideClusters(); compactBox.checked = clusterMode; }
+    const shownG = shownGraph();
+    if (clusterMode === null) { clusterMode = decideClusters(shownG); compactBox.checked = clusterMode; }
     const key = g.order + ":" + g.size;
     if (key === clusterKey) return;
     clusterKey = key;
@@ -207,8 +211,8 @@ async function openInPortal(n) {
     if (clusters.length) return keepClusters();
     clusterOf.clear();
     let seed = 7; const rng = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296; // the same graph always clusters the same way
-    const comm = graphologyLibrary.communitiesLouvain(g, { rng }), by = new Map();
-    g.forEachNode(id => { const c = comm[id]; if (!by.has(c)) by.set(c, []); by.get(c).push(id); });
+    const comm = graphologyLibrary.communitiesLouvain(shownG, { rng }), by = new Map();
+    shownG.forEachNode(id => { const c = comm[id]; if (!by.has(c)) by.set(c, []); by.get(c).push(id); });
     clusters = [...by.values()].filter(m => m.length >= MIN_CLUSTER).map(members => {
       const n = {}; let top = null;
       for (const id of members) {
@@ -224,7 +228,7 @@ async function openInPortal(n) {
     clusters.forEach(c => c.members.forEach(id => clusterOf.set(id, c.key)));
     const byKey = new Map(clusters.map(c => [c.key, c]));
     g.forEachNode(id => { // a node left out (its group was too small) joins the cluster most of its neighbours are in
-      if (clusterOf.has(id)) return;
+      if (clusterOf.has(id) || hiddenKinds.has(kindOf(id))) return;
       const votes = new Map(); g.forEachNeighbor(id, n => { const k = clusterOf.get(n); if (k) votes.set(k, (votes.get(k) || 0) + 1); });
       const best = [...votes].sort((a, b) => b[1] - a[1])[0]; if (best) { clusterOf.set(id, best[0]); byKey.get(best[0]).members.push(id); }
     });
@@ -805,7 +809,7 @@ async function openInPortal(n) {
       else if (!hiddenKinds.has(t) && stash.has(t)) { const back = stash.get(t).filter(id => g.hasNode(id)); stash.delete(t); stashOwn = true; setSelection(back, "add"); stashOwn = false; } // shown again: back in the selection
     }
     if (!catView && sel.size) { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); } // a selection that is left keeps its connected view
-    if (!catView) { refreshView(); burst(); return; } // hiding or showing a type: ForceAtlas runs briefly so the graph settles
+    if (!catView) { reflow(); refreshView(); return; } // hiding or showing a type: clusters and layout are made again on what is shown
     const keep = catView.kinds.filter(k => !hiddenKinds.has(k)); // a hidden type leaves the grid with its nodes, so no empty area is left behind
     if (keep.length) { regrid(keep); stats(); renderChips(); renderPanel(); } else exitCat(false, () => { computeFocus(); refresh(); stats(); renderChips(); renderPanel(); });
   }
@@ -1708,7 +1712,17 @@ async function openInPortal(n) {
   function relayout() { // the first layout of the current mode: clusters laid out and placed, or the plain graph as it is
     findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   }
-  relayout();
+  // The graph is laid out from scratch on what the legend shows: clusters found among the shown nodes, then ForceAtlas (or the two-level layout) on them. Done at open and after every type toggle.
+  let clusterForced = false; // the Clusters box was set by hand: it stays as set
+  function reflow() {
+    stopLive(); stopGathering(); releasePulled(); snapHome(); zoomedToSelection = false;
+    if (!clusterForced) clusterMode = null;
+    clusterKey = ""; clusters = []; clusterOf.clear(); collapsed.clear(); clustersSeen = false;
+    g.forEachNode(id => inLayout(id) && g.mergeNodeAttributes(id, { x: Math.random(), y: Math.random() }));
+    findClusters(); if (!clusters.length) relax(300, null, true);
+    relayout(); compactBox.checked = clusters.length > 0;
+  }
+  reflow();
   compactBox.checked = clusters.length > 0;
   // The Clusters switch: lay the graph out again in the other mode. A grid and a selection are left first.
   compactBox.onchange = () => {
@@ -1716,7 +1730,7 @@ async function openInPortal(n) {
     stopGathering(); releasePulled(); snapHome(); zoomedToSelection = false;
     if (catView) { for (const [id, v] of catView.sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); catView = null; crumbs.hidden = true; labelSlot.clear(); }
     if (sel.size) setSelection([], "replace");
-    clusterMode = want; clusterKey = ""; collapsed.clear();
+    clusterMode = want; clusterForced = true; clusterKey = ""; collapsed.clear();
     if (!want) { g.forEachNode(id => g.mergeNodeAttributes(id, { x: Math.random(), y: Math.random() })); FA2.assign(g, { iterations: 200, settings: settingsFor(g) }); }
     relayout(); compactBox.checked = clusters.length > 0; // asked for clusters and there are none to make: the box says so
     refresh(); stats(); renderChips(); renderPanel();

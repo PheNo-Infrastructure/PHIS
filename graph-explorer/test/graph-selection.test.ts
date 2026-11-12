@@ -443,17 +443,15 @@ test("e2e: graph selection: ForceAtlas is available in the overview, greyed whil
   });
 });
 
-test("e2e: graph selection: hiding or showing a type rescales the sizes among what is shown, restores them exactly, and settles the layout briefly", async () => {
+test("e2e: graph selection: hiding or showing a type rescales the sizes among what is shown, restores them exactly, and lays the graph out again on what is shown", async () => {
   await withGraph(async (page) => {
     const sizes = () => page.evaluate(() => { const G = (window as any).__graph, o: Record<string, number> = {}; G.g.forEachNode((id: string, a: any) => { o[id] = a.size; }); return o; });
-    const before = await sizes();
-    await page.locator('#legend button[data-t="device"]').click();
-    await page.waitForFunction(() => (window as any).__graph.physics().liveOn);
+    const before = await sizes(), home = await places(page);
+    await page.locator('#legend button[data-t="device"]').click(); await settled(page);
     const hidden = await sizes();
     assert.ok(before["facility-0"] > hidden["facility-0"], "a facility linked to hidden devices shrinks");
-    await page.waitForFunction(() => !(window as any).__graph.physics().liveOn, null, { timeout: 8000 });
-    await page.locator('#legend button[data-t="device"]').click();
-    await page.waitForFunction(() => (window as any).__graph.physics().liveOn);
+    assert.equal(sameAs(home, await places(page)), false, "the layout is made again on what is left");
+    await page.locator('#legend button[data-t="device"]').click(); await settled(page);
     assert.deepEqual(await sizes(), before, "showing the type again gives the same sizes");
   });
 });
