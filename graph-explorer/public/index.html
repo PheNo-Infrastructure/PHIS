@@ -163,10 +163,11 @@ body[data-view="browse"] #pagePane { display: none; }
 .graph-info .chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .graph-info .chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
 .graph-info .chip.static { cursor: default; border-color: transparent; background: none; }
-.graph-info .grp { display: flex; flex-wrap: wrap; gap: 3px; width: 100%; align-items: center; }
+.graph-info .grp { display: flex; flex-wrap: wrap; gap: 3px; width: 100%; align-items: center; margin-bottom: 8px; }
 .graph-info .chip.gtoggle { border-radius: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; padding: 3px 7px; min-width: 132px; justify-content: space-between; background: var(--accent-soft); border-color: var(--accent); }
 .graph-info .chip.gtoggle.part { border-style: dashed; }
 .graph-info .chip.gtoggle[aria-pressed="false"] { background: var(--bg); border-color: var(--border); }
+.graph-info .chip.gtoggle.sel { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .graph-info .chip .n { opacity: .6; } .graph-info .chip.sel { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); } .graph-info [data-gid="legend"] { user-select: none; }
 .legend-marquee { position: fixed; z-index: 60; pointer-events: none; border: 1px dashed var(--accent); background: rgba(61, 133, 38, .12); }
 .graph-info button { font: inherit; padding: 4px 10px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--ink); border-radius: 6px; cursor: pointer; }

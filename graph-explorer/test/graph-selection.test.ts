@@ -139,7 +139,7 @@ test("e2e: graph selection: legend chips mean what was clicked, keep the selecti
     await chip("experiment").click({ modifiers: ["Control"] }); await settled(page);
     assert.deepEqual(await selected(page), ["organization-0"], "the selection is kept");
     assert.deepEqual(await shown(page), { organization: 1, experiment: 9 }, "only experiments, and the selected organization stays shown whatever its type");
-    assert.deepEqual(await page.locator("#legend .chip.sel").evaluateAll((l) => l.map((e) => (e as HTMLElement).dataset.t)), ["experiment"], "the chip says only what was clicked");
+    assert.deepEqual(await page.locator("#legend .chip.sel[data-t]").evaluateAll((l) => l.map((e) => (e as HTMLElement).dataset.t)), ["experiment"], "the chip says only what was clicked");
     await chip("organization").click({ modifiers: ["Control"] }); await settled(page);
     assert.deepEqual(await shown(page), { organization: 3, experiment: 9 }, "adding the organization chip shows every organization too");
     await chip("organization").click({ modifiers: ["Control"] }); await chip("experiment").click({ modifiers: ["Control"] }); await settled(page);
@@ -163,6 +163,11 @@ test("e2e: graph legend: types come in groups, the first three are on at open, a
     assert.equal((await shown(page)).person, 6); assert.equal((await shown(page)).organization, undefined, "a type toggles alone");
     await group("Material").click(); await settled(page);
     assert.equal(await pressed(chip("germplasm")), "true", "an off group turns all its types on");
+    await group("Places and devices").click({ modifiers: ["Control"] }); await settled(page);
+    assert.deepEqual(await page.evaluate(() => (window as any).__graph.cat()?.kinds.sort()), ["device", "facility", "site"], "Ctrl+click puts the group's types in a grid");
+    assert.equal(await group("Places and devices").evaluate((e) => e.classList.contains("sel")), true, "and the group chip says so");
+    await group("Places and devices").click({ modifiers: ["Control"] }); await settled(page);
+    assert.equal(await page.evaluate(() => (window as any).__graph.cat()), null, "Ctrl+click again takes them out");
   });
 });
 
@@ -174,7 +179,7 @@ test("e2e: graph selection: in a legend grid Ctrl+click on a node adds to the se
     const a = await xy(page, "organization-0"); await ctrlClick(page, a.x, a.y); await settled(page);
     assert.deepEqual(await selected(page), ["organization-0"]);
     assert.deepEqual(await grid(), ["organization"], "Ctrl+click keeps the grid");
-    assert.deepEqual(await page.locator("#legend .chip.sel").evaluateAll((l) => l.map((e) => (e as HTMLElement).dataset.t)), ["organization"], "and the chip stays lit");
+    assert.deepEqual(await page.locator("#legend .chip.sel[data-t]").evaluateAll((l) => l.map((e) => (e as HTMLElement).dataset.t)), ["organization"], "and the chip stays lit");
     await page.locator('#legend button[data-t="experiment"]').click({ modifiers: ["Control"] }); await settled(page);
     assert.deepEqual(await selected(page), ["organization-0"], "a chip keeps the selection");
     assert.deepEqual(await grid(), ["organization", "experiment"]);

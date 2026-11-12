@@ -21,7 +21,8 @@
   .chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; font-size:12px; border-radius:99px; }
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
-  #legend .grp { display:flex; flex-wrap:wrap; gap:3px; width:100%; align-items:center; }
+  #legend .grp { display:flex; flex-wrap:wrap; gap:3px; width:100%; align-items:center; margin-bottom:8px; }
+  #legend .gtoggle.sel { background:var(--accent); color:#fff; border-color:var(--accent); }
   #legend .gtoggle { border-radius:4px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:10px; padding:3px 7px; min-width:132px; justify-content:space-between; background:#e3eba1; border-color:#6aa86a; color:#222; }
   #legend .gtoggle.part { border-style:dashed; } #legend .gtoggle[aria-pressed="false"] { background:none; border-color:currentColor; }
   .chip.static { cursor:default; border-color:transparent; background:none; }
@@ -796,8 +797,13 @@ async function openInPortal(n) {
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
     setHidden([t], !hiddenKinds.has(t));
   }
-  function legendGroup(name) { // a group's toggle: any type of it shown -> hide them all, none shown -> show them all
-    const kinds = GROUPS.find(x => x.name === name).kinds;
+  function legendGroup(name, ev) { // a group's toggle: any type of it shown -> hide them all, none shown -> show them all; Ctrl+click does to the group's types what Ctrl+click does to one type
+    const kinds = GROUPS.find(x => x.name === name).kinds, present = kinds.filter(k => kindCount[k]), ctrl = ev.ctrlKey || ev.metaKey;
+    if (ctrl && present.length) {
+      present.forEach(k => hiddenKinds.delete(k)); kindAnchor = present[0];
+      if (!catView && sel.size) { const all = present.every(k => soloKinds.has(k)); present.forEach(k => all ? soloKinds.delete(k) : soloKinds.add(k)); computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); }
+      if (plain()) { const cur = catView?.kinds ?? []; return setKinds(present.every(k => cur.includes(k)) ? cur.filter(k => !kinds.includes(k)) : [...cur, ...present.filter(k => !cur.includes(k))]); }
+    }
     setHidden(kinds, kinds.some(k => !hiddenKinds.has(k)));
   }
   function setHidden(ts, hide) {
@@ -826,11 +832,12 @@ async function openInPortal(n) {
     const kindChip = t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`;
     legend.innerHTML = GROUPS.map(x => { // one row per group: its toggle first (dimmed when none is shown, outlined when only some are), then its types
       const on = x.kinds.filter(k => !hiddenKinds.has(k)).length, n = x.kinds.reduce((s, k) => s + (kindCount[k] || 0), 0);
-      return `<div class="grp"><button class="chip gtoggle${on && on < x.kinds.length ? " part" : ""}" data-g="${x.name}" aria-pressed="${on > 0}" title="Hides or shows every type in ${x.name}">${x.name}${grids && n ? ` <span class="n">${n}</span>` : ""}</button>${x.kinds.map(kindChip).join("")}</div>`;
+      const inSet = catView?.kinds ?? soloKinds, here = x.kinds.filter(k => kindCount[k]), isSel = grids && here.length && here.every(k => inSet.has ? inSet.has(k) : inSet.includes(k));
+      return `<div class="grp"><button class="chip gtoggle${on && on < x.kinds.length ? " part" : ""}${isSel ? " sel" : ""}" data-g="${x.name}" aria-pressed="${on > 0}" title="Click hides or shows every type in ${x.name}. Ctrl+click puts them in a grid (inside a selection: shows only them)">${x.name}${grids && n ? ` <span class="n">${n}</span>` : ""}</button>${x.kinds.map(kindChip).join("")}</div>`;
     }).join("")
       + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "");
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
-    legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = () => legendGroup(b.dataset.g));
+    legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = ev => legendGroup(b.dataset.g, ev));
   }
   function stats() {
     selBtn(); // buttons, hint line and ForceAtlas follow the view
