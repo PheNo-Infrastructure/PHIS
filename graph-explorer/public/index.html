@@ -5121,13 +5121,16 @@ window.addEventListener("message", ev => {
   }
 });
 
-// A click on the mirrored graph panel is sent back; the graph clicks the matching element of its own (hidden) panel.
-document.getElementById("graphInfo").addEventListener("click", ev => {
-  const el = ev.target.closest("[data-gid], [data-t], [data-g], a[data-id]");
+// A click on the mirrored graph panel is sent back; the graph clicks the matching element of its own (hidden) panel. A right-click on a legend chip is sent too (it shows only that type).
+const forwardToGraph = right => ev => {
+  const el = ev.target.closest(right ? "[data-t], [data-g]" : "[data-gid], [data-t], [data-g], a[data-id]");
   if (!el) return;
+  if (right) ev.preventDefault();
   const selector = el.dataset.gid ? "#" + el.dataset.gid : el.dataset.g ? '[data-g=' + JSON.stringify(el.dataset.g) + ']' : el.dataset.t ? '[data-t=' + JSON.stringify(el.dataset.t) + ']' : 'a[data-id=' + JSON.stringify(el.dataset.id) + ']';
-  tellGraph({ kind: "click", selector, ctrl: ev.ctrlKey || ev.metaKey, shift: ev.shiftKey });
-});
+  tellGraph({ kind: "click", selector, right, ctrl: ev.ctrlKey || ev.metaKey, shift: ev.shiftKey });
+};
+document.getElementById("graphInfo").addEventListener("click", forwardToGraph(false));
+document.getElementById("graphInfo").addEventListener("contextmenu", forwardToGraph(true));
 
 // Dragging a box over the copy of the legend selects the types it touches (Ctrl keeps the grid's types and adds to them).
 (() => {

@@ -171,6 +171,32 @@ test("e2e: graph legend: types come in groups, the first three are on at open, a
   });
 });
 
+test("e2e: graph legend: turning a hidden group on and then Clusters off lays out only what is shown, nodes do not pile up", async () => {
+  await withGraph(async (page) => {
+    const big = stubGraph();
+    for (let i = 0; i < 400; i++) { big.nodes.push({ id: `scientific_object-${i}`, type: "scientific_object", label: `Obj ${i}` }); big.edges.push({ source: `scientific_object-${i}`, target: `experiment-${i % 9}` }); }
+    await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(big) }));
+    await page.reload(); await page.waitForFunction(() => (window as any).__graph?.g.order > 0); await settled(page);
+    await page.locator('#legend button[data-g="Material"]').click(); await settled(page);
+    await page.locator("#compact").evaluate((e) => { const c = e as HTMLInputElement; if (c.checked) c.click(); }); await settled(page);
+    const overlaps = await page.evaluate(() => { // shown pairs closer than half their drawn radii
+      const G = (window as any).__graph, pts: { x: number; y: number; r: number }[] = [];
+      G.g.forEachNode((id: string, a: any) => { const d = G.sigma.getNodeDisplayData(id); if (d && !d.hidden) { const v = G.sigma.graphToViewport(a); pts.push({ x: v.x, y: v.y, r: G.sigma.scaleSize(a.size) }); } });
+      let n = 0; for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) if (Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) < (pts[i].r + pts[j].r) * .5) n++;
+      return { n, total: pts.length };
+    });
+    await page.locator('#legend button[data-t="experiment"]').click({ button: "right" }); await settled(page);
+    assert.deepEqual(Object.keys(await shown(page)), ["experiment"], "right-click on a type shows only it");
+    await page.locator('#legend button[data-t="experiment"]').click({ button: "right" }); await settled(page);
+    assert.ok(Object.keys(await shown(page)).length > 1, "right-click again brings every type back");
+    await page.locator('#legend button[data-g="Trials"]').click({ button: "right" }); await settled(page);
+    assert.deepEqual(Object.keys(await shown(page)), ["experiment"], "right-click on a group shows only its types (the stub has just experiments of them)");
+    await page.locator('#legend button[data-g="Trials"]').click({ button: "right" }); await settled(page);
+    assert.ok(overlaps.total > 400, "the group's nodes are shown");
+    assert.ok(overlaps.n < overlaps.total * 0.2, `few overlapping pairs (got ${overlaps.n} among ${overlaps.total})`);
+  });
+});
+
 test("e2e: graph selection: in a legend grid Ctrl+click on a node adds to the selection and the grid stays; a plain click leaves it", async () => {
   await withGraph(async (page) => {
     await page.locator('#legend button[data-t="organization"]').click({ modifiers: ["Control"] }); await settled(page);

@@ -795,7 +795,7 @@ async function openInPortal(n) {
     if (t === "*") return grids && setKinds(cur.length === shown.length ? [] : shown);
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
-    setHidden([t], !hiddenKinds.has(t));
+    hiddenKinds.has(t) ? setHidden([], [t]) : setHidden([t]);
   }
   function legendGroup(name, ev) { // a group's toggle: any type of it shown -> hide them all, none shown -> show them all; Ctrl+click does to the group's types what Ctrl+click does to one type
     const kinds = GROUPS.find(x => x.name === name).kinds, present = kinds.filter(k => kindCount[k]), ctrl = ev.ctrlKey || ev.metaKey;
@@ -804,10 +804,15 @@ async function openInPortal(n) {
       if (!catView && sel.size) { const all = present.every(k => soloKinds.has(k)); present.forEach(k => all ? soloKinds.delete(k) : soloKinds.add(k)); computeFocus(); refresh(); stats(); renderChips(); renderPanel(); return connected(); }
       if (plain()) { const cur = catView?.kinds ?? []; return setKinds(present.every(k => cur.includes(k)) ? cur.filter(k => !kinds.includes(k)) : [...cur, ...present.filter(k => !cur.includes(k))]); }
     }
-    setHidden(kinds, kinds.some(k => !hiddenKinds.has(k)));
+    kinds.some(k => !hiddenKinds.has(k)) ? setHidden(kinds) : setHidden([], kinds);
   }
-  function setHidden(ts, hide) {
-    ts.forEach(t => hide ? hiddenKinds.add(t) : hiddenKinds.delete(t));
+  function legendOnly(kinds) { // right-click: only these types stay shown; right-click again (they are all that is shown) brings everything back
+    const shownNow = FILTERS.filter(k => !hiddenKinds.has(k)), already = shownNow.length === kinds.length && kinds.every(k => shownNow.includes(k));
+    already ? setHidden([], FILTERS) : setHidden(FILTERS.filter(k => !kinds.includes(k)), kinds);
+  }
+  function setHidden(hide, show = []) {
+    const ts = [...hide, ...show];
+    hide.forEach(t => hiddenKinds.add(t)); show.forEach(t => hiddenKinds.delete(t));
     if (!catView) restyle();
     for (const t of ts) {
       const mine = [...sel].filter(id => filterKind(g.getNodeAttributes(id)) === t);
@@ -829,7 +834,7 @@ async function openInPortal(n) {
     const legend = document.getElementById("legend");
     kindCount = {}; g.forEachNode((id, a) => { const k = filterKind(a); kindCount[k] = (kindCount[k] || 0) + 1; });
     const grids = plain();
-    const kindChip = t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`;
+    const kindChip = t => `<button class="chip${grids && (catView?.kinds.includes(t) || soloKinds.has(t)) ? " sel" : ""}" data-t="${t}" aria-pressed="${!hiddenKinds.has(t)}" title="${grids ? "Click hides or shows. Right-click shows only it. Ctrl+click puts it in a grid (inside a selection: shows only it), Shift+click a range of types" : "Click hides or shows. Right-click shows only it"}"><i style="background:${COLORS[t]}"></i>${NAMES[t]}${grids && kindCount[t] ? ` <span class="n">${kindCount[t]}</span>` : ""}</button>`;
     legend.innerHTML = GROUPS.map(x => { // one row per group: its toggle first (dimmed when none is shown, outlined when only some are), then its types
       const on = x.kinds.filter(k => !hiddenKinds.has(k)).length, n = x.kinds.reduce((s, k) => s + (kindCount[k] || 0), 0);
       const inSet = catView?.kinds ?? soloKinds, here = x.kinds.filter(k => kindCount[k]), isSel = grids && here.length && here.every(k => inSet.has ? inSet.has(k) : inSet.includes(k));
@@ -838,6 +843,8 @@ async function openInPortal(n) {
       + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "");
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
     legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = ev => legendGroup(b.dataset.g, ev));
+    legend.querySelectorAll("button[data-t]").forEach(b => b.oncontextmenu = ev => { ev.preventDefault(); if (b.dataset.t !== "*") legendOnly([b.dataset.t]); });
+    legend.querySelectorAll("button[data-g]").forEach(b => b.oncontextmenu = ev => { ev.preventDefault(); legendOnly(GROUPS.find(x => x.name === b.dataset.g).kinds); });
   }
   function stats() {
     selBtn(); // buttons, hint line and ForceAtlas follow the view
@@ -1042,7 +1049,7 @@ async function openInPortal(n) {
       else if (m.kind === "changed") reconcile(true);
       else if (m.kind === "kinds" && plain()) { leaveSelection(); const cur = catView?.kinds ?? [], pick = m.kinds.filter(k => !hiddenKinds.has(k) && kindCount[k]); kindAnchor = pick[0] ?? kindAnchor; setKinds(m.add ? [...cur, ...pick] : pick); } // a box dragged over the portal's copy of the legend
       else if (m.kind === "category") showCategory(m.type);
-      else if (m.kind === "click") { try { document.querySelector(m.selector)?.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: !!m.ctrl, shiftKey: !!m.shift })); } catch {} } // a click on the mirrored panel
+      else if (m.kind === "click") { try { document.querySelector(m.selector)?.dispatchEvent(new MouseEvent(m.right ? "contextmenu" : "click", { bubbles: true, ctrlKey: !!m.ctrl, shiftKey: !!m.shift })); } catch {} } // a click on the mirrored panel
     });
   }
   // Browse is on a type's list: show that type in the grid; any other page puts the graph back.
@@ -1737,9 +1744,8 @@ async function openInPortal(n) {
     stopGathering(); releasePulled(); snapHome(); zoomedToSelection = false;
     if (catView) { for (const [id, v] of catView.sizes0) if (g.hasNode(id)) g.setNodeAttribute(id, "size", v); catView = null; crumbs.hidden = true; labelSlot.clear(); }
     if (sel.size) setSelection([], "replace");
-    clusterMode = want; clusterForced = true; clusterKey = ""; collapsed.clear();
-    if (!want) { g.forEachNode(id => g.mergeNodeAttributes(id, { x: Math.random(), y: Math.random() })); FA2.assign(g, { iterations: 200, settings: settingsFor(g) }); }
-    relayout(); compactBox.checked = clusters.length > 0; // asked for clusters and there are none to make: the box says so
+    clusterMode = want; clusterForced = true;
+    reflow(); // the same layout from scratch on what is shown; asked for clusters and there are none to make: the box says so
     refresh(); stats(); renderChips(); renderPanel();
   };
   renderChips(); stats(); refresh(); // refresh draws the first labels
