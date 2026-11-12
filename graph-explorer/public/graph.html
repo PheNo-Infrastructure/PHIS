@@ -22,6 +22,7 @@
   .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
   .chip[aria-pressed="false"] { opacity:.45; text-decoration:line-through; }
   #legend .grp { display:flex; flex-wrap:wrap; gap:3px; width:100%; align-items:center; margin-bottom:8px; }
+  #legend .lghint { width:100%; font-size:10px; opacity:.7; line-height:1.4; margin-top:2px; }
   #legend .gtoggle.sel { background:var(--accent); color:#fff; border-color:var(--accent); }
   #legend .gtoggle { border-radius:4px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:10px; padding:3px 7px; min-width:132px; justify-content:space-between; background:#e3eba1; border-color:#6aa86a; color:#222; }
   #legend .gtoggle.part { border-style:dashed; } #legend .gtoggle[aria-pressed="false"] { background:none; border-color:currentColor; }
@@ -623,7 +624,7 @@ async function openInPortal(n) {
     for (const p of parts) p.ids.forEach((id, i) => g.mergeNodeAttributes(id, { x: p.x + p.rel[i][0], y: p.y + p.rel[i][1] }));
     // Nodes outside the clusters are placed on the new layout, never where the plain layout left them (that was on another scale, and spread the graph out):
     // next to what they link to, working outward from the clusters; what is left, whole detached groups of nodes, goes on a ring just outside the clusters, each group together.
-    const placed = new Set(parts.flatMap(p => p.ids)), left = new Set(); g.forEachNode(id => { if (!clusterOf.has(id) && inLayout(id)) left.add(id); });
+    const placed = new Set(parts.flatMap(p => p.ids)), left = new Set(); g.forEachNode(id => { if (!clusterOf.has(id) && inLayout(id) && !isLoose(id)) left.add(id); }); // loose nodes are placed by placeLoose (relayout)
     const near = () => (Math.random() - .5) * 2.4;
     for (let moved = true; moved && left.size;) { moved = false;
       for (const id of [...left]) { let sx = 0, sy = 0, n = 0; g.forEachNeighbor(id, nb => { if (placed.has(nb)) { const a = g.getNodeAttributes(nb); sx += a.x; sy += a.y; n++; } });
@@ -637,10 +638,22 @@ async function openInPortal(n) {
     }
     return true;
   }
+  // Loose nodes: shown, but linked to nothing else that is shown (an object whose experiment is hidden). ForceAtlas would push each one out on its own and they would form a shell around everything else,
+  // so they stay out of the forces and are packed together in one disc beside the rest (placeLoose).
+  const isLoose = id => { if (!inLayout(id)) return false; let any = false; g.forEachNeighbor(id, nb => { if (nb !== id && inLayout(nb)) any = true; }); return !any; };
+  const looseIds = () => g.nodes().filter(isLoose);
+  function placeLoose() {
+    const loose = looseIds(); if (!loose.length) return;
+    const L = new Set(loose); let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, n = 0;
+    g.forEachNode((id, a) => { if (!inLayout(id) || L.has(id)) return; n++; x0 = Math.min(x0, a.x); x1 = Math.max(x1, a.x); y0 = Math.min(y0, a.y); y1 = Math.max(y1, a.y); });
+    const area = (x1 - x0) * (y1 - y0), density = n > 3 && area > 1e-9 ? n / area : DENSITY; // as dense as what is already laid out, so the disc looks like part of it
+    const R = Math.sqrt(loose.length / (Math.PI * density)), cx = n ? x1 + R * 1.25 + (x1 - x0) * .05 : 0, cy = n ? (y0 + y1) / 2 : 0;
+    loose.forEach((id, i) => { const r = R * Math.sqrt((i + .5) / loose.length), th = i * 2.399963; g.mergeNodeAttributes(id, { x: cx + Math.cos(th) * r, y: cy + Math.sin(th) * r }); }); // a sunflower: even spacing
+  }
   // With clusters, ForceAtlas moves each cluster as one block (its inside is laid out already) and loose nodes alone; the blocks then keep their gaps. It is cheap, and it does not undo the layout.
   function relaxClusters(iterations, pinned) {
     const units = clusters.map(c => c.members.filter(id => g.hasNode(id) && inLayout(id))).filter(l => l.length);
-    g.forEachNode(id => { if (inLayout(id) && !clusterOf.has(id)) units.push([id]); });
+    g.forEachNode(id => { if (inLayout(id) && !clusterOf.has(id) && !isLoose(id)) units.push([id]); });
     const sup = new Graph({ type:"undirected" }), uOf = new Map(), start = [];
     units.forEach((list, i) => { let sx = 0, sy = 0, fixed = false; for (const id of list) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; uOf.set(id, String(i)); if (a.fixed || pinned?.(id)) fixed = true; }
       start.push([sx / list.length, sy / list.length]); sup.addNode(String(i), { x: sx / list.length, y: sy / list.length, size: 1 + Math.sqrt(list.length), fixed }); });
@@ -655,7 +668,7 @@ async function openInPortal(n) {
     if (catView) return;
     if (clusters.length && K && !plain) return relaxClusters(iterations, pinned); // a category view places its nodes by rule
     const sub = new Graph({ type:"undirected" });
-    g.forEachNode((id, a) => { if (inLayout(id)) sub.addNode(id, { x:a.x, y:a.y, fixed: !!a.fixed || !!pinned?.(id) }); });
+    g.forEachNode((id, a) => { if (inLayout(id) && !isLoose(id)) sub.addNode(id, { x:a.x, y:a.y, fixed: !!a.fixed || !!pinned?.(id) }); });
     if (sub.order < 2) return;
     // a link between two clusters pulls much more weakly than one inside a cluster, so clusters can stand apart instead of being drawn into one knot
     g.forEachEdge((ed, a, s, t) => { if (sub.hasNode(s) && sub.hasNode(t)) { const cs = clusterOf.get(s), ct = clusterOf.get(t); sub.addEdge(s, t, { weight: cs !== undefined && cs !== ct ? CROSS_PULL : 1 }); } });
@@ -780,7 +793,7 @@ async function openInPortal(n) {
     if (arr || catView) return; // a grid or the selection view is arranged by its own rules: resetting would scatter the nodes over it
     const wasLive = liveOn; stopLive();
     g.forEachNode((id) => inLayout(id) && g.mergeNodeAttributes(id, { x:Math.random(), y:Math.random() }));
-    if (!layoutTwoLevel()) relax(300, null, true); collide(60); fitView(); if (wasLive) startLive();
+    if (!layoutTwoLevel()) relax(300, null, true); placeLoose(); collide(60); fitView(); if (wasLive) startLive();
   };
   document.getElementById("fit").onclick = () => fitView();
 
@@ -853,7 +866,8 @@ async function openInPortal(n) {
       const inSet = catView?.kinds ?? soloKinds, here = x.kinds.filter(k => kindCount[k]), isSel = grids && here.length && here.every(k => inSet.has ? inSet.has(k) : inSet.includes(k));
       return `<div class="grp"><button class="chip gtoggle${on && on < x.kinds.length ? " part" : ""}${isSel ? " sel" : ""}" data-g="${x.name}" aria-pressed="${on > 0}" title="Click hides or shows every type in ${x.name}. Ctrl+click puts them in a grid (inside a selection: shows only them)">${x.name}${grids && n ? ` <span class="n">${n}</span>` : ""}</button>${x.kinds.map(kindChip).join("")}</div>`;
     }).join("")
-      + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "");
+      + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "")
+      + `<div class="lghint"><b>Click</b> hides or shows · <b>Right-click</b> shows only it (again: back) · <b>Ctrl+click</b> a grid · <b>Alt+←/→</b> earlier legend states</div>`;
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
     legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = ev => legendGroup(b.dataset.g, ev));
     legend.querySelectorAll("button[data-t]").forEach(b => b.oncontextmenu = ev => { ev.preventDefault(); if (b.dataset.t !== "*") legendOnly([b.dataset.t]); });
@@ -862,7 +876,8 @@ async function openInPortal(n) {
   function stats() {
     selBtn(); // buttons, hint line and ForceAtlas follow the view
     let shown = 0, orphans = 0; g.forEachNode((id, a) => { if (isVisible(id)) { shown++; a.orphan && orphans++; } });
-    document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link.`;
+    const loose = catView || arr ? 0 : looseIds().length; // linked to nothing that is shown: packed in a disc beside the rest
+    document.getElementById("stats").textContent = `${shown} of ${g.order} nodes shown. ${orphans} with no link.${loose ? ` ${loose} linked to nothing shown, set apart.` : ""}`;
   }
   function refreshView() { computeFocus(); refresh(); fitView(); stats(); renderChips(); renderPanel(); }
 
@@ -1737,7 +1752,7 @@ async function openInPortal(n) {
   window.addEventListener("mouseup", () => { pan = null; });
 
   function relayout() { // the first layout of the current mode: clusters laid out and placed, or the plain graph as it is
-    findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
+    findClusters(); const twoLevel = layoutTwoLevel(); if (!twoLevel && clusters.length) relax(300, null, true); placeLoose(); setK(); if (twoLevel) K = .4 / (() => { let t = 0, n = 0; g.forEachNode((id, a) => { t += a.size; n++; }); return t / n; })(); collide(60); fitView(); measurePx(); // no two nodes overlap; their size in graph units is fixed from here on
   }
   // The graph is laid out from scratch on what the legend shows: clusters found among the shown nodes, then ForceAtlas (or the two-level layout) on them. Done at open and after every type toggle.
   let clusterForced = false; // the Clusters box was set by hand: it stays as set

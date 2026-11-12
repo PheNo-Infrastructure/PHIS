@@ -192,6 +192,26 @@ test("e2e: graph legend: right-click shows only that type, another right-click m
   });
 });
 
+test("e2e: graph legend: shown nodes linked to nothing shown are set apart in one block, not spread as a shell around the rest", async () => {
+  await withGraph(async (page) => {
+    const big = stubGraph();
+    for (let i = 0; i < 300; i++) { big.nodes.push({ id: `scientific_object-${i}`, type: "scientific_object", label: `Obj ${i}` }); big.edges.push({ source: `scientific_object-${i}`, target: `experiment-${i % 9}` }); }
+    await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(big) }));
+    await page.reload(); await page.waitForFunction(() => (window as any).__graph?.g.order > 0); await settled(page);
+    await page.locator('#legend button[data-g="Material"]').click(); await settled(page);
+    await page.locator('#legend button[data-t="experiment"]').click(); await settled(page);
+    const r = await page.evaluate(() => {
+      const G = (window as any).__graph, loose: number[][] = [], rest: number[][] = [];
+      G.g.forEachNode((id: string, a: any) => { if (a.kind === "scientific_object") loose.push([a.x, a.y]); else if (!G.hiddenKinds.has(a.kind)) rest.push([a.x, a.y]); });
+      const xs = loose.map((p) => p[0]), ys = loose.map((p) => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      return { loose: loose.length, inside: rest.filter((p) => p[0] > x0 && p[0] < x1 && p[1] > y0 && p[1] < y1).length };
+    });
+    assert.equal(r.loose, 300);
+    assert.equal(r.inside, 0, "nothing else sits inside the block of loose nodes (no shell around it)");
+    assert.match(await page.locator("#stats").innerText(), /300 linked to nothing shown/);
+  });
+});
+
 test("e2e: graph legend: turning a hidden group on and then Clusters off lays out only what is shown, nodes do not pile up", async () => {
   await withGraph(async (page) => {
     const big = stubGraph();
