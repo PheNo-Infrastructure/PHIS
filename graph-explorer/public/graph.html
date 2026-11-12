@@ -665,11 +665,13 @@ async function openInPortal(n) {
     if (sup.order < 2) return;
     g.forEachEdge((e, a, s2, t2) => { const u = uOf.get(s2), v = uOf.get(t2); if (u === undefined || v === undefined || u === v) return; if (sup.hasEdge(u, v)) sup.updateEdgeAttribute(sup.edge(u, v), "weight", w => w + 1); else sup.addEdge(u, v, { weight: 1 }); });
     sup.forEachEdge((e, a) => sup.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
-    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: 6, barnesHutOptimize: sup.order > 500 } });
+    FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: iterations <= 5 ? 2 : 6, barnesHutOptimize: sup.order > 500 } });
     sup.forEachNode((k, a) => { const dx = a.x - start[+k][0], dy = a.y - start[+k][1]; for (const id of units[+k]) { const q = g.getNodeAttributes(id); if (!q.fixed) g.mergeNodeAttributes(id, { x: q.x + dx, y: q.y + dy }); } });
     spreadClusters(3); if (!drag) placeLoose(); collide(2); // the loose block follows the clusters: it is kept beside them, never pulled into them
   }
+  let lastMove = Infinity; // the biggest move of the last live step (graph units): a short run ends when it falls under a small share of a node's size
   function relax(iterations, pinned, plain) {
+    lastMove = Infinity;
     if (catView) return;
     if (clusters.length && K && !plain) return relaxClusters(iterations, pinned); // a category view places its nodes by rule
     const sub = new Graph({ type:"undirected" });
@@ -682,14 +684,18 @@ async function openInPortal(n) {
       for (const [k, ids] of by) if (ids.length >= MIN_CAT) { const hub = `~${c.key}|${k}`; sub.addNode(hub, { x: g.getNodeAttribute(ids[0], "x"), y: g.getNodeAttribute(ids[0], "y") }); for (const id of ids) sub.addEdge(hub, id, { weight: c.typeKind ? TYPE_PULL * .4 : TYPE_PULL }); } }
     // once the two-level layout has set the scale (small, dense), the live step must not use the global strong repulsion: it would blow the clusters apart
     // A live step (a few iterations per frame) restarts ForceAtlas at full speed every frame, and a dense clump is kicked hard: a node may move only about a node radius per step.
-    const cap = iterations <= 5 && K ? K * 1.2 : Infinity, from = new Map(); if (cap < Infinity) sub.forEachNode((id, a) => from.set(id, [a.x, a.y]));
-    FA2.assign(sub, { iterations, settings: K && clusters.length ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : settingsFor(sub) }); // a plain graph was laid out with settingsFor: the live step must not change the physics under it
+    // slowDown divides every move (Gephi's tolerance/speed): a live step runs it lower than the full solve, and the cap above keeps that safe.
+    const step = iterations <= 5, cap = step && K ? K * 1 * iterations : Infinity, from = new Map(); if (cap < Infinity) sub.forEachNode((id, a) => from.set(id, [a.x, a.y]));
+    FA2.assign(sub, { iterations, settings: K && clusters.length ? { ...settingsFor(sub), gravity: 2, scalingRatio: .6 } : step ? { ...settingsFor(sub), slowDown: 1 } : settingsFor(sub) }); // a plain graph was laid out with settingsFor: the live step must not change the physics under it
+    let moved = 0;
     sub.forEachNode((id, a) => {
       if (!g.hasNode(id)) return;
       let { x, y } = a; const p = from.get(id), d = p ? Math.hypot(x - p[0], y - p[1]) : 0;
       if (d > cap) { x = p[0] + (x - p[0]) * cap / d; y = p[1] + (y - p[1]) * cap / d; }
+      if (p) moved = Math.max(moved, Math.hypot(x - p[0], y - p[1]));
       g.mergeNodeAttributes(id, { x, y });
     });
+    lastMove = moved;
     if (cap < Infinity && !drag) placeLoose(); // while the linked part drifts, the loose block keeps its place beside it
     spreadClusters(3); collide(2);
   }
@@ -795,10 +801,11 @@ async function openInPortal(n) {
   const live = document.getElementById("live");
   const stopLive = () => { liveOn = false; cancelAnimationFrame(raf); };
   const startLive = () => {
-    stopLive(); liveOn = true; cost = 0;
+    stopLive(); liveOn = true; cost = 0; let calm = 0;
     const tick = () => {
       if (!liveOn) return;
-      const t = performance.now(); relax(2);
+      const t = performance.now(); relax(4);
+      if (!live.checked && !dragRun && lastMove < (K || 1) * .03) { if (++calm >= 8) return endBurst(); } else calm = 0; // a short run stops as soon as nothing moves
       cost = cost * .9 + (performance.now() - t) * .1;
       if (cost > 30) { live.checked = false; stopLive(); document.getElementById("stats").textContent += " ForceAtlas switched off: too many nodes for it."; return; }
       raf = requestAnimationFrame(tick);
@@ -811,8 +818,9 @@ async function openInPortal(n) {
   function burst() {
     if (!liveOn) startLive();
     clearTimeout(burstTimer);
-    burstTimer = setTimeout(() => { if (!live.checked && !dragRun) stopLive(); if (!clusters.length && outOfView(g.nodes().filter(isVisible))) easeFit(); }, 2200); // long enough for a big group to find its shape; the view then eases out only if something has drifted off it
+    burstTimer = setTimeout(endBurst, 4000); // at most this long (it usually ends sooner, when nothing moves any more)
   }
+  function endBurst() { clearTimeout(burstTimer); if (!live.checked && !dragRun) stopLive(); if (!clusters.length && outOfView(g.nodes().filter(isVisible))) easeFit(); } // the view then eases out only if something has drifted off it
   document.getElementById("reset").onclick = () => {
     if (arr || catView) return; // a grid or the selection view is arranged by its own rules: resetting would scatter the nodes over it
     const wasLive = liveOn; stopLive();
@@ -829,7 +837,10 @@ async function openInPortal(n) {
     const cur = catView?.kinds ?? [], shown = FILTERS.filter(k => !hiddenKinds.has(k) && kindCount[k]);
     const grids = plain(); // Ctrl, Shift and All build grids from the legend: plain graphs only
     if (!catView && sel.size && (t === "*" || ev.ctrlKey || ev.metaKey || ev.shiftKey)) return soloKind(t, ev, shown); // inside the selection view they filter its three grids instead
-    if (t === "*") return grids && setKinds(cur.length === shown.length ? [] : shown);
+    if (t === "*") { // All: a click shows every type; Ctrl+click puts every shown type in a grid
+      if (ev.ctrlKey || ev.metaKey) return grids && setKinds(cur.length === shown.length ? [] : shown);
+      return hiddenKinds.size ? setHidden([], FILTERS) : undefined;
+    }
     if (grids && (ev.ctrlKey || ev.metaKey)) { hiddenKinds.delete(t); kindAnchor = t; return setKinds(cur.includes(t) ? cur.filter(k => k !== t) : [...cur, t]); }
     if (grids && ev.shiftKey) { const a = FILTERS.indexOf(kindAnchor ?? cur[0] ?? t), b = FILTERS.indexOf(t), [x, y] = a < b ? [a, b] : [b, a]; return setKinds(FILTERS.slice(x, y + 1).filter(k => !hiddenKinds.has(k) && kindCount[k])); }
     hiddenKinds.has(t) ? setHidden([], [t]) : setHidden([t]);
@@ -890,8 +901,8 @@ async function openInPortal(n) {
       const inSet = catView?.kinds ?? soloKinds, here = x.kinds.filter(k => kindCount[k]), isSel = grids && here.length && here.every(k => inSet.has ? inSet.has(k) : inSet.includes(k));
       return `<div class="grp"><button class="chip gtoggle${on && on < x.kinds.length ? " part" : ""}${isSel ? " sel" : ""}" data-g="${x.name}" aria-pressed="${on > 0}" title="Click hides or shows every type in ${x.name}. Ctrl+click puts them in a grid (inside a selection: shows only them)">${x.name}${grids && n ? ` <span class="n">${n}</span>` : ""}</button>${x.kinds.map(kindChip).join("")}</div>`;
     }).join("")
-      + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Every type as a grid, one section each">All</button>` : "")
-      + `<span class="lghelp" tabindex="0" title="Click: hide or show a type, or a whole group (the bold chip).&#10;Right-click: show only it; right-click it again to go back to what was shown before.&#10;Ctrl+click: put it in a grid.&#10;Shift+click: a range of types.&#10;Alt+Left / Alt+Right: step through earlier legend states.">?</span>`;
+      + (grids && FILTERS.filter(k => kindCount[k]).length > 1 ? `<button class="chip all" data-t="*" title="Click shows every type. Ctrl+click puts every type in a grid, one section each">All</button>` : "")
+      + `<span class="lghelp" tabindex="0" title="Click: hide or show a type, or a whole group (the bold chip).&#10;Right-click: show only it; right-click it again to go back to what was shown before.&#10;Ctrl+click: put it in a grid.&#10;Shift+click: a range of types.&#10;All: click shows every type, Ctrl+click puts them all in a grid.&#10;Alt+Left / Alt+Right: step through earlier legend states.">?</span>`;
     legend.querySelectorAll("button[data-t]").forEach(b => b.onclick = ev => legendClick(b.dataset.t, ev));
     legend.querySelectorAll("button[data-g]").forEach(b => b.onclick = ev => legendGroup(b.dataset.g, ev));
     legend.querySelectorAll("button[data-t]").forEach(b => b.oncontextmenu = ev => { ev.preventDefault(); if (b.dataset.t !== "*") legendOnly([b.dataset.t]); });

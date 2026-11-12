@@ -4840,11 +4840,11 @@ test("e2e: graph: Ctrl+click on a type in the legend puts it in a grid, Ctrl+cli
   });
 });
 
-test("e2e: graph: All opens every type as sections of one grid, and picking a node leaves the grid for its connected view", async () => {
+test("e2e: graph: Ctrl+click on All opens every type as sections of one grid, and picking a node leaves the grid for its connected view", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
     const cat = () => frame.evaluate(() => (window as any).__graph.cat());
-    await page.locator('#graphInfo [data-t="*"]').click();
+    await page.locator('#graphInfo [data-t="*"]').click({ modifiers: ["Control"] });
     await frame.waitForFunction(() => (window as any).__graph.cat()?.kinds.length === 4);
     assert.equal((await cat()).n, 5);
     await frame.evaluate(() => (window as any).__graph.select("t:org-a", false));
