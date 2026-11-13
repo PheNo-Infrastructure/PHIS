@@ -4962,6 +4962,22 @@ test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removi
   });
 });
 
+test("e2e: graph in Browse: every legend change is a history step, and Back restores the legend state inside the iframe", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    const frame = await openGraph(page, base);
+    const hidden = () => frame.evaluate(() => [...(window as any).__graph.hiddenKinds].sort().join());
+    const start = await hidden(), steps0 = await page.evaluate(() => history.length);
+    await page.locator('button[data-t="site"]').first().click(); await settled(frame);
+    const one = await hidden(); assert.notEqual(one, start, "the click hid the type");
+    await page.locator('button[data-t="facility"]').first().click({ button: "right" }); await settled(frame);
+    const two = await hidden(); assert.notEqual(two, one);
+    assert.equal(await page.evaluate(() => history.length), steps0 + 2, "each legend change added one history step");
+    await page.evaluate(() => history.back()); await page.waitForFunction(() => true); await frame.waitForFunction((want) => [...(window as any).__graph.hiddenKinds].sort().join() === want, one);
+    await page.evaluate(() => history.back()); await frame.waitForFunction((want) => [...(window as any).__graph.hiddenKinds].sort().join() === want, start);
+    await page.evaluate(() => history.forward()); await frame.waitForFunction((want) => [...(window as any).__graph.hiddenKinds].sort().join() === want, one);
+  });
+});
+
 test("e2e: graph: a plain click opens the resource and leaves the selection alone; a click on empty space clears the selection", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
