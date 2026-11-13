@@ -140,3 +140,15 @@ Do this with the user (brainstorm first), before more A–Z items.
 ## 2026-11-11: the whole GraphDB in the graph
 
 The graph now holds every kind GraphDB holds (MongoDB stays out) and the portal gaps found by that inventory are closed. Rule, numbers, how to re-read both databases, what is left: `docs/superpowers/specs/2026-11-11-whole-graphdb-in-the-graph.md`.
+
+## 2026-11-13: items from the Pheno meeting notes (not started unless marked)
+Source: the owner's meeting notes (management 9 Nov, data portal discussion 13 Nov with Thomas and Marius). Status of the graph work itself: branch `graph-explorer/graph-spike`, full suite green, not merged or deployed (the owner's call).
+
+| Item | Source | State / next step |
+|---|---|---|
+| **Four access levels** (Public / PHIS / Organization / Private; Private default; optional publication date; public access through a guest account) | management 9 Nov | Design first: map onto groups (Priority 1) + `is_public` on experiments; decides login, guest and NIRD questions. Nothing built. |
+| **More device information** (provenance device linking) | Thomas 13 Nov | Ask Thomas which fields; also raise with INRAe. Device page already shows type, moves, person in charge, provenances. |
+| **Facility editing by URI edit or replace** | 13 Nov | Probe on a throwaway on phis-test first; the two Holt sites with an `address` stay blocked (location-duplication bug). |
+| **Raw data to NIRD, URL linked into PHIS** | 13 Nov | Needs funding talk (Steinar) and file/document support (Data files and Documents are ✖ above). |
+| **Treatment and genotype mapped to PHIS objects; Horten version metadata field** | 16 Oct | Factor/germplasm reuse is built (2026-11-10); the metadata field is open, ask where Thomas and Marius want it. |
+| **Nomenclature, variable names** | 13 Nov | Thomas and Marius come back to us. |
