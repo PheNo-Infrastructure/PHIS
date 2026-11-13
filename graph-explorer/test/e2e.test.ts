@@ -50,6 +50,9 @@ async function withServerAndBrowser(fn: (base: string, page: import("playwright"
   const page = await context.newPage();
   await page.addInitScript(() => { try { localStorage.setItem("showTree", "1"); } catch {} }); // the selection tree pane is hidden by default
   await page.addInitScript(COUNT_PENDING);
+  // The embedded graph would otherwise read the real /api/graph (live PHIS, cached in the server process): once an earlier test had filled that cache, its legend showed up in the Selection pane and moved every button below it.
+  // An empty graph by default; a test that needs a graph registers its own route afterwards (the last route wins).
+  await page.route("**/api/graph", (r) => r.fulfill({ status: 200, contentType: "application/json", body: '{"nodes":[],"edges":[]}' }));
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
   // The browser logs every 4xx answer by itself; a test that stubs a refusal expects that line, a script error is still a failure.

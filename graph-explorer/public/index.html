@@ -5548,6 +5548,9 @@ function flipIfCramped(menu) {
   if (above > below) menu.classList.add("up");
   list.style.maxHeight = `${Math.max(160, Math.floor(Math.max(above, below) - 8))}px`;
 }
+// A menu that opens by itself (the experiment question) can end up below the window when something above it grows afterwards, such as the graph legend loading into the Selection pane:
+// whenever something in the pane is added or removed, every open menu in it is checked again.
+{ const pane = document.getElementById("selectionPane"); let queued = false; if (pane) new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; pane.querySelectorAll(".newmenu.open").forEach(flipIfCramped); }); }).observe(pane, { childList: true, subtree: true }); }
 function openImport(opts = {}) { importSession = opts; if (view === "import") renderPage(); else showView("import"); }
 function wireImportPage(opts) {
   const close = () => { importSession = null; renderPage(); };

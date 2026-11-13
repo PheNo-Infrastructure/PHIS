@@ -658,18 +658,18 @@ async function openInPortal(n) {
   function relaxClusters(iterations, pinned) {
     const loose = looseIds(), L = new Set(loose);
     const units = clusters.map(c => c.members.filter(id => g.hasNode(id) && inLayout(id) && !L.has(id))).filter(l => l.length);
-    g.forEachNode(id => { if (inLayout(id) && (!clusterOf.has(id) || L.has(id))) units.push([id]); }); // loose nodes take part one by one, like any node outside a cluster
-    const linked = units.reduce((t, l) => t + l.length, 0) - loose.length; // the speed follows how many linked nodes are shown: more of them, slower steps (no vibration)
+    g.forEachNode(id => { if (inLayout(id) && !clusterOf.has(id) && !L.has(id)) units.push([id]); }); // loose nodes stay out of the forces: placeLoose packs them in one block beside the rest
+    const linked = units.reduce((t, l) => t + l.length, 0); // the speed follows how many linked nodes are shown: more of them, slower steps (no vibration)
     const sup = new Graph({ type:"undirected" }), uOf = new Map(), start = [];
     units.forEach((list, i) => { let sx = 0, sy = 0, fixed = false; for (const id of list) { const a = g.getNodeAttributes(id); sx += a.x; sy += a.y; uOf.set(id, String(i)); if (a.fixed || pinned?.(id)) fixed = true; }
       const cx = sx / list.length, cy = sy / list.length, ds = list.map(id => { const a = g.getNodeAttributes(id); return Math.hypot(a.x - cx, a.y - cy); }).sort((p, q) => p - q);
       start.push([cx, cy]); sup.addNode(String(i), { x: cx, y: cy, size: list.length > 1 ? Math.max(.5, ds[Math.floor(ds.length * .9)]) : Math.max(.05, (K || .1) * g.getNodeAttribute(list[0], "size")), fixed }); }); // size = the radius it takes up, so ForceAtlas keeps units apart
-    if (sup.order < 2) return;
+    if (sup.order < 2) { placeLoose(); return; }
     g.forEachEdge((e, a, s2, t2) => { const u = uOf.get(s2), v = uOf.get(t2); if (u === undefined || v === undefined || u === v) return; if (sup.hasEdge(u, v)) sup.updateEdgeAttribute(sup.edge(u, v), "weight", w => w + 1); else sup.addEdge(u, v, { weight: 1 }); });
     sup.forEachEdge((e, a) => sup.setEdgeAttribute(e, "weight", Math.sqrt(a.weight)));
     FA2.assign(sup, { iterations, settings: { ...FA2.inferSettings(sup), gravity: 1, scalingRatio: 6, slowDown: iterations <= 5 ? Math.min(6, 1 + linked / 100) : 6, barnesHutOptimize: sup.order > 500 } });
     sup.forEachNode((k, a) => { const dx = a.x - start[+k][0], dy = a.y - start[+k][1]; for (const id of units[+k]) { const q = g.getNodeAttributes(id); if (!q.fixed) g.mergeNodeAttributes(id, { x: q.x + dx, y: q.y + dy }); } });
-    spreadClusters(3); collide(2);
+    spreadClusters(3); placeLoose(); collide(2);
   }
   let lastMove = Infinity; // the biggest move of the last live step (graph units): a short run ends when it falls under a small share of a node's size
   function relax(iterations, pinned, plain) {
