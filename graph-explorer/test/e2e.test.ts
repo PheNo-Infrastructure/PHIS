@@ -4788,6 +4788,12 @@ const settled = (frame: import("playwright").Frame) => frame.evaluate(() => new 
   requestAnimationFrame(tick);
 }));
 const nodeXY = (frame: import("playwright").Frame, id: string) => frame.evaluate((i) => { const g = (window as any).__graph; return g.sigma.graphToViewport(g.g.getNodeAttributes(i)); }, id);
+// A node's place once it has stopped moving: a selection starts a camera animation a moment AFTER the nodes look still, and a click aimed before that lands on empty space.
+async function stableXY(frame: import("playwright").Frame, id: string) {
+  let prev = await nodeXY(frame, id);
+  for (let i = 0; i < 40; i++) { await frame.waitForTimeout(120); const now = await nodeXY(frame, id); if (Math.hypot(now.x - prev.x, now.y - prev.y) < 0.5) return now; prev = now; }
+  return prev;
+}
 const graphSel = (frame: import("playwright").Frame) => frame.evaluate(() => [...(window as any).__graph.sel]);
 async function ctrlClick(page: import("playwright").Page, x: number, y: number) {
   await page.keyboard.down("Control"); await page.mouse.click(x, y); await page.keyboard.up("Control");
@@ -4953,7 +4959,7 @@ test("e2e: graph: a big graph with clear groups is clustered by default, a rando
 test("e2e: graph: Ctrl+click on a node puts it in the Selection pane, and removing it there clears it in the graph", async () => {
   await withServerAndBrowser(async (base, page) => {
     const frame = await openGraph(page, base);
-    const box = (await page.locator("#graphPane iframe").boundingBox())!, v = await nodeXY(frame, "t:org-a");
+    const box = (await page.locator("#graphPane iframe").boundingBox())!, v = await stableXY(frame, "t:org-a");
     await ctrlClick(page, box.x + v.x, box.y + v.y);
     await page.locator(".sel-label", { hasText: "Org A" }).waitFor();
     assert.deepEqual(await graphSel(frame), ["t:org-a"]);
@@ -4983,12 +4989,12 @@ test("e2e: graph: a plain click opens the resource and leaves the selection alon
     const frame = await openGraph(page, base);
     await page.evaluate(() => { (window as any).__opened = []; (window as any).openRelatedNode = (item: any) => (window as any).__opened.push(item.id); });
     const box = (await page.locator("#graphPane iframe").boundingBox())!;
-    let v = await nodeXY(frame, "t:org-a");
+    let v = await stableXY(frame, "t:org-a");
     await ctrlClick(page, box.x + v.x, box.y + v.y);
     await frame.waitForFunction(() => (window as any).__graph.sel.size === 1);
     await settled(frame);
     await page.waitForTimeout(350); // the ctrl-click above and this click are under 300 ms apart when everything is fast: Sigma then drops this one as the second click of a double click
-    v = await nodeXY(frame, "t:exp-1");
+    v = await stableXY(frame, "t:exp-1");
     await page.mouse.click(box.x + v.x, box.y + v.y);
     await page.waitForFunction(() => (window as any).__opened.length === 1);
     assert.deepEqual(await page.evaluate(() => (window as any).__opened), ["t:exp-1"], "the experiment was opened");
