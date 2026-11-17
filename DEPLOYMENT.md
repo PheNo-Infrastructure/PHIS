@@ -172,6 +172,5 @@ This cluster **is production** (has been since 2026-06-11) — the items below a
 
 - [ ] Upgrade AKS from Free tier to Standard for an SLA
 - [ ] Add autoscaler / multiple nodes for high availability (currently a single `Standard_D4s_v3` node — a node failure is an outage)
-- [ ] Invite-token store is in-memory only (patch 006) — a pod restart silently drops pending researcher invites; would need a DB-backed store to survive restarts
 - [ ] New PVCs aren't auto-locked in Azure — `terraform/locks.tf` must be updated by hand whenever a new managed disk is added (see [Backups & Disaster Recovery](#backups--disaster-recovery) above)
 - [ ] No PHIS-specific Grafana dashboards yet — only the chart's generic Kubernetes ones

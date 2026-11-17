@@ -54,7 +54,7 @@ cyan buttons/badges are not recoloured.
 
 ## Active Patches
 
-The build applies patches in filename order — `002` → `012` — via a shell glob
+The build applies patches in filename order — `002` → `015` — via a shell glob
 in `opensilex-build-step.docker` (`for patch in /patches/*.patch`). Several
 patches edit the same file (`AuthenticationAPI.java` especially), and later
 patches assume earlier ones already applied, so **don't rename or renumber
@@ -131,16 +131,6 @@ unfixed on `develop` 2026-09-02.
 
 **Files**: `ProfileDAO.java` (+3 lines in `getByUserURI`)
 
-### 009-fix-empty-germplasm-attr-migration.patch
-
-Guards the 1.5.1 `GermplasmAttributeUpdateRightsMigration` against an empty Mongo
-`bulkWrite`. When no germplasm has custom attributes the ops list is empty and
-the Mongo driver throws *"state should be: writes is not an empty list"*,
-aborting the migration instead of completing as a no-op. Upstream bug, present in
-1.5.4, unfixed on `develop`.
-
-**Files**: `GermplasmAttributeUpdateRightsMigration.java` (+4 lines)
-
 ### 008-batch-scientific-objects-import.patch
 
 Adds `POST /core/scientific_objects/json_import` — a JSON batch endpoint for creating many scientific objects in one request.
@@ -179,32 +169,6 @@ fail with a "linked with other resources" error; removing a member from a
 group succeeds but the group-edit screen shows `Error: URI not found :
 phis:id/group/<n>` and the member count doesn't update until a refresh.
 
-### 006-invite-system.patch
-
-Adds an admin-only "invite a researcher by email" flow, separate from open self-registration (005).
-
-**How it works**:
-1. Admin calls `POST /security/invite` with an email — generates a one-time token (kept **in-memory only**, cleared on pod restart) and emails an accept link.
-2. Invitee visits `/app/accept-invite/:token` → `GET /security/accept-invite` marks that email as a "pending researcher".
-3. When that person actually logs in via Feide, `SecurityAutoAssignmentService` sees they're a pending researcher and assigns them to the **Researchers** group / **Researcher profile** instead of the default **Users** group.
-
-**Files**: `InviteService.java` (new), `InviteDTO.java` (new), `SecurityAutoAssignmentService.java` (new — also used by patch 002/005 for default-group assignment), `AuthenticationAPI.java`, `invite.mustache` (new email template), `AcceptInvite.vue` (new frontend page)
-
-**Known limitation**: invite tokens live in a Java in-memory map (`ConcurrentHashMap`), not the database. A pod restart (rollout restart, crash, redeploy) silently invalidates all pending invites — the admin has to resend them. Fine for low volume; would need a DB-backed store to survive restarts.
-
-### 005-self-registration.patch
-
-Adds public self-service account registration (as opposed to admin-issued invites in 006).
-
-**How it works**:
-1. `POST /security/register` (public) creates a disabled account and emails a confirmation link.
-2. User clicks the link → `GET /security/confirm-registration?token=...` enables the account and auto-assigns it to the default **Users** group via `SecurityAutoAssignmentService`.
-3. Frontend adds `/app/register` and `/app/confirm-registration/:token` pages, plus a "Don't have an account? Register here" link on the login screen.
-
-**Files**: `AccountRegisterDTO.java` (new), `AuthenticationAPI.java`, `register-confirmation.mustache` (new email template), `Register.vue` (new), `ConfirmRegistration.vue` (new), `opensilex.front.yml` (new routes), `DefaultLoginComponent.vue`
-
-**Requires**: `email.enable: true` in `opensilex.yml` — registration and invites both return HTTP 503 if the email service isn't configured. (Test environments deliberately run with email disabled — see [CLAUDE.md](../../CLAUDE.md) — so registration/invite links won't work there.)
-
 ### 004-default-feide-login.patch
 
 UI-only change: when Feide (OpenID SSO) is configured, show the SSO button(s) directly on the login screen instead of behind a "select login method" dropdown. Password login stays available underneath.
@@ -225,7 +189,9 @@ Automatically assigns new password/OpenID/SAML users to a default group on first
 
 **Root cause**: OpenSILEX didn't assign any group to a newly-created account after authentication.
 
-**Fix**: calls `SecurityAutoAssignmentService.assignToDefaultGroupIfNew()` from all three login paths in `AuthenticationAPI.java` (password, OpenID, SAML). Note: `SecurityAutoAssignmentService` itself is defined later in patch **006** — that's fine, all patches apply before the Maven build compiles anything — but it means 002 and 006 are logically a pair even though they're numbered apart.
+**Fix**: calls `SecurityAutoAssignmentService.assignToDefaultGroupIfNew()` from all three login paths in `AuthenticationAPI.java` (password, OpenID, SAML). The service itself (new file, adds the user to the "Users" group with the "Default profile" if the user has no group yet) is part of this patch.
+
+**Removed 2026-11-17**: patches 005 (self-registration), 006 (invite flow) and 009 (upstream fixed it in 1.5.6) were dropped. 005 and 006 had no recorded use; 006's "pending researcher" branch was removed from the service, so researchers are moved to the Researchers group by an admin.
 
 ## Build Files
 
