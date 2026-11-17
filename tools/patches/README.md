@@ -131,14 +131,6 @@ unfixed on `develop` 2026-09-02.
 
 **Files**: `ProfileDAO.java` (+3 lines in `getByUserURI`)
 
-### 008-batch-scientific-objects-import.patch
-
-Adds `POST /core/scientific_objects/json_import` — a JSON batch endpoint for creating many scientific objects in one request.
-
-**Motivation**: the existing `POST /core/scientific_objects` endpoint is called once per object. At 8000+ SOs per import, each round-trip takes ~15-17s under concurrent load, making large imports impractically slow. This endpoint accepts a list of `ScientificObjectCreationDTO`, generates URIs for all models upfront, batch-inserts via `createWithNoValidations`, copies to global graph once, and updates experiment species once — turning N HTTP calls into 1.
-
-**Files**: `ScientificObjectAPI.java` (+2 imports, +1 endpoint)
-
 ### 007-fix-group-user-profile-cleanup.patch
 
 Fixes an orphaned-record bug in group/user management, without racing
@@ -191,7 +183,7 @@ Automatically assigns new password/OpenID/SAML users to a default group on first
 
 **Fix**: calls `SecurityAutoAssignmentService.assignToDefaultGroupIfNew()` from all three login paths in `AuthenticationAPI.java` (password, OpenID, SAML). The service itself (new file, adds the user to the "Users" group with the "Default profile" if the user has no group yet) is part of this patch.
 
-**Removed 2026-11-17**: patches 005 (self-registration), 006 (invite flow) and 009 (upstream fixed it in 1.5.6) were dropped. 005 and 006 had no recorded use; 006's "pending researcher" branch was removed from the service, so researchers are moved to the Researchers group by an admin.
+**Removed 2026-11-17**: patches 005 (self-registration), 006 (invite flow), 008 (batch SO import: no calls in the ingress logs since 2026-10-02, the portal posts objects one by one) and 009 (upstream fixed it in 1.5.6) were dropped. 005 and 006 had no recorded use; 006's "pending researcher" branch was removed from the service, so researchers are moved to the Researchers group by an admin.
 
 ## Build Files
 

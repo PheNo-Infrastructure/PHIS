@@ -53,7 +53,7 @@ never against prod.
 
 | Order | Patch | Becomes | Notes |
 |---|---|---|---|
-| 1 | 008 batch scientific-object import | `APIExtension` endpoint in the module | Pilot. Smallest, new endpoint only. |
+| dropped | 008 batch scientific-object import | Deleted 2026-11-17 (branch `chore/upgrade-1.5.9`), not migrated | No calls in the ingress logs since 2026-10-02; the portal posts objects one by one and the Streamlit importer is gone. The module's pilot is now 002. |
 | 2 | 002 auto-group on first login | `LoginExtension` in the module | Hardest correctness case, see risk 1. Removes our edits to `AuthenticationAPI`. |
 | dropped | 005 self-registration, 006 invites | Deleted 2026-11-17 (commit e1489cf on `chore/patches-audit`), not migrated | No recorded use. The front-hook risk (3) no longer applies. `SecurityAutoAssignmentService` now lives in 002 without the invite branch. |
 | later | 004 Feide button, PheNo theme | Front or theme module | Not part of this design. Revisit after the above. |
