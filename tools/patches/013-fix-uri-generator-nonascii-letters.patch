@@ -14,13 +14,15 @@ Confirmed repro (GitHub issue #7): normalize("test_ÆØÅ_[-1:2]") currently
 returns "test__-12" -- Æ, Ø and Å vanish silently along with the bracket/
 colon symbols, producing an unpredictable, information-lossy URI.
 
-Fix: perform NFD normalization and combining-mark stripping (\p{Mn}) up
-front, on the raw input, so accented Latin letters (é, ü, ö, ...) degrade
-to their ASCII base letter instead of being deleted by the later strip.
-Æ/Ø/Å don't decompose under NFD (they're atomic letters, not a base plus
-a combining mark), so they get an explicit transliteration per the issue's
-own suggestion: Æ/æ -> ae, Ø/ø -> oe, Å/å -> aa (normalize() lowercases
-everything anyway, so mapping straight to the lowercase form is enough).
+Fix: transliterate Æ/æ -> ae, Ø/ø -> oe, Å/å -> aa FIRST, on the raw input
+(per the issue's own suggestion; normalize() lowercases everything anyway,
+so mapping straight to the lowercase form is enough). It must come before
+the decomposition: Æ and Ø are atomic letters, but Å does decompose under
+NFD (A plus a combining ring), so transliterating afterwards would find a
+plain "a" (found on 1.5.9.2: "ÆØÅ" gave "aeoea"). Then NFD normalization and
+combining-mark stripping (\p{Mn}) run on that, so accented Latin letters
+(é, ü, ö, ...) degrade to their ASCII base letter instead of being deleted
+by the later strip.
 
 This does not change the existing, intentionally-tested symbol-stripping
 behavior (URIGeneratorTest.testNormalization asserts symbols like $ & ~
@@ -55,18 +57,18 @@ letters that were being silently destroyed are now preserved.
 -        // search and replace pattern from src
 -        Matcher matcher = pattern.matcher(src);
 -        String formattedSrc = matcher.replaceAll("")
-+        // decompose accented Latin letters (é, ü, ö, ...) and strip the resulting combining marks so they
-+        // degrade to their ASCII base letter instead of being deleted whole by the strip pattern below
-+        String decomposed = combiningMarkPattern.matcher(Normalizer.normalize(src, Normalizer.Form.NFD)).replaceAll("");
-+
-+        // Æ/Ø/Å don't decompose under NFD (atomic letters, not base+combining-mark) -- transliterate explicitly
-+        String transliterated = decomposed
++        // Æ and Ø are atomic letters and Å would lose its ring under NFD (leaving a plain "a"): transliterate all three first
++        String transliterated = src
 +                .replace("Æ", "ae").replace("æ", "ae")
 +                .replace("Ø", "oe").replace("ø", "oe")
 +                .replace("Å", "aa").replace("å", "aa");
 +
++        // decompose accented Latin letters (é, ü, ö, ...) and strip the resulting combining marks so they
++        // degrade to their ASCII base letter instead of being deleted whole by the strip pattern below
++        String decomposed = combiningMarkPattern.matcher(Normalizer.normalize(transliterated, Normalizer.Form.NFD)).replaceAll("");
++
 +        // search and replace pattern from src
-+        Matcher matcher = pattern.matcher(transliterated);
++        Matcher matcher = pattern.matcher(decomposed);
 +        return matcher.replaceAll("")
                  .toLowerCase()
                  .trim() // call trim before intermediate replace in order to remove leading and trailing space
