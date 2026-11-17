@@ -55,7 +55,7 @@ never against prod.
 |---|---|---|---|
 | 1 | 008 batch scientific-object import | `APIExtension` endpoint in the module | Pilot. Smallest, new endpoint only. |
 | 2 | 002 auto-group on first login | `LoginExtension` in the module | Hardest correctness case, see risk 1. Removes our edits to `AuthenticationAPI`. |
-| 3 | 005 self-registration, 006 invites | Module endpoints, services, email templates; Vue pages for the front | Front hook unverified, see risk 3. 002, 005 and 006 share `SecurityAutoAssignmentService`, so they move together or 002 first. |
+| dropped | 005 self-registration, 006 invites | Deleted 2026-11-17 (commit e1489cf on `chore/patches-audit`), not migrated | No recorded use. The front-hook risk (3) no longer applies. `SecurityAutoAssignmentService` now lives in 002 without the invite branch. |
 | later | 004 Feide button, PheNo theme | Front or theme module | Not part of this design. Revisit after the above. |
 
 Order matters: a patch is removed from `tools/patches/` only after its module replacement
@@ -111,10 +111,8 @@ no longer contains the patch:
    on upstream's `ScientificObjectAPI`. A module resource with the same root path may conflict
    or merge in Jersey. Unverified. If it cannot keep the URL, the portal's import call changes
    with it, in the same release.
-3. **Front hook (005, 006).** Our Vue pages, routes (`opensilex.front.yml`), component
-   registration (currently a `sed` on `index.ts`) and the login screen's "Register here" link
-   live in `opensilex-front`. Whether a module can add routes and components and change an
-   existing login component without patching `opensilex-front` is unverified.
+3. **Front hook.** No longer a risk for this design: 005 and 006 (the only patches that needed
+   Vue pages and routes) were dropped. It returns only if 004 (Feide button) is moved later.
 4. **Two upstream versions.** The module compiles against 1.5.4 and must also compile against
    1.5.9; APIs it uses (`ScientificObjectLogic`, `ExperimentDAO`, `AccountDAO`) changed between
    them (patch 008 already needed a compile fix once in 1.5.4).
