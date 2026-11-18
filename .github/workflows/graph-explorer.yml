@@ -47,8 +47,8 @@ jobs:
       run:
         working-directory: graph-explorer
     env:
-      # The server reads these at start-up; the tests mock every call to PHIS.
-      PHIS_HOST: http://localhost:1
+      # There is no PHIS in CI: the server talks to a fake one (test/fake-phis.mts, started below) that answers empty lists.
+      PHIS_HOST: http://localhost:4999
       PHIS_USER: ci
       PHIS_PASS: ci
       NO_LIVE_PHIS: '1' # the tests that need a real PHIS skip themselves
@@ -60,9 +60,12 @@ jobs:
           cache: npm
           cache-dependency-path: graph-explorer/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium (about 5 min of apt), only for test files that use a browser
+        run: if grep -q 'from "playwright"' "${{ matrix.file }}"; then npx playwright install --with-deps chromium; fi
       - name: Run the file (7 min limit); a browser test now and then fails only under load, so one rerun is allowed and said out loud
         run: |
+          node --experimental-strip-types test/fake-phis.mts 4999 &
+          sleep 1
           if ! timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"; then
             echo "::warning::${{ matrix.file }} failed once, running it again"
             timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"
