@@ -11,6 +11,11 @@ on:
     branches: [main]
     paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml', '!graph-explorer/docs/**', '!graph-explorer/k8s/**']
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Redeploy without running the tests again (they ran when the commit was merged)
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -22,6 +27,7 @@ concurrency:
 
 jobs:
   files:
+    if: ${{ !inputs.skip_tests }}
     runs-on: ubuntu-latest
     outputs:
       list: ${{ steps.list.outputs.list }}
@@ -36,6 +42,7 @@ jobs:
 
   test:
     needs: files
+    if: ${{ !inputs.skip_tests }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -74,7 +81,7 @@ jobs:
 
   deploy:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: ${{ always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && inputs.skip_tests)) }}
     runs-on: ubuntu-latest
     env:
       REGISTRY: phisacr
@@ -98,9 +105,9 @@ jobs:
           # exchange is called directly: the ARM access token (the identity holds AcrPush on phisacr) for an ACR token.
           ARM=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
           echo "::add-mask::$ARM"
-          ACR_TOKEN=$(curl -sf -X POST "https://${REGISTRY}.azurecr.io/oauth2/exchange" \
-            -d grant_type=access_token -d "service=${REGISTRY}.azurecr.io" -d "tenant=${{ secrets.AZURE_TENANT_ID }}" \
-            --data-urlencode "access_token=${ARM}" | jq -r .refresh_token)
+          STATUS=$(curl -s -o acr.json -w %{http_code} -X POST "https://${REGISTRY}.azurecr.io/oauth2/exchange"             -d grant_type=access_token -d "service=${REGISTRY}.azurecr.io" -d "tenant=${{ secrets.AZURE_TENANT_ID }}"             --data-urlencode "access_token=${ARM}")
+          if [ "$STATUS" != 200 ]; then echo "::error::the registry answered $STATUS to the token exchange"; cat acr.json; echo; exit 1; fi
+          ACR_TOKEN=$(jq -r .refresh_token acr.json)
           echo "::add-mask::$ACR_TOKEN"
           echo "$ACR_TOKEN" | docker login "${REGISTRY}.azurecr.io" -u 00000000-0000-0000-0000-000000000000 --password-stdin
           docker build -t "${IMAGE}:${GITHUB_SHA}" -t "${IMAGE}:latest" graph-explorer
