@@ -93,7 +93,15 @@ jobs:
       # is built on the runner and pushed, tagged with the commit and as latest.
       - name: Build and push the image
         run: |
-          az acr login --name "$REGISTRY"
+          # `az acr login` needs a refresh token, which a federated (OIDC) login does not have, so the registry's own token
+          # exchange is called directly: the ARM access token (the identity holds AcrPush on phisacr) for an ACR token.
+          ARM=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
+          echo "::add-mask::$ARM"
+          ACR_TOKEN=$(curl -sf -X POST "https://${REGISTRY}.azurecr.io/oauth2/exchange" \
+            -d grant_type=access_token -d "service=${REGISTRY}.azurecr.io" -d "tenant=${{ secrets.AZURE_TENANT_ID }}" \
+            --data-urlencode "access_token=${ARM}" | jq -r .refresh_token)
+          echo "::add-mask::$ACR_TOKEN"
+          echo "$ACR_TOKEN" | docker login "${REGISTRY}.azurecr.io" -u 00000000-0000-0000-0000-000000000000 --password-stdin
           docker build -t "${IMAGE}:${GITHUB_SHA}" -t "${IMAGE}:latest" graph-explorer
           docker push "${IMAGE}:${GITHUB_SHA}"
           docker push "${IMAGE}:latest"
