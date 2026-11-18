@@ -21,6 +21,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: graph-explorer
@@ -39,13 +40,19 @@ jobs:
           PHIS_HOST: http://localhost:1
           PHIS_USER: ci
           PHIS_PASS: ci
-        # A browser test now and then fails only under load (passes alone), so one rerun is allowed before the run is red.
+        # One file at a time, each with its own time limit: a hung browser test then names itself instead of stalling the run.
+        # A browser test now and then fails only under load (passes alone), so a failed file is run once more before the run is red.
         run: |
-          for attempt in 1 2; do
-            node --experimental-strip-types --test $(ls test/*.test.ts | grep -v live-smoke) && exit 0
-            echo "::warning::tests failed on attempt $attempt"
+          failed=""
+          for f in $(ls test/*.test.ts | grep -v live-smoke); do
+            echo "::group::$f"
+            if ! timeout 600 node --experimental-strip-types --test "$f"; then
+              echo "::warning::$f failed, running it once more"
+              timeout 600 node --experimental-strip-types --test "$f" || failed="$failed $f"
+            fi
+            echo "::endgroup::"
           done
-          exit 1
+          if [ -n "$failed" ]; then echo "::error::failed:$failed"; exit 1; fi
 
   deploy:
     needs: test
