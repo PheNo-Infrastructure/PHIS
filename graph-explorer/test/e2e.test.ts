@@ -93,8 +93,10 @@ const WIRED_CATEGORIES: Array<{ branch: string; hub?: string; label: string; fak
   { branch: "Data", label: "Documents", fakeIdPrefix: "doc-" },
 ];
 
+// These click through the real PHIS lists, so CI (no PHIS: NO_LIVE_PHIS=1) skips them; locally, with .env, they run.
+const NO_LIVE_PHIS = process.env.NO_LIVE_PHIS === "1";
 for (const { branch, hub, label, fakeIdPrefix } of WIRED_CATEGORIES) {
-  test(`e2e: ${label} category loads without fake ids or console errors`, async () => {
+  test(`e2e: ${label} category loads without fake ids or console errors`, { skip: NO_LIVE_PHIS && "needs live PHIS" }, async () => {
     await withServerAndBrowser(async (base, page) => {
       await page.goto(base + "/#browse");
       await idle(page);
