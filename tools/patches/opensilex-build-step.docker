@@ -30,15 +30,6 @@ RUN for patch in /patches/*.patch; do \
         patch --verbose -p1 < "$patch" || exit 1; \
     done
 
-# Register.vue and ConfirmRegistration.vue need entries in index.ts.
-# patch -p1 fails on this file consistently; sed r-command is used instead.
-RUN printf 'import Register from '"'"'./layout/Register.vue'"'"';\ncomponents["opensilex-Register"] = Register;\nimport ConfirmRegistration from '"'"'./layout/ConfirmRegistration.vue'"'"';\ncomponents["opensilex-ConfirmRegistration"] = ConfirmRegistration;\nimport AcceptInvite from '"'"'./layout/AcceptInvite.vue'"'"';\ncomponents["opensilex-AcceptInvite"] = AcceptInvite;\n' \
-        > /tmp/reg_comps.txt \
-    && sed -i '/^components\["opensilex-ForgotPassword"\] = ForgotPassword;/r /tmp/reg_comps.txt' \
-       opensilex-front/front/src/components/index.ts \
-    && grep -q 'opensilex-Register' opensilex-front/front/src/components/index.ts \
-    && echo "index.ts patched OK"
-
 # PheNo theme: new theme folder next to the default one (selected with
 # front.theme: "opensilex-front#pheno"). Missing images (login backgrounds,
 # icons) are taken from the default theme first, then PheNo's own overwrite them.
@@ -72,9 +63,9 @@ RUN (mvn clean install -DskipTests \
        opensilex-front/front/node_modules/opensilex-core/model/geoJsonObject.ts && \
      echo 'export type NamedResourceDTO = any;' > \
        opensilex-front/front/node_modules/opensilex-core/model/namedResourceDTO.ts && \
-     find opensilex-front/node_modules/vuelayers/src -name '*.vue' -type f \
+     find opensilex-front -path '*/node_modules/vuelayers/src/*' -name '*.vue' -type f \
        -exec sed -i 's/this::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.bind(this)/g' {} + && \
-     find opensilex-front/node_modules/vuelayers/src -name '*.vue' -type f \
+     find opensilex-front -path '*/node_modules/vuelayers/src/*' -name '*.vue' -type f \
        -exec sed -i 's/\([a-zA-Z_][a-zA-Z0-9_]*\)::\([a-zA-Z_][a-zA-Z0-9_]*\)/\1.\2.bind(\1)/g' {} + && \
      echo "Retrying build with patched vuelayers and stub models..." && \
      mvn install -DskipTests -rf :opensilex-front \
