@@ -2024,11 +2024,13 @@ test("e2e: import confirm — the button names what it creates, waits for a spec
     await page.locator("#importOpenBtn").waitFor();
     assert.match(runUrl, /\/api\/import\/run\?species=agrovoc%3Abarley$/);
     assert.match((await page.locator("#importFooter").innerText()).replace(/\s+/g, " "), /Created PBar1x4 – TraitFinder – 2025-10-22 with 3 scientific objects, 1 factor and 1 new germplasm; it also created 1 variable and wrote 1,200 measured values\./);
+    await page.evaluate(() => { document.body.style.minHeight = "4000px"; window.scrollTo(0, 1500); }); // a long review leaves the page scrolled down
     await page.locator("#importOpenBtn").click();
     await idle(page);
     assert.equal(await page.locator("#importOverlay.open").count(), 0);
     const crumbs = (await page.locator(".crumb").allTextContents()).map((c) => c.trim());
     assert.deepEqual(crumbs, ["Graph", "Scientific Organization", "Experiments", exp.label], "lands on its canonical path, the list reloaded");
+    assert.equal(await page.evaluate(() => window.scrollY), 0, "Browse opens at the top, not scrolled down to the graph");
   });
 });
 

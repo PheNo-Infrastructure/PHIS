@@ -2182,7 +2182,7 @@ async function restoreFrom(st) {
 function navigateTo(newPath) {
   // Opening a node from a page view (Overview, Set up, Import) lands in the workspace: one history entry for both.
   const leaving = PAGE_VIEWS.has(view);
-  if (leaving) applyView("browse");
+  if (leaving) { applyView("browse"); window.scrollTo(0, 0); } // the page we left may be scrolled far down (the import review); Browse starts at its top, not at the graph below it
   showPath(newPath);
   historyPaths.set(++historyCount, path);
   historyTabs.set(historyCount, tabsNow());
