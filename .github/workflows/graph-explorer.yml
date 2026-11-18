@@ -2,12 +2,14 @@ name: Graph Explorer (portal)
 
 # Pull requests: tests only. Push to main (or a manual run on main): tests, then build the image in ACR,
 # roll it out to the portal and check it; a failed check rolls back.
+# Tests: one job per test file, in parallel (a new file is picked up automatically). Changes that only touch docs or
+# the hand-applied k8s files run nothing.
 on:
   pull_request:
-    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml']
+    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml', '!graph-explorer/docs/**', '!graph-explorer/k8s/**']
   push:
     branches: [main]
-    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml']
+    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml', '!graph-explorer/docs/**', '!graph-explorer/k8s/**']
   workflow_dispatch:
 
 permissions:
@@ -16,15 +18,39 @@ permissions:
 
 concurrency:
   group: graph-explorer-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # a newer push replaces a PR's test run, but never interrupts a deploy
 
 jobs:
-  test:
+  files:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: list
+        # Everything except the live smoke test, which needs PHIS credentials.
+        run: |
+          cd graph-explorer
+          files=$(ls test/*.test.ts | grep -v live-smoke | sed 's/.*/"&"/' | paste -sd, -)
+          echo "list=[$files]" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: files
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJson(needs.files.outputs.list) }}
+    name: test ${{ matrix.file }}
     defaults:
       run:
         working-directory: graph-explorer
+    env:
+      # The server reads these at start-up; the tests mock every call to PHIS.
+      PHIS_HOST: http://localhost:1
+      PHIS_USER: ci
+      PHIS_PASS: ci
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -34,25 +60,12 @@ jobs:
           cache-dependency-path: graph-explorer/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Unit, backend and e2e tests (everything except the live smoke test, which needs PHIS credentials)
-        env:
-          # The server reads these at start-up; the tests mock every call to PHIS.
-          PHIS_HOST: http://localhost:1
-          PHIS_USER: ci
-          PHIS_PASS: ci
-        # One file at a time, each with its own time limit: a hung browser test then names itself instead of stalling the run.
-        # A browser test now and then fails only under load (passes alone), so a failed file is run once more before the run is red.
+      - name: Run the file (7 min limit); a browser test now and then fails only under load, so one rerun is allowed and said out loud
         run: |
-          failed=""
-          for f in $(ls test/*.test.ts | grep -v live-smoke); do
-            echo "::group::$f"
-            if ! timeout 600 node --experimental-strip-types --test "$f"; then
-              echo "::warning::$f failed, running it once more"
-              timeout 600 node --experimental-strip-types --test "$f" || failed="$failed $f"
-            fi
-            echo "::endgroup::"
-          done
-          if [ -n "$failed" ]; then echo "::error::failed:$failed"; exit 1; fi
+          if ! timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"; then
+            echo "::warning::${{ matrix.file }} failed once, running it again"
+            timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"
+          fi
 
   deploy:
     needs: test
