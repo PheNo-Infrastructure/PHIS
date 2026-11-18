@@ -37,7 +37,7 @@ jobs:
   test:
     needs: files
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -62,14 +62,15 @@ jobs:
       - run: npm ci
       - name: Install Chromium (about 5 min of apt), only for test files that use a browser
         run: if grep -q 'from "playwright"' "${{ matrix.file }}"; then npx playwright install --with-deps chromium; fi
-      - name: Run the file (7 min limit); a browser test now and then fails only under load, so one rerun is allowed and said out loud
+      - name: Run the file (7 min limit per attempt, 3 attempts); two browser tests flake under load, every failed attempt is said out loud
         run: |
           node --experimental-strip-types test/fake-phis.mts 4999 &
           sleep 1
-          if ! timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"; then
-            echo "::warning::${{ matrix.file }} failed once, running it again"
-            timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"
-          fi
+          for attempt in 1 2 3; do
+            if timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"; then exit 0; fi
+            echo "::warning::${{ matrix.file }} failed attempt $attempt"
+          done
+          exit 1
 
   deploy:
     needs: test

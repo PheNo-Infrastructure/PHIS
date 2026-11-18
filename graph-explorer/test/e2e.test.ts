@@ -2231,9 +2231,11 @@ test("e2e: import review — where the objects stand follows the device: recorde
     const places = async () => (await page.locator("#importPlaces").innerText()).replace(/\s+/g, " ");
     assert.match(await places(), /Where they stand: 3 objects are recorded in HOLT_PT_G, the facility the device stands in/);
     await page.locator("#importDevice .import-chip button").click();
+    await idle(page); // the page re-renders from the change; reading at once sometimes saw the old text (flaked in CI)
     assert.match(await places(), /won't be recorded: no device is chosen/);
     await page.locator("#importDeviceAdd").fill("Nikon Z6III");
     await page.locator("#importDeviceAdd").evaluate((el) => el.dispatchEvent(new Event("change")));
+    await idle(page);
     assert.match(await places(), /won't be recorded: none of the chosen devices stands in a facility in PHIS/);
   });
 });
