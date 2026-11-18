@@ -1237,8 +1237,10 @@ test("'Contains' on a parent lists its children in that experiment; removing one
 
 test("GET /api/node-detail rejects an unsupported type or missing id", async () => {
   await withServer(async (base) => {
-    const res = await realFetch(`${base}/api/node-detail?type=germplasm&id=x`);
-    assert.equal(res.status, 400);
+    // Germplasm used to be the unsupported example; it has a view now, and the old request only passed because live PHIS answered 400.
+    // Both bad requests are refused before PHIS is asked, so the test needs no PHIS (CI has none).
+    assert.equal((await realFetch(`${base}/api/node-detail?type=nonsense&id=x`)).status, 400);
+    assert.equal((await realFetch(`${base}/api/node-detail?type=germplasm`)).status, 400);
   });
 });
 

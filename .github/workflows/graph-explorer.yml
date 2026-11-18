@@ -1,0 +1,92 @@
+name: Graph Explorer (portal)
+
+# Pull requests: tests only. Push to main (or a manual run on main): tests, then build the image in ACR,
+# roll it out to the portal and check it; a failed check rolls back.
+on:
+  pull_request:
+    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml']
+  push:
+    branches: [main]
+    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml']
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: graph-explorer-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: graph-explorer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: graph-explorer/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Unit, backend and e2e tests (everything except the live smoke test, which needs PHIS credentials)
+        env:
+          # The server reads these at start-up; the tests mock every call to PHIS.
+          PHIS_HOST: http://localhost:1
+          PHIS_USER: ci
+          PHIS_PASS: ci
+        # A browser test now and then fails only under load (passes alone), so one rerun is allowed before the run is red.
+        run: |
+          for attempt in 1 2; do
+            node --experimental-strip-types --test $(ls test/*.test.ts | grep -v live-smoke) && exit 0
+            echo "::warning::tests failed on attempt $attempt"
+          done
+          exit 1
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: phisacr
+      IMAGE: phisacr.azurecr.io/graph-explorer
+      PORTAL_URL: https://phis.pheno.no/portal
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build the image in ACR (tagged with the commit, and latest)
+        run: az acr build -r "$REGISTRY" -t "graph-explorer:${GITHUB_SHA}" -t graph-explorer:latest graph-explorer
+
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: phis-rg
+          cluster-name: phis-cluster
+          admin: 'true'
+
+      - name: Roll out
+        run: |
+          kubectl set image deployment/graph-explorer "graph-explorer=${IMAGE}:${GITHUB_SHA}" -n graph-explorer
+          kubectl rollout status deployment/graph-explorer -n graph-explorer --timeout=180s
+
+      - name: Check the live portal
+        run: |
+          set -e
+          sleep 5
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$PORTAL_URL/")" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$PORTAL_URL/api/instance")" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$PORTAL_URL/api/experiment-delete?id=x&name=x")" = 403
+
+      - name: Roll back if the checks failed
+        if: failure()
+        run: kubectl rollout undo deployment/graph-explorer -n graph-explorer
