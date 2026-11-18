@@ -107,6 +107,15 @@ export async function authedPut(urlPath: string, body: unknown): Promise<{ resul
   }) as Promise<{ result: string }>;
 }
 
+// OpenSILEX 1.5.9 refuses a PUT of a scientific object whose relations include `isHosted` ("Invalid relation value"; 1.5.4 took
+// it). A Move sets isHosted, and the PUT leaves it in place when it is left out (probed on phis-test 2026-11-18), so every
+// scientific-object PUT goes through here and the relation is dropped.
+type Rel = { property?: unknown };
+const isHosted = (r: Rel) => String(r.property).split(/[:#/]/).pop() === "isHosted";
+export async function putScientificObject(body: { relations?: Rel[] } & Record<string, unknown>) {
+  return authedPut("/core/scientific_objects", { ...body, ...(body.relations ? { relations: body.relations.filter((r) => !isHosted(r)) } : {}) });
+}
+
 export async function authedDelete(urlPath: string): Promise<void> {
   await authedFetch(urlPath, { method: "DELETE" });
 }

@@ -498,7 +498,7 @@ function mockExistingExperiment(writes: { method: string; path: string; body: an
     const copy = path.match(/^\/core\/scientific_objects\/so%3A(old1|old2|block1)\?experiment=/);
     if (copy) return jsonResponse(200, { result: copy[1] === "block1" ? { uri: "so:block1", name: "Block 1", rdf_type: "https://phis.pheno.no/vocabulary#Block", relations: [] }
       : copy[1] === "old1"
-      ? { uri: "so:old1", name: "B1-C1", rdf_type: "vocabulary:Plant", relations: [] }
+      ? { uri: "so:old1", name: "B1-C1", rdf_type: "vocabulary:Plant", relations: [{ property: "http://www.opensilex.org/vocabulary/oeso#isHosted", value: "fac:g", inverse: false }] } // a Move put it there; OpenSILEX 1.5.9 refuses it in a PUT
       : { uri: "so:old2", name: "B1-C2", rdf_type: "vocabulary:Plant", relations: [
         { property: "vocabulary:hasGermplasm", value: "g:annika", inverse: false },
         { property: "https://phis.pheno.no/vocabulary#positionInBlock", value: "3", inverse: false }] } });

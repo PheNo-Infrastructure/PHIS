@@ -2,7 +2,7 @@
 // and PHIS lacks is added — objects, blocks, factors and levels, an object's germplasm, factor levels,
 // block and position, measured values — and nothing in PHIS is changed. Where PHIS says something else,
 // it's listed in the plan and PHIS is kept. Fewer orphans: an old import gets its blocks and values.
-import { authedGet, authedGetOne, authedPost, authedPut, compactUri } from "../opensilex.ts";
+import { authedGet, authedGetOne, authedPost, putScientificObject, compactUri } from "../opensilex.ts";
 import { factorsOf } from "../experiment-factors.ts";
 import type { TrialData } from "./plugins.ts";
 import type { Value } from "./measurements.ts";
@@ -81,7 +81,7 @@ export async function writeFill(fill: Fill, expId: string, ids: { germplasm: Map
   if (fill.germplasm) add("vocabulary:hasGermplasm", ids.germplasm.get(fill.germplasm));
   for (const [f, l] of fill.levels) add("vocabulary:hasFactorLevel", ids.levels.get(`${f}|${l}`));
   if (fill.parent) add("vocabulary:isPartOf", ids.objects.get(fill.parent));
-  await authedPut("/core/scientific_objects", { uri: fill.uri, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
+  await putScientificObject({ uri: fill.uri, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
 }
 
 // The values PHIS already has in the experiment, keyed like the file's: object|variable|local time.

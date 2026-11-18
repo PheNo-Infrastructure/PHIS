@@ -1,4 +1,4 @@
-import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, authedDelete, compactUri, escapeRegex } from "./opensilex.ts";
+import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut, putScientificObject, authedDelete, compactUri, escapeRegex } from "./opensilex.ts";
 import { experimentStructure } from "./experiment-structure.ts";
 import { experimentsOfFactor, factorsOf, madeIn } from "./experiment-factors.ts";
 
@@ -444,7 +444,7 @@ async function updateSoInExperiment(soId: string, expId: string, mod: { field: s
   for (const uri of mod.add ?? []) {
     if (!have.has(await compactUri(uri))) relations.push({ property: `vocabulary:${mod.field}`, value: uri, inverse: false });
   }
-  await authedPut("/core/scientific_objects", { uri: soId, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
+  await putScientificObject({ uri: soId, name: copy.name, rdf_type: copy.rdf_type, experiment: expId, relations });
   return alsoHolds.length ? { alsoHolds } : undefined;
 }
 async function soRowsIn(soId: string, expId: string) {
@@ -542,7 +542,7 @@ async function renameSoCopy(soId: string, name: string, expId?: string) {
   const copy = (await authedGetOne(`/core/scientific_objects/${encodeURIComponent(soId)}${expId ? `?experiment=${encodeURIComponent(expId)}` : ""}`)).result;
   const relations = ((Array.isArray(copy.relations) ? copy.relations : []) as { property: string; value: string; inverse?: boolean }[])
     .map((r) => ({ property: r.property, value: r.value, inverse: Boolean(r.inverse) }));
-  await authedPut("/core/scientific_objects", { uri: soId, name, rdf_type: copy.rdf_type, ...(expId ? { experiment: expId } : {}), relations });
+  await putScientificObject({ uri: soId, name, rdf_type: copy.rdf_type, ...(expId ? { experiment: expId } : {}), relations });
 }
 async function renameSo(soId: string, name: string, expId?: string): Promise<string> {
   const trimmed = name.trim();
