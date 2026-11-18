@@ -8,7 +8,7 @@ import { OpenSilexError, authedGet, authedGetOne, authedPost, authedPut } from "
 import { NODE_TYPES, saveLevels, updateNode, updatePayloadFromDto } from "../node-types.ts";
 import { addTerm } from "./ontology.ts";
 import { placeBatches, recordPlaces, type Facility } from "./places.ts";
-import { prepare } from "./plan.ts";
+import { prepare, NOT_ALLOWED_LIST, type InvalidName } from "./plan.ts";
 import { createPart, createVariable, type PartKind } from "./variables.ts";
 import { VALUES_AT_ONCE, createProvenance, writeValues } from "./measurements.ts";
 import { writeFill } from "./existing.ts";
@@ -49,6 +49,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
     else if (choices.newSpecies !== undefined ? !newSpecies : !plan.speciesOptions.some((o) => o.id === choices.species)) blockers.push("Choose the species for the new germplasm.");
   }
   for (const f of plan.factors) if (f.matches) blockers.push(`"${f.name}" matches ${f.matches.length} factors in PHIS, so it isn't clear which one is meant: pick one in the review, or choose to make a new one.`);
+  for (const n of (plan as unknown as { invalidNames: InvalidName[] }).invalidNames) blockers.push(`The ${n.kind === "factor" ? "factor" : `level of ${n.factor}`} "${n.name}" can't be created: PHIS doesn't accept ${NOT_ALLOWED_LIST} in a name. Change it under Factors with ✎ Edit (for example "${n.suggestion}").`);
   if (choices.devices?.some((id) => !plan.options.devices.some((d) => d.id === id))) blockers.push("That device isn't in PHIS.");
   if (choices.person && !plan.options.persons.some((p) => p.id === choices.person)) blockers.push("That person isn't in PHIS.");
   const share = choices.share ?? "public";
@@ -103,7 +104,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
       done.experiment = firstUri(await authedPost("/core/experiments", {
         name: plan.experiment.name,
         start_date: plan.experiment.startDate,
-        objective: `Imported from a ${plan.instrument} export.`,
+        objective: `Imported from ${plan.instrument}.`,
         // Public (the default), or nobody but this app's account sees it in PHIS (OpenSILEX defaults to private) —
         // unless the user chose private or one group to share it with.
         is_public: share === "public",
@@ -209,7 +210,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
       const tz = trial.timezone ?? "UTC";
       done.provenance = await createProvenance(
         `${plan.experiment.name} – ${trial.source ?? plan.instrument} import ${new Date().toISOString().slice(0, 19).replace("T", " ")}`,
-        `Imported from a ${plan.instrument} export by the Graph Explorer: ${values.length} values, scans from ${m.first!.replace("T", " ")} to ${m.last!.replace("T", " ")} (${tz}).`,
+        `Imported from ${plan.instrument} by the Graph Explorer: ${values.length} values, scans from ${m.first!.replace("T", " ")} to ${m.last!.replace("T", " ")} (${tz}).`,
         m.first!, m.last!, tz,
         [
           ...(choices.devices ?? []).map((uri) => ({ uri, rdf_type: "vocabulary:Device" })),
@@ -236,7 +237,7 @@ export async function runImport(files: Files, choices: Choices, progress: (p: Pr
         const m = plan.measurements;
         const left = m ? [m.skipped.empty && `${m.skipped.empty} empty cells`, m.skipped.notNumbers.count && `${m.skipped.notNumbers.count} non-numbers`, m.skipped.contradictions.count && `${m.skipped.contradictions.count} contradicting values`].filter(Boolean) : [];
         const text = [
-          `Imported from a ${plan.instrument} export by the Graph Explorer on ${new Date().toISOString().slice(0, 10)}.`,
+          `Imported from ${plan.instrument} by the Graph Explorer on ${new Date().toISOString().slice(0, 10)}.`,
           `Files: ${names.join(", ")}.`,
           made.length ? `Written: ${made.join(", ")}.` : "Nothing new was written; everything was already in PHIS.",
           left.length ? `Left out: ${left.join(", ")}.` : "",

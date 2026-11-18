@@ -2128,6 +2128,28 @@ test("e2e: a distribution (a variable group of histogram bins) is picked like a 
   });
 });
 
+test("e2e: import review (Marius 2026-11-15) — the objects tile says what it counts (plants and blocks), a name PHIS refuses is flagged under Factors with the way forward and stops the import before any write", async () => {
+  await withServerAndBrowser(async (base, page) => {
+    await page.route("**/api/import/plan", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      instrument: "PlantEye system (HortControl export)", experiment: { name: "Trial", startDate: "2025-11-25", exists: false },
+      germplasm: { existing: [], missing: [], ambiguous: [], codes: [] }, speciesOptions: [],
+      factors: [{ name: "Treatment", levels: ["water", "standard-fertilizer"] }], invalidNames: [{ kind: "level", name: "standard-fertilizer", factor: "Treatment", suggestion: "standard_fertilizer" }],
+      vocabulary: [], variables: { existing: [], missing: [], parts: [] }, objects: { count: 36, kinds: [{ type: "plot", count: 4 }, { type: "plant", count: 32 }], sample: [] }, warnings: [],
+    }) }));
+    await page.goto(base);
+    await idle(page);
+    await page.locator("#importBtn").click();
+    await page.locator("#importFile").setInputFiles({ name: "export.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
+    await page.locator(".import-section").first().waitFor();
+    const tile = (await page.locator(".import-tile").first().innerText()).replace(/\s+/g, " ");
+    assert.match(tile, /^36 scientific objects \(4 plots and 32 plants\)$/, "32 plants + 4 blocks, not a bare 36");
+    const factors = (await page.locator('[data-section="factors"]').innerText()).replace(/\s+/g, " ");
+    assert.match(factors, /A level of Treatment standard-fertilizer can't be created: PHIS doesn't accept - \+ = < > \? \/ \* & in a name\. Use ✎ Edit to change it, for example to standard_fertilizer\./);
+    assert.match(await page.locator("#importFooter").innerText(), /Can't import this yet: a factor or level name has a character PHIS doesn't accept \(see Factors\)\. Nothing has been written to PHIS\./);
+    assert.equal(await page.locator("#importRunBtn").count(), 0, "no import button while a name is refused");
+  });
+});
+
 test("e2e: a file dropped on the import dialog is read like a chosen one — a CSV goes up with its name, a ZIP as a ZIP", async () => {
   await withServerAndBrowser(async (base, page) => {
     const seen: { type: string; name: string | undefined; size: number }[] = [];

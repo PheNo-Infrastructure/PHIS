@@ -14,6 +14,22 @@ import { checkMeasurements } from "./measurements.ts";
 import { compareObjects, newValues, readExperiment, valuesIn, type Experiment } from "./existing.ts";
 
 const enc = encodeURIComponent;
+
+// PHIS refuses these characters in a factor's name and in a level's name (probed 2026-11-18: "must not contains : -,+,=,<,>,=,?,/,*,&"),
+// and only after the experiment and germplasm exist. Said in the review instead, with a name that PHIS accepts.
+const NOT_ALLOWED = /[-+=<>?/*&]/;
+export const NOT_ALLOWED_LIST = "- + = < > ? / * &";
+const fixName = (n: string) => n.replace(/[-+=<>?/*&]+/g, "_");
+export type InvalidName = { kind: "factor" | "level"; name: string; factor: string; suggestion: string };
+// Only what would be created: a reused or existing factor keeps its own name, and only its new levels count.
+export function invalidFactorNames(factors: { name: string; levels: string[]; exists?: boolean; reuse?: unknown; newLevels?: string[] }[]): InvalidName[] {
+  const out: InvalidName[] = [];
+  for (const f of factors) {
+    if (!f.exists && !f.reuse && NOT_ALLOWED.test(f.name)) out.push({ kind: "factor", name: f.name, factor: f.name, suggestion: fixName(f.name) });
+    for (const l of f.exists || f.reuse ? f.newLevels ?? [] : f.levels) if (NOT_ALLOWED.test(l)) out.push({ kind: "level", name: l, factor: f.name, suggestion: fixName(l) });
+  }
+  return out;
+}
 // How many existing objects get each kind of detail added: "block", "germplasm", "factor level".
 function fillWhat(fills: Awaited<ReturnType<typeof compareObjects>>["fills"]) {
   return {
@@ -191,6 +207,7 @@ export async function prepare(files: Files, edits?: Edits) {
     factorChoices: factorChoices.map((c) => ({ file: c.file, parsed: c.parsed, ...(c.reuse ? { reuse: c.reuse.uri, auto: c.reuse.auto } : {}), ...(c.matches ? { ambiguous: true } : {}) })),
     warnings,
   };
+  Object.assign(plan, { invalidNames: invalidFactorNames(plan.factors) });
   return { trial, plan, variables, variableGroupPlans, values: against.fresh, experiment, fills: compared.fills, reused: standing.found, unplaced };
 }
 

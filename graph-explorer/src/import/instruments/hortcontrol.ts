@@ -36,7 +36,7 @@ function parseUnit(unit: string) {
 
 const plugin: InstrumentPlugin = {
   key: "hortcontrol",
-  label: "TraitFinder (HortControl export)",
+  label: "PlantEye system (HortControl export)",
 
   detect: (files) => csvs(files).some((c) => isExport(c.rows)),
 

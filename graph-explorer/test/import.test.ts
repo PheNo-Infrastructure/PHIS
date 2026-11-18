@@ -131,7 +131,7 @@ test("POST /api/import/plan: HortControl export -> the plan (exact-name germplas
     const res = await realFetch(`${base}/api/import/plan`, { method: "POST", body: makeZip({ [FILE]: RAW }) });
     assert.equal(res.status, 200);
     const plan = await res.json();
-    assert.equal(plan.instrument, "TraitFinder (HortControl export)");
+    assert.equal(plan.instrument, "PlantEye system (HortControl export)");
     assert.deepEqual(plan.experiment, { name: NAME, startDate: "2025-10-22", exists: false }, "a name that only contains it isn't a match; earliest date starts it");
     assert.deepEqual(plan.germplasm, { existing: [{ name: "Olve", id: "g:olve" }], missing: ["Tiril"], ambiguous: [], codes: [{ name: "Olve", code: "G5" }, { name: "Tiril", code: "G16" }] }, "case-insensitive exact match; 'Olve 2' ignored; codes from g_alias");
     assert.deepEqual(plan.vocabulary, [], "blocks are PHIS's own Plot type and places are Move events: nothing is added to the ontology");
@@ -183,7 +183,7 @@ test("POST /api/import/plan refuses what it can't import, saying why", async () 
     assert.match(edited.error, /10\/29\/2025 01:19:34 PM.*straight from HortControl/);
     const unknown = await post(makeZip({ "notes.txt": "hi" }));
     assert.equal(unknown.status, 400);
-    assert.match(unknown.error, /None of the known instruments recognises these files \(Boxeed 2\.0 \(Labdeers seed sort\), TraitFinder \(HortControl export\)\)/);
+    assert.match(unknown.error, /None of the known instruments recognises these files \(Boxeed 2\.0 \(Labdeers seed sort\), PlantEye system \(HortControl export\)\)/);
   });
 });
 
@@ -237,6 +237,22 @@ test("POST /api/import/run refuses before writing anything when a choice is miss
   });
 });
 
+test("a factor or level name with a character PHIS refuses (- + = < > ? / * &) is flagged in the plan with a name that works, and the run stops before writing anything (Marius, 2026-11-15)", async () => {
+  await withServer(async (base) => {
+    const writes: any[] = [];
+    mockPhisForRun(writes);
+    const edits = { "X-Import-Edits": encodeURIComponent(JSON.stringify({ factors: { Treatment: { levels: { "15C": "15-C" } } } })) };
+    const plan = await (await realFetch(`${base}/api/import/plan`, { method: "POST", headers: edits, body: EXPORT() })).json();
+    assert.deepEqual(plan.invalidNames, [{ kind: "level", name: "15-C", factor: "Treatment", suggestion: "15_C" }]);
+    const res = await realFetch(`${base}/api/import/run?species=${encodeURIComponent("agrovoc:barley")}`, { method: "POST", headers: edits, body: EXPORT() });
+    assert.equal(res.status, 409);
+    assert.match((await res.json()).error, /The level of Treatment "15-C" can't be created: PHIS doesn't accept - \+ = < > \? \/ \* & in a name\. Change it under Factors with ✎ Edit \(for example "15_C"\)\./);
+    assert.deepEqual(writes, [], "nothing written, not even the experiment");
+    const fine = await (await realFetch(`${base}/api/import/plan`, { method: "POST", body: EXPORT() })).json();
+    assert.deepEqual(fine.invalidNames, [], "plain names pass");
+  });
+});
+
 test("POST /api/import/run writes in order: vocabulary, variables (parts first), experiment, new germplasm (with its code), an existing germplasm's code, the factor with its levels, blocks, then each plant with its germplasm, treatment and block", async () => {
   await withServer(async (base) => {
     const writes: { method: string; path: string; body: any }[] = [];
@@ -266,7 +282,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
     ], "blocks before the plants in them; the values last");
     const w = (name: string) => writes.find((x) => x.body.name === name)!.body;
     const prov = writes.find((x) => x.path === "/core/provenances")!.body;
-    assert.match(prov.description, /^Imported from a TraitFinder \(HortControl export\) export by the Graph Explorer: 15 values, scans from 2025-10-22 13:19:34 to 2025-10-29 13:19:34 \(Europe\/Oslo\)\.$/);
+    assert.match(prov.description, /^Imported from PlantEye system \(HortControl export\) by the Graph Explorer: 15 values, scans from 2025-10-22 13:19:34 to 2025-10-29 13:19:34 \(Europe\/Oslo\)\.$/);
     assert.deepEqual(prov.prov_activity, [{ rdf_type: "http://www.w3.org/ns/prov#Activity", start_date: "2025-10-22T13:19:34", end_date: "2025-10-29T13:19:34", timezone: "Europe/Oslo" }]);
     const data = writes.find((x) => x.path === "/core/data")!.body;
     assert.equal(data.length, 15);
@@ -274,7 +290,7 @@ test("POST /api/import/run writes in order: vocabulary, variables (parts first),
       target: "so:B1-C2", variable: "variables:NDVI Average", date: "2025-10-22T13:19:34", timezone: "Europe/Oslo", value: 0.6, metadata: { sensor: "A" },
       provenance: { uri: "prov:new", experiments: ["exp:new"] },
     }, "the plant by its new uri, the variable by its new uri, a number, local time with its zone");
-    assert.deepEqual(writes.find((x) => x.path === "/core/experiments")!.body, { name: NAME, start_date: "2025-10-22", objective: "Imported from a TraitFinder (HortControl export) export.", is_public: true });
+    assert.deepEqual(writes.find((x) => x.path === "/core/experiments")!.body, { name: NAME, start_date: "2025-10-22", objective: "Imported from PlantEye system (HortControl export).", is_public: true });
     const variable = (name: string) => writes.find((x) => x.path === "/core/variables" && x.body.name === name)!.body;
     assert.deepEqual(variable("Height"), {
       name: "Height", entity: "entities:Plant", characteristic: "characteristics:Height", method: "m:pe", unit: "u:mm",
@@ -613,7 +629,7 @@ test("POST /api/import/run with choices: the provenance names its device and per
     const note = writes.find((w) => w.path === "/core/annotations")!.body;
     assert.deepEqual(note.targets, ["exp:new", "prov:new"]);
     assert.equal(note.motivation, "http://www.w3.org/ns/oa#describing");
-    assert.match(note.description, /^Imported from a TraitFinder \(HortControl export\) export by the Graph Explorer on \d{4}-\d\d-\d\d\. Files: Sheets\/Trial01_TraitFinder_20260107_PlantEye\.csv\. Written: 5 scientific objects, 1 new germplasm, 1 factor, 5 variables, 15 measured values\./);
+    assert.match(note.description, /^Imported from PlantEye system \(HortControl export\) by the Graph Explorer on \d{4}-\d\d-\d\d\. Files: Sheets\/Trial01_TraitFinder_20260107_PlantEye\.csv\. Written: 5 scientific objects, 1 new germplasm, 1 factor, 5 variables, 15 measured values\./);
   });
 });
 

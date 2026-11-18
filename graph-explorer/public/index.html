@@ -5773,7 +5773,8 @@ function importPlanHtml(p) {
   const editable = { experiment: !!orig, germplasm: !!orig?.germplasm.length, factors: !!orig?.factors.length, variables: !!orig && editableVariables(p).length > 0 };
   const editBtn = (kind) => editable[kind] ? `<button type="button" class="import-edit" data-edit="${kind}" title="Change this before importing">✎ Edit</button>${ed[kind] || (kind === "germplasm" && ed.germplasmCodes) ? `<span class="import-edited">edited</span>` : ""}` : "";
   const tiles = [
-    ...(p.objects.count ? [[p.objects.count.toLocaleString("en"), typeName("scientific_object", p.objects.count), true]] : []),
+    // Blocks are scientific objects too, so 32 plants in 4 blocks is 36; the tile says what it counts (the Marius test, 2026-11-15).
+    ...(p.objects.count ? [[p.objects.count.toLocaleString("en"), typeName("scientific_object", p.objects.count) + (p.objects.kinds.length > 1 ? ` (${andList(p.objects.kinds.map(k => `${k.count} ${k.type}${k.count === 1 ? "" : "s"}`))})` : ""), true]] : []),
     ...(p.factors.length ? [[String(p.factors.length), p.factors.length === 1 ? "factor" : "factors", p.factors.some(f => !f.exists)]] : []),
     ...(nv ? [[String(nv), `${nv === 1 ? "variable" : "variables"} (${v.missing.length ? `${v.missing.length} new` : "all reused"})`, v.missing.length > 0]] : []),
     ...(m?.count ? [[m.count.toLocaleString("en"), m.count === 1 ? "measured value" : "measured values", true]] : []),
@@ -5805,6 +5806,7 @@ function importPlanHtml(p) {
     </div>
     <div data-section="factors" class="import-section${p.factors.some(f => !f.exists) ? " is-new" : ""}">
       <h3><span class="h-title">Factors<small>treatments and design</small></span>${editBtn("factors")}</h3>
+      ${(p.invalidNames ?? []).map(n => `<div class="import-warning">${n.kind === "factor" ? "The factor" : `A level of ${escapeHtml(n.factor)}`} <b>${escapeHtml(n.name)}</b> can't be created: PHIS doesn't accept <code>- + = &lt; &gt; ? / * &amp;</code> in a name. Use ✎ Edit to change it, for example to <b>${escapeHtml(n.suggestion)}</b>.</div>`).join("")}
       ${p.factors.length ? p.factors.map(f => `<p>${escapeHtml(f.name)}: ${f.reuse
         ? `<b>reusing the factor already in PHIS</b>${f.reuse.unit ? ` (unit ${escapeHtml(f.reuse.unit.name)})` : " (no unit)"}${f.reuse.usedBy.length ? `, used by ${escapeHtml(andList(f.reuse.usedBy))}` : ""}${f.reuse.auto ? " — same name; ✎ picks another or makes a new one" : ""}; ${f.newLevels.length ? `adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))} to it${f.reuse.usedBy.length ? ", which everyone using it will see" : ""}` : "it already has all the levels"}`
         : f.exists ? (f.newLevels.length ? `already in PHIS; adds ${f.newLevels.length === 1 ? "level" : "levels"} ${escapeHtml(andList(f.newLevels))}` : "already in PHIS, with all its levels") : `${f.levels.length} levels${f.unit ? `, unit ${escapeHtml(f.unit.name)}` : ""}`} <span class="import-names">(${list(f.levels, 12)})</span>${f.parsed?.length ? `<br><span class="import-names">read as numbers: ${list(f.parsed.map(([a, b]) => `${a} → ${b}`), 6)}</span>` : ""}${f.matches ? `<br><span class="import-warning">${f.matches.length} factors in PHIS are named ${escapeHtml(f.name)} (${escapeHtml(f.matches.map(m => m.unit ? m.unit.name : "no unit").join(", "))}): ✎ pick one, or make a new one.</span>` : ""}</p>`).join("") : "<p>None.</p>"}
@@ -5899,11 +5901,35 @@ function partsText(parts) {
       : `${xs.length} ${xs[0].kind}`);
 }
 
+// The names the person changed in the review, old -> new: other files from the same instrument still carry the old ones (Marius, 2026-11-15).
+function renameRows(plan, edits) {
+  const rows = [], o = plan.original ?? {}, ed = edits ?? {};
+  const add = (kind, from, to) => { if (to !== undefined && to !== "" && to !== from) rows.push([kind, from, to]); };
+  add("Experiment", o.experiment?.name, ed.experiment?.name);
+  for (const [g, n] of Object.entries(ed.germplasm ?? {})) add("Germplasm", g, n);
+  for (const [f, v] of Object.entries(ed.factors ?? {})) {
+    add("Factor", f, v.name);
+    for (const [l, n] of Object.entries(v.levels ?? {})) add(`Level of ${v.name ?? f}`, l, n);
+  }
+  for (const [x, n] of Object.entries(ed.variables ?? {})) add("Variable", x, n);
+  return rows;
+}
+const csvCell = (x) => `"${String(x).replace(/"/g, '""')}"`;
+function downloadRenames(rows, experimentName) {
+  const text = ["Kind,Name in the file,Name in PHIS", ...rows.map(r => r.map(csvCell).join(","))].join("\r\n") + "\r\n";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv" }));
+  a.download = `renamed-in-import-${experimentName.replace(/[^\w.-]+/g, "_")}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 // What stops the import is said up front; otherwise the button says exactly what it will create.
 function importFooterHtml(p) {
   const stops = [
     ...(p.experiment.sameName ? ["more than one experiment has this name"] : []),
     ...(p.germplasm.ambiguous.length ? ["some germplasm names match more than one in PHIS"] : []),
+    ...((p.invalidNames ?? []).length ? ["a factor or level name has a character PHIS doesn't accept (see Factors)"] : []),
   ];
   if (stops.length) return `<span>Can't import this yet: ${escapeHtml(stops.join("; "))}. Nothing has been written to PHIS.</span>`;
   const newFactors = p.factors.filter(f => !f.exists).length;
@@ -6010,7 +6036,7 @@ function wireImportRun(file, plan, close, onDevices) {
         ...(c.values ? [`wrote ${c.values.toLocaleString("en")} measured ${c.values === 1 ? "value" : "values"}`] : []),
         ...(c.note === true ? ["recorded an annotation about the import"] : c.note === false ? ["could not save the annotation about the import (the data is in PHIS)"] : []),
       ];
-      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span><button class="btn" id="importSetupBtn">${importSession?.inSetup ? "Back to the steps" : "Set up this experiment"}</button><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
+      footer.innerHTML = `<span>${plan.experiment.exists ? "Filled in" : "Created"} <b>${escapeHtml(body.experiment.label)}</b>${c.filled ? ` (${c.filled} existing ${typeName("scientific_object", c.filled)} filled in)` : ""} with ${c.objects} ${typeName("scientific_object", c.objects)}, ${c.factors} ${c.factors === 1 ? "factor" : "factors"} and ${c.germplasm} new germplasm${also.length ? `; it also ${escapeHtml(andList(also))}` : ""}.</span>${renameRows(plan, importEdits).length ? `<button class="btn" id="importReceiptBtn" title="The old and the new name of everything you renamed in the review, as a CSV">Download the renamed names (CSV)</button>` : ""}<button class="btn" id="importSetupBtn">${importSession?.inSetup ? "Back to the steps" : "Set up this experiment"}</button><button class="btn primary" id="importOpenBtn">Open the experiment</button>`;
       if (into && document.getElementById("importPlan")?.contains(document.getElementById("importFooter"))) {
         const out = document.getElementById("importPlan"), foot = document.getElementById("importFooter");
         const wasOpen = out.querySelector(".setup-optional-box")?.open;
@@ -6020,6 +6046,7 @@ function wireImportRun(file, plan, close, onDevices) {
         wireSetupImport(into);
       }
       document.getElementById("importOpenBtn").addEventListener("click", () => { close(); openRelatedNode(body.experiment); });
+      document.getElementById("importReceiptBtn")?.addEventListener("click", () => downloadRenames(renameRows(plan, importEdits), body.experiment.label));
       document.getElementById("importSetupBtn").addEventListener("click", () => { if (!importSession?.inSetup) setupTrial = { id: body.experiment.id, type: "experiment", label: body.experiment.label, isNew: !plan.experiment.exists }; importSession = null; showView("setup"); renderPage(); });
     } catch (err) {
       footer.innerHTML = `<div class="import-warning">The import failed: ${escapeHtml(String(err))}</div>`;
