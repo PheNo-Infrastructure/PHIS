@@ -118,6 +118,7 @@ jobs:
         with:
           resource-group: phis-rg
           cluster-name: phis-cluster
+          admin: 'true' # phis-gha-identity (the identity GitHub logs in as) holds the Cluster Admin role, not Cluster User
 
       - name: Roll out
         id: rollout
