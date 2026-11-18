@@ -1,9 +1,16 @@
-import { test, after } from "node:test";
+import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { chromium } from "playwright";
 import { handleRequest } from "../src/index.ts";
 import { NODE_TYPES } from "../src/node-types.ts";
+import { LIVE_ONLY } from "./live-only.ts";
+
+// With NO_LIVE_PHIS=1 (CI, which has only a fake PHIS answering empty lists) the tests listed in live-only.ts skip themselves.
+const live = new Set(LIVE_ONLY);
+const test = ((name: string, ...rest: any[]) => process.env.NO_LIVE_PHIS === "1" && live.has(name)
+  ? nodeTest(name, { skip: "needs live PHIS" }, () => {})
+  : (nodeTest as any)(name, ...rest)) as typeof nodeTest;
 
 // Browser-level regression check: catches breakage that only shows up once
 // JS actually runs in a page (a console error, a wired category regressing
@@ -48,6 +55,7 @@ async function withServerAndBrowser(fn: (base: string, page: import("playwright"
   const browser = await (sharedBrowser ??= chromium.launch());
   const context = await browser.newContext();
   const page = await context.newPage();
+  if (process.env.E2E_TIMEOUT_MS) page.setDefaultTimeout(Number(process.env.E2E_TIMEOUT_MS)); // a short wait when classifying failures
   await page.addInitScript(() => { try { localStorage.setItem("showTree", "1"); } catch {} }); // the selection tree pane is hidden by default
   await page.addInitScript(COUNT_PENDING);
   // The embedded graph would otherwise read the real /api/graph (live PHIS, cached in the server process): once an earlier test had filled that cache, its legend showed up in the Selection pane and moved every button below it.
@@ -93,8 +101,10 @@ const WIRED_CATEGORIES: Array<{ branch: string; hub?: string; label: string; fak
   { branch: "Data", label: "Documents", fakeIdPrefix: "doc-" },
 ];
 
+// These click through the real PHIS lists, so CI (no PHIS: NO_LIVE_PHIS=1) skips them; locally, with .env, they run.
+const NO_LIVE_PHIS = process.env.NO_LIVE_PHIS === "1";
 for (const { branch, hub, label, fakeIdPrefix } of WIRED_CATEGORIES) {
-  test(`e2e: ${label} category loads without fake ids or console errors`, async () => {
+  test(`e2e: ${label} category loads without fake ids or console errors`, { skip: NO_LIVE_PHIS && "needs live PHIS" }, async () => {
     await withServerAndBrowser(async (base, page) => {
       await page.goto(base + "/#browse");
       await idle(page);

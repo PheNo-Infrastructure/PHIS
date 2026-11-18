@@ -1,0 +1,33 @@
+// The e2e tests that need REAL PHIS data (a real experiment or organization row to click, live writes on phis-test).
+// CI has no PHIS (it runs with a fake one that answers empty lists), so with NO_LIVE_PHIS=1 these skip themselves; locally,
+// with .env, they run. Found 2026-11-18 by running the file against test/fake-phis.mts. A NEW test that fails in CI only
+// because the fake PHIS is empty belongs here (or should stub its routes with page.route and not need this list).
+export const LIVE_ONLY: string[] = [
+  "e2e: '+ New' menu shows the honest empty state when a multi-selection shares no adjacent type",
+  "e2e: standalone \"+ New site\" picks organization(s) first (same click rules), then creates linked to all of them",
+  "e2e: creating a facility from a selected organization auto-attaches it and it appears when browsing Facilities, without a reload",
+  "e2e: opening a facility shows its real relations, and Rename/Delete work end to end",
+  "e2e: clicking a relation chip jumps to that resource's own canonical breadcrumb, instead of appending to the current trail",
+  "e2e: ctrl-clicking a relation chip adds it to the current selection instead of navigating",
+  "e2e: relation chips of a resource's page: Shift+click picks the range, a box picks (Ctrl/Shift adds, Alt removes)",
+  "e2e: unlinking a relation from one side drops the OTHER side's cached detail too, so navigating back shows the change without a full reload",
+  "e2e: a site down to its LAST organization can't unlink it — the unlink view offers deleting the site instead, naming every link it removes",
+  "e2e: '+ New' → experiment from a selected organization opens a form (not a name prompt) and posts its fields",
+  "e2e: '+ New' → scientific object from ONE selected experiment: form has a Type dropdown from OpenSILEX's classes, posts experiment + rdf_type",
+  "e2e: the selection pane's '+ New' menu stays inside the window: when the pane is tall it opens upward, so every item can be reached",
+  "e2e: '+ New' → scientific object with TWO experiments selected creates it in both (one form, both links posted)",
+  "e2e: the Scientific Objects page shows a collapsible 'How scientific objects work' box, and remembers it open",
+  "e2e: opening a real experiment shows its relations as chips with Rename and Delete",
+  "e2e: deleting an experiment that holds scientific objects: one counted card, one click, no typing",
+  "e2e: an experiment reads Rename - Unlink - Delete; Unlink removes objects one by one (x) or all at once, after a confirm",
+  "e2e: a type whose Delete takes its links along (e.g. scientific object) gets an 'Unlink…' button — the only way to take it out of one experiment",
+  "e2e: the open node's own title is a selectable chip — plain click selects only it, ctrl toggles it",
+  "e2e: opening a node from the selection TREE (local detail) fetches its relations instead of showing 'No connections found'",
+  "e2e: selecting two existing, different-typed adjacent nodes offers \"Link selection\", which calls /api/link",
+  "e2e: two of a type WITHOUT parent/child (facilities) offer no \"Link selection\" and say why; two organizations open the ranking list",
+  "e2e: selecting several facilities plus one organization offers \"Link selection\" and sends every item",
+  "e2e: one organization selected + more ctrl-clicked in the list -> Link selection opens the ranking modal instead of linking blindly",
+  "e2e: + New factor from the Factors list with two experiments picked opens the form and sends both",
+  "e2e: layout — the blocked-delete banner, a long title and a long chip stay inside the detail pane at narrow widths",
+  "e2e: overview with no trials, or a failing list, still shows search and the import card",
+];

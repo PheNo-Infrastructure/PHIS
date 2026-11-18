@@ -1,0 +1,116 @@
+name: Graph Explorer (portal)
+
+# Pull requests: tests only. Push to main (or a manual run on main): tests, then build the image in ACR,
+# roll it out to the portal and check it; a failed check rolls back.
+# Tests: one job per test file, in parallel (a new file is picked up automatically). Changes that only touch docs or
+# the hand-applied k8s files run nothing.
+on:
+  pull_request:
+    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml', '!graph-explorer/docs/**', '!graph-explorer/k8s/**']
+  push:
+    branches: [main]
+    paths: ['graph-explorer/**', '.github/workflows/graph-explorer.yml', '!graph-explorer/docs/**', '!graph-explorer/k8s/**']
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: graph-explorer-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # a newer push replaces a PR's test run, but never interrupts a deploy
+
+jobs:
+  files:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: list
+        # Everything except the live smoke test, which needs PHIS credentials.
+        run: |
+          cd graph-explorer
+          files=$(ls test/*.test.ts | grep -v live-smoke | sed 's/.*/"&"/' | paste -sd, -)
+          echo "list=[$files]" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: files
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJson(needs.files.outputs.list) }}
+    name: test ${{ matrix.file }}
+    defaults:
+      run:
+        working-directory: graph-explorer
+    env:
+      # There is no PHIS in CI: the server talks to a fake one (test/fake-phis.mts, started below) that answers empty lists.
+      PHIS_HOST: http://localhost:4999
+      PHIS_USER: ci
+      PHIS_PASS: ci
+      NO_LIVE_PHIS: '1' # the tests that need a real PHIS skip themselves
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: graph-explorer/package-lock.json
+      - run: npm ci
+      - name: Install Chromium (about 5 min of apt), only for test files that use a browser
+        run: if grep -q 'from "playwright"' "${{ matrix.file }}"; then npx playwright install --with-deps chromium; fi
+      - name: Run the file (7 min limit); a browser test now and then fails only under load, so one rerun is allowed and said out loud
+        run: |
+          node --experimental-strip-types test/fake-phis.mts 4999 &
+          sleep 1
+          if ! timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"; then
+            echo "::warning::${{ matrix.file }} failed once, running it again"
+            timeout 420 node --experimental-strip-types --test "${{ matrix.file }}"
+          fi
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: phisacr
+      IMAGE: phisacr.azurecr.io/graph-explorer
+      PORTAL_URL: https://phis.pheno.no/portal
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build the image in ACR (tagged with the commit, and latest)
+        run: az acr build -r "$REGISTRY" -t "graph-explorer:${GITHUB_SHA}" -t graph-explorer:latest graph-explorer
+
+      - uses: azure/aks-set-context@c7eb093e5a5d47caa333f64974d5fd1cd4bf069d # v4
+        with:
+          resource-group: phis-rg
+          cluster-name: phis-cluster
+          admin: 'true'
+
+      - name: Roll out
+        run: |
+          kubectl set image deployment/graph-explorer "graph-explorer=${IMAGE}:${GITHUB_SHA}" -n graph-explorer
+          kubectl rollout status deployment/graph-explorer -n graph-explorer --timeout=180s
+
+      - name: Check the live portal
+        run: |
+          set -e
+          sleep 5
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$PORTAL_URL/")" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$PORTAL_URL/api/instance")" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$PORTAL_URL/api/experiment-delete?id=x&name=x")" = 403
+
+      - name: Roll back if the checks failed
+        if: failure()
+        run: kubectl rollout undo deployment/graph-explorer -n graph-explorer
