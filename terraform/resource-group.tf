@@ -11,14 +11,19 @@ resource "azurerm_resource_group" "phis" {
 # file storage (via blobfuse2 PVC), and nightly database backups.
 # Billed per GiB stored — starts at €0.
 resource "azurerm_storage_account" "main" {
-  name                     = var.storage_account_name
-  resource_group_name      = azurerm_resource_group.phis.name
-  location                 = azurerm_resource_group.phis.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  min_tls_version          = "TLS1_2"
+  name                = var.storage_account_name
+  resource_group_name = azurerm_resource_group.phis.name
+  location            = azurerm_resource_group.phis.location
+  account_tier        = "Standard"
+  # GRS: second copy in the paired region (northeurope). Protects against loss
+  # of the westeurope storage cluster; versioning + soft delete protect against
+  # overwrite/delete.
+  account_replication_type        = "GRS"
+  min_tls_version                 = "TLS1_2"
+  allow_nested_items_to_be_public = false
 
   blob_properties {
+    versioning_enabled = true
     delete_retention_policy {
       days = 30
     }
@@ -29,6 +34,40 @@ resource "azurerm_storage_account" "main" {
 
   lifecycle {
     prevent_destroy = true
+  }
+}
+
+# Backups were never pruned. Delete dump blobs after 90 days, and old versions
+# of any blob (tfstate, uploaded files) after 90 days. Current versions of
+# tfstate and uploaded files are never touched (prefix_match is backups only).
+resource "azurerm_storage_management_policy" "main" {
+  storage_account_id = azurerm_storage_account.main.id
+
+  rule {
+    name    = "prune-backups"
+    enabled = true
+    filters {
+      blob_types   = ["blockBlob"]
+      prefix_match = ["mongodb-backups/", "graphdb-backups/"]
+    }
+    actions {
+      base_blob {
+        delete_after_days_since_modification_greater_than = 90
+      }
+    }
+  }
+
+  rule {
+    name    = "prune-old-versions"
+    enabled = true
+    filters {
+      blob_types = ["blockBlob"]
+    }
+    actions {
+      version {
+        delete_after_days_since_creation = 90
+      }
+    }
   }
 }
 
