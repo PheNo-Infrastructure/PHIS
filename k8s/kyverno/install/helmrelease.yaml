@@ -9,7 +9,9 @@ spec:
   chart:
     spec:
       chart: kyverno
-      version: "3.*.*"
+      # Pinned: 3.10 refuses to install while kyverno.io ClusterPolicy objects exist
+      # (our PVC delete block). Migrate the policy before upgrading.
+      version: "3.9.2"
       sourceRef:
         kind: HelmRepository
         name: kyverno
