@@ -37,9 +37,10 @@ resource "azurerm_storage_account" "main" {
   }
 }
 
-# Backups were never pruned. Delete dump blobs after 90 days, and old versions
-# of any blob (tfstate, uploaded files) after 90 days. Current versions of
-# tfstate and uploaded files are never touched (prefix_match is backups only).
+# Backups were never pruned: delete dump blobs and their versions after 90 days.
+# Both rules are limited to the backup containers. Versions of tfstate and
+# uploaded files are kept indefinitely, because Azure counts the age from when a
+# version was created, not from when it was replaced.
 resource "azurerm_storage_management_policy" "main" {
   storage_account_id = azurerm_storage_account.main.id
 
@@ -61,7 +62,8 @@ resource "azurerm_storage_management_policy" "main" {
     name    = "prune-old-versions"
     enabled = true
     filters {
-      blob_types = ["blockBlob"]
+      blob_types   = ["blockBlob"]
+      prefix_match = ["mongodb-backups/", "graphdb-backups/"]
     }
     actions {
       version {
